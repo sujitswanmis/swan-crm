@@ -38,6 +38,11 @@ export async function POST(req) {
       validTill: Math.floor(Date.now() / 1000) + 86400, // Valid for 24 hours
       uid: user.id
     });
+    
+    token.addVoiceGrants({
+      incomingAllow: true,
+      outgoingAllow: true
+    });
 
     return NextResponse.json({ token: token.toJwt() });
 
