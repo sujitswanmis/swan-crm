@@ -33,6 +33,18 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
     }
 
+    // Diagnostics to help verify Vercel environment variables & Plivo account mismatch
+    console.log(`[Token Debug] AuthID prefix: ${authId.substring(0, 4)}... AuthToken prefix: ${authToken.substring(0, 4)}...`);
+    try {
+      const client = new plivo.Client(authId, authToken);
+      const endpoints = await client.endpoints.list();
+      const usernames = endpoints.map(e => e.username);
+      const exists = usernames.includes(agentData.plivo_username);
+      console.log(`[Token Debug] Target username: ${agentData.plivo_username}. Exists in Plivo account endpoints: ${exists}. Available endpoints: ${usernames.join(', ')}`);
+    } catch (err) {
+      console.error(`[Token Debug] Failed to verify endpoints on Plivo:`, err.message);
+    }
+
     // Use Plivo SDK to generate a JWT Access Token for the browser SDK
     const token = new plivo.AccessToken(
       authId,
