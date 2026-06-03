@@ -10,6 +10,7 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
   const [incomingCall, setIncomingCall] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
+  const [debugToken, setDebugToken] = useState('');
 
   const durationTimerRef = useRef(null);
 
@@ -102,6 +103,7 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
     if (!plivoClient) return;
     setConnectionState('connecting');
     setErrorMessage('');
+    setDebugToken('');
 
     try {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
@@ -110,6 +112,7 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
       if (data.username && data.password) {
         plivoClient.login(data.username, data.password);
       } else if (data.token) {
+        setDebugToken(data.token);
         plivoClient.loginWithAccessToken(data.token);
       } else {
         setConnectionState('error');
@@ -202,7 +205,21 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
 
       {errorMessage && (
         <div style={{ fontSize: '0.85rem', color: '#ef4444', marginBottom: '1rem' }}>
-          {errorMessage}
+          <div>{errorMessage}</div>
+          {debugToken && (
+            <div style={{ marginTop: '0.5rem', padding: '0.75rem', background: '#0f172a', borderRadius: '6px', border: '1px dashed #ef4444', color: '#94a3b8', wordBreak: 'break-all', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+              <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: '0.25rem' }}>Debug Token Payload:</div>
+              {(() => {
+                try {
+                  const payloadB64 = debugToken.split('.')[1];
+                  const payloadStr = atob(payloadB64);
+                  return payloadStr;
+                } catch (e) {
+                  return 'Error parsing token: ' + e.message;
+                }
+              })()}
+            </div>
+          )}
         </div>
       )}
 
