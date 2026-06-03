@@ -4,12 +4,13 @@ export async function POST(req) {
   try {
     const url = new URL(req.url);
     const roomName = url.searchParams.get('room');
+    const customerNumber = url.searchParams.get('customer_number') || '';
     
     // Plivo expects an XML response.
     // We return it instantly without DB queries for zero delay.
     
     const appBaseUrl = 'https://swan-hosting.vercel.app';
-    const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}`;
+    const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&customer_number=${encodeURIComponent(customerNumber)}`;
     
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

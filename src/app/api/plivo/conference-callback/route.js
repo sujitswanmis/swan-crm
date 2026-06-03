@@ -11,9 +11,10 @@ export async function POST(req) {
     const textData = await req.text();
     const searchParams = new URLSearchParams(textData);
     const event = Object.fromEntries(searchParams);
+    const customerNumber = url.searchParams.get('customer_number');
 
     // Run processing sequentially so serverless function doesn't terminate early
-    await processConferenceEvent(roomName, event, url.origin).catch(console.error);
+    await processConferenceEvent(roomName, event, url.origin, customerNumber).catch(console.error);
 
     return new NextResponse('OK', { status: 200 });
   } catch (error) {
@@ -22,7 +23,7 @@ export async function POST(req) {
   }
 }
 
-async function processConferenceEvent(roomName, event, originUrl) {
+async function processConferenceEvent(roomName, event, originUrl, customerNumber) {
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -33,6 +34,29 @@ async function processConferenceEvent(roomName, event, originUrl) {
   const callUuid = event.CallUUID;
   const conferenceName = event.ConferenceName;
 
+  // 1. FAST PATH: Dial customer instantly before ANY database operations to guarantee 0 latency!
+  if (eventType === 'enter' && event.ConferenceFirstMember === 'true' && customerNumber) {
+      const authId = process.env.PLIVO_AUTH_ID;
+      const authToken = process.env.PLIVO_AUTH_TOKEN;
+      const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
+      const client = new plivo.Client(authId, authToken);
+      const appBaseUrl = 'https://swan-hosting.vercel.app';
+      
+      // Fire and forget the Plivo API call instantly!
+      client.calls.create(
+        fromNumber,
+        customerNumber,
+        `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
+        {
+          answerMethod: 'POST',
+          fallbackMethod: 'POST',
+          callbackUrl: `${appBaseUrl}/api/plivo/ring-callback`,
+          callbackMethod: 'POST',
+        }
+      ).catch(console.error);
+  }
+
+  // 2. BACKGROUND DATABASE OPERATIONS (Runs after dialing)
   // Save event
   await adminClient.from('call_events').insert({
     room_name: roomName,
@@ -50,38 +74,14 @@ async function processConferenceEvent(roomName, event, originUrl) {
   if (!session) return;
 
   if (eventType === 'enter') {
-    // Member joined. The first member is always the agent since they answer first.
     if (event.ConferenceFirstMember === 'true' || callUuid === session.agent_call_uuid) {
-      // Agent joined! Now dial the customer into the conference.
+      // Agent joined
       await adminClient.from('call_sessions').update({
-        agent_call_uuid: callUuid, // Save it just in case
+        agent_call_uuid: callUuid,
         agent_member_id: memberId,
         conference_name: conferenceName,
         agent_answer_time: new Date().toISOString(),
         status: 'agent_answered'
-      }).eq('id', session.id);
-
-      const authId = process.env.PLIVO_AUTH_ID;
-      const authToken = process.env.PLIVO_AUTH_TOKEN;
-      const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
-      const client = new plivo.Client(authId, authToken);
-
-      const appBaseUrl = 'https://swan-hosting.vercel.app';
-      
-      const response = await client.calls.create(
-        fromNumber,
-        session.customer_number,
-        `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
-        {
-          answerMethod: 'POST',
-          fallbackMethod: 'POST',
-          callbackUrl: `${appBaseUrl}/api/plivo/ring-callback`,
-          callbackMethod: 'POST',
-        }
-      );
-
-      await adminClient.from('call_sessions').update({
-        customer_call_uuid: response.requestUuid
       }).eq('id', session.id);
       
     } else if (event.ConferenceFirstMember !== 'true' || callUuid === session.customer_call_uuid) {

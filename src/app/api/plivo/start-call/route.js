@@ -84,7 +84,7 @@ export async function POST(req) {
     const response = await client.calls.create(
       fromNumber,
       dialTo,
-      `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=agent`,
+      `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=agent&customer_number=${encodeURIComponent(customerNumber)}`,
       {
         answerMethod: 'POST',
         fallbackMethod: 'POST',
