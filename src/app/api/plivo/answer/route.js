@@ -8,7 +8,7 @@ export async function POST(req) {
     // Plivo expects an XML response.
     // We return it instantly without DB queries for zero delay.
     
-    const appBaseUrl = process.env.NEXT_PUBLIC_SITE_URL || url.origin;
+    const appBaseUrl = 'https://swan-hosting.vercel.app';
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}`;
     
     const xml = `<?xml version="1.0" encoding="UTF-8"?>

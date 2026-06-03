@@ -65,7 +65,7 @@ async function processConferenceEvent(roomName, event, originUrl) {
       const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
       const client = new plivo.Client(authId, authToken);
 
-      const appBaseUrl = process.env.NEXT_PUBLIC_SITE_URL || originUrl;
+      const appBaseUrl = 'https://swan-hosting.vercel.app';
       
       const response = await client.calls.create(
         fromNumber,

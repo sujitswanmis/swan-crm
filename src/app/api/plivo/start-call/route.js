@@ -64,13 +64,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
     }
 
-    let appBaseUrl = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get('origin');
-    
-    // Plivo strictly requires a public URL. If testing locally, fake it so the API call doesn't crash.
-    // NOTE: Call webhooks will fail to reach localhost. User must test on Vercel.
-    if (appBaseUrl && appBaseUrl.includes('localhost')) {
-       appBaseUrl = 'https://plivo-dummy-callback.vercel.app';
-    }
+    let appBaseUrl = 'https://swan-hosting.vercel.app';
     // We only initiate the call to the AGENT first.
     // The answer URL will put the agent in the conference.
     // The conference callback will then dial the customer.
