@@ -55,7 +55,7 @@ export default function CallCenterModule({ userId }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerNumber,
+          customerNumber: `+91${customerNumber}`,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
           agentMobile: agentData?.mobile_number
