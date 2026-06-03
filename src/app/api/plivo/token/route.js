@@ -33,16 +33,27 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
     }
 
-    // Diagnostics to help verify Vercel environment variables & Plivo account mismatch
+    // Verify endpoints and extract the Application ID dynamically
+    let appId = '';
     console.log(`[Token Debug] AuthID prefix: ${authId.substring(0, 4)}... AuthToken prefix: ${authToken.substring(0, 4)}...`);
     try {
       const client = new plivo.Client(authId, authToken);
       const endpoints = await client.endpoints.list();
-      const usernames = endpoints.map(e => e.username);
-      const exists = usernames.includes(agentData.plivo_username);
-      console.log(`[Token Debug] Target username: ${agentData.plivo_username}. Exists in Plivo account endpoints: ${exists}. Available endpoints: ${usernames.join(', ')}`);
+      const endpoint = endpoints.find(e => e.username === agentData.plivo_username);
+      if (endpoint) {
+        console.log(`[Token Debug] Target username: ${agentData.plivo_username} exists in account.`);
+        if (endpoint.application) {
+          const match = endpoint.application.match(/\/Application\/([^\/]+)\//);
+          if (match) {
+            appId = match[1];
+            console.log(`[Token Debug] Found associated Plivo App ID: ${appId}`);
+          }
+        }
+      } else {
+        console.warn(`[Token Debug] Target username: ${agentData.plivo_username} NOT found in account endpoints!`);
+      }
     } catch (err) {
-      console.error(`[Token Debug] Failed to verify endpoints on Plivo:`, err.message);
+      console.error(`[Token Debug] Failed to fetch endpoints from Plivo:`, err.message);
     }
 
     // Use Plivo API to generate a JWT Access Token for the browser SDK
@@ -61,6 +72,7 @@ export async function POST(req) {
         sub: agentData.plivo_username,
         nbf: now - 300,       // 5 minutes in the past to prevent clock skew issues
         exp: now + 82800,     // Valid for 23 hours (total lifetime exp - nbf remains under 24 hours)
+        app: appId || undefined,
         per: {
           voice: {
             incoming_allow: true,
