@@ -17,7 +17,7 @@ export async function POST(req) {
 
     const { data: agentData } = await adminClient
       .from('call_agents')
-      .select('plivo_username')
+      .select('plivo_username, plivo_password')
       .eq('user_id', user.id)
       .single();
 
@@ -25,15 +25,14 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
     }
 
-    // Return username + password for direct SIP login (most reliable for SIP registration)
-    // Password is stored as env variable per-account (one shared password for all endpoints)
-    // This is the most reliable method — loginWithAccessToken does not always trigger SIP REGISTER
-    const plivoEndpointPassword = process.env.PLIVO_ENDPOINT_PASSWORD || 'SwanCRM@2025!';
+    if (!agentData.plivo_password) {
+      return NextResponse.json({ error: 'Agent missing Plivo password in database. Please contact admin.' }, { status: 400 });
+    }
 
     console.log(`[Token API] Returning credentials for username: ${agentData.plivo_username}`);
     return NextResponse.json({
       username: agentData.plivo_username,
-      password: plivoEndpointPassword
+      password: agentData.plivo_password
     });
 
   } catch (error) {
