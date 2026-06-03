@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Plivo WebRTC Test</title>
+  <script src="https://cdn.plivo.com/sdk/browser/v2/plivo.min.js"></script>
+</head>
+<body>
+  <h1>Plivo WebRTC Raw Test</h1>
+  <button id="loginBtn">Login with Username/Password</button>
+  <button id="loginAliasBtn">Login with Alias/Password</button>
+  <button id="loginUriBtn">Login with SIP URI/Password</button>
+  <p id="status">Status: Disconnected</p>
+
+  <script>
+    const plivoObj = new window.Plivo({ enableTracking: true, closeProtection: true });
+    
+    plivoObj.client.on('onLogin', () => { document.getElementById('status').innerText = 'Status: SUCCESS! Logged In!'; });
+    plivoObj.client.on('onLoginFailed', (reason) => { document.getElementById('status').innerText = 'Status: FAILED - ' + reason; });
+    
+    const username = "nsmlrtc3939694880445266";
+    const alias = "TC0001-NSMLR";
+    const sipUri = "nsmlrtc3939694880445266@phone.plivo.com";
+    const password = "1f45f9005c94669098fef7b88dabfb0e";
+
+    document.getElementById('loginBtn').onclick = () => {
+      document.getElementById('status').innerText = 'Status: Connecting with Username...';
+      plivoObj.client.login(username, password);
+    };
+    
+    document.getElementById('loginAliasBtn').onclick = () => {
+      document.getElementById('status').innerText = 'Status: Connecting with Alias...';
+      plivoObj.client.login(alias, password);
+    };
+
+    document.getElementById('loginUriBtn').onclick = () => {
+      document.getElementById('status').innerText = 'Status: Connecting with SIP URI...';
+      plivoObj.client.login(sipUri, password);
+    };
+  </script>
+</body>
+</html>
