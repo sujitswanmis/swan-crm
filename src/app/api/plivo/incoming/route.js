@@ -18,6 +18,27 @@ export async function POST(req) {
     // Default Forward Number
     let routeTo = process.env.DEFAULT_FORWARD_TO || '+919988119276';
 
+    const plivo = require('plivo');
+    const plivoClient = new plivo.Client(
+      (process.env.PLIVO_AUTH_ID || '').trim().replace(/['"]/g, ''),
+      (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '')
+    );
+
+    // Helper to verify if SIP endpoint is registered on Plivo
+    const verifySipRegistered = async (username) => {
+      if (!username) return false;
+      try {
+        const endpoints = await plivoClient.endpoints.list();
+        const ep = endpoints.find(e => e.username === username);
+        const registered = ep && ep.sipRegistered === 'true';
+        console.log(`[Incoming Webhook] Endpoint ${username} registration check: ${registered}`);
+        return registered;
+      } catch (err) {
+        console.error(`[Incoming Webhook] Error checking registration for ${username}:`, err.message);
+        return true; // Fallback to true on API error to avoid blocking call
+      }
+    };
+
     // Sticky Agent Routing Logic
     // 1. Find the last agent who talked to this customer
     const { data: lastCall } = await adminClient
@@ -35,13 +56,35 @@ export async function POST(req) {
       // 2. Check if this agent is online/available
       const { data: agentData } = await adminClient
         .from('call_agents')
-        .select('plivo_sip_uri, status')
+        .select('plivo_username, plivo_sip_uri, status')
         .eq('id', lastCall.agent_id)
         .single();
 
       if (agentData) {
         if (agentData.status === 'available') {
-          targetAgentSip = agentData.plivo_sip_uri;
+          // Double-check real registration status on Plivo
+          const isRegistered = await verifySipRegistered(agentData.plivo_username);
+          if (isRegistered) {
+            targetAgentSip = agentData.plivo_sip_uri;
+          } else {
+            console.warn(`[Incoming Webhook] Last agent ${agentData.plivo_username} is offline on Plivo. Updating status in DB.`);
+            // Auto-heal agent status to offline
+            await adminClient
+              .from('call_agents')
+              .update({ status: 'offline' })
+              .eq('id', lastCall.agent_id);
+            
+            // Get department to try group fallback
+            const { data: userData } = await adminClient
+              .from('user_roles')
+              .select('emp_department')
+              .eq('user_id', (await adminClient.from('call_agents').select('user_id').eq('id', lastCall.agent_id).single()).data?.user_id)
+              .single();
+            
+            if (userData && userData.emp_department) {
+               fallbackGroup = userData.emp_department;
+            }
+          }
         } else {
           // Find their department/group from user_roles
           const { data: userData } = await adminClient
@@ -67,16 +110,27 @@ export async function POST(req) {
         
       if (groupUsers && groupUsers.length > 0) {
         const userIds = groupUsers.map(u => u.user_id);
-        const { data: availableGroupAgent } = await adminClient
+        const { data: availableGroupAgents } = await adminClient
           .from('call_agents')
-          .select('plivo_sip_uri')
+          .select('id, plivo_username, plivo_sip_uri')
           .in('user_id', userIds)
-          .eq('status', 'available')
-          .limit(1)
-          .single();
+          .eq('status', 'available');
           
-        if (availableGroupAgent) {
-          targetAgentSip = availableGroupAgent.plivo_sip_uri;
+        if (availableGroupAgents && availableGroupAgents.length > 0) {
+          // Find the first agent in the group who is actually registered on Plivo
+          for (const agent of availableGroupAgents) {
+            const isRegistered = await verifySipRegistered(agent.plivo_username);
+            if (isRegistered) {
+              targetAgentSip = agent.plivo_sip_uri;
+              break;
+            } else {
+              console.warn(`[Incoming Webhook] Group agent ${agent.plivo_username} is offline on Plivo. Updating status in DB.`);
+              await adminClient
+                .from('call_agents')
+                .update({ status: 'offline' })
+                .eq('id', agent.id);
+            }
+          }
         }
       }
     }

@@ -49,6 +49,22 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
           setErrorMessage('Login failed: ' + reason);
         });
 
+        client.on('onLogout', () => {
+          console.log('[Softphone] Plivo client logged out.');
+          setConnectionState('offline');
+          if (onStatusChange) onStatusChange('offline');
+        });
+
+        client.on('onConnectionChange', (state) => {
+          console.log('[Softphone] Connection state changed:', state);
+          if (state && (state.status === 'disconnected' || state.status === 'failed')) {
+            console.warn('[Softphone] Connection lost, marking agent offline in database.');
+            setConnectionState('error');
+            setErrorMessage('Connection lost: ' + (state.reason || 'Disconnected'));
+            if (onStatusChange) onStatusChange('offline');
+          }
+        });
+
         client.on('onIncomingCall', (callerName, extraHeaders) => {
           console.log('[Softphone] Incoming call received from:', callerName, extraHeaders);
           setIncomingCall({ callerName, extraHeaders });
