@@ -33,24 +33,13 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
     }
 
-    // Bypass JWT and fetch the actual endpoint password from Plivo to login directly
-    const b64 = Buffer.from(authId + ':' + authToken).toString('base64');
-    const plivoRes = await fetch(`https://api.plivo.com/v1/Account/${authId}/Endpoint/`, {
-      headers: { 'Authorization': 'Basic ' + b64 }
+    // Use Plivo SDK to generate a JWT Access Token for the browser SDK
+    const token = new plivo.AccessToken(authId, authToken, agentData.plivo_username, {
+      validTill: Math.floor(Date.now() / 1000) + 86400, // Valid for 24 hours
+      uid: user.id
     });
-    
-    if (!plivoRes.ok) {
-       return NextResponse.json({ error: 'Failed to fetch Plivo endpoints' }, { status: 500 });
-    }
-    
-    const plivoData = await plivoRes.json();
-    const endpoint = plivoData.objects.find(e => e.username === agentData.plivo_username);
-    
-    if (!endpoint || !endpoint.password) {
-       return NextResponse.json({ error: 'Endpoint password not found' }, { status: 500 });
-    }
 
-    return NextResponse.json({ username: endpoint.username, password: endpoint.password });
+    return NextResponse.json({ token: token.toJwt() });
 
   } catch (error) {
     console.error('Token error:', error);
