@@ -34,15 +34,15 @@ export async function POST(req) {
     }
 
     // Use Plivo SDK to generate a JWT Access Token for the browser SDK
-    const token = new plivo.AccessToken(authId, authToken, agentData.plivo_username, {
-      validTill: Math.floor(Date.now() / 1000) + 86400, // Valid for 24 hours
-      uid: user.id
-    });
+    const token = new plivo.AccessToken(
+      authId,
+      authToken,
+      agentData.plivo_username,
+      { validTill: Math.floor(Date.now() / 1000) + 86400 },
+      user.id
+    );
     
-    token.addVoiceGrants({
-      incomingAllow: true,
-      outgoingAllow: true
-    });
+    token.addVoiceGrants(true, true);
 
     return NextResponse.json({ token: token.toJwt() });
 
