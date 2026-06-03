@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { PhoneCall, Users, Clock, Database, Loader2, ShieldAlert } from 'lucide-react';
 import { getAgentProfile, getRecentCalls, updateCallAgentAdmin } from '@/app/actions/team';
 import BrowserSoftphone from './BrowserSoftphone';
+import ActiveCallPanel from './ActiveCallPanel';
 
 export default function CallCenterModule({ userId }) {
   const [agentData, setAgentData] = useState(null);
@@ -11,6 +12,7 @@ export default function CallCenterModule({ userId }) {
   const [callingMode, setCallingMode] = useState('browser_webrtc'); // browser_webrtc, mobile
   const [recentCalls, setRecentCalls] = useState([]);
   const [agentStatus, setAgentStatus] = useState('offline');
+  const [activeSession, setActiveSession] = useState(null);
 
   useEffect(() => {
     fetchAgentProfile();
@@ -36,7 +38,12 @@ export default function CallCenterModule({ userId }) {
 
   const fetchRecent = async (agentId) => {
     const { data } = await getRecentCalls(agentId);
-    if (data) setRecentCalls(data);
+    if (data) {
+      setRecentCalls(data);
+      // Check if there is an active session
+      const active = data.find(c => ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status));
+      setActiveSession(active || null);
+    }
   };
 
   const updateAgentStatus = async (status) => {
@@ -66,12 +73,17 @@ export default function CallCenterModule({ userId }) {
         alert("Call Error: " + result.error);
       } else {
         setCustomerNumber('');
-        // Refresh call history after 5 seconds to show new call
-        setTimeout(() => { if (agentData) fetchRecent(agentData.id); }, 5000);
+        // Refresh call history after a short delay
+        setTimeout(() => { if (agentData) fetchRecent(agentData.id); }, 2000);
       }
     } catch (err) {
       alert("Failed to start call");
     }
+  };
+
+  const handleCallEnded = () => {
+    setActiveSession(null);
+    if (agentData) fetchRecent(agentData.id);
   };
 
   if (loading) {
@@ -111,6 +123,10 @@ export default function CallCenterModule({ userId }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
           <BrowserSoftphone agentData={agentData} onStatusChange={updateAgentStatus} />
+
+          {activeSession && (
+            <ActiveCallPanel session={activeSession} onCallEnded={handleCallEnded} />
+          )}
 
           {/* Outbound Dialer */}
           <div className="card" style={{ padding: '1.5rem' }}>
