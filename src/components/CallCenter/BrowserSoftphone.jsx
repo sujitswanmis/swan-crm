@@ -14,47 +14,62 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
 
   const durationTimerRef = useRef(null);
 
+  const plivoClientRef = useRef(null);
+
   useEffect(() => {
+    let activeClient = null;
+
     // Dynamic import of plivo browser SDK to avoid SSR issues
     const initPlivo = async () => {
       try {
+        console.log('[Softphone] Dynamically importing plivo-browser-sdk...');
         const PlivoModule = await import('plivo-browser-sdk');
         const Plivo = PlivoModule.default || PlivoModule;
         
+        console.log('[Softphone] Initializing Plivo Browser SDK client with debug level ALL...');
         const plivoObj = new Plivo({
           enableTracking: true,
           closeProtection: true,
+          debug: 'ALL'
         });
         const client = plivoObj.client;
+        activeClient = client;
+        plivoClientRef.current = client;
 
         // Event Listeners
         client.on('onLogin', () => {
+          console.log('[Softphone] Plivo client logged in and SIP registered successfully!');
           setConnectionState('online');
           if (onStatusChange) onStatusChange('available');
         });
 
         client.on('onLoginFailed', (reason) => {
+          console.error('[Softphone] Plivo client login/registration failed:', reason);
           setConnectionState('error');
           setErrorMessage('Login failed: ' + reason);
         });
 
         client.on('onIncomingCall', (callerName, extraHeaders) => {
+          console.log('[Softphone] Incoming call received from:', callerName, extraHeaders);
           setIncomingCall({ callerName, extraHeaders });
         });
 
         client.on('onIncomingCallCanceled', () => {
+          console.log('[Softphone] Incoming call canceled by caller.');
           setIncomingCall(null);
         });
 
         client.on('onCallRemoteRinging', () => {
-          // Outbound ringing
+          console.log('[Softphone] Remote endpoint is ringing...');
         });
 
         client.on('onCallAnswered', () => {
+          console.log('[Softphone] Call answered and active.');
           startDurationTimer();
         });
 
         client.on('onCallTerminated', () => {
+          console.log('[Softphone] Call terminated.');
           setActiveCall(null);
           setIncomingCall(null);
           stopDurationTimer();
@@ -62,21 +77,36 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
         });
 
         client.on('onMediaPermission', (res) => {
-           if (res.error) {
-              setErrorMessage('Microphone permission denied.');
-           }
+          console.log('[Softphone] Media/Microphone permission status:', res);
+          if (res.error) {
+            console.error('[Softphone] Media permission error:', res.error);
+            setErrorMessage('Microphone permission denied.');
+          }
+        });
+
+        client.on('onCallFailed', (reason) => {
+          console.error('[Softphone] Active call failed:', reason);
+          setActiveCall(null);
+          setIncomingCall(null);
+          stopDurationTimer();
+          setCallDuration(0);
         });
 
         setPlivoClient(client);
       } catch (err) {
-        console.error('Failed to load Plivo Browser SDK:', err);
+        console.error('[Softphone] Failed to load Plivo Browser SDK:', err);
       }
     };
     initPlivo();
 
     return () => {
-      if (plivoClient) {
-        plivoClient.logout();
+      if (activeClient) {
+        console.log('[Softphone] Unmounting BrowserSoftphone. Logging out Plivo client to release SIP registration...');
+        try {
+          activeClient.logout();
+        } catch (e) {
+          console.error('[Softphone] Error during Plivo client logout on unmount:', e);
+        }
       }
     };
   }, []);
