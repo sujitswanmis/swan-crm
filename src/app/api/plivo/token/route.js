@@ -45,22 +45,37 @@ export async function POST(req) {
       console.error(`[Token Debug] Failed to verify endpoints on Plivo:`, err.message);
     }
 
-    // Use Plivo SDK to generate a JWT Access Token for the browser SDK
+    // Use Plivo API to generate a JWT Access Token for the browser SDK
     const now = Math.floor(Date.now() / 1000);
-    const token = new plivo.AccessToken(
-      authId,
-      authToken,
-      agentData.plivo_username,
-      {
-        validFrom: now - 300, // 5 minutes in the past to prevent clock skew issues
-        lifetime: 86400       // Valid for 24 hours
-      },
-      user.id
-    );
+    const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
+    const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/JWT/Token/`;
     
-    token.addVoiceGrants(true, true);
+    const plivoRes = await fetch(plivoUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + b64,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        iss: authId,
+        sub: agentData.plivo_username,
+        nbf: now - 300,       // 5 minutes in the past to prevent clock skew issues
+        exp: now + 86400,     // Valid for 24 hours
+        per: {
+          voice: {
+            incoming_allow: true,
+            outgoing_allow: true
+          }
+        }
+      })
+    });
 
-    return NextResponse.json({ token: token.toJwt() });
+    const plivoData = await plivoRes.json();
+    if (!plivoRes.ok) {
+      throw new Error(plivoData.error || 'Failed to generate token from Plivo API');
+    }
+
+    return NextResponse.json({ token: plivoData.token });
 
   } catch (error) {
     console.error('Token error:', error);
