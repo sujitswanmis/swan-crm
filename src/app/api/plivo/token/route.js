@@ -11,8 +11,8 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const authId = (process.env.PLIVO_AUTH_ID || '').trim().replace(/"/g, '');
-    const authToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/"/g, '');
+    const authId = (process.env.PLIVO_AUTH_ID || '').trim().replace(/['"]/g, '');
+    const authToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '');
 
     if (!authId || !authToken) {
       return NextResponse.json({ error: 'Plivo credentials missing' }, { status: 500 });
@@ -46,11 +46,15 @@ export async function POST(req) {
     }
 
     // Use Plivo SDK to generate a JWT Access Token for the browser SDK
+    const now = Math.floor(Date.now() / 1000);
     const token = new plivo.AccessToken(
       authId,
       authToken,
       agentData.plivo_username,
-      { validTill: Math.floor(Date.now() / 1000) + 86400 },
+      {
+        validFrom: now - 300, // 5 minutes in the past to prevent clock skew issues
+        lifetime: 86400       // Valid for 24 hours
+      },
       user.id
     );
     
