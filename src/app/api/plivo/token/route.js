@@ -60,7 +60,7 @@ export async function POST(req) {
         iss: authId,
         sub: agentData.plivo_username,
         nbf: now - 300,       // 5 minutes in the past to prevent clock skew issues
-        exp: now + 86400,     // Valid for 24 hours
+        exp: now + 82800,     // Valid for 23 hours (total lifetime exp - nbf remains under 24 hours)
         per: {
           voice: {
             incoming_allow: true,
