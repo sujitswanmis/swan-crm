@@ -11,8 +11,8 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const authId = process.env.PLIVO_AUTH_ID;
-    const authToken = process.env.PLIVO_AUTH_TOKEN;
+    const authId = (process.env.PLIVO_AUTH_ID || '').replace(/"/g, '');
+    const authToken = (process.env.PLIVO_AUTH_TOKEN || '').replace(/"/g, '');
 
     if (!authId || !authToken) {
       return NextResponse.json({ error: 'Plivo credentials missing' }, { status: 500 });
