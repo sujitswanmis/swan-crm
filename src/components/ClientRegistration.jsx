@@ -1,0 +1,775 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@/utils/supabase/client';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X } from 'lucide-react';
+import Papa from 'papaparse';
+import { getTeamMembers } from '@/app/actions/team';
+
+export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null }) {
+  const supabase = createClient();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    leadInfo: true,
+    businessInfo: false,
+    cp1: false,
+    cp2: false,
+    cp3: false,
+    location: false,
+    requirements: false
+  });
+  
+  const [teamMembers, setTeamMembers] = useState([]);
+
+  useEffect(() => {
+    async function loadTeam() {
+      try {
+        const response = await getTeamMembers();
+        if (response && Array.isArray(response)) {
+          setTeamMembers(response);
+        } else if (response?.data) {
+          setTeamMembers(response.data);
+        }
+      } catch (error) {
+        console.error("Failed to load team members:", error);
+      }
+    }
+    loadTeam();
+  }, []);
+
+  const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
+  const [clientStatuses, setClientStatuses] = useState(['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress']);
+  const [priorities, setPriorities] = useState([
+    'LP00: None', 'LP01: Immediate', 'LP02: High', 'LP03: Medium', 
+    'LP04: Low', 'LP05: Cold', 'LP06: Disqualified', 'LP07: Irrelevant', 
+    'LP08: Invalid', 'LP09: Spam', 'LP10: Archive', 'LP11: Competitor Dealer', 'LP12: Competitor Distributor'
+  ]);
+
+  useEffect(() => {
+    const loadConfig = () => {
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.sources) setSources(parsed.sources);
+          if (parsed.clientStatuses) setClientStatuses(parsed.clientStatuses);
+          if (parsed.priorities) setPriorities(parsed.priorities);
+        } catch (e) { console.error(e); }
+      }
+    };
+    
+    loadConfig();
+    window.addEventListener('crm_config_updated', loadConfig);
+    return () => window.removeEventListener('crm_config_updated', loadConfig);
+  }, []);
+
+  const [formData, setFormData] = useState({
+    // Lead Info
+    assigned_to: '',
+    our_company: '',
+    lead_date: new Date().toISOString().split('T')[0],
+    source: '',
+    source_name: '',
+    entry_by: '',
+    status: 'None',
+    priority: '',
+    
+    // Business Info
+    business_type: '',
+    business_gst: '',
+    company: '', // Using existing column for Business_Name
+    business_contact_1: '',
+    business_contact_2: '',
+    business_alt_1: '',
+    business_alt_2: '',
+    business_email_1: '',
+    business_email_2: '',
+    business_alt_email_1: '',
+    business_alt_email_2: '',
+    
+    // Contact Person 1 (Map primary name, phone, email to existing columns)
+    name: '', // CP1 Name
+    phone: '', // CP1 Mobile 1
+    cp1_mobile_2: '',
+    cp1_alt_1: '',
+    cp1_alt_2: '',
+    email: '', // CP1 Mail 1
+    cp1_email_2: '',
+    
+    // Contact Person 2
+    cp2_name: '',
+    cp2_mobile_1: '',
+    cp2_mobile_2: '',
+    cp2_alt_1: '',
+    cp2_alt_2: '',
+    cp2_email_1: '',
+    cp2_email_2: '',
+    
+    // Contact Person 3
+    cp3_name: '',
+    cp3_mobile_1: '',
+    cp3_mobile_2: '',
+    cp3_alt_1: '',
+    cp3_alt_2: '',
+    cp3_email_1: '',
+    cp3_email_2: '',
+    
+    // Location
+    state_name: '',
+    district_name: '',
+    pin_code: '',
+    city_name: '',
+    tehsil_name: '',
+    block_name: '',
+    address: '',
+    
+    // Requirements & Deal
+    requirement: '',
+    investment: '',
+    buying_timeline: ''
+  });
+
+  useEffect(() => {
+    if (isEditMode && initialData) {
+      // Convert any null values from database to empty strings to prevent React warnings
+      const safeData = { ...initialData };
+      for (let key in safeData) {
+        if (safeData[key] === null) {
+          safeData[key] = '';
+        }
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        ...safeData
+      }));
+    }
+  }, [initialData, isEditMode]);
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = user?.email?.split('@')[0] || 'Unknown';
+      
+      const payload = {
+        ...formData
+      };
+      
+      // Convert empty strings back to null ONLY for date/uuid fields to avoid breaking NOT NULL text constraints
+      for (const key in payload) {
+        if (payload[key] === '' && (key.endsWith('_date') || key.endsWith('_at') || key.endsWith('timestamp') || key === 'assigned_to')) {
+          payload[key] = null;
+        }
+      }
+
+      // Remove fields that shouldn't be saved to DB
+      delete payload.lead_formatted_id;
+      delete payload.id;
+      delete payload.created_at;
+      delete payload.updated_at;
+      delete payload.sr_no;
+      delete payload.last_status;
+      delete payload.latest_remark;
+      delete payload.latest_emp_name;
+      delete payload.completion_count;
+      delete payload.last_follow_up_duration;
+      delete payload.last_timestamp;
+      delete payload.lead_notes;
+
+      if (isEditMode && initialData) {
+        // UPDATE MODE
+        const { error } = await supabase.from('leads').update(payload).eq('id', initialData.id);
+        if (error) throw error;
+
+        await supabase.from('lead_notes').insert([{
+          lead_id: initialData.id,
+          note_text: 'Client Profile was updated.',
+          created_by: actor
+        }]);
+        
+        alert('Client Updated Successfully!');
+        if (onRegistrationSuccess) onRegistrationSuccess();
+        if (onClose) onClose();
+      } else {
+        // INSERT MODE
+        payload.created_by = actor;
+        const { data, error } = await supabase.from('leads').insert([payload]).select();
+        
+        if (error) throw error;
+        
+        // Log initial history
+        if (data && data.length > 0) {
+          await supabase.from('lead_notes').insert([{
+            lead_id: data[0].id,
+            note_text: 'Client Registration Form Submitted',
+            created_by: actor
+          }]);
+        }
+        
+        alert('Client Registered Successfully!');
+        if (onRegistrationSuccess) onRegistrationSuccess();
+        
+        // Reset form (keeping defaults)
+        setFormData(prev => ({
+          ...prev,
+          source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: '',
+          business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
+          business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
+          name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
+          cp2_name: '', cp2_mobile_1: '', cp2_mobile_2: '', cp2_alt_1: '', cp2_alt_2: '', cp2_email_1: '', cp2_email_2: '',
+          cp3_name: '', cp3_mobile_1: '', cp3_mobile_2: '', cp3_alt_1: '', cp3_alt_2: '', cp3_email_1: '', cp3_email_2: '',
+          state_name: '', district_name: '', pin_code: '', city_name: '', tehsil_name: '', block_name: '', address: '',
+          requirement: '', investment: '', buying_timeline: ''
+        }));
+        window.scrollTo(0, 0);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert('Error saving client: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Client Registration');
+
+      const headers = [
+        'Lead Date', 'Our Company Name', 'Lead Source', 'Source Name', 'Entry By', 'Client Status', 'Lead Priority Type',
+        'Business Name', 'Business Type', 'Business GST', 'Business Contact 1', 'Business Contact 2',
+        'Business Alt 1', 'Business Alt 2', 'Business Email 1', 'Business Email 2', 'Business Alt Email 1', 'Business Alt Email 2',
+        'CP1 Name', 'CP1 Mobile 1', 'CP1 Mobile 2', 'CP1 Alt 1', 'CP1 Alt 2', 'CP1 Email 1', 'CP1 Email 2',
+        'CP2 Name', 'CP2 Mobile 1', 'CP2 Mobile 2', 'CP2 Alt 1', 'CP2 Alt 2', 'CP2 Email 1', 'CP2 Email 2',
+        'CP3 Name', 'CP3 Mobile 1', 'CP3 Mobile 2', 'CP3 Alt 1', 'CP3 Alt 2', 'CP3 Email 1', 'CP3 Email 2',
+        'State', 'District', 'PIN Code', 'City', 'Tehsil', 'Block', 'Full Address',
+        'Requirement', 'Investment', 'Buying Timeline'
+      ];
+
+      sheet.addRow(headers);
+      
+      // Style headers
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+      
+      // Set column widths
+      sheet.columns.forEach(column => { column.width = 20; });
+
+      // Add Data Validation Dropdowns for first 100 rows
+      for (let i = 2; i <= 100; i++) {
+        // Lead Source (Column C / 3)
+        sheet.getCell(`C${i}`).dataValidation = {
+          type: 'list', allowBlank: true,
+          formulae: ['"Organic,Direct,Referral,Facebook Ads,Google Ads,LinkedIn,Cold Call,Email Campaign,Event/Trade Show,WhatsApp,Other"']
+        };
+        // Client Status (Column F / 6)
+        sheet.getCell(`F${i}`).dataValidation = {
+          type: 'list', allowBlank: true,
+          formulae: ['"None,1;01>New Stage>New Lead,2;01>Contact Stage>Contacted,3;01>Qualification Stage>Interested,4;01>Follow Up Stage>Catalog Shared,5;01>Sales Process Stage>Discussion,6;01>Conversion Stage>Converted,7;01>Final Stage>Lost"']
+        };
+        // Lead Priority Type (Column G / 7)
+        sheet.getCell(`G${i}`).dataValidation = {
+          type: 'list', allowBlank: true,
+          formulae: ['"LP01: Urgent,LP02: High Priority,LP03: Medium Priority,LP04: Low Priority,LP05: Long Term,LP06: Disqualified"']
+        };
+        // Business Type (Column I / 9)
+        sheet.getCell(`I${i}`).dataValidation = {
+          type: 'list', allowBlank: true,
+          formulae: ['"Retailer,Wholesaler,Distributor,Manufacturer,Service Provider,Individual,Other"']
+        };
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), 'Client_Registration_Template.xlsx');
+    } catch (err) {
+      console.error("Error generating Excel template:", err);
+      alert("Could not generate Excel template.");
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsSubmitting(true);
+    try {
+      let parsedData = [];
+
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const ExcelJS = (await import('exceljs')).default;
+        const workbook = new ExcelJS.Workbook();
+        const arrayBuffer = await file.arrayBuffer();
+        await workbook.xlsx.load(arrayBuffer);
+        const worksheet = workbook.worksheets[0];
+        
+        const headers = [];
+        worksheet.getRow(1).eachCell((cell, colNumber) => {
+          headers[colNumber] = cell.value;
+        });
+
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // skip header
+          const rowData = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const header = headers[colNumber];
+            if (header) {
+              let val = cell.value;
+              if (val instanceof Date) {
+                val = val.toISOString().split('T')[0];
+              } else if (val && typeof val === 'object' && val.text) {
+                val = val.text;
+              }
+              rowData[header] = val ? String(val).trim() : '';
+            }
+          });
+          if (Object.values(rowData).some(v => v !== '')) {
+            parsedData.push(rowData);
+          }
+        });
+      } else {
+        const csvText = await file.text();
+        const Papa = (await import('papaparse')).default;
+        const result = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+        parsedData = result.data;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = user?.email?.split('@')[0] || 'Unknown';
+
+      const formatCsvDate = (dateStr) => {
+        if (!dateStr) return new Date().toISOString().split('T')[0];
+        const cleanStr = dateStr.trim();
+        const parts = cleanStr.split('-');
+        if (parts.length === 3 && parts[0].length <= 2 && parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        const slashParts = cleanStr.split('/');
+        if (slashParts.length === 3 && slashParts[0].length <= 2 && slashParts[2].length === 4) {
+          return `${slashParts[2]}-${slashParts[1].padStart(2, '0')}-${slashParts[0].padStart(2, '0')}`;
+        }
+        return cleanStr;
+      };
+
+      const mappedData = parsedData.map(row => ({
+        lead_date: formatCsvDate(row['Lead Date']),
+        our_company: row['Our Company Name'] || '',
+        source: row['Lead Source'] || '',
+        source_name: row['Source Name'] || '',
+        entry_by: row['Entry By'] || '',
+        status: row['Client Status'] || 'None',
+        priority: row['Lead Priority Type'] || '',
+        company: row['Business Name'] || '',
+        business_type: row['Business Type'] || '',
+        business_gst: row['Business GST'] || '',
+        business_contact_1: row['Business Contact 1'] || '',
+        business_contact_2: row['Business Contact 2'] || '',
+        business_alt_1: row['Business Alt 1'] || '',
+        business_alt_2: row['Business Alt 2'] || '',
+        business_email_1: row['Business Email 1'] || '',
+        business_email_2: row['Business Email 2'] || '',
+        business_alt_email_1: row['Business Alt Email 1'] || '',
+        business_alt_email_2: row['Business Alt Email 2'] || '',
+        name: row['CP1 Name'] || '',
+        phone: row['CP1 Mobile 1'] || '',
+        cp1_mobile_2: row['CP1 Mobile 2'] || '',
+        cp1_alt_1: row['CP1 Alt 1'] || '',
+        cp1_alt_2: row['CP1 Alt 2'] || '',
+        email: row['CP1 Email 1'] || '',
+        cp1_email_2: row['CP1 Email 2'] || '',
+        cp2_name: row['CP2 Name'] || '',
+        cp2_mobile_1: row['CP2 Mobile 1'] || '',
+        cp2_mobile_2: row['CP2 Mobile 2'] || '',
+        cp2_alt_1: row['CP2 Alt 1'] || '',
+        cp2_alt_2: row['CP2 Alt 2'] || '',
+        cp2_email_1: row['CP2 Email 1'] || '',
+        cp2_email_2: row['CP2 Email 2'] || '',
+        cp3_name: row['CP3 Name'] || '',
+        cp3_mobile_1: row['CP3 Mobile 1'] || '',
+        cp3_mobile_2: row['CP3 Mobile 2'] || '',
+        cp3_alt_1: row['CP3 Alt 1'] || '',
+        cp3_alt_2: row['CP3 Alt 2'] || '',
+        cp3_email_1: row['CP3 Email 1'] || '',
+        cp3_email_2: row['CP3 Email 2'] || '',
+        state_name: row['State'] || '',
+        district_name: row['District'] || '',
+        pin_code: row['PIN Code'] || '',
+        city_name: row['City'] || '',
+        tehsil_name: row['Tehsil'] || '',
+        block_name: row['Block'] || '',
+        address: row['Full Address'] || '',
+        requirement: row['Requirement'] || '',
+        investment: row['Investment'] || '',
+        buying_timeline: row['Buying Timeline'] || '',
+        created_by: actor
+      }));
+
+      // Fetch ALL existing phone numbers to prevent duplicates
+      let existingLeads = [];
+      let fetchPage = 0;
+      while (true) {
+        const { data: pageData, error: fetchErr } = await supabase
+          .from('leads')
+          .select('phone')
+          .range(fetchPage * 1000, (fetchPage + 1) * 1000 - 1);
+        
+        if (fetchErr) throw fetchErr;
+        if (pageData && pageData.length > 0) {
+          existingLeads = [...existingLeads, ...pageData];
+        }
+        if (!pageData || pageData.length < 1000) break;
+        fetchPage++;
+      }
+      
+      const existingPhones = new Set(existingLeads.map(l => String(l.phone).trim()).filter(Boolean));
+
+      // Filter out leads where the phone number already exists
+      const filteredMappedData = mappedData.filter(row => {
+        if (!row.phone) return true; // allow leads without phone
+        return !existingPhones.has(String(row.phone).trim());
+      });
+
+      const duplicatesCount = mappedData.length - filteredMappedData.length;
+
+      const chunkSize = 500;
+      for (let i = 0; i < filteredMappedData.length; i += chunkSize) {
+        const chunk = filteredMappedData.slice(i, i + chunkSize);
+        const { error } = await supabase.from('leads').insert(chunk);
+        if (error) {
+          console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
+          throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
+        }
+      }
+
+      alert(`Successfully uploaded ${filteredMappedData.length} new clients!\n${duplicatesCount > 0 ? `(${duplicatesCount} duplicates were safely skipped)` : ''}`);
+      if (onRegistrationSuccess) onRegistrationSuccess();
+    } catch (err) {
+      console.error(err);
+      alert('Error uploading file: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+      e.target.value = null;
+    }
+  };
+
+  const renderInput = (label, name, type = 'text', required = false) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+        {label} {required && <span style={{color: 'red'}}>*</span>}
+      </label>
+      <input 
+        type={type} 
+        name={name} 
+        value={formData[name]} 
+        onChange={handleChange} 
+        required={required}
+        style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+      />
+    </div>
+  );
+
+  return (
+    <div style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: '0.5rem', paddingBottom: '2rem' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+        
+        {/* Header with Upload Tools */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-primary)' }}>
+            <CheckCircle2 size={24} color="var(--accent-color)" />
+            {isEditMode ? 'Edit Client Profile' : 'New Client Registration'}
+          </h2>
+          
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            {!isEditMode && (
+              <>
+                <button 
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  style={{ padding: '0.5rem 1rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}
+                >
+                  <Download size={16} /> Sample Template
+                </button>
+                <label style={{ padding: '0.5rem 1rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                  <Upload size={16} /> {isSubmitting ? 'Uploading...' : 'Bulk Upload CSV'}
+                  <input type="file" accept=".csv" onChange={handleFileUpload} disabled={isSubmitting} style={{ display: 'none' }} />
+                </label>
+              </>
+            )}
+            {isEditMode && onClose && (
+              <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--th-bg)' }}><X size={20} color="var(--text-secondary)" /></button>
+            )}
+          </div>
+        </div>
+        
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          
+          {/* GROUP 1: Lead Info */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('leadInfo')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={18} /> 01 - Lead Information</div>
+              {expandedSections.leadInfo ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.leadInfo && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('Lead Date', 'lead_date', 'date', true)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Our Company Name <span style={{color: 'red'}}>*</span></label>
+                  <select name="our_company" value={formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Company</option>
+                    <option value="NSMLR">NSMLR</option>
+                    <option value="NSTLP">NSTLP</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Source</label>
+                  <select name="source" value={formData.source} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Lead Source</option>
+                    {sources.map(src => (
+                      <option key={src} value={src}>{src}</option>
+                    ))}
+                  </select>
+                </div>
+                {renderInput('Source Name', 'source_name')}
+                {renderInput('Lead Entry By', 'entry_by')}
+                {/* Assigned To Row */}
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Assign To (Agent)</label>
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      name="assigned_to"
+                      value={formData.assigned_to}
+                      onChange={handleChange}
+                      style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Open Lead (Unassigned)</option>
+                      {teamMembers.filter(m => m.emp_name).map(member => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Client Status</label>
+                  <select name="status" value={formData.status} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    {clientStatuses.map(st => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Priority Type</label>
+                  <select name="priority" value={formData.priority} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Priority</option>
+                    {priorities.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 2: Business Info */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('businessInfo')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Briefcase size={18} /> 02 - Business Details</div>
+              {expandedSections.businessInfo ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.businessInfo && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('Business Name', 'company', 'text', true)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Business Type</label>
+                  <select name="business_type" value={formData.business_type} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Business Type</option>
+                    <option value="Dealer">Dealer</option>
+                    <option value="Distributor">Distributor</option>
+                    <option value="Retailer">Retailer</option>
+                    <option value="Farmer">Farmer</option>
+                    <option value="Trader">Trader</option>
+                    <option value="Manufacturer">Manufacturer</option>
+                    <option value="Service Provider">Service Provider</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                {renderInput('Business GST', 'business_gst')}
+                {renderInput('Contact Number 1', 'business_contact_1')}
+                {renderInput('Contact Number 2', 'business_contact_2')}
+                {renderInput('Alternate Number 1', 'business_alt_1')}
+                {renderInput('Alternate Number 2', 'business_alt_2')}
+                {renderInput('Mail ID 1', 'business_email_1', 'email')}
+                {renderInput('Mail ID 2', 'business_email_2', 'email')}
+                {renderInput('Alternate Mail ID 1', 'business_alt_email_1', 'email')}
+                {renderInput('Alternate Mail ID 2', 'business_alt_email_2', 'email')}
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 3: Contact Person 1 */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('cp1')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><User size={18} /> 03 - Contact Person 1 (Primary)</div>
+              {expandedSections.cp1 ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.cp1 && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('Name', 'name', 'text', true)}
+                {renderInput('Mobile Number 1', 'phone', 'text', true)}
+                {renderInput('Mobile Number 2', 'cp1_mobile_2')}
+                {renderInput('Alternate Number 1', 'cp1_alt_1')}
+                {renderInput('Alternate Number 2', 'cp1_alt_2')}
+                {renderInput('Mail ID 1', 'email', 'email')}
+                {renderInput('Alternate Mail ID 1', 'cp1_email_2', 'email')}
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 4: Contact Person 2 */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('cp2')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><User size={18} /> 04 - Contact Person 2</div>
+              {expandedSections.cp2 ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.cp2 && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('Name', 'cp2_name')}
+                {renderInput('Mobile Number 1', 'cp2_mobile_1')}
+                {renderInput('Mobile Number 2', 'cp2_mobile_2')}
+                {renderInput('Alternate Number 1', 'cp2_alt_1')}
+                {renderInput('Alternate Number 2', 'cp2_alt_2')}
+                {renderInput('Mail ID 1', 'cp2_email_1', 'email')}
+                {renderInput('Alternate Mail ID 1', 'cp2_email_2', 'email')}
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 5: Contact Person 3 */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('cp3')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><User size={18} /> 05 - Contact Person 3</div>
+              {expandedSections.cp3 ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.cp3 && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('Name', 'cp3_name')}
+                {renderInput('Mobile Number 1', 'cp3_mobile_1')}
+                {renderInput('Mobile Number 2', 'cp3_mobile_2')}
+                {renderInput('Alternate Number 1', 'cp3_alt_1')}
+                {renderInput('Alternate Number 2', 'cp3_alt_2')}
+                {renderInput('Mail ID 1', 'cp3_email_1', 'email')}
+                {renderInput('Alternate Mail ID 1', 'cp3_email_2', 'email')}
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 6: Location */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('location')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MapPin size={18} /> 06 - Location Details</div>
+              {expandedSections.location ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.location && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                {renderInput('State Name', 'state_name')}
+                {renderInput('District Name', 'district_name')}
+                {renderInput('PIN Code', 'pin_code')}
+                {renderInput('City Name', 'city_name')}
+                {renderInput('Tehsil Name', 'tehsil_name')}
+                {renderInput('Block Name', 'block_name')}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  {renderInput('Full Address', 'address')}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* GROUP 7: Requirements */}
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button type="button" onClick={() => toggleSection('requirements')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={18} /> 07 - Requirement & Timeline</div>
+              {expandedSections.requirements ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.requirements && (
+              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  {renderInput('Detailed Requirement', 'requirement')}
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Investment Size</label>
+                  <select name="investment" value={formData.investment} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Investment</option>
+                    <option value="Below 1 Lakh">Below 1 Lakh</option>
+                    <option value="1 Lakh - 5 Lakh">1 Lakh - 5 Lakh</option>
+                    <option value="5 Lakh - 10 Lakh">5 Lakh - 10 Lakh</option>
+                    <option value="10 Lakh - 25 Lakh">10 Lakh - 25 Lakh</option>
+                    <option value="25 Lakh - 50 Lakh">25 Lakh - 50 Lakh</option>
+                    <option value="Above 50 Lakh">Above 50 Lakh</option>
+                  </select>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Buying Timeline</label>
+                  <select name="buying_timeline" value={formData.buying_timeline} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                    <option value="">Select Buying Timeline</option>
+                    <option value="Immediate">Immediate</option>
+                    <option value="Within 7 Days">Within 7 Days</option>
+                    <option value="Within 15 Days">Within 15 Days</option>
+                    <option value="Within 30 Days">Within 30 Days</option>
+                    <option value="Within 60 Days">Within 60 Days</option>
+                    <option value="After 60 Days">After 60 Days</option>
+                    <option value="Not Decided">Not Decided</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Submit Button */}
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button 
+              type="submit" 
+              disabled={isSubmitting}
+              style={{ 
+                padding: '0.75rem 2rem', 
+                backgroundColor: 'var(--accent-color)', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '8px', 
+                fontSize: '1rem', 
+                fontWeight: 600, 
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              <Save size={20} />
+              {isSubmitting ? (isEditMode ? 'Updating...' : 'Registering...') : (isEditMode ? 'Update Client' : 'Register Client')}
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  );
+}

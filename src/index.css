@@ -1,0 +1,19 @@
+
+.pulse { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } 100% { transform: scale(1); opacity: 1; } }
+
+.markdown-body { font-family: inherit; line-height: 1.6; }
+.markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+.markdown-body th, .markdown-body td { border: 1px solid #e5e5e5; padding: 0.75rem; text-align: left; }
+.markdown-body th { background-color: #f9f9f9; font-weight: 600; }
+.markdown-body p { margin-bottom: 0.5rem; }
+.markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 0.5rem; }
+.markdown-body strong { font-weight: 600; color: #111; }
+.markdown-body pre { background: #1e1e1e; color: #fff; padding: 1rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; }
+.markdown-body code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+
+.markdown-body ul { list-style-type: disc !important; padding-left: 20px !important; margin-bottom: 1rem !important; }
+.markdown-body ol { list-style-type: decimal !important; padding-left: 20px !important; margin-bottom: 1rem !important; }
+.markdown-body li { margin-bottom: 0.25rem !important; display: list-item !important; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { font-weight: bold !important; margin-top: 1rem !important; margin-bottom: 0.5rem !important; }
+.markdown-body p { margin-bottom: 0.75rem !important; }
