@@ -163,11 +163,23 @@ export default function CallCenterModule({ userId }) {
 
               <button 
                 type="submit"
-                disabled={!customerNumber || customerNumber.length < 10}
+                disabled={!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && agentStatus !== 'available')}
                 className="btn-primary"
-                style={{ width: '100%', padding: '0.8rem', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: (!customerNumber || customerNumber.length < 10) ? 0.5 : 1 }}
+                style={{ 
+                  width: '100%', 
+                  padding: '0.8rem', 
+                  fontSize: '1rem', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: '0.5rem', 
+                  opacity: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && agentStatus !== 'available')) ? 0.5 : 1 
+                }}
               >
-                <PhoneCall size={18} /> Call Customer
+                <PhoneCall size={18} />
+                {callingMode === 'browser_webrtc' && agentStatus !== 'available' 
+                  ? 'Connect Softphone First' 
+                  : 'Call Customer'}
               </button>
             </form>
           </div>
