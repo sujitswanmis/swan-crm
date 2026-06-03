@@ -12,8 +12,8 @@ export async function POST(req) {
     const searchParams = new URLSearchParams(textData);
     const event = Object.fromEntries(searchParams);
 
-    // Run async background processing so we return 200 OK fast to Plivo
-    processConferenceEvent(roomName, event, url.origin).catch(console.error);
+    // Run processing sequentially so serverless function doesn't terminate early
+    await processConferenceEvent(roomName, event, url.origin).catch(console.error);
 
     return new NextResponse('OK', { status: 200 });
   } catch (error) {
@@ -50,10 +50,11 @@ async function processConferenceEvent(roomName, event, originUrl) {
   if (!session) return;
 
   if (eventType === 'enter') {
-    // Member joined
-    if (callUuid === session.agent_call_uuid) {
+    // Member joined. The first member is always the agent since they answer first.
+    if (event.ConferenceFirstMember === 'true' || callUuid === session.agent_call_uuid) {
       // Agent joined! Now dial the customer into the conference.
       await adminClient.from('call_sessions').update({
+        agent_call_uuid: callUuid, // Save it just in case
         agent_member_id: memberId,
         conference_name: conferenceName,
         agent_answer_time: new Date().toISOString(),
@@ -83,9 +84,10 @@ async function processConferenceEvent(roomName, event, originUrl) {
         customer_call_uuid: response.requestUuid
       }).eq('id', session.id);
       
-    } else if (callUuid === session.customer_call_uuid) {
+    } else if (event.ConferenceFirstMember !== 'true' || callUuid === session.customer_call_uuid) {
       // Customer joined
       await adminClient.from('call_sessions').update({
+        customer_call_uuid: callUuid, // Save it just in case
         customer_member_id: memberId,
         customer_answer_time: new Date().toISOString(),
         status: 'connected'

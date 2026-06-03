@@ -4,6 +4,17 @@ const env = fs.readFileSync('.env.local', 'utf8').split('\n').reduce((acc, line)
   if (match) acc[match[1].trim()] = match[2].trim().replace(/^"|"$/g, '');
   return acc;
 }, {});
-fetch(env.NEXT_PUBLIC_SUPABASE_URL + '/rest/v1/call_agents?select=plivo_username,plivo_endpoint_key', {
-  headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
-}).then(res => res.json()).then(console.log).catch(console.error);
+
+const { createClient } = require('@supabase/supabase-js');
+
+async function checkDb() {
+  const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  
+  const { data: sessions } = await supabase.from('call_sessions').select('*').order('created_at', { ascending: false }).limit(2);
+  console.log('Sessions:', JSON.stringify(sessions, null, 2));
+
+  const { data: events } = await supabase.from('call_events').select('*').order('created_at', { ascending: false }).limit(5);
+  console.log('Events:', JSON.stringify(events, null, 2));
+}
+
+checkDb().catch(console.error);
