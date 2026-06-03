@@ -11,6 +11,7 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [debugToken, setDebugToken] = useState('');
+  const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false, isLoggedIn: false });
 
   const durationTimerRef = useRef(null);
 
@@ -26,11 +27,12 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
         const PlivoModule = await import('plivo-browser-sdk');
         const Plivo = PlivoModule.default || PlivoModule;
         
-        console.log('[Softphone] Initializing Plivo Browser SDK client with debug level ALL...');
+        console.log('[Softphone] Initializing Plivo Browser SDK client with debug level ALL and south_asia region...');
         const plivoObj = new Plivo({
           enableTracking: true,
           closeProtection: true,
-          debug: 'ALL'
+          debug: 'ALL',
+          clientRegion: 'south_asia'
         });
         const client = plivoObj.client;
         activeClient = client;
@@ -127,6 +129,25 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!plivoClient) return;
+    const checkStatus = () => {
+      try {
+        setSdkStatus({
+          isRegistered: !!plivoClient.isRegistered(),
+          isConnected: !!plivoClient.isConnected(),
+          isLoggedIn: !!plivoClient.isLoggedIn
+        });
+      } catch (e) {
+        console.error('[Softphone] Error querying SDK status:', e);
+      }
+    };
+    
+    checkStatus();
+    const interval = setInterval(checkStatus, 2000);
+    return () => clearInterval(interval);
+  }, [plivoClient]);
+
   const startDurationTimer = () => {
     stopDurationTimer();
     setCallDuration(0);
@@ -219,15 +240,23 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
         <PhoneCall size={20} color="#3b82f6" /> WebRTC Softphone
       </h3>
 
-      {/* Connection Status */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', padding: '0.75rem', background: '#0f172a', borderRadius: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : '#64748b' }} />
-          <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
-            {connectionState === 'online' ? 'Online & Ready' : 
-             connectionState === 'connecting' ? 'Connecting...' : 
-             connectionState === 'error' ? 'Connection Error' : 'Offline'}
-          </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : '#64748b' }} />
+            <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+              {connectionState === 'online' ? 'Online & Ready' : 
+               connectionState === 'connecting' ? 'Connecting...' : 
+               connectionState === 'error' ? 'Connection Error' : 'Offline'}
+            </span>
+          </div>
+          {plivoClient && (
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+              <span>SIP: <strong style={{ color: sdkStatus.isRegistered ? '#10b981' : '#f59e0b' }}>{sdkStatus.isRegistered ? 'Registered' : 'Not Registered'}</strong></span>
+              <span>•</span>
+              <span>WS: <strong style={{ color: sdkStatus.isConnected ? '#10b981' : '#ef4444' }}>{sdkStatus.isConnected ? 'Connected' : 'Disconnected'}</strong></span>
+            </div>
+          )}
         </div>
         
         {connectionState !== 'online' ? (

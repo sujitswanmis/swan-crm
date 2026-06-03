@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import * as plivo from 'plivo';
+import jwt from 'jsonwebtoken';
 
 export async function POST(req) {
   try {
@@ -56,38 +57,39 @@ export async function POST(req) {
       console.error(`[Token Debug] Failed to fetch endpoints from Plivo:`, err.message);
     }
 
-    // Use Plivo API to generate a JWT Access Token for the browser SDK
+    // Generate Plivo JWT Access Token locally with both 'per' and 'grants' claims
     const now = Math.floor(Date.now() / 1000);
-    const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
-    const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/JWT/Token/`;
-    
-    const plivoRes = await fetch(plivoUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + b64,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        iss: authId,
-        sub: agentData.plivo_username,
-        nbf: now - 300,       // 5 minutes in the past to prevent clock skew issues
-        exp: now + 82800,     // Valid for 23 hours (total lifetime exp - nbf remains under 24 hours)
-        app: appId || undefined,
-        per: {
-          voice: {
-            incoming_allow: true,
-            outgoing_allow: true
-          }
+    const payload = {
+      jti: `${agentData.plivo_username}-${Date.now()}`,
+      iss: authId,
+      sub: agentData.plivo_username,
+      nbf: now - 300,       // 5 minutes in the past to prevent clock skew issues
+      exp: now + 82800,     // Valid for 23 hours (lifetime nbf to exp is 83100, which is < 24 hours / 86400 limit)
+      app: appId || undefined,
+      per: {
+        voice: {
+          incoming_allow: true,
+          outgoing_allow: true
         }
-      })
+      },
+      grants: {
+        voice: {
+          incoming_allow: true,
+          outgoing_allow: true
+        }
+      }
+    };
+
+    const token = jwt.sign(payload, authToken, {
+      header: {
+        typ: 'JWT',
+        cty: 'plivo;v=1'
+      },
+      noTimestamp: true
     });
 
-    const plivoData = await plivoRes.json();
-    if (!plivoRes.ok) {
-      throw new Error(plivoData.error || 'Failed to generate token from Plivo API');
-    }
-
-    return NextResponse.json({ token: plivoData.token });
+    console.log(`[Token API] Locally generated token for ${agentData.plivo_username} with App ID: ${appId}`);
+    return NextResponse.json({ token });
 
   } catch (error) {
     console.error('Token error:', error);
