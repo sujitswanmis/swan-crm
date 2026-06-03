@@ -11,8 +11,8 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const authId = (process.env.PLIVO_AUTH_ID || '').replace(/"/g, '');
-    const authToken = (process.env.PLIVO_AUTH_TOKEN || '').replace(/"/g, '');
+    const authId = (process.env.PLIVO_AUTH_ID || '').trim().replace(/"/g, '');
+    const authToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/"/g, '');
 
     if (!authId || !authToken) {
       return NextResponse.json({ error: 'Plivo credentials missing' }, { status: 500 });
@@ -33,14 +33,28 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
     }
 
-    const tokenObj = new plivo.AccessToken(authId, authToken, agentData.plivo_username);
-    tokenObj.addVoiceGrants(true, true);
-    const token = tokenObj.toJwt();
+    // Bypass JWT and fetch the actual endpoint password from Plivo to login directly
+    const b64 = Buffer.from(authId + ':' + authToken).toString('base64');
+    const plivoRes = await fetch(`https://api.plivo.com/v1/Account/${authId}/Endpoint/`, {
+      headers: { 'Authorization': 'Basic ' + b64 }
+    });
+    
+    if (!plivoRes.ok) {
+       return NextResponse.json({ error: 'Failed to fetch Plivo endpoints' }, { status: 500 });
+    }
+    
+    const plivoData = await plivoRes.json();
+    const endpoint = plivoData.objects.find(e => e.username === agentData.plivo_username);
+    
+    if (!endpoint || !endpoint.password) {
+       return NextResponse.json({ error: 'Endpoint password not found' }, { status: 500 });
+    }
 
-    return NextResponse.json({ token, username: agentData.plivo_username });
+    return NextResponse.json({ username: endpoint.username, password: endpoint.password });
 
   } catch (error) {
     console.error('Token error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

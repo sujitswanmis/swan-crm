@@ -107,15 +107,17 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
       const data = await res.json();
       
-      if (data.token) {
+      if (data.username && data.password) {
+        plivoClient.login(data.username, data.password);
+      } else if (data.token) {
         plivoClient.loginWithAccessToken(data.token);
       } else {
         setConnectionState('error');
-        setErrorMessage(data.error || 'Failed to fetch token');
+        setErrorMessage(data.error || 'Failed to fetch credentials');
       }
     } catch (err) {
       setConnectionState('error');
-      setErrorMessage(err.message || 'Failed to fetch token');
+      setErrorMessage(err.message || 'Failed to fetch credentials');
     }
   };
 
