@@ -102,6 +102,16 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
     await onRefresh();
   };
 
+  const handleSetPassword = async (agentId) => {
+    const newPassword = prompt("Enter the SIP password for this endpoint:");
+    if (!newPassword) return;
+
+    setSaving(p => ({ ...p, [agentId]: true }));
+    await updateCallAgentAdmin(agentId, { plivo_password: newPassword });
+    setSaving(p => ({ ...p, [agentId]: false }));
+    await onRefresh();
+  };
+
   return (
     <div>
       {/* Add Agent */}
@@ -183,10 +193,19 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       </div>
                     )}
                   </td>
-                  <td style={{ padding:'1rem', textAlign:'center' }}>
-                    {agent.plivo_password
-                      ? <CheckCircle size={18} color="#16a34a" />
-                      : <XCircle size={18} color="#dc2626" />}
+                  <td style={{ padding:'1rem' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                      {agent.plivo_password
+                        ? <CheckCircle size={18} color="#16a34a" />
+                        : <XCircle size={18} color="#dc2626" />}
+                      <button
+                        onClick={() => handleSetPassword(agent.id)}
+                        style={{ padding:'0.2rem 0.5rem', fontSize:'0.75rem', borderRadius:'4px', border:'1px solid #cbd5e1', background:'white', cursor:'pointer', color:'#475569' }}
+                        title="Manually set or update SIP Password"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </td>
                   <td style={{ padding:'1rem' }}>{statusBadge(agent.status)}</td>
                   <td style={{ padding:'1rem' }}>
