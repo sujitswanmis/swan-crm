@@ -354,24 +354,30 @@ function TabCallLogs() {
             <thead>
               <tr style={{ background:'#f8fafc', fontSize:'0.78rem', textTransform:'uppercase', color:'#64748b' }}>
                 {source === 'db'
-                  ? ['Time','Agent','Customer','Direction','Status','Duration','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)
+                  ? ['Time','CallUUID','Agent','Customer','Direction','Status','StartTime','AnswerTime','EndTime','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)
                   : ['Time','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
+                <tr><td colSpan="13" style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan="7" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
+                <tr><td colSpan="13" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
               ) : source === 'db' ? filtered.map((c, i) => (
                 <tr key={c.id} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500 }}>{c.call_agents?.display_name || '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
                   <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.customer_number || '—'}</td>
                   <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.direction || 'outbound')}</td>
                   <td style={{ padding:'0.85rem 1rem' }}>{callStatusBadge(c.status)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{fmtDur(c.duration_seconds)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'160px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.start_time)}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.end_time)}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#3b82f6' }}>{c.recording_url ? <a href={c.recording_url} target="_blank" rel="noopener noreferrer">Play</a> : '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'120px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
                 </tr>
               )) : filtered.map((c, i) => (
                 <tr key={c.call_uuid} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
