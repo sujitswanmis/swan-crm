@@ -11,6 +11,7 @@ import WhatsappUnofficialModule from './WhatsappUnofficial/WhatsappUnofficialMod
 import AiAssistantModule from './AiAssistant/AiAssistantModule';
 import CallCenterModule from './CallCenter/CallCenterModule';
 import CallAdminModule from './CallCenter/CallAdminModule';
+import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, Menu, Palette, Check, Bot, PhoneCall, Phone } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
@@ -998,8 +999,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             </>
           )}
         </div>
-      </div>
-    </main>
-  </div>
+        </div>
+      </main>
+      <GlobalSoftphoneWidget userId={userId} />
+    </div>
   );
 }

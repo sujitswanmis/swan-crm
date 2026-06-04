@@ -2,8 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { PhoneCall, Users, Clock, Database, Loader2, ShieldAlert } from 'lucide-react';
 import { getAgentProfile, getRecentCalls, updateCallAgentAdmin } from '@/app/actions/team';
-import BrowserSoftphone from './BrowserSoftphone';
-import ActiveCallPanel from './ActiveCallPanel';
+
 
 export default function CallCenterModule({ userId }) {
   const [agentData, setAgentData] = useState(null);
@@ -122,11 +121,7 @@ export default function CallCenterModule({ userId }) {
         {/* Left Column: Softphone & Dialer */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          <BrowserSoftphone agentData={agentData} onStatusChange={updateAgentStatus} />
 
-          {activeSession && (
-            <ActiveCallPanel session={activeSession} onCallEnded={handleCallEnded} />
-          )}
 
           {/* Outbound Dialer */}
           <div className="card" style={{ padding: '1.5rem' }}>
