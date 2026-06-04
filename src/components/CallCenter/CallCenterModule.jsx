@@ -107,7 +107,7 @@ export default function CallCenterModule({ userId }) {
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PhoneCall size={28} color="#3b82f6" /> Telecalling Dashboard
           </h1>
-          <p style={{ color: '#64748b', marginTop: '0.25rem' }}>Endpoint: {agentData.plivo_endpoint_key || 'Not Assigned'}</p>
+          <p style={{ color: '#64748b', marginTop: '0.25rem' }}>SIP: {agentData.plivo_sip_uri || 'Not Assigned'}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'white', padding: '0.5rem 1rem', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
           <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: agentStatus === 'available' ? '#10b981' : '#cbd5e1' }} />
