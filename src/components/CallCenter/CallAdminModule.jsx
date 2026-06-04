@@ -611,12 +611,13 @@ export default function CallAdminModule() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [userData, adminData] = await Promise.all([
+      const [userData, adminData, endpointsRes] = await Promise.all([
         getTeamMembers(),
-        getCallAdminData()
+        getCallAdminData(),
+        fetch('/api/plivo/admin/endpoints').then(r => r.json()).catch(() => ({ endpoints: [] }))
       ]);
       if (userData) setUsers(userData.filter(u => u.emp_name?.trim()));
-      setEndpoints(adminData.endpoints || []);
+      setEndpoints(endpointsRes.endpoints || []);
       setAgents(adminData.agents || []);
     } catch (err) {
       console.error(err);
