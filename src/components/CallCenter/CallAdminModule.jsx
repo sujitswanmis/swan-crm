@@ -91,7 +91,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 
   const handleEndpoint = async (agentId, endpointKey) => {
     setSaving(p => ({ ...p, [agentId]: true }));
-    const ep = endpoints.find(e => e.endpoint_key === endpointKey);
+    const ep = endpoints.find(e => e.endpoint_id === endpointKey || e.endpoint_key === endpointKey);
     await updateCallAgentAdmin(agentId, {
       plivo_endpoint_key: endpointKey || null,
       plivo_username:     ep?.username || null,
@@ -183,9 +183,10 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', minWidth:'200px', cursor:'pointer' }}
                     >
                       <option value="">— No Endpoint —</option>
-                      {endpoints.map(ep => (
-                        <option key={ep.endpoint_key} value={ep.endpoint_key}>{ep.alias}</option>
-                      ))}
+                      {endpoints.map(ep => {
+                        const epKey = ep.endpoint_id || ep.endpoint_key;
+                        return <option key={epKey} value={epKey}>{ep.alias}</option>;
+                      })}
                     </select>
                     {agent.plivo_sip_uri && (
                       <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace' }}>
