@@ -12,7 +12,7 @@ export async function POST(req) {
     const endOnExit = (role === 'agent') ? 'true' : 'false';
     const startOnEnter = (role === 'agent') ? 'false' : 'true';
     const appBaseUrl = 'https://swan-hosting.vercel.app';
-    const waitSoundAttr = (role === 'agent') ? ` waitSound="https://swanagro.in/assets/upload/ivr/Ringback_IVR_1.mp3"` : '';
+    const waitSoundAttr = (role === 'agent') ? ` waitSound="${appBaseUrl}/ringback.wav"` : '';
     
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     

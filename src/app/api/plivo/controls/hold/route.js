@@ -15,13 +15,13 @@ export async function POST(req) {
       await client.conferences.deafMember(roomName, memberId);
       await client.conferences.muteMember(roomName, memberId);
       try {
-        await client.conferences.playMember(roomName, memberId, `https://swanagro.in/assets/upload/ivr/Hold_IVR_2.mp3`);
+        await client.conferences.playAudioToMember(roomName, memberId, `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3`);
       } catch (e) {
         console.error('Failed to play hold music:', e);
       }
     } else if (action === 'unhold') {
       try {
-        await client.conferences.stopPlayMember(roomName, memberId);
+        await client.conferences.stopPlayingAudioToMember(roomName, memberId);
       } catch (e) {
         console.error('Failed to stop hold music:', e);
       }
