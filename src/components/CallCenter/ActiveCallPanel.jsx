@@ -158,13 +158,19 @@ export default function ActiveCallPanel({ session, onCallEnded }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {members.map(member => (
               <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: '#f1f5f9', borderRadius: '8px', borderLeft: '4px solid #3b82f6' }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#0f172a' }}>
-                    {member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}
+                <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
+                  <div style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
+                    {(() => {
+                      let name = member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
+                      if (name && typeof name === 'string' && name.startsWith('sip:')) {
+                        name = name.replace('sip:', '').split('@')[0];
+                      }
+                      return name;
+                    })()}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                   <button 
                     onClick={() => handleMuteToggle(member.memberId, member.muted)}
                     disabled={loadingAction === `mute_${member.memberId}`}
