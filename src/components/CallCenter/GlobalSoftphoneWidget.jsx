@@ -51,7 +51,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
     const fetchSession = async () => {
       const { data } = await getRecentCalls(agentData.id);
       if (data) {
-        const active = data.find(c => ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status));
+        const active = data.find(c => {
+          const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
+          const isRecent = (new Date() - new Date(c.created_at)) < 1000 * 60 * 60; // strictly within 1 hour
+          return isStatusActive && isRecent;
+        });
         setActiveSession(active || null);
       }
     };
