@@ -14,9 +14,23 @@ export async function GET(req) {
     const conference = await client.conferences.get(roomName);
     
     // Extract members
-    // Plivo returns `members` as an array
-    const members = conference.members || [];
+    const rawMembers = conference.members || [];
     
+    // Fetch call details for each member to get the mobile number
+    const members = await Promise.all(rawMembers.map(async (member) => {
+      try {
+        const callDetails = await client.calls.get(member.callUuid);
+        return {
+          ...member,
+          from: callDetails.fromNumber || callDetails.from,
+          to: callDetails.toNumber || callDetails.to,
+          direction: callDetails.direction
+        };
+      } catch (e) {
+        return member;
+      }
+    }));
+
     return NextResponse.json({ members });
   } catch (error) {
     console.error('Fetch members error:', error);

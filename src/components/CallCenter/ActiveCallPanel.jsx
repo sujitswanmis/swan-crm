@@ -159,7 +159,9 @@ export default function ActiveCallPanel({ session, onCallEnded }) {
             {members.map(member => (
               <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: '#f1f5f9', borderRadius: '8px', borderLeft: '4px solid #3b82f6' }}>
                 <div>
-                  <div style={{ fontWeight: 600, color: '#0f172a' }}>{member.callerName || member.callUuid}</div>
+                  <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                    {member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}
+                  </div>
                   <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
