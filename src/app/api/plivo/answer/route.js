@@ -11,9 +11,9 @@ export async function POST(req) {
     const role = url.searchParams.get('role') || 'agent';
     const endOnExit = (role === 'agent') ? 'true' : 'false';
     const startOnEnter = (role === 'agent') ? 'false' : 'true';
-    const waitSoundAttr = (role === 'agent') ? ' waitSound="https://s3.amazonaws.com/plivocloud/ringback.wav"' : '';
-    
     const appBaseUrl = 'https://swan-hosting.vercel.app';
+    const waitSoundAttr = (role === 'agent') ? ` waitSound="${appBaseUrl}/ringback.mp3"` : '';
+    
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
