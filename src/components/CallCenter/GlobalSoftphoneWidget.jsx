@@ -53,7 +53,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
       if (data) {
         const active = data.find(c => {
           const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
-          const isRecent = (new Date() - new Date(c.created_at)) < 1000 * 60 * 60; // strictly within 1 hour
+          const ageInMs = new Date() - new Date(c.created_at);
+          // If status is initiated/ringing, timeout after 2 mins to prevent stuck dialer
+          if (['initiated', 'ringing'].includes(c.status) && ageInMs > 120000) return false;
+          const isRecent = ageInMs < 1000 * 60 * 60; // strictly within 1 hour for connected calls
           return isStatusActive && isRecent;
         });
         setActiveSession(active || null);
