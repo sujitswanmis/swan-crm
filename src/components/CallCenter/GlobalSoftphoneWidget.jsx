@@ -25,9 +25,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
     if (!userId) return;
     const fetchAgent = async () => {
       try {
-        const { createClient } = await import('@/utils/supabase/client');
-        const supabase = createClient();
-        const { data } = await supabase.from('call_agents').select('*').eq('user_id', userId).single();
+        const { getAgentProfile } = await import('@/app/actions/team');
+        const { data } = await getAgentProfile(userId);
         if (data) setAgentData(data);
       } catch (err) {
         console.error(err);
