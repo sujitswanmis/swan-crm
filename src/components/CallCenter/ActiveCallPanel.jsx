@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { PhoneOff, Mic, MicOff, UserX, UserPlus, Loader2, Users } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
-export default function ActiveCallPanel({ session, onCallEnded }) {
+export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   const [members, setMembers] = useState([]);
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
@@ -158,17 +158,27 @@ export default function ActiveCallPanel({ session, onCallEnded }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {members.map(member => (
               <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: '#f1f5f9', borderRadius: '8px', borderLeft: '4px solid #3b82f6' }}>
-                <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
+                <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
                   <div style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
                     {(() => {
                       let name = member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
-                      if (name && typeof name === 'string' && name.startsWith('sip:')) {
-                        name = name.replace('sip:', '').split('@')[0];
+                      if (name && typeof name === 'string') {
+                        if (name.startsWith('sip:')) {
+                          name = name.replace('sip:', '').split('@')[0];
+                        }
+                        if (agentData && (name === agentData.plivo_username || name === agentData.plivo_sip_uri)) {
+                          name = `${agentData.display_name || 'Agent'} (Me)`;
+                        }
+                        if (name.length > 15 && name !== `${agentData?.display_name || 'Agent'} (Me)`) {
+                          // strictly truncate extremely long names to ensure it doesn't break flex layout
+                          // though overflow: hidden on the parent should handle it now
+                          name = name.substring(0, 15) + '...';
+                        }
                       }
                       return name;
                     })()}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                   <button 

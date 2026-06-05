@@ -376,7 +376,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
           {activeSession && (
             <div style={{ marginTop: '0.5rem' }}>
-              <ActiveCallPanel session={activeSession} onCallEnded={() => setActiveSession(null)} />
+              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={() => setActiveSession(null)} />
             </div>
           )}
 
