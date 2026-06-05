@@ -116,71 +116,9 @@ export default function CallCenterModule({ userId }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', alignItems: 'start' }}>
+      <div>
         
-        {/* Left Column: Softphone & Dialer */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          
-
-
-          {/* Outbound Dialer */}
-          <div className="card" style={{ padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: '#1e293b' }}>Make Outbound Call</h3>
-            
-            <form onSubmit={handleStartCall}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: '#475569' }}>Customer Mobile Number</label>
-                <div style={{ display: 'flex', border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
-                  <span style={{ background: '#f1f5f9', padding: '0.75rem 1rem', color: '#64748b', fontWeight: 500, borderRight: '1px solid #cbd5e1' }}>+91</span>
-                  <input 
-                    type="text" 
-                    value={customerNumber}
-                    onChange={(e) => setCustomerNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                    placeholder="Enter 10 digit number"
-                    style={{ flex: 1, padding: '0.75rem 1rem', border: 'none', outline: 'none', fontSize: '1rem' }}
-                    maxLength={10}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: '#475569' }}>Calling Mode</label>
-                <select 
-                  value={callingMode}
-                  onChange={(e) => setCallingMode(e.target.value)}
-                  style={{ width: '100%', padding: '0.75rem 1rem', border: '1px solid #cbd5e1', borderRadius: '8px', outline: 'none', background: 'white' }}
-                >
-                  <option value="browser_webrtc">Browser Softphone (WebRTC)</option>
-                  <option value="mobile">Dial via my Mobile ({agentData.mobile_number})</option>
-                  <option value="external_softphone">External App (MicroSIP / Zoiper)</option>
-                </select>
-              </div>
-
-              <button 
-                type="submit"
-                disabled={!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && agentStatus !== 'available')}
-                className="btn-primary"
-                style={{ 
-                  width: '100%', 
-                  padding: '0.8rem', 
-                  fontSize: '1rem', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  gap: '0.5rem', 
-                  opacity: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && agentStatus !== 'available')) ? 0.5 : 1 
-                }}
-              >
-                <PhoneCall size={18} />
-                {callingMode === 'browser_webrtc' && agentStatus !== 'available' 
-                  ? 'Connect Softphone First' 
-                  : 'Call Customer'}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* Right Column: Call Logs */}
+        {/* Call Logs */}
         <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
           <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

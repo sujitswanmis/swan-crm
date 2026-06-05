@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2, ShieldAlert } from 'lucide-react';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
@@ -16,6 +16,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [activeSession, setActiveSession] = useState(null);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
   const [agentData, setAgentData] = useState(null);
+  
+  // Dialer state
+  const [customerNumber, setCustomerNumber] = useState('');
+  const [callingMode, setCallingMode] = useState('browser_webrtc');
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
@@ -27,7 +31,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
       try {
         const { getAgentProfile } = await import('@/app/actions/team');
         const { data } = await getAgentProfile(userId);
-        if (data) setAgentData(data);
+        if (data) {
+          setAgentData(data);
+          if (data.default_calling_mode) {
+             setCallingMode(data.default_calling_mode);
+          }
+        }
       } catch (err) {
         console.error(err);
       }
@@ -50,6 +59,27 @@ export default function GlobalSoftphoneWidget({ userId }) {
     interval = setInterval(fetchSession, 5000);
     return () => clearInterval(interval);
   }, [agentData]);
+
+  const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
+    if (!clientInstance) return;
+    setConnectionState('connecting');
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/plivo/token', { method: 'POST' });
+      const data = await res.json();
+      if (data.username && data.password) {
+        clientInstance.login(data.username, data.password);
+      } else if (data.token) {
+        clientInstance.loginWithAccessToken(data.token);
+      } else {
+        setConnectionState('error');
+        setErrorMessage(data.error || 'Failed to fetch credentials');
+      }
+    } catch (err) {
+      setConnectionState('error');
+      setErrorMessage(err.message || 'Failed to fetch credentials');
+    }
+  }, [plivoClient]);
 
   useEffect(() => {
     let activeClient = null;
@@ -115,6 +145,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         setPlivoClient(client);
+        
+        // Auto connect after initialization
+        connectSoftphone(client);
       } catch (err) {
         setConnectionState('error');
         setErrorMessage('Failed to load SDK');
@@ -146,27 +179,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const connectSoftphone = async () => {
-    if (!plivoClient) return;
-    setConnectionState('connecting');
-    setErrorMessage('');
-    try {
-      const res = await fetch('/api/plivo/token', { method: 'POST' });
-      const data = await res.json();
-      if (data.username && data.password) {
-        plivoClient.login(data.username, data.password);
-      } else if (data.token) {
-        plivoClient.loginWithAccessToken(data.token);
-      } else {
-        setConnectionState('error');
-        setErrorMessage(data.error || 'Failed to fetch credentials');
-      }
-    } catch (err) {
-      setConnectionState('error');
-      setErrorMessage(err.message || 'Failed to fetch credentials');
-    }
   };
 
   const disconnectSoftphone = () => {
@@ -208,7 +220,35 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
   };
 
+  const handleStartCall = async (e) => {
+    e.preventDefault();
+    if (!customerNumber) return;
+
+    try {
+      const res = await fetch('/api/plivo/start-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerNumber: `+91${customerNumber}`,
+          callingMode,
+          agentEndpoint: agentData?.plivo_sip_uri,
+          agentMobile: agentData?.mobile_number
+        })
+      });
+      const result = await res.json();
+      if (result.error) {
+        alert("Call Error: " + result.error);
+      } else {
+        setCustomerNumber('');
+      }
+    } catch (err) {
+      alert("Failed to start call");
+    }
+  };
+
   if (!agentData) return null; // Don't show widget if not an agent
+
+  const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
   return (
     <div style={{
@@ -252,35 +292,37 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
       {/* Widget Body */}
       {!isMinimized && (
-        <div style={{ padding: '1rem', maxHeight: '60vh', overflowY: 'auto' }}>
+        <div style={{ padding: '1rem', maxHeight: '70vh', overflowY: 'auto' }}>
           {/* Connection Controls */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.5rem', background: '#0f172a', borderRadius: '8px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
                 {connectionState === 'online' ? 'Online' : 
                  connectionState === 'connecting' ? 'Connecting...' : 
                  connectionState === 'error' ? 'Connection Error' : 'Offline'}
               </span>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 SIP: {agentData.plivo_sip_uri || 'N/A'}
               </span>
             </div>
-            {connectionState !== 'online' ? (
-              <button 
-                onClick={connectSoftphone}
-                disabled={connectionState === 'connecting'}
-                style={{ padding: '0.4rem 0.75rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              >
-                {connectionState === 'connecting' ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} Connect
-              </button>
-            ) : (
-              <button 
-                onClick={disconnectSoftphone}
-                style={{ padding: '0.4rem 0.75rem', background: '#475569', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
-              >
-                Disconnect
-              </button>
-            )}
+            <div style={{ flexShrink: 0 }}>
+              {connectionState !== 'online' ? (
+                <button 
+                  onClick={() => connectSoftphone(plivoClient)}
+                  disabled={connectionState === 'connecting'}
+                  style={{ padding: '0.4rem 0.75rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                >
+                  {connectionState === 'connecting' ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} Connect
+                </button>
+              ) : (
+                <button 
+                  onClick={disconnectSoftphone}
+                  style={{ padding: '0.4rem 0.75rem', background: '#475569', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
           </div>
 
           {errorMessage && (
@@ -334,9 +376,64 @@ export default function GlobalSoftphoneWidget({ userId }) {
             </div>
           )}
 
-          {connectionState === 'online' && !activeCall && !incomingCall && !activeSession && (
-            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem', padding: '1rem 0' }}>
-              Ready. Make calls from Call Center tab.
+          {/* Outbound Dialer (Only visible when no active calls) */}
+          {!hasActiveInteraction && (
+            <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#f8fafc' }}>Make Outbound Call</div>
+              
+              <form onSubmit={handleStartCall}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', overflow: 'hidden' }}>
+                    <span style={{ background: '#334155', padding: '0.6rem', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                    <input 
+                      type="text" 
+                      value={customerNumber}
+                      onChange={(e) => setCustomerNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="Mobile Number"
+                      style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'white' }}
+                      maxLength={10}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <select 
+                    value={callingMode}
+                    onChange={(e) => setCallingMode(e.target.value)}
+                    style={{ width: '100%', padding: '0.6rem', border: '1px solid #334155', borderRadius: '6px', outline: 'none', background: '#1e293b', color: 'white', fontSize: '0.8rem' }}
+                  >
+                    <option value="browser_webrtc">Browser Softphone (WebRTC)</option>
+                    <option value="mobile">Dial via my Mobile ({agentData.mobile_number})</option>
+                    <option value="external_softphone">External App (MicroSIP)</option>
+                  </select>
+                </div>
+
+                <button 
+                  type="submit"
+                  disabled={!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')}
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.6rem', 
+                    fontSize: '0.85rem', 
+                    fontWeight: 600,
+                    background: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '0.5rem',
+                    cursor: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')) ? 'not-allowed' : 'pointer',
+                    opacity: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')) ? 0.5 : 1 
+                  }}
+                >
+                  <PhoneCall size={16} />
+                  {callingMode === 'browser_webrtc' && connectionState !== 'online' 
+                    ? 'Connect Softphone First' 
+                    : 'Call Customer'}
+                </button>
+              </form>
             </div>
           )}
         </div>
