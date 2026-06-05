@@ -598,6 +598,34 @@ function TabSettings() {
           <strong>Note:</strong> Incoming webhook checks real-time Plivo API for SIP registration before routing. If agent's browser is disconnected, the call auto-heals and routes to the next available agent or falls back to <code>{settings?.defaultForward || '+91XXXXXXXXXX'}</code>.
         </div>
       </div>
+
+      {/* Widget Settings */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', gridColumn:'1/-1' }}>
+        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+          <Settings size={18} color="#3b82f6" /> Softphone Preferences (Browser Local)
+        </h3>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
+          <div>
+            <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.95rem' }}>Auto-Answer Outbound Calls</div>
+            <div style={{ fontSize:'0.8rem', color:'#64748b', marginTop:'0.25rem' }}>When dialing a number, connect immediately without requiring the agent to click "Accept".</div>
+          </div>
+          <button 
+            onClick={() => {
+              const current = localStorage.getItem('CRM_AUTO_ANSWER_OUTBOUND') !== 'false';
+              localStorage.setItem('CRM_AUTO_ANSWER_OUTBOUND', (!current).toString());
+              // Force re-render just to show toggle state
+              setSettings({...settings});
+            }}
+            style={{ background:'none', border:'none', cursor:'pointer' }}
+          >
+            {localStorage.getItem('CRM_AUTO_ANSWER_OUTBOUND') !== 'false' ? (
+              <ToggleRight size={36} color="#10b981" />
+            ) : (
+              <ToggleLeft size={36} color="#94a3b8" />
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

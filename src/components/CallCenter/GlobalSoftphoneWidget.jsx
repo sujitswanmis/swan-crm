@@ -133,9 +133,24 @@ export default function GlobalSoftphoneWidget({ userId }) {
           }
         });
 
-        client.on('onIncomingCall', (callerName, extraHeaders) => {
-          setIncomingCall({ callerName, extraHeaders });
+        client.on('onIncomingCall', (callerName, extraHeaders, callInfo) => {
+          setIncomingCall({ callerName, extraHeaders, callInfo });
           setIsMinimized(false); // Auto-expand on incoming call
+          
+          // Auto-answer logic for outbound calls initiated by the agent
+          if (localStorage.getItem('pendingOutboundCall') === 'true') {
+            localStorage.removeItem('pendingOutboundCall');
+            // Check admin setting, default to true (direct call)
+            if (localStorage.getItem('CRM_AUTO_ANSWER_OUTBOUND') !== 'false') {
+              setTimeout(() => {
+                // use the explicit client reference to answer
+                try { client.answer(); } catch(e){}
+                setActiveCall({ direction: 'inbound', remote: callerName });
+                setIncomingCall(null);
+                // The onCallAnswered event will start the timer
+              }, 500); // slight delay ensures DOM/SDK readiness
+            }
+          }
         });
 
         client.on('onIncomingCallCanceled', () => {
@@ -232,6 +247,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const handleStartCall = async (e) => {
     e.preventDefault();
     if (!customerNumber) return;
+
+    // Set flag so onIncomingCall knows this is our outbound call
+    localStorage.setItem('pendingOutboundCall', 'true');
 
     try {
       const res = await fetch('/api/plivo/start-call', {
