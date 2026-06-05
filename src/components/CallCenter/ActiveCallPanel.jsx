@@ -167,11 +167,10 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                           name = name.replace('sip:', '').split('@')[0];
                         }
                         if (agentData && (name === agentData.plivo_username || name === agentData.plivo_sip_uri)) {
-                          name = `${agentData.display_name || 'Agent'} (Me)`;
+                          name = 'Agent (Me)';
                         }
-                        if (name.length > 15 && name !== `${agentData?.display_name || 'Agent'} (Me)`) {
+                        if (name.length > 15 && name !== 'Agent (Me)') {
                           // strictly truncate extremely long names to ensure it doesn't break flex layout
-                          // though overflow: hidden on the parent should handle it now
                           name = name.substring(0, 15) + '...';
                         }
                       }
