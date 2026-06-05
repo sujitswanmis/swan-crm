@@ -39,6 +39,18 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     };
   }, [session, onCallEnded]);
 
+  const fetchMembers = async () => {
+    try {
+      const res = await fetch(`/api/plivo/controls/members?room=${session.room_name}`);
+      const data = await res.json();
+      if (data.members) {
+        setMembers(data.members);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleMuteToggle = async (memberId, isMuted) => {
     setLoadingAction(`mute_${memberId}`);
     try {
