@@ -15,7 +15,7 @@ export async function POST(req) {
       await client.conferences.deafMember(roomName, memberId);
       await client.conferences.muteMember(roomName, memberId);
       try {
-        await client.conferences.playMember(roomName, memberId, `${appBaseUrl}/hold.mp3`);
+        await client.conferences.playMember(roomName, memberId, `https://swanagro.in/assets/upload/ivr/Hold_IVR_2.mp3`);
       } catch (e) {
         console.error('Failed to play hold music:', e);
       }
