@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2, ShieldAlert } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2, ShieldAlert, GripHorizontal } from 'lucide-react';
+import Draggable from 'react-draggable';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
 
@@ -23,6 +24,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
+  const nodeRef = useRef(null);
 
   // Fetch agent profile
   useEffect(() => {
@@ -258,41 +260,43 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: '20px',
-      right: '20px',
-      width: isMinimized ? '280px' : '360px',
-      background: '#1e293b',
-      borderRadius: '12px',
-      color: 'white',
-      border: '1px solid #334155',
-      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-      zIndex: 9999,
-      transition: 'all 0.3s ease',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden'
-    }}>
+    <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds="body">
+      <div ref={nodeRef} style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        width: isMinimized ? '280px' : '360px',
+        background: '#1e293b',
+        borderRadius: '12px',
+        color: 'white',
+        border: '1px solid #334155',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        zIndex: 9999,
+        transition: 'width 0.3s ease',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
       {/* Widget Header (Click to toggle) */}
       <div 
-        onClick={() => setIsMinimized(!isMinimized)}
         style={{ 
           padding: '0.75rem 1rem', 
           background: '#0f172a', 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
-          cursor: 'pointer',
           borderBottom: isMinimized ? 'none' : '1px solid #334155'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="drag-handle" style={{ cursor: 'move', display: 'flex', alignItems: 'center', color: '#94a3b8' }}>
+            <GripHorizontal size={16} />
+          </div>
           <PhoneCall size={18} color={connectionState === 'online' ? '#10b981' : '#64748b'} />
           <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>CRM Softphone</span>
           <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : '#64748b' }} />
         </div>
-        <div>
+        <div style={{ cursor: 'pointer' }} onClick={() => setIsMinimized(!isMinimized)}>
           {isMinimized ? <Maximize2 size={16} color="#94a3b8" /> : <Minimize2 size={16} color="#94a3b8" />}
         </div>
       </div>
@@ -445,6 +449,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           )}
         </div>
       )}
-    </div>
+      </div>
+    </Draggable>
   );
 }
