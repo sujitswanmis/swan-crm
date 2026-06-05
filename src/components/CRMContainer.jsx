@@ -48,7 +48,7 @@ const THEMES = [
   { id: 'theme-premium-5', name: 'Monochrome Sleek', icon: '🔳' },
 ];
 
-export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany }) {
+export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -776,6 +776,15 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 </select>
               </div>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1rem' }}>
+                {userName ? userName.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{userName || 'User'}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{userRole}</span>
+              </div>
+            </div>
             <div style={{ position: 'relative' }}>
               <Bell 
                 size={20} 
@@ -962,7 +971,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           )}
 
       {/* Follow-up Notifications Panel */}
-      {dueFollowUps.length > 0 && activeTab !== 'ai' && (
+      {dueFollowUps.length > 0 && activeTab === 'leads' && (
         <div style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '1rem', marginBottom: '2rem', display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
           <div style={{ backgroundColor: '#f59e0b', color: 'white', padding: '0.5rem', borderRadius: '50%' }}>
             <Bell size={20} />
@@ -977,7 +986,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         </div>
       )}
 
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {(!canRead && activeTab === 'leads') ? (
             <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
               <h2 style={{ color: 'var(--text-secondary)' }}>You do not have permission to view leads.</h2>

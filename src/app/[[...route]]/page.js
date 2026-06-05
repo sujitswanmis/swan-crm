@@ -35,6 +35,7 @@ export default async function Home() {
   const moduleAccess = roleData?.module_access || {};
   const isApproved = roleData?.is_approved;
   const userCompany = roleData?.company || '';
+  const userName = roleData?.emp_name || user.email?.split('@')[0] || 'User';
 
   // 2.5. Check Approval Status
   if (!isApproved && userRole !== 'admin' && userRole !== 'Admin') {
@@ -67,6 +68,7 @@ export default async function Home() {
         moduleAccess={moduleAccess}
         userId={user.id}
         userCompany={userCompany}
+        userName={userName}
       />
     </main>
   );

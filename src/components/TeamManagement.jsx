@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess } from '@/app/actions/team';
 
 const MODULES_CONFIG = [
+  { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
+  { id: 'new_swan_ai', label: 'New Swan AI', category: 'General' },
+  { id: 'callcenter', label: 'Call Center', category: 'General' },
   { id: 'registration', label: 'New Client Registration', category: 'Sales' },
   { id: 'report', label: 'Client Registered Report', category: 'Sales' },
   { id: 'leads', label: 'Lead Data', category: 'Sales' },
@@ -365,10 +368,10 @@ export default function TeamManagement() {
             </p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '1.5rem' }}>
-              {['Sales', 'Purchase', 'Human Resource'].map(category => (
+              {['General', 'Sales', 'Purchase', 'Human Resource'].map(category => (
                 <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
                   <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                    {category} Department
+                    {category === 'General' ? 'Core Features' : `${category} Department`}
                   </div>
                   <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     {MODULES_CONFIG.filter(m => m.category === category).map(module => (
