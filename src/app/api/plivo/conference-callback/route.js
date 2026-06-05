@@ -54,6 +54,9 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
           callbackMethod: 'POST',
         }
       ).catch(console.error);
+
+      // Explicitly play ringback tone to the agent while they wait
+      client.conferences.playAudioToMember(roomName, memberId, `${appBaseUrl}/ringback.wav`).catch(console.error);
   }
 
   // 2. BACKGROUND DATABASE OPERATIONS (Runs after dialing)
@@ -92,6 +95,14 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         customer_answer_time: new Date().toISOString(),
         status: 'connected'
       }).eq('id', session.id);
+      
+      // Stop ringback for the agent
+      if (session.agent_member_id) {
+         try {
+             const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+             await client.conferences.stopPlayingAudioToMember(roomName, session.agent_member_id);
+         } catch(e) {}
+      }
     }
   } else if (eventType === 'exit') {
      // If the AGENT leaves, end the conference for everyone
