@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { PhoneOff, Mic, MicOff, UserX, UserPlus, Loader2, Users } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, UserX, UserPlus, Loader2, Users, Pause, Play } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
 export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
@@ -39,18 +39,6 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     };
   }, [session, onCallEnded]);
 
-  const fetchMembers = async () => {
-    try {
-      const res = await fetch(`/api/plivo/controls/members?room=${session.room_name}`);
-      const data = await res.json();
-      if (data.members) {
-        setMembers(data.members);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleMuteToggle = async (memberId, isMuted) => {
     setLoadingAction(`mute_${memberId}`);
     try {
@@ -64,6 +52,26 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
         })
       });
       await fetchMembers();
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleHoldToggle = async (memberId, isHeld) => {
+    setLoadingAction(`hold_${memberId}`);
+    try {
+      await fetch('/api/plivo/controls/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName: session.room_name,
+          memberId,
+          action: isHeld ? 'unhold' : 'hold'
+        })
+      });
+      await fetchMembers();
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoadingAction(null);
     }
@@ -180,6 +188,14 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                   <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                  <button 
+                    onClick={() => handleHoldToggle(member.memberId, member.deaf)}
+                    disabled={loadingAction === `hold_${member.memberId}`}
+                    title={member.deaf ? "Resume Call" : "Hold Call"}
+                    style={{ background: member.deaf ? '#fef08a' : 'white', color: member.deaf ? '#ca8a04' : '#64748b', border: '1px solid #cbd5e1', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {loadingAction === `hold_${member.memberId}` ? <Loader2 size={16} className="spin" /> : (member.deaf ? <Play size={16} /> : <Pause size={16} />)}
+                  </button>
                   <button 
                     onClick={() => handleMuteToggle(member.memberId, member.muted)}
                     disabled={loadingAction === `mute_${member.memberId}`}

@@ -94,8 +94,8 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       }).eq('id', session.id);
     }
   } else if (eventType === 'exit') {
-     // If either leaves, end conference
-     if (session.status !== 'ended') {
+     // If the AGENT leaves, end the conference for everyone
+     if (memberId === session.agent_member_id && session.status !== 'ended') {
         await adminClient.from('call_sessions').update({
            status: 'ended',
            end_time: new Date().toISOString()
