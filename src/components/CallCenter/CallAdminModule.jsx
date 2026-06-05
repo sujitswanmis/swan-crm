@@ -56,7 +56,21 @@ const callStatusBadge = (s) => {
   return <span style={{padding:'0.15rem 0.55rem',borderRadius:'999px',fontSize:'0.73rem',fontWeight:600,background:bg,color}}>{s}</span>;
 };
 
-const fmtDate = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle:'short', timeStyle:'short' }) : '—';
+const fmtDate = (d) => {
+  if (!d) return '—';
+  const date = new Date(d);
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mmm = date.toLocaleString('en-US', { month: 'short' });
+  const yyyy = date.getFullYear();
+  let hh = date.getHours();
+  const min = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12;
+  hh = hh ? hh : 12; // hour '0' should be '12'
+  const hhStr = String(hh).padStart(2, '0');
+  return `${dd}-${mmm}-${yyyy} ${hhStr}:${min}:${ss} ${ampm}`;
+};
 const fmtDur  = (s) => {
   if (!s && s !== 0) return '—';
   const m = Math.floor(s/60), sec = s%60;

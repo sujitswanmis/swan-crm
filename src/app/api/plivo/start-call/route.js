@@ -54,6 +54,7 @@ export async function POST(req) {
         customer_number: customerNumber,
         calling_mode: callingMode,
         status: 'initiated',
+        start_time: new Date().toISOString(),
         agent_dial_to: callingMode === 'mobile' ? agentMobile : (agentEndpoint || agentData.plivo_sip_uri)
       })
       .select()

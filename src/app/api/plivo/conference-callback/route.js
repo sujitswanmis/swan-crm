@@ -107,9 +107,31 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
   } else if (eventType === 'exit') {
      // If the AGENT leaves, end the conference for everyone
      if (memberId === session.agent_member_id && session.status !== 'ended') {
+        const endTime = new Date();
+        const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
+        const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
+        const startTime = session.start_time ? new Date(session.start_time) : (agentAnsTime || endTime);
+        
+        let ringingSec = null;
+        let talkSec = null;
+
+        if (customerAnsTime) {
+           talkSec = Math.floor((endTime - customerAnsTime) / 1000);
+           ringingSec = Math.floor((customerAnsTime - (agentAnsTime || startTime)) / 1000);
+        } else {
+           // Missed call / not answered by customer
+           ringingSec = Math.floor((endTime - (agentAnsTime || startTime)) / 1000);
+           talkSec = 0;
+        }
+
+        if (ringingSec < 0) ringingSec = 0;
+        if (talkSec < 0) talkSec = 0;
+
         await adminClient.from('call_sessions').update({
            status: 'ended',
-           end_time: new Date().toISOString()
+           end_time: endTime.toISOString(),
+           ringing_duration_sec: ringingSec,
+           talk_duration_sec: talkSec
         }).eq('id', session.id);
         
         try {
