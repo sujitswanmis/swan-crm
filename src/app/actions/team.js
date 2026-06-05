@@ -205,7 +205,8 @@ export async function updateCallAgentAdmin(agentId, updates) {
   if (updates.plivo_username !== undefined) {
     if (updates.plivo_username === null) {
       updates.plivo_password = null;
-    } else {
+    } else if (updates.plivo_password === undefined) {
+      // Only auto-populate from map if the frontend didn't explicitly send a plivo_password
       updates.plivo_password = plivoCredentialsMap[updates.plivo_username] || null;
     }
   }

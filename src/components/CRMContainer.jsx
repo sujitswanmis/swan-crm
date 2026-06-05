@@ -11,6 +11,7 @@ import WhatsappUnofficialModule from './WhatsappUnofficial/WhatsappUnofficialMod
 import AiAssistantModule from './AiAssistant/AiAssistantModule';
 import CallCenterModule from './CallCenter/CallCenterModule';
 import CallAdminModule from './CallCenter/CallAdminModule';
+import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, Menu, Palette, Check, Bot, PhoneCall, Phone } from 'lucide-react';
@@ -630,6 +631,16 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 <Phone size={20} />
                 Call Admin
               </button>
+              
+              <button 
+                onClick={() => handleTabChange('aicallcenter')}
+                className="nav-item" 
+                data-active={activeTab === 'aicallcenter'}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                <Bot size={20} />
+                AI Call Center
+              </button>
 
               <div style={{ display: 'contents' }}>
                 <button 
@@ -939,6 +950,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'ai' && 'Leverage AI for lead insights and communication'}
               {activeTab === 'callcenter' && 'Make and receive calls directly from your browser'}
               {activeTab === 'calladmin' && 'Manage call center agents and SIP endpoints'}
+              {activeTab === 'aicallcenter' && 'Manage AI agents for incoming and outgoing campaigns'}
               {activeTab === 'team' && 'Manage user roles and permissions'}
               {activeTab === 'whatsapp_official' && 'Configure Cloud API setup for Official WhatsApp'}
               {activeTab === 'whatsapp_unofficial' && 'Configure Web session setup for UnOfficial WhatsApp'}
@@ -989,6 +1001,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'aiadmin' && <AiAdminModule />}
               {activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
               {activeTab === 'calladmin' && (userRole === 'admin' || userRole === 'Admin') && <CallAdminModule />}
+              {activeTab === 'aicallcenter' && (userRole === 'admin' || userRole === 'Admin') && <AiCallCenterModule />}
               {activeTab === 'team' && (userRole === 'admin' || userRole === 'Admin') && <TeamManagement />}
               {activeTab === 'whatsapp_official' && <WhatsappOfficial />}
               {activeTab === 'whatsapp_unofficial' && <WhatsappUnofficialModule userRole={userRole} userId={userId} />}
