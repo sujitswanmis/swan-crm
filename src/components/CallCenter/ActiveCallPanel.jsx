@@ -7,6 +7,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   const [members, setMembers] = useState([]);
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
+  const [heldMembers, setHeldMembers] = useState({});
   
   useEffect(() => {
     let interval;
@@ -81,6 +82,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
           action: isHeld ? 'unhold' : 'hold'
         })
       });
+      setHeldMembers(prev => ({ ...prev, [memberId]: !isHeld }));
       await fetchMembers();
     } catch (e) {
       console.error(e);
@@ -201,12 +203,12 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                   <button 
-                    onClick={() => handleHoldToggle(member.memberId, member.deaf)}
+                    onClick={() => handleHoldToggle(member.memberId, heldMembers[member.memberId] || false)}
                     disabled={loadingAction === `hold_${member.memberId}`}
-                    title={member.deaf ? "Resume Call" : "Hold Call"}
-                    style={{ background: member.deaf ? '#fef08a' : 'white', color: member.deaf ? '#ca8a04' : '#64748b', border: '1px solid #cbd5e1', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title={heldMembers[member.memberId] ? "Resume Call" : "Hold Call"}
+                    style={{ background: heldMembers[member.memberId] ? '#fef08a' : 'white', color: heldMembers[member.memberId] ? '#ca8a04' : '#64748b', border: '1px solid #cbd5e1', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {loadingAction === `hold_${member.memberId}` ? <Loader2 size={16} className="spin" /> : (member.deaf ? <Play size={16} /> : <Pause size={16} />)}
+                    {loadingAction === `hold_${member.memberId}` ? <Loader2 size={16} className="spin" /> : (heldMembers[member.memberId] ? <Play size={16} /> : <Pause size={16} />)}
                   </button>
                   <button 
                     onClick={() => handleMuteToggle(member.memberId, member.muted)}
