@@ -163,7 +163,7 @@ export async function POST(req) {
             
             const { data: matchedDocs } = await supabase.rpc('match_company_documents', {
               query_embedding: queryEmbedding,
-              match_threshold: 0.5,
+              match_threshold: 0.25,
               match_count: 3
             });
             
