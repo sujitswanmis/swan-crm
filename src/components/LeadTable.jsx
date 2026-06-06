@@ -405,7 +405,13 @@ const columns = [
       return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }},
   { accessorKey: 'latest_remark', header: 'Remarks' },
-  { accessorKey: 'latest_emp_name', header: 'Emp Name' },
+  { accessorKey: 'latest_emp_name', header: 'Emp Name', cell: info => {
+      const val = info.getValue();
+      if (!val || val === 'Agent' || val === 'System') return val || 'Agent';
+      const teamMembers = info.table.options.meta?.teamMembers || [];
+      const member = teamMembers.find(m => m.email?.split('@')[0] === val || m.user_id === val);
+      return member ? member.emp_name : val;
+  }},
   { accessorKey: 'completion_count', header: 'Actual Completion of Count' },
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
 ];
@@ -570,6 +576,14 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       const member = teamMembers.find(m => m.user_id === val);
       val = member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
     } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
+      if (typeof filterValue === 'string' && filterValue.includes('-')) {
+        const rawDate = row.original[columnId];
+        if (!rawDate) return false;
+        const d = new Date(rawDate);
+        const pad = (n) => String(n).padStart(2, '0');
+        const rowDateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        return rowDateStr === filterValue;
+      }
       if (val) {
         const pad = (n) => String(n).padStart(2, '0');
         const d = new Date(val);
@@ -912,38 +926,56 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                           
                           {activeFilterColumn === header.id && (
                             <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
-                              <input 
-                                type="text"
-                                placeholder="Search..."
-                                value={filterSearchText}
-                                onChange={e => setFilterSearchText(e.target.value)}
-                                style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
-                              />
-                              <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
-                                  const currentFilterValue = header.column.getFilterValue() || [];
-                                  const isChecked = currentFilterValue.includes(val);
-                                  return (
-                                    <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
-                                      <input 
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={() => {
-                                          const newValue = isChecked 
-                                            ? currentFilterValue.filter(v => v !== val)
-                                            : [...currentFilterValue, val];
-                                          header.column.setFilterValue(newValue.length ? newValue : undefined);
-                                        }}
-                                      />
-                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
-                                <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
-                                <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
-                              </div>
+                              {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date') ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Date:</label>
+                                  <input 
+                                    type="date"
+                                    value={header.column.getFilterValue() || ''}
+                                    onChange={e => header.column.setFilterValue(e.target.value ? e.target.value : undefined)}
+                                    style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem' }}
+                                  />
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                                    <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                                    <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <input 
+                                    type="text"
+                                    placeholder="Search..."
+                                    value={filterSearchText}
+                                    onChange={e => setFilterSearchText(e.target.value)}
+                                    style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
+                                  />
+                                  <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
+                                      const currentFilterValue = header.column.getFilterValue() || [];
+                                      const isChecked = currentFilterValue.includes(val);
+                                      return (
+                                        <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
+                                          <input 
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => {
+                                              const newValue = isChecked 
+                                                ? currentFilterValue.filter(v => v !== val)
+                                                : [...currentFilterValue, val];
+                                              header.column.setFilterValue(newValue.length ? newValue : undefined);
+                                            }}
+                                          />
+                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                                    <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                                    <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
