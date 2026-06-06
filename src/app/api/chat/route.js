@@ -10,29 +10,40 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "get_my_leads_summary",
-      description: "Get a summary of the user's leads grouped by status. Useful for answering questions like 'how many leads do I have?'",
+      name: "get_leads_summary",
+      description: "Get a summary of leads grouped by status. Useful for answering questions like 'how many leads do I have?' or 'team summary'.",
       parameters: {
         type: "object",
-        properties: {},
-        required: []
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["me", "all"],
+            description: "If the user asks for 'my leads', use 'me'. If the user asks for 'all leads' or 'team leads' (and they are an admin), use 'all'."
+          }
+        },
+        required: ["scope"]
       }
     }
   },
   {
     type: "function",
     function: {
-      name: "search_my_leads",
-      description: "Search the user's leads by name, email, phone, or company.",
+      name: "search_leads",
+      description: "Search leads by name, email, phone, or company.",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
             description: "The search term (name, company, phone, etc.)"
+          },
+          scope: {
+            type: "string",
+            enum: ["me", "all"],
+            description: "If searching only personal leads use 'me', if searching the entire company database use 'all'."
           }
         },
-        required: ["query"]
+        required: ["query", "scope"]
       }
     }
   },
@@ -40,17 +51,23 @@ const tools = [
     type: "function",
     function: {
       name: "get_recent_follow_ups",
-      description: "Get the user's leads that have a follow-up scheduled for today or are overdue.",
+      description: "Get leads that have a follow-up scheduled for today or are overdue.",
       parameters: {
         type: "object",
-        properties: {},
-        required: []
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["me", "all"],
+            description: "Scope of follow-ups ('me' for user's own, 'all' for entire team)."
+          }
+        },
+        required: ["scope"]
       }
     }
   }
 ];
 
-async function executeTool(toolCall, userId) {
+async function executeTool(toolCall, userId, isAdmin) {
   const name = toolCall.function.name;
   let args = {};
   try {
@@ -59,13 +76,14 @@ async function executeTool(toolCall, userId) {
     // Ignore parse error
   }
   
+  const scope = isAdmin && args.scope === 'all' ? 'all' : 'me';
+  
   try {
-    if (name === 'get_my_leads_summary') {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('status')
-        .eq('assigned_to', userId);
+    if (name === 'get_leads_summary' || name === 'get_my_leads_summary') {
+      let query = supabase.from('leads').select('status');
+      if (scope === 'me') query = query.eq('assigned_to', userId);
         
+      const { data, error } = await query;
       if (error) throw error;
       
       const summary = data.reduce((acc, lead) => {
@@ -73,34 +91,38 @@ async function executeTool(toolCall, userId) {
         return acc;
       }, {});
       
-      return JSON.stringify({ total: data.length, summary });
+      return JSON.stringify({ total: data.length, summary, scope_applied: scope });
     }
     
-    if (name === 'search_my_leads') {
-      const { data, error } = await supabase
+    if (name === 'search_leads' || name === 'search_my_leads') {
+      let query = supabase
         .from('leads')
         .select('id, name, company, phone, email, status, follow_up_date, requirement')
-        .eq('assigned_to', userId)
-        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%`)
-        .limit(10);
+        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%`);
         
+      if (scope === 'me') query = query.eq('assigned_to', userId);
+      query = query.limit(10);
+        
+      const { data, error } = await query;
       if (error) throw error;
-      return JSON.stringify({ results: data });
+      return JSON.stringify({ results: data, scope_applied: scope });
     }
     
     if (name === 'get_recent_follow_ups') {
       const today = new Date().toISOString().split('T')[0];
-      const { data, error } = await supabase
+      let query = supabase
         .from('leads')
         .select('id, name, company, phone, status, follow_up_date')
-        .eq('assigned_to', userId)
         .lte('follow_up_date', today)
         .neq('status', 'Converted')
         .order('follow_up_date', { ascending: true })
         .limit(15);
         
+      if (scope === 'me') query = query.eq('assigned_to', userId);
+        
+      const { data, error } = await query;
       if (error) throw error;
-      return JSON.stringify({ follow_ups: data });
+      return JSON.stringify({ follow_ups: data, scope_applied: scope });
     }
     
     return JSON.stringify({ error: 'Tool not found' });
@@ -120,6 +142,10 @@ export async function POST(req) {
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required for AI usage tracking. Please refresh the page.' }, { status: 400 });
     }
+
+    // New check: Is user an Admin?
+    const { data: userRoleData } = await supabase.from('user_roles').select('role').eq('user_id', userId).single();
+    const isAdmin = userRoleData?.role === 'admin';
 
     // 1. Check AI Token Usage
     const { data: usageData, error: usageError } = await supabase
@@ -186,7 +212,8 @@ export async function POST(req) {
 Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}${knowledgeContext}
 - If the user uploads an image, YOU MUST LOOK AT THE IMAGE and describe it or answer questions about it. Do not say you cannot see it.
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
-- You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools. You ONLY see data belonging to the logged-in user.
+- You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools.
+${isAdmin ? "- YOU ARE TALKING TO AN ADMIN. You have the super-power to view data for the ENTIRE TEAM. If the admin asks for team data or 'all' leads, set the scope to 'all' in your tools." : "- You ONLY see data belonging to the logged-in user."}
 
 IMPORTANT BEHAVIORAL RULES:
 1. ALWAYS adapt your tone and language to match the user. If they use short, casual phrases, you reply concisely. 
@@ -238,7 +265,7 @@ IMPORTANT BEHAVIORAL RULES:
         currentMessages.push(choice.message); // Append assistant's tool call request
         
         for (const toolCall of toolCalls) {
-          const result = await executeTool(toolCall, userId);
+          const result = await executeTool(toolCall, userId, isAdmin);
           currentMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
