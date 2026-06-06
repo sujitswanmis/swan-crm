@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Sparkles, Send, Loader2, MessageSquare, Zap, Mic, MicOff, Camera, Paperclip, Volume2, X, PhoneCall, PhoneOff, Plus, MessageCircle, MoreVertical, Menu, Settings2, Copy, Check, Pencil, AlertCircle } from 'lucide-react';
+import { Bot, Sparkles, Send, Loader2, MessageSquare, Zap, Mic, MicOff, Camera, Paperclip, Volume2, X, PhoneCall, PhoneOff, Plus, MessageCircle, MoreVertical, Menu, Settings2, Copy, Check, Pencil, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,10 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   ]);
   const [currentSessionId, setCurrentSessionId] = useState('1');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [renamingSessionId, setRenamingSessionId] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
 
   // Input & Tool State
   const [prompt, setPrompt] = useState('');
@@ -46,18 +50,46 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   const loadSessions = async () => {
     try {
       const response = await fetch(`/api/ai/history?userId=${userId || 'guest'}`);
-      if (!response.ok) return;
+      if (!response.ok) throw new Error('Failed to fetch history');
       const data = await response.json();
       
-      if (data.sessions && data.sessions.length > 0) {
-        setSessions(data.sessions);
-        if (!currentSessionId) setCurrentSessionId(data.sessions[0].id);
+      let loadedSessions = data.sessions || [];
+      const now = Date.now();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      let needsSave = false;
+
+      // Auto-delete chats older than 30 days in the Trash
+      loadedSessions = loadedSessions.filter(s => {
+        if (s.isDeleted && s.deletedAt) {
+          if (now - new Date(s.deletedAt).getTime() > thirtyDaysMs) {
+            needsSave = true;
+            return false;
+          }
+        }
+        return true;
+      });
+      
+      if (loadedSessions.length > 0) {
+        setSessions(loadedSessions);
+        const firstActive = loadedSessions.find(s => !s.isDeleted);
+        setCurrentSessionId(firstActive ? firstActive.id : null);
       } else {
-        createNewSession();
+        // Only create a new session if we successfully fetched and there are no sessions
+        const newId = Date.now().toString();
+        const newSession = { id: newId, title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am New Swan AI. How can I assist you with your tasks today?' }] };
+        setSessions([newSession]);
+        setCurrentSessionId(newId);
       }
+
+      if (needsSave && loadedSessions.length > 0) {
+        saveSessions(loadedSessions);
+      }
+
+      setIsHistoryLoaded(true);
     } catch (error) {
       console.error('Error loading history:', error);
-      createNewSession();
+      // DO NOT call createNewSession() here, as it would overwrite the DB with default state if network fails!
+      setIsHistoryLoaded(true);
     }
   };
 
@@ -92,6 +124,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   };
 
   const createNewSession = () => {
+    setShowTrash(false);
     const newId = Date.now().toString();
     const newSession = {
       id: newId,
@@ -100,6 +133,41 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
     };
     saveSessions([newSession, ...sessions]);
     setCurrentSessionId(newId);
+  };
+
+  const saveTitle = (id) => {
+    if (newTitle.trim()) {
+      const updatedSessions = sessions.map(s => s.id === id ? { ...s, title: newTitle.trim() } : s);
+      saveSessions(updatedSessions);
+    }
+    setRenamingSessionId(null);
+  };
+
+  const softDeleteSession = (e, id) => {
+    e.stopPropagation();
+    const updatedSessions = sessions.map(s => s.id === id ? { ...s, isDeleted: true, deletedAt: new Date().toISOString() } : s);
+    saveSessions(updatedSessions);
+    if (currentSessionId === id) {
+      const nextActive = updatedSessions.find(s => !s.isDeleted);
+      setCurrentSessionId(nextActive ? nextActive.id : null);
+    }
+  };
+
+  const restoreSession = (e, id) => {
+    e.stopPropagation();
+    const updatedSessions = sessions.map(s => s.id === id ? { ...s, isDeleted: false, deletedAt: null } : s);
+    saveSessions(updatedSessions);
+  };
+
+  const hardDeleteSession = (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to permanently delete this chat?')) return;
+    const updatedSessions = sessions.filter(s => s.id !== id);
+    saveSessions(updatedSessions);
+    if (currentSessionId === id) {
+      const nextActive = updatedSessions.find(s => !s.isDeleted);
+      setCurrentSessionId(nextActive ? nextActive.id : null);
+    }
   };
 
   const updateCurrentSessionMessages = (newMessages) => {
@@ -579,24 +647,91 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#888', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>Recent History</div>
-          {sessions.map(session => (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#888' }}>
+              {showTrash ? 'Recycle Bin' : 'Recent History'}
+            </div>
             <button 
-              key={session.id}
-              onClick={() => setCurrentSessionId(session.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
-                width: '100%', background: currentSessionId === session.id ? '#ececec' : 'transparent',
-                border: 'none', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
-                color: currentSessionId === session.id ? '#000' : '#444'
-              }}
+              onClick={() => setShowTrash(!showTrash)} 
+              style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center' }} 
+              title={showTrash ? "Back to Chats" : "Recycle Bin"}
             >
-              <MessageCircle size={16} style={{ flexShrink: 0 }} />
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem' }}>
-                {session.title}
-              </span>
+              {showTrash ? <MessageCircle size={14} /> : <Trash2 size={14} />}
             </button>
+          </div>
+          
+          {sessions.filter(s => showTrash ? s.isDeleted : !s.isDeleted).map(session => (
+            <div key={session.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', gap: '0.25rem' }}>
+              <button 
+                onClick={() => !showTrash && setCurrentSessionId(session.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
+                  flex: 1, background: (!showTrash && currentSessionId === session.id) ? '#ececec' : 'transparent',
+                  border: 'none', borderRadius: '8px', cursor: showTrash ? 'default' : 'pointer', textAlign: 'left',
+                  color: (!showTrash && currentSessionId === session.id) ? '#000' : '#444'
+                }}
+              >
+                <MessageCircle size={16} style={{ flexShrink: 0 }} />
+                {renamingSessionId === session.id ? (
+                  <input
+                    type="text"
+                    value={newTitle}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    onBlur={() => saveTitle(session.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveTitle(session.id);
+                      if (e.key === 'Escape') setRenamingSessionId(null);
+                    }}
+                    style={{ flex: 1, border: '1px solid #8b5cf6', borderRadius: '4px', padding: '0.1rem 0.25rem', fontSize: '0.9rem', outline: 'none', background: 'white' }}
+                  />
+                ) : (
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem' }}>
+                    {session.title}
+                  </span>
+                )}
+              </button>
+              
+              {showTrash ? (
+                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                  <button onClick={(e) => restoreSession(e, session.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10b981', padding: '0.25rem' }} title="Restore">
+                    <RotateCcw size={14} />
+                  </button>
+                  <button onClick={(e) => hardDeleteSession(e, session.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem' }} title="Delete Permanently">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.1rem' }}>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setRenamingSessionId(session.id); setNewTitle(session.title); }} 
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: '0.5rem' }} 
+                    title="Rename Chat"
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#3b82f6'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button 
+                    onClick={(e) => softDeleteSession(e, session.id)} 
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: '0.5rem' }} 
+                    title="Move to Recycle Bin"
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
+          
+          {showTrash && sessions.filter(s => s.isDeleted).length === 0 && (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: '0.8rem', padding: '2rem 0' }}>
+              Recycle bin is empty
+            </div>
+          )}
         </div>
       </div>
 
@@ -607,6 +742,13 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         onDragLeave={handleDragLeave}
         style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', background: isDragging ? '#f0fdf4' : 'transparent', transition: 'background 0.2s' }}
       >
+        {!isHistoryLoaded ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#888' }}>
+            <Loader2 size={32} className="spin" style={{ marginBottom: '1rem' }} />
+            <p>Loading your chat history...</p>
+          </div>
+        ) : (
+          <>
         {isDragging && (
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.8)', border: '2px dashed #10b981', margin: '1rem', borderRadius: '1rem' }}>
             <div style={{ textAlign: 'center', color: '#10b981' }}>
@@ -908,7 +1050,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             </div>
           </div>
         </div>
-
+        </>
+        )}
       </div>
 
       {/* Full Screen Image Viewer / Lightbox */}
