@@ -140,11 +140,50 @@ export async function POST(req) {
       return NextResponse.json({ error: 'OpenAI API key is missing on the server' }, { status: 500 });
     }
 
+    // --- RAG Knowledge Base Retrieval ---
+    let knowledgeContext = "";
+    try {
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUserMsg) {
+        const queryText = typeof lastUserMsg.content === 'string' 
+          ? lastUserMsg.content 
+          : Array.isArray(lastUserMsg.content) 
+            ? lastUserMsg.content.filter(c => c.type === 'text').map(c => c.text).join(' ') 
+            : '';
+
+        if (queryText.trim().length > 5) {
+          const embRes = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+            body: JSON.stringify({ model: 'text-embedding-3-small', input: queryText })
+          });
+          if (embRes.ok) {
+            const embData = await embRes.json();
+            const queryEmbedding = embData.data[0].embedding;
+            
+            const { data: matchedDocs } = await supabase.rpc('match_company_documents', {
+              query_embedding: queryEmbedding,
+              match_threshold: 0.5,
+              match_count: 3
+            });
+            
+            if (matchedDocs && matchedDocs.length > 0) {
+              knowledgeContext = "\n\n--- COMPANY KNOWLEDGE BASE ---\nUse the following official company rules/policies to answer the user if relevant:\n\n" + 
+                matchedDocs.map(d => `Title: ${d.title}\nContent: ${d.content}`).join('\n\n') +
+                "\n--- END KNOWLEDGE BASE ---\n";
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('RAG Error:', err);
+    }
+
     let currentMessages = [
       { 
         role: 'system', 
         content: `You are New Swan AI, an extremely smart and adaptive professional CRM assistant. You have FULL VISION CAPABILITIES and can analyze data, text, and uploaded images perfectly. 
-Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}${knowledgeContext}
 - If the user uploads an image, YOU MUST LOOK AT THE IMAGE and describe it or answer questions about it. Do not say you cannot see it.
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
 - You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools. You ONLY see data belonging to the logged-in user.

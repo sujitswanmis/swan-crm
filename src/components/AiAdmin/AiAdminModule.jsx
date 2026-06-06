@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X } from 'lucide-react';
+import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2 } from 'lucide-react';
 
 export default function AiAdminModule() {
   const [users, setUsers] = useState([]);
@@ -8,9 +8,64 @@ export default function AiAdminModule() {
   const [newLimitValue, setNewLimitValue] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Knowledge Base State
+  const [documents, setDocuments] = useState([]);
+  const [docTitle, setDocTitle] = useState("");
+  const [docContent, setDocContent] = useState("");
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+
   useEffect(() => {
     fetchUsers();
+    fetchDocuments();
   }, []);
+
+  const fetchDocuments = async () => {
+    try {
+      const res = await fetch('/api/ai/knowledge');
+      if (res.ok) {
+        const data = await res.json();
+        setDocuments(data.documents || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUploadDocument = async () => {
+    if (!docTitle.trim() || !docContent.trim()) return alert("Title and content are required.");
+    setUploadingDoc(true);
+    try {
+      const res = await fetch('/api/ai/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: docTitle, content: docContent })
+      });
+      if (res.ok) {
+        setDocTitle("");
+        setDocContent("");
+        await fetchDocuments();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to upload document");
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleDeleteDocument = async (id) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+    try {
+      const res = await fetch(`/api/ai/knowledge?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDocuments(prev => prev.filter(d => d.id !== id));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -156,6 +211,81 @@ export default function AiAdminModule() {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div style={{ marginTop: '3rem', borderTop: '1px solid var(--border-light)', paddingTop: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+            <FileText size={20} />
+          </div>
+          <div>
+            <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '1.2rem' }}>AI Knowledge Base (RAG)</h3>
+            <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>Train AI on your company policies, FAQs, and product details</p>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+          {/* Upload Form */}
+          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+            <h4 style={{ margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Add New Document</h4>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Document Title</label>
+              <input 
+                type="text" 
+                value={docTitle}
+                onChange={(e) => setDocTitle(e.target.value)}
+                placeholder="e.g., Leave Policy, Pricing Guide"
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Document Content</label>
+              <textarea 
+                value={docContent}
+                onChange={(e) => setDocContent(e.target.value)}
+                placeholder="Paste the full text here. The AI will read and remember this."
+                rows={8}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
+              />
+            </div>
+            <button 
+              onClick={handleUploadDocument}
+              disabled={uploadingDoc}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: uploadingDoc ? 'not-allowed' : 'pointer', opacity: uploadingDoc ? 0.7 : 1 }}
+            >
+              {uploadingDoc ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+              {uploadingDoc ? 'Saving to AI Memory...' : 'Save Document'}
+            </button>
+          </div>
+
+          {/* Document List */}
+          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', overflowY: 'auto', maxHeight: '450px' }}>
+            <h4 style={{ margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Saved Documents ({documents.length})</h4>
+            {documents.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '2rem 0' }}>No documents uploaded yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {documents.map(doc => (
+                  <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)' }}>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)', fontSize: '0.95rem' }}>{doc.title}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                        {new Date(doc.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleDeleteDocument(doc.id)}
+                      style={{ background: '#fef2f2', color: '#ef4444', border: 'none', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer' }}
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
