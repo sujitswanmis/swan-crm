@@ -6,6 +6,109 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "get_my_leads_summary",
+      description: "Get a summary of the user's leads grouped by status. Useful for answering questions like 'how many leads do I have?'",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_my_leads",
+      description: "Search the user's leads by name, email, phone, or company.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search term (name, company, phone, etc.)"
+          }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recent_follow_ups",
+      description: "Get the user's leads that have a follow-up scheduled for today or are overdue.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  }
+];
+
+async function executeTool(toolCall, userId) {
+  const name = toolCall.function.name;
+  let args = {};
+  try {
+    args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
+  } catch (e) {
+    // Ignore parse error
+  }
+  
+  try {
+    if (name === 'get_my_leads_summary') {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('status')
+        .eq('assigned_to', userId);
+        
+      if (error) throw error;
+      
+      const summary = data.reduce((acc, lead) => {
+        acc[lead.status] = (acc[lead.status] || 0) + 1;
+        return acc;
+      }, {});
+      
+      return JSON.stringify({ total: data.length, summary });
+    }
+    
+    if (name === 'search_my_leads') {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, name, company, phone, email, status, follow_up_date, requirement')
+        .eq('assigned_to', userId)
+        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%`)
+        .limit(10);
+        
+      if (error) throw error;
+      return JSON.stringify({ results: data });
+    }
+    
+    if (name === 'get_recent_follow_ups') {
+      const today = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, name, company, phone, status, follow_up_date')
+        .eq('assigned_to', userId)
+        .lte('follow_up_date', today)
+        .neq('status', 'Converted')
+        .order('follow_up_date', { ascending: true })
+        .limit(15);
+        
+      if (error) throw error;
+      return JSON.stringify({ follow_ups: data });
+    }
+    
+    return JSON.stringify({ error: 'Tool not found' });
+  } catch (error) {
+    return JSON.stringify({ error: error.message });
+  }
+}
+
 export async function POST(req) {
   try {
     const { messages, userId } = await req.json();
@@ -25,7 +128,6 @@ export async function POST(req) {
       .eq('user_id', userId)
       .single();
 
-    // If user has a record and has exceeded the limit, block the request
     if (!usageError && usageData) {
       const currentTokens = Number(usageData.total_tokens) || 0;
       if (currentTokens >= usageData.token_limit) {
@@ -38,22 +140,14 @@ export async function POST(req) {
       return NextResponse.json({ error: 'OpenAI API key is missing on the server' }, { status: 500 });
     }
 
-    // Call OpenAI API using native fetch
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { 
-            role: 'system', 
-            content: `You are New Swan AI, an extremely smart and adaptive professional CRM assistant. You have FULL VISION CAPABILITIES and can analyze data, text, and uploaded images perfectly. 
+    let currentMessages = [
+      { 
+        role: 'system', 
+        content: `You are New Swan AI, an extremely smart and adaptive professional CRM assistant. You have FULL VISION CAPABILITIES and can analyze data, text, and uploaded images perfectly. 
 Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 - If the user uploads an image, YOU MUST LOOK AT THE IMAGE and describe it or answer questions about it. Do not say you cannot see it.
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
+- You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools. You ONLY see data belonging to the logged-in user.
 
 IMPORTANT BEHAVIORAL RULES:
 1. ALWAYS adapt your tone and language to match the user. If they use short, casual phrases, you reply concisely. 
@@ -63,51 +157,83 @@ IMPORTANT BEHAVIORAL RULES:
    - Use standard English spellings for common English loan words (e.g., "Computer", "Data", "Internet", "Keyboard").
    - Use natural conversational phrasing (e.g., "Computer ek electronic device hai jo data ko process karta hai").
 3. Always use Markdown to make your responses look beautiful and easy to read. Use clear Markdown tables for data. NEVER use raw HTML tags like <br> in your responses. Use bullet points or numbered lists. Use bold text for emphasis.`
-          },
-          ...messages
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      })
-    });
+      },
+      ...messages
+    ];
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API Error:', errorData);
-      
-      const errorMessage = errorData.error?.message || 'Failed to communicate with AI provider';
-      return NextResponse.json({ error: errorMessage }, { status: response.status });
+    let totalTokensUsed = 0;
+    let finalContent = '';
+
+    // Tool calling loop
+    for (let i = 0; i < 4; i++) {
+      const payload = {
+        model: 'gpt-4o-mini',
+        messages: currentMessages,
+        temperature: 0.7,
+        max_tokens: 1000,
+        tools: tools,
+        tool_choice: "auto"
+      };
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('OpenAI API Error:', errorData);
+        return NextResponse.json({ error: errorData.error?.message || 'Failed to communicate with AI provider' }, { status: response.status });
+      }
+
+      const data = await response.json();
+      const choice = data.choices[0];
+      totalTokensUsed += data.usage?.total_tokens || 0;
+
+      if (choice.finish_reason === 'tool_calls') {
+        const toolCalls = choice.message.tool_calls;
+        currentMessages.push(choice.message); // Append assistant's tool call request
+        
+        for (const toolCall of toolCalls) {
+          const result = await executeTool(toolCall, userId);
+          currentMessages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            name: toolCall.function.name,
+            content: result
+          });
+        }
+        // Continue loop to let OpenAI generate response with tool results
+      } else {
+        finalContent = choice.message.content;
+        break; // Done
+      }
     }
 
-    const data = await response.json();
-    const aiMessage = data.choices[0].message.content;
-    const tokensUsed = data.usage?.total_tokens || 0;
-
     // 2. Update Token Usage
-    if (tokensUsed > 0) {
+    if (totalTokensUsed > 0) {
       if (!usageError && usageData) {
-        // Supabase returns BIGINT as a string, so we must parse it to avoid string concatenation
         let currentTokens = Number(usageData.total_tokens) || 0;
-        
-        // If the user got stuck with a string concatenated bug (e.g., 145645), let's reset it to a sane value
-        if (currentTokens > 100000 && tokensUsed < 2000) {
-           currentTokens = 0; // Reset bugged tokens
+        if (currentTokens > 100000 && totalTokensUsed < 2000) {
+           currentTokens = 0;
         }
-
         await supabase.from('ai_token_usage').update({ 
-          total_tokens: currentTokens + tokensUsed 
+          total_tokens: currentTokens + totalTokensUsed 
         }).eq('user_id', userId);
       } else {
-        // Insert new record if one doesn't exist
         await supabase.from('ai_token_usage').insert({
           user_id: userId,
-          total_tokens: tokensUsed,
-          token_limit: 100000 // Default limit
+          total_tokens: totalTokensUsed,
+          token_limit: 100000
         });
       }
     }
 
-    return NextResponse.json({ content: aiMessage });
+    return NextResponse.json({ content: finalContent });
 
   } catch (error) {
     console.error('Chat API Error:', error);
