@@ -129,7 +129,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
     const newSession = {
       id: newId,
       title: 'New Chat',
-      messages: [{ role: 'ai', content: 'How can I help you today?' }]
+      messages: [{ role: 'ai', content: 'How can I help you today?', timestamp: new Date().toISOString() }]
     };
     saveSessions([newSession, ...sessions]);
     setCurrentSessionId(newId);
@@ -508,7 +508,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       content: currentPrompt || 'Uploaded an attachment',
       apiContent: userContent, 
       hasAttachments: currentAttachments.length > 0,
-      attachmentsData: currentAttachments // Store for UI rendering
+      attachmentsData: currentAttachments, // Store for UI rendering
+      timestamp: new Date().toISOString()
     };
     
     const newMessages = [...messages, uiMessage];
@@ -552,7 +553,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       content: newText || 'Uploaded an attachment',
       apiContent: userContent, 
       hasAttachments: msgToEdit.hasAttachments,
-      attachmentsData: msgToEdit.attachmentsData 
+      attachmentsData: msgToEdit.attachmentsData,
+      timestamp: new Date().toISOString()
     };
 
     const newMessages = [...truncatedMessages, updatedUiMessage];
@@ -596,7 +598,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       
       updateCurrentSessionMessages([...newMessages, { 
         role: 'ai', 
-        content: responseData.content 
+        content: responseData.content,
+        timestamp: new Date().toISOString()
       }]);
       
       if (isVoiceSessionRef.current) {
@@ -895,6 +898,12 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       >
                         <Pencil size={12} />
                       </button>
+                    </div>
+                  )}
+                  
+                  {msg.timestamp && (
+                    <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.5rem', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   )}
                   
