@@ -661,12 +661,16 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
           </div>
           
           {sessions.filter(s => showTrash ? s.isDeleted : !s.isDeleted).map(session => (
-            <div key={session.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', gap: '0.25rem' }}>
+            <div key={session.id} style={{ 
+              position: 'relative', display: 'flex', alignItems: 'center', width: '100%', gap: '0.25rem',
+              background: (!showTrash && currentSessionId === session.id) ? '#ececec' : 'transparent',
+              borderRadius: '8px'
+            }}>
               <button 
                 onClick={() => !showTrash && setCurrentSessionId(session.id)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
-                  flex: 1, background: (!showTrash && currentSessionId === session.id) ? '#ececec' : 'transparent',
+                  flex: 1, background: 'transparent',
                   border: 'none', borderRadius: '8px', cursor: showTrash ? 'default' : 'pointer', textAlign: 'left',
                   color: (!showTrash && currentSessionId === session.id) ? '#000' : '#444'
                 }}
