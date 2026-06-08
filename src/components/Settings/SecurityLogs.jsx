@@ -12,7 +12,8 @@ export default function SecurityLogs() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { supabase } = await import('@/lib/supabase');
+        const { createClient } = await import('@/utils/supabase/client');
+        const supabase = createClient();
         
         // 1. Fetch Active Sessions
         const { data: sessionsData, error: sessionErr } = await supabase
