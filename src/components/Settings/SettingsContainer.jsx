@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock } from 'lucide-react';
 
 // Subcomponents (to be implemented)
 import BusinessProfile from './BusinessProfile';
@@ -8,7 +8,8 @@ import CustomFields from './CustomFields';
 import NotificationsConfig from './NotificationsConfig';
 import RolesPermissions from './RolesPermissions';
 import AutomationAPI from './AutomationAPI';
-import SecurityLogs from './SecurityLogs';
+import ActiveSessionsConfig from './ActiveSessionsConfig';
+import AuditLogsConfig from './AuditLogsConfig';
 import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
@@ -21,7 +22,8 @@ const SETTINGS_TABS = [
   { id: 'notifications', label: 'Notifications & Alerts', icon: <Bell size={18} /> },
   { id: 'roles', label: 'Roles & Permissions', icon: <Shield size={18} /> },
   { id: 'automation', label: 'Automation & API', icon: <Workflow size={18} /> },
-  { id: 'security', label: 'Security & Logs', icon: <Lock size={18} /> },
+  { id: 'sessions', label: 'Monitor Sessions', icon: <Monitor size={18} /> },
+  { id: 'audit', label: 'Activity Audit Logs', icon: <Clock size={18} /> },
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
@@ -103,7 +105,8 @@ export default function SettingsContainer() {
           {activeTab === 'notifications' && <NotificationsConfig />}
           {activeTab === 'roles' && <RolesPermissions />}
           {activeTab === 'automation' && <AutomationAPI />}
-          {activeTab === 'security' && <SecurityLogs />}
+          {activeTab === 'sessions' && <ActiveSessionsConfig />}
+          {activeTab === 'audit' && <AuditLogsConfig />}
           {activeTab === 'data' && <DataManagement />}
           {activeTab === 'targets' && <TargetPerformance />}
           {activeTab === 'media' && <FileMedia />}

@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Download, Columns, ChevronDown, Loader2, Edit2, FileText, Search, ChevronLeft, ChevronRight, Filter, Trash2, UserPlus } from 'lucide-react';
 import LeadProfilePanel from './LeadProfilePanel';
 import ClientRegistration from './ClientRegistration';
+import { logAuditAction } from '@/app/actions/audit';
 
 const ALL_COLUMNS = [
   { key: 'lead_formatted_id', label: 'Lead ID' },
@@ -211,6 +212,12 @@ export default function ClientReport({ initialData = [], teamMembers = [] }) {
         const { error } = await supabase.from('leads').delete().in('id', chunk);
         if (error) throw error;
       }
+      
+      // Log the deletion action
+      try {
+        await logAuditAction('Delete Leads', `Deleted ${selectedRows.length} lead(s) via Report Page`);
+      } catch(e) { console.error('Audit Log failed', e); }
+
       setLeads(prev => prev.filter(l => !selectedRows.includes(l.id)));
       setSelectedRows([]); 
     } catch (err) {

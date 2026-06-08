@@ -154,14 +154,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       try {
         const { logUserSession } = await import('@/app/actions/audit');
         const device = navigator.userAgent;
-        await logUserSession(device);
+        const res = await logUserSession(device); console.log('Auto session tracking result:', res);
       } catch (e) {
         console.error('Auto session tracking failed:', e);
       }
     }
     
     // Check if we've already tracked this session in this browser tab
-    if (!sessionStorage.getItem('session_tracked')) {
+    if (true) {
       trackSession();
       sessionStorage.setItem('session_tracked', 'true');
     }

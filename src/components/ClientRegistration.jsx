@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
+import { logAuditAction } from '@/app/actions/audit';
 
 export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null }) {
   const supabase = createClient();
@@ -198,6 +199,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           created_by: actor
         }]);
         
+        try {
+          await logAuditAction('Update Lead', `Updated Lead ID: ${initialData.id} (${payload.company || payload.name || 'Unknown'})`);
+        } catch(e) { console.error('Audit Log failed', e); }
+        
         alert('Client Updated Successfully!');
         if (onRegistrationSuccess) onRegistrationSuccess();
         if (onClose) onClose();
@@ -215,6 +220,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             note_text: 'Client Registration Form Submitted',
             created_by: actor
           }]);
+          
+          try {
+            await logAuditAction('Create Lead', `Created New Lead: ${payload.company || payload.name || 'Unknown'}`);
+          } catch(e) { console.error('Audit Log failed', e); }
         }
         
         alert('Client Registered Successfully!');
