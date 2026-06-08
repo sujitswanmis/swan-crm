@@ -970,21 +970,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           </div>
           )}
 
-      {/* Follow-up Notifications Panel */}
-      {dueFollowUps.length > 0 && activeTab === 'leads' && (
-        <div style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '1rem', marginBottom: '2rem', display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-          <div style={{ backgroundColor: '#f59e0b', color: 'white', padding: '0.5rem', borderRadius: '50%' }}>
-            <Bell size={20} />
-          </div>
-          <div>
-            <h3 style={{ color: '#92400e', fontWeight: 'bold', margin: '0 0 0.25rem 0' }}>Action Required: Follow-ups Due!</h3>
-            <p style={{ color: '#b45309', margin: 0, fontSize: '0.9rem' }}>
-              The following leads require your attention today: <strong>{dueFollowUps.map(l => `${l.name} ${l.lead_ref_id ? `(${l.lead_ref_id})` : ''}`).join(', ')}</strong>. 
-              Switch to the Leads Database tab to check them.
-            </p>
-          </div>
-        </div>
-      )}
+
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {(!canRead && activeTab === 'leads') ? (
