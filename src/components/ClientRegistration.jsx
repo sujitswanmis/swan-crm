@@ -187,6 +187,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       delete payload.last_follow_up_duration;
       delete payload.last_timestamp;
       delete payload.lead_notes;
+      // Remove virtual AIO fields
+      delete payload.business_contact_aio;
+      delete payload.business_email_aio;
+      delete payload.cp_name_aio;
+      delete payload.cp_mobile_aio;
+      delete payload.cp_email_aio;
 
       if (isEditMode && initialData) {
         // UPDATE MODE
