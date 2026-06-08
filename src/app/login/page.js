@@ -86,6 +86,13 @@ export default function LoginPage() {
         setError('Signup successful! Please check your email inbox to verify your account before logging in.');
         setLoading(false);
       } else {
+        // Log Session
+        try {
+          const { logUserSession } = await import('@/app/actions/audit');
+          const device = navigator.userAgent;
+          await logUserSession(device);
+        } catch (e) { console.error('Failed to log session', e); }
+        
         router.push('/');
         router.refresh();
       }

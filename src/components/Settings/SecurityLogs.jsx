@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, ShieldAlert, Monitor, Clock, LogOut, X } from 'lucide-react';
 import { getTeamMembers } from '@/app/actions/team';
+import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
 
 export default function SecurityLogs() {
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -11,46 +12,60 @@ export default function SecurityLogs() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const teamData = await getTeamMembers();
-        let team = [];
-        if (teamData && teamData.length > 0) {
-          team = teamData.map(t => ({
-            name: t.emp_name || t.email?.split('@')[0] || 'Unknown User',
-            email: t.emp_official_mail_id || t.email || 'No email'
-          }));
-        }
+        const { supabase } = await import('@/lib/supabase');
         
-        if (team.length === 0) {
-          team = [
-            { name: 'No Team Found', email: 'none@company.com' }
-          ];
+        // 1. Fetch Active Sessions
+        const { data: sessionsData, error: sessionErr } = await supabase
+          .from('user_sessions')
+          .select('*')
+          .eq('is_active', true)
+          .order('last_active', { ascending: false });
+
+        if (!sessionErr && sessionsData) {
+          const formattedSessions = sessionsData.map(s => ({
+            id: s.id,
+            user: s.emp_name || 'System User',
+            email: s.email,
+            device: s.device || 'Unknown Device',
+            ip: s.ip_address || 'Unknown IP',
+            current: false // We will set this in CRMContainer or based on a local flag if needed
+          }));
+          
+          // Let's mark the most recently active session for the current user as "Current"
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const mySession = formattedSessions.find(s => s.email === user.email);
+            if (mySession) mySession.current = true;
+          }
+          
+          setActiveSessions(formattedSessions);
         }
 
-        const sessions = [
-          { id: 1, user: 'Admin (You)', email: 'admin@company.com', device: 'Chrome on Windows', ip: '192.168.1.10', current: true },
-          ...team.slice(0, 3).map((member, i) => ({
-            id: i + 2,
-            user: member.name,
-            email: member.email,
-            device: i % 2 === 0 ? 'Safari on iPhone' : 'Chrome on Mac',
-            ip: `192.168.1.${50 + i}`,
-            current: false
-          }))
-        ];
-        setActiveSessions(sessions);
+        // 2. Fetch Audit Logs
+        const { data: auditData, error: auditErr } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50); // Get latest 50 for the full modal
 
-        const generatedLogs = [
-          { id: 1, user: team[0]?.name || 'User', email: team[0]?.email || '', action: 'Deleted Lead', target: 'Lead #20260529', time: '10 mins ago', ip: '192.168.1.50' },
-          { id: 2, user: 'Admin (You)', email: 'admin@company.com', action: 'Changed Settings', target: 'CRM Stages', time: '1 hour ago', ip: '192.168.1.10' },
-          { id: 3, user: team[1]?.name || 'User 2', email: team[1]?.email || '', action: 'Exported CSV', target: 'All Leads', time: '2 hours ago', ip: '192.168.1.51' },
-          { id: 4, user: team[0]?.name || 'User', email: team[0]?.email || '', action: 'Updated Stage', target: 'Lead #20260528', time: '5 hours ago', ip: '192.168.1.50' },
-          { id: 5, user: 'Admin (You)', email: 'admin@company.com', action: 'Logged In', target: 'System', time: '1 day ago', ip: '192.168.1.10' },
-          { id: 6, user: team[1]?.name || 'User 2', email: team[1]?.email || '', action: 'Created Lead', target: 'Lead #20260530', time: '1 day ago', ip: '192.168.1.51' },
-          { id: 7, user: 'Admin (You)', email: 'admin@company.com', action: 'Updated Settings', target: 'Notifications', time: '2 days ago', ip: '192.168.1.10' },
-          { id: 8, user: team[0]?.name || 'User', email: team[0]?.email || '', action: 'Logged In', target: 'System', time: '2 days ago', ip: '192.168.1.50' },
-        ];
-        setAuditLogs(generatedLogs.slice(0, 4));
-        setAllAuditLogs(generatedLogs);
+        if (!auditErr && auditData) {
+          const formattedLogs = auditData.map(log => {
+            const d = new Date(log.created_at);
+            return {
+              id: log.id,
+              user: log.emp_name || 'System User',
+              email: log.email,
+              action: log.action,
+              target: log.target,
+              ip: log.ip_address || 'Logged via Web App',
+              time: `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`
+            };
+          });
+          
+          setAllAuditLogs(formattedLogs);
+          setAuditLogs(formattedLogs.slice(0, 5));
+        }
+
       } catch (e) {
         console.error(e);
       }
@@ -113,7 +128,13 @@ export default function SecurityLogs() {
                   </div>
                 </div>
                 {!session.current && (
-                  <button style={{ background: 'none', border: 'none', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500 }}>
+                  <button 
+                    onClick={async () => {
+                      await forceLogoutSession(session.id);
+                      setActiveSessions(activeSessions.filter(s => s.id !== session.id));
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500 }}
+                  >
                     <LogOut size={16} /> Force Logout
                   </button>
                 )}
@@ -122,7 +143,8 @@ export default function SecurityLogs() {
           </div>
           <div style={{ marginTop: '1rem', textAlign: 'right' }}>
             <button 
-              onClick={() => {
+              onClick={async () => {
+                await forceLogoutAllOtherSessions();
                 setActiveSessions(activeSessions.filter(s => s.current));
                 alert('All other devices have been logged out.');
               }}
