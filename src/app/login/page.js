@@ -93,8 +93,7 @@ export default function LoginPage() {
           await logUserSession(device);
         } catch (e) { console.error('Failed to log session', e); }
         
-        router.push('/');
-        router.refresh();
+        window.location.href = '/';
       }
     }
   };

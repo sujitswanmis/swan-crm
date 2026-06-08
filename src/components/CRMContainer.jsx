@@ -413,8 +413,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
+    window.location.href = '/login';
   };
 
   // Calculate upcoming or overdue follow-ups
