@@ -81,14 +81,23 @@ export async function forceLogoutSession(sessionId) {
   }
 }
 
-export async function forceLogoutAllOtherSessions() {
+export async function forceLogoutAllOtherSessions(currentDevice) {
     try {
       const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { success: false, error: 'Not authenticated' };
-      // Here we would ideally exclude the current session. But we don't have a specific session ID.
-      // So we will just deactivate all and rely on the frontend to re-activate the current one.
-      await supabase.from('user_sessions').update({ is_active: false }).eq('user_id', user.id);
+      
+      // Deactivate all devices for this user EXCEPT the current one
+      if (currentDevice) {
+        await supabase.from('user_sessions')
+          .update({ is_active: false })
+          .eq('user_id', user.id)
+          .neq('device', currentDevice);
+      } else {
+        await supabase.from('user_sessions')
+          .update({ is_active: false })
+          .eq('user_id', user.id);
+      }
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };

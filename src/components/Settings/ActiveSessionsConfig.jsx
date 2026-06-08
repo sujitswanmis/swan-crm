@@ -101,7 +101,8 @@ export default function ActiveSessionsConfig() {
   };
 
   const handleForceLogoutAll = async () => {
-    await forceLogoutAllOtherSessions();
+    const currentDevice = typeof navigator !== 'undefined' ? navigator.userAgent : null;
+    await forceLogoutAllOtherSessions(currentDevice);
     alert('All other devices have been logged out.');
     fetchSessions();
   };
