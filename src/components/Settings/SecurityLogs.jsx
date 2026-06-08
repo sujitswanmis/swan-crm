@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Lock, ShieldAlert, Monitor, Clock, LogOut, X } from 'lucide-react';
 import { getTeamMembers } from '@/app/actions/team';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
+import { createClient } from '@/utils/supabase/client';
 
 export default function SecurityLogs() {
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -12,7 +13,6 @@ export default function SecurityLogs() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { createClient } = await import('@/utils/supabase/client');
         const supabase = createClient();
         
         // 1. Fetch Active Sessions
