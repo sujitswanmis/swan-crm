@@ -148,6 +148,25 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     };
   }, []);
   
+  // Auto-track session for already logged-in users
+  useEffect(() => {
+    async function trackSession() {
+      try {
+        const { logUserSession } = await import('@/app/actions/audit');
+        const device = navigator.userAgent;
+        await logUserSession(device);
+      } catch (e) {
+        console.error('Auto session tracking failed:', e);
+      }
+    }
+    
+    // Check if we've already tracked this session in this browser tab
+    if (!sessionStorage.getItem('session_tracked')) {
+      trackSession();
+      sessionStorage.setItem('session_tracked', 'true');
+    }
+  }, []);
+  
   // Fetch user email
   useEffect(() => {
     async function fetchUser() {
