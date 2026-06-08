@@ -22,7 +22,10 @@ export default function SecurityLogs() {
           .eq('is_active', true)
           .order('last_active', { ascending: false });
 
-        if (!sessionErr && sessionsData) {
+        if (sessionErr) {
+          throw new Error('Session DB Error: ' + sessionErr.message);
+        }
+        if (sessionsData) {
           const formattedSessions = sessionsData.map(s => ({
             id: s.id,
             user: s.emp_name || 'System User',
@@ -49,7 +52,10 @@ export default function SecurityLogs() {
           .order('created_at', { ascending: false })
           .limit(50); // Get latest 50 for the full modal
 
-        if (!auditErr && auditData) {
+        if (auditErr) {
+          throw new Error('Audit DB Error: ' + auditErr.message);
+        }
+        if (auditData) {
           const formattedLogs = auditData.map(log => {
             const d = new Date(log.created_at);
             return {
@@ -69,6 +75,7 @@ export default function SecurityLogs() {
 
       } catch (e) {
         console.error(e);
+        setAuditLogs([{id: 99, user: 'Error', action: e.message || String(e), target: '', ip: '', time: ''}]);
       }
     };
     
