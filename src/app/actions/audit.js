@@ -1,27 +1,11 @@
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-
-function getSupabase() {
-  const cookieStore = cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
-        },
-      },
-    }
-  );
-}
+import { createClient } from '@/utils/supabase/server';
 
 // Function to fetch the current user's name/email and log the action
 export async function logAuditAction(action, target) {
   try {
-    const supabase = getSupabase();
+    const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Not authenticated' };
 
@@ -48,7 +32,7 @@ export async function logAuditAction(action, target) {
 
 export async function logUserSession(deviceInfo) {
   try {
-    const supabase = getSupabase();
+    const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Not authenticated' };
 
@@ -86,7 +70,7 @@ export async function logUserSession(deviceInfo) {
 
 export async function forceLogoutSession(sessionId) {
   try {
-    const supabase = getSupabase();
+    const supabase = await createClient();
     await supabase.from('user_sessions').update({ is_active: false }).eq('id', sessionId);
     return { success: true };
   } catch (err) {
@@ -96,7 +80,7 @@ export async function forceLogoutSession(sessionId) {
 
 export async function forceLogoutAllOtherSessions() {
     try {
-      const supabase = getSupabase();
+      const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { success: false, error: 'Not authenticated' };
       // Here we would ideally exclude the current session. But we don't have a specific session ID.
