@@ -39,11 +39,14 @@ export async function logUserSession(deviceInfo) {
     const { data: roleData } = await supabase.from('user_roles').select('emp_name').eq('user_id', user.id).single();
 
     // Check if a session already exists for this user/device, and update it, else insert
-    const { data: existing } = await supabase.from('user_sessions')
+    const { data: existingRecords } = await supabase.from('user_sessions')
       .select('id')
       .eq('user_id', user.id)
       .eq('device', deviceInfo)
-      .single();
+      .order('last_active', { ascending: false })
+      .limit(1);
+
+    const existing = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
 
     if (existing) {
       await supabase.from('user_sessions').update({
