@@ -85,6 +85,17 @@ const tools = [
         required: ["date", "scope"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_users_summary",
+      description: "Get the total count of registered users/employees/agents in the CRM system, grouped by role. Use this whenever the user asks about 'users', 'agents', or 'team members'.",
+      parameters: {
+        type: "object",
+        properties: {}
+      }
+    }
   }
 ];
 
@@ -136,6 +147,17 @@ async function executeTool(toolCall, userId, isAdmin) {
       const { data, error } = await query;
       if (error) throw error;
       return JSON.stringify({ results: data, scope_applied: scope });
+    }
+    
+    if (name === 'get_users_summary') {
+      const { data, error } = await supabase.from('user_roles').select('role, is_approved');
+      if (error) throw error;
+      const summary = data.reduce((acc, user) => {
+        const key = `${user.role} (${user.is_approved ? 'Approved' : 'Pending'})`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      return JSON.stringify({ total_users: data.length, breakdown: summary });
     }
     
     if (name === 'get_recent_follow_ups') {
