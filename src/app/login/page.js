@@ -26,6 +26,7 @@ export default function LoginPage() {
   const [empName, setEmpName] = useState('');
   const [empDepartment, setEmpDepartment] = useState('');
   const [empDesignation, setEmpDesignation] = useState('');
+  const [empMobile, setEmpMobile] = useState('');
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -38,7 +39,7 @@ export default function LoginPage() {
     let result;
 
     if (!isLoginMode) {
-      if (!empId || !empName || !empDepartment || !empDesignation || !email || !password) {
+      if (!empId || !empName || !empDepartment || !empDesignation || !empMobile || !email || !password) {
         setError("All fields are mandatory for registration.");
         setLoading(false);
         return;
@@ -63,6 +64,7 @@ export default function LoginPage() {
           emp_name: empName,
           emp_department: empDepartment,
           emp_designation: empDesignation,
+          emp_mobile: empMobile,
           emp_official_mail_id: email
         };
         const regResult = await registerEmployeeDetails(result.data.user.id, email, details);
@@ -138,6 +140,16 @@ export default function LoginPage() {
                 />
               </div>
               <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number *</label>
+                <input
+                  type="tel"
+                  value={empMobile}
+                  onChange={(e) => setEmpMobile(e.target.value)}
+                  placeholder="10-digit mobile number"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Department *</label>
                 <select
                   value={empDepartment}
@@ -189,7 +201,7 @@ export default function LoginPage() {
 
         <button
           onClick={handleAuth}
-          disabled={loading || !email || !password || (!isLoginMode && (!empId || !empName || !empDepartment || !empDesignation))}
+          disabled={loading || !email || !password || (!isLoginMode && (!empId || !empName || !empDepartment || !empDesignation || !empMobile))}
           className="btn-primary"
           style={{ width: '100%', marginBottom: '0.5rem', padding: '0.75rem', fontSize: '1rem' }}
         >

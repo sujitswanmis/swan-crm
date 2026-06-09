@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess } from '@/app/actions/team';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin } from '@/app/actions/team';
 
 const MODULES_CONFIG = [
   { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
@@ -40,8 +40,16 @@ export default function TeamManagement() {
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
-  const [editForm, setEditForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', company: '' });
+  const [editForm, setEditForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', company: '', emp_mobile: '' });
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Add Account state
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [addForm, setAddForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
+  const [savingAddUser, setSavingAddUser] = useState(false);
 
   // Access Manage state
   const [accessUser, setAccessUser] = useState(null);
@@ -100,7 +108,8 @@ export default function TeamManagement() {
       emp_name: user.emp_name || '',
       emp_department: user.emp_department || '',
       emp_designation: user.emp_designation || '',
-      company: user.company || ''
+      company: user.company || '',
+      emp_mobile: user.emp_mobile || ''
     });
   };
 
@@ -209,6 +218,41 @@ export default function TeamManagement() {
     }
   };
 
+  const handleSaveAddUser = async () => {
+    if (!addForm.email || !addForm.password || !addForm.emp_id || !addForm.emp_name) {
+      alert("Email, Password, Emp ID, and Name are required.");
+      return;
+    }
+    setSavingAddUser(true);
+    const result = await createAccountAdmin(addForm.email, addForm.password, {
+      emp_id: addForm.emp_id,
+      emp_name: addForm.emp_name,
+      emp_department: addForm.emp_department,
+      emp_designation: addForm.emp_designation,
+      emp_mobile: addForm.emp_mobile,
+      company: addForm.company,
+      emp_official_mail_id: addForm.email
+    });
+    setSavingAddUser(false);
+    if (result.success) {
+      setShowAddUserModal(false);
+      setAddForm({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
+      fetchUsers();
+    } else {
+      alert("Error adding user: " + result.error);
+    }
+  };
+
+  const filteredUsers = users.filter(u => {
+    const q = searchQuery.toLowerCase();
+    return (
+      (u.emp_name || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.emp_id || '').toLowerCase().includes(q) ||
+      (u.emp_mobile || '').toLowerCase().includes(q)
+    );
+  });
+
   if (loading) return <div style={{ padding: '2rem' }}>Loading team members...</div>;
 
   return (
@@ -218,11 +262,28 @@ export default function TeamManagement() {
         Manage what your team members can see and do within the CRM. Only Admins can access this panel.
       </p>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <input 
+          type="text" 
+          placeholder="Search by name, email, ID, or mobile..." 
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', width: '100%', maxWidth: '350px' }}
+        />
+        <button 
+          onClick={() => setShowAddUserModal(true)}
+          className="btn-primary"
+          style={{ padding: '0.6rem 1.5rem', borderRadius: '6px' }}
+        >
+          Add New User
+        </button>
+      </div>
+
       <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
         <thead style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
           <tr>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name & Email</th>
+            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Dept / Desig</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Company</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Status</th>
@@ -232,12 +293,13 @@ export default function TeamManagement() {
           </tr>
         </thead>
         <tbody>
-          {users.map(user => (
+          {filteredUsers.map(user => (
             <tr key={user.user_id} style={{ borderBottom: '1px solid var(--border-light)' }}>
               <td style={{ padding: '1rem', fontWeight: 500 }}>{user.emp_id || '-'}</td>
               <td style={{ padding: '1rem' }}>
                 <div style={{ fontWeight: 600 }}>{user.emp_name || '-'}</div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{user.email}</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{user.emp_mobile || '-'}</div>
               </td>
               <td style={{ padding: '1rem' }}>
                 <div>{user.emp_department || '-'}</div>
@@ -321,6 +383,112 @@ export default function TeamManagement() {
         </tbody>
       </table>
 
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem' }}>Create New Account</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Email Address *</label>
+                <input 
+                  type="email" 
+                  value={addForm.email} 
+                  onChange={e => setAddForm({...addForm, email: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Password *</label>
+                <input 
+                  type="password" 
+                  value={addForm.password} 
+                  onChange={e => setAddForm({...addForm, password: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp ID *</label>
+                <input 
+                  type="text" 
+                  value={addForm.emp_id} 
+                  onChange={e => setAddForm({...addForm, emp_id: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name *</label>
+                <input 
+                  type="text" 
+                  value={addForm.emp_name} 
+                  onChange={e => setAddForm({...addForm, emp_name: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number</label>
+                <input 
+                  type="tel" 
+                  value={addForm.emp_mobile} 
+                  onChange={e => setAddForm({...addForm, emp_mobile: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Company</label>
+                <select 
+                  value={addForm.company} 
+                  onChange={e => setAddForm({...addForm, company: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
+                >
+                  <option value="">Select Company...</option>
+                  <option value="NSMLR">NSMLR</option>
+                  <option value="NSTLP">NSTLP</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Department</label>
+                <select 
+                  value={addForm.emp_department} 
+                  onChange={e => setAddForm({...addForm, emp_department: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
+                >
+                  <option value="">Select Department...</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Designation</label>
+                <input 
+                  type="text" 
+                  value={addForm.emp_designation} 
+                  onChange={e => setAddForm({...addForm, emp_designation: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setShowAddUserModal(false)}
+                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveAddUser}
+                disabled={savingAddUser || !addForm.email || !addForm.password || !addForm.emp_id || !addForm.emp_name}
+                className="btn-primary"
+                style={{ padding: '0.5rem 1.5rem', borderRadius: '4px' }}
+              >
+                {savingAddUser ? 'Creating...' : 'Create Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Modal */}
       {editingUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -363,6 +531,15 @@ export default function TeamManagement() {
                   type="text" 
                   value={editForm.emp_designation} 
                   onChange={e => setEditForm({...editForm, emp_designation: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number</label>
+                <input 
+                  type="tel" 
+                  value={editForm.emp_mobile} 
+                  onChange={e => setEditForm({...editForm, emp_mobile: e.target.value})}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
                 />
               </div>

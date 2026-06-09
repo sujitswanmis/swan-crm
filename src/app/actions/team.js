@@ -95,6 +95,7 @@ export async function registerEmployeeDetails(userId, email, details) {
         emp_name: details.emp_name,
         emp_department: details.emp_department,
         emp_designation: details.emp_designation,
+        emp_mobile: details.emp_mobile,
         emp_official_mail_id: details.emp_official_mail_id
       })
       .eq('user_id', userId);
@@ -113,6 +114,7 @@ export async function registerEmployeeDetails(userId, email, details) {
         emp_name: details.emp_name,
         emp_department: details.emp_department,
         emp_designation: details.emp_designation,
+        emp_mobile: details.emp_mobile,
         company: details.company,
         emp_official_mail_id: details.emp_official_mail_id,
         can_read: true,
@@ -136,6 +138,7 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
       emp_name: details.emp_name,
       emp_department: details.emp_department,
       emp_designation: details.emp_designation,
+      emp_mobile: details.emp_mobile,
       company: details.company,
       // intentionally not updating email here since that's tied to Auth
     })
@@ -159,6 +162,25 @@ export async function updateModuleAccess(userId, accessData) {
     console.error('Error updating module access:', error);
     return { success: false, error: error.message };
   }
+  return { success: true };
+}
+
+export async function createAccountAdmin(email, password, details) {
+  const adminClient = getAdminClient();
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true
+  });
+  if (authError) return { success: false, error: authError.message };
+  
+  // Register employee details
+  const regResult = await registerEmployeeDetails(authData.user.id, email, details);
+  if (!regResult.success) return regResult;
+
+  // Approve them automatically since admin created it
+  await toggleUserApproval(authData.user.id, true);
+
   return { success: true };
 }
 
