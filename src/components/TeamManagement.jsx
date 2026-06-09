@@ -48,6 +48,11 @@ export default function TeamManagement() {
   const [accessForm, setAccessForm] = useState({});
   const [savingAccess, setSavingAccess] = useState(false);
 
+  // Password reset state
+  const [passwordUser, setPasswordUser] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -177,6 +182,33 @@ export default function TeamManagement() {
     }
   };
 
+  const handleSavePassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      alert("Password must be at least 6 characters long.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: passwordUser, newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Password updated successfully!");
+        setPasswordUser(null);
+        setNewPassword('');
+      } else {
+        alert("Error: " + data.error);
+      }
+    } catch (e) {
+      alert("Error updating password: " + e.message);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   if (loading) return <div style={{ padding: '2rem' }}>Loading team members...</div>;
 
   return (
@@ -269,12 +301,20 @@ export default function TeamManagement() {
                 </div>
               </td>
               <td style={{ padding: '1rem' }}>
-                <button 
-                  onClick={() => handleEditClick(user)}
-                  style={{ padding: '0.4rem 0.8rem', backgroundColor: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
-                >
-                  Edit User
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button 
+                    onClick={() => handleEditClick(user)}
+                    style={{ padding: '0.4rem 0.8rem', backgroundColor: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                  >
+                    Edit User
+                  </button>
+                  <button 
+                    onClick={() => setPasswordUser(user.user_id)}
+                    style={{ padding: '0.4rem 0.8rem', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                  >
+                    Change Password
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -364,7 +404,16 @@ export default function TeamManagement() {
       {accessUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Assign Processes</h3>
+            {(() => {
+              const u = users.find(x => x.user_id === accessUser);
+              return u ? (
+                <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || 'Unknown User'}</h3>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</div>
+                </div>
+              ) : null;
+            })()}
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Assign Processes</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
               Select which modules this user is allowed to access.
             </p>
@@ -438,6 +487,51 @@ export default function TeamManagement() {
                 style={{ padding: '0.5rem 1.5rem', borderRadius: '4px' }}
               >
                 {savingAccess ? 'Saving...' : 'Save Access'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {passwordUser && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '400px' }}>
+            {(() => {
+              const u = users.find(x => x.user_id === passwordUser);
+              return u ? (
+                <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || 'Unknown User'}</h3>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</div>
+                </div>
+              ) : null;
+            })()}
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Change Password</h3>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>New Password</label>
+              <input 
+                type="text" 
+                value={newPassword} 
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Enter minimum 6 characters"
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => { setPasswordUser(null); setNewPassword(''); }}
+                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSavePassword}
+                disabled={savingPassword}
+                style={{ padding: '0.5rem 1.5rem', borderRadius: '4px', background: '#b91c1c', color: 'white', border: 'none', cursor: savingPassword ? 'not-allowed' : 'pointer' }}
+              >
+                {savingPassword ? 'Saving...' : 'Update Password'}
               </button>
             </div>
           </div>
