@@ -8,7 +8,7 @@ import ClientRegistration from './ClientRegistration';
 import { logAuditAction } from '@/app/actions/audit';
 
 const ALL_COLUMNS = [
-  { key: 'lead_formatted_id', label: 'Lead ID' },
+  { key: 'lead_ref_id', label: 'Lead ID' },
   { key: 'id', label: 'Lead DBID' },
   { key: 'created_at', label: 'Created At' },
   { key: 'lead_date', label: 'Lead Date' },
