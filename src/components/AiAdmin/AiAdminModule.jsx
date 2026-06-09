@@ -218,31 +218,40 @@ export default function AiAdminModule() {
                     )}
                   </td>
                   <td style={{ padding: '1rem' }}>
-                    <select
-                      multiple
-                      value={user.ai_models || ['gpt-4o-mini']}
-                      onChange={(e) => {
-                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                        handleModelChange(user.id, selectedOptions);
-                      }}
-                      style={{
-                        padding: '0.4rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem',
-                        minWidth: '150px',
-                        height: '80px'
-                      }}
-                    >
-                      {AI_MODELS.map(model => (
-                        <option key={model} value={model}>{model}</option>
-                      ))}
-                    </select>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>Ctrl+Click to select multiple</div>
+                    <div style={{
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '6px',
+                      background: 'var(--bg-surface)',
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      padding: '0.4rem',
+                      minWidth: '180px'
+                    }}>
+                      {AI_MODELS.map(model => {
+                        const isSelected = (user.ai_models || ['gpt-4o-mini']).includes(model);
+                        return (
+                          <label key={model} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.25rem 0.2rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentModels = user.ai_models || ['gpt-4o-mini'];
+                                let newModels;
+                                if (e.target.checked) {
+                                  newModels = [...currentModels, model];
+                                } else {
+                                  newModels = currentModels.filter(m => m !== model);
+                                }
+                                if (newModels.length === 0) newModels = ['gpt-4o-mini']; // Enforce at least one
+                                handleModelChange(user.id, newModels);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            {model}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {editingLimit === user.id ? (
