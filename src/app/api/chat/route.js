@@ -63,6 +63,7 @@ const tools = [
         },
         required: ["scope"]
       }
+    }
   },
   {
     type: "function",
