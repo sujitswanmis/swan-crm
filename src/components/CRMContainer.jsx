@@ -371,7 +371,23 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   // Listen for browser back/forward navigation
   useEffect(() => {
     let tab = pathname.replace('/', '');
-    if (!tab) tab = searchParams?.get('tab') || 'dashboard';
+    if (!tab) tab = searchParams?.get('tab');
+    
+    if (!tab) {
+      const isAdmin = userRole === 'admin' || userRole === 'Admin';
+      if (isAdmin || moduleAccess['analytics']?.view) tab = 'dashboard';
+      else if (moduleAccess['new_swan_ai']?.view) tab = 'ai';
+      else if (moduleAccess['callcenter']?.view) tab = 'callcenter';
+      else if (moduleAccess['aiadmin']?.view) tab = 'aiadmin';
+      else if (moduleAccess['aiknowledgebase']?.view) tab = 'aiknowledgebase';
+      else if (moduleAccess['calladmin']?.view) tab = 'calladmin';
+      else if (moduleAccess['aicallcenter']?.view) tab = 'aicallcenter';
+      else {
+        const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view);
+        if (firstAllowed) tab = firstAllowed;
+        else tab = 'dashboard';
+      }
+    }
     
     if (tab && tab !== activeTab) {
       setActiveTab(tab);
