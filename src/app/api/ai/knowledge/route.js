@@ -7,10 +7,10 @@ const supabase = createClient(
 );
 
 import * as cheerio from 'cheerio';
-import pdf from 'pdf-parse';
 
 export async function POST(req) {
   try {
+    const pdf = require('pdf-parse');
     const formData = await req.formData();
     const title = formData.get('title');
     const type = formData.get('type') || 'text';
