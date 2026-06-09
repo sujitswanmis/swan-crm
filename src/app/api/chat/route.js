@@ -210,8 +210,8 @@ async function executeTool(toolCall, userId, isAdmin) {
     if (name === 'search_users') {
       const { data, error } = await supabase
         .from('user_roles')
-        .select('emp_id, emp_name, email, role, emp_department, emp_designation, is_approved')
-        .or(`emp_name.ilike.%${args.query}%,email.ilike.%${args.query}%,emp_id.ilike.%${args.query}%`)
+        .select('emp_id, emp_name, email, role, emp_department, emp_designation, is_approved, emp_mobile')
+        .or(`emp_name.ilike.%${args.query}%,email.ilike.%${args.query}%,emp_id.ilike.%${args.query}%,emp_mobile.ilike.%${args.query}%`)
         .limit(10);
       if (error) throw error;
       return JSON.stringify({ results: data });
