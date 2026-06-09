@@ -307,7 +307,7 @@ export async function POST(req) {
             const embData = await embRes.json();
             const queryEmbedding = embData.data[0].embedding;
             
-            const { data: matchedDocs } = await supabase.rpc('match_company_knowledge', {
+            const { data: matchedDocs } = await supabase.rpc('match_company_documents', {
               query_embedding: queryEmbedding,
               match_threshold: 0.25,
               match_count: 3
@@ -335,6 +335,7 @@ Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'A
 - Read and respect the user's intent.${isPremiumFallback ? ' Note: The user has reached their premium model limit, so you are running on a fallback basic model.' : ''}
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
 - You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools.
+- CRITICAL: BEFORE using the search_leads tool, ALWAYS check the "COMPANY KNOWLEDGE BASE" section (if provided above). If the requested information (like company contact details, policies, etc.) is in the knowledge base, use that instead of searching for a lead!
 ${isAdmin ? "- YOU ARE TALKING TO AN ADMIN. You have the super-power to view data for the ENTIRE TEAM. If the admin asks for team data or 'all' leads, set the scope to 'all' in your tools." : "- You ONLY see data belonging to the logged-in user."}
 
 IMPORTANT BEHAVIORAL RULES:
