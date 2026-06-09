@@ -847,9 +847,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             </>
           )}
 
-          {(userRole === 'admin' || userRole === 'Admin' || globalRolePermissions?.editSettings) && (
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
             <>
-              {!(userRole === 'admin' || userRole === 'Admin') && (
+              {!(userRole === 'admin' || userRole === 'Admin' || moduleAccess['team']?.view || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view || moduleAccess['calladmin']?.view || moduleAccess['aicallcenter']?.view || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', paddingLeft: '1rem', marginTop: '1rem' }}>
                   System
                 </div>

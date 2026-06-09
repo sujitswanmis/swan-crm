@@ -16,8 +16,17 @@ const MODULES_CONFIG = [
   { id: 'mrp_against', label: 'MRP Against', category: 'Purchase' },
   { id: 'recruiter', label: 'Recruiter Dashboard', category: 'Human Resource' },
   { id: 'joining', label: 'Joining Process', category: 'Human Resource' },
-  { id: 'aiadmin', label: 'AI Admin Dashboard', category: 'System' },
+  { id: 'team', label: 'Team Management', category: 'System' },
+  { id: 'aiadmin', label: 'User AI Usage', category: 'System' },
   { id: 'aiknowledgebase', label: 'AI Knowledge Base (RAG)', category: 'System' },
+  { id: 'calladmin', label: 'Call Admin', category: 'System' },
+  { id: 'aicallcenter', label: 'AI Call Center', category: 'System' },
+  { id: 'whatsapp_official', label: 'WhatsApp Official', category: 'System' },
+  { id: 'whatsapp_unofficial', label: 'WhatsApp UnOfficial', category: 'System' },
+  { id: 'sms_config', label: 'SMS Configuration', category: 'System' },
+  { id: 'rcs_config', label: 'RCS Configuration', category: 'System' },
+  { id: 'email_config', label: 'Email Configuration', category: 'System' },
+  { id: 'settings', label: 'Settings', category: 'System' },
 ];
 
 const DEPARTMENTS = [
