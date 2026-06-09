@@ -78,7 +78,7 @@ export default function AiAdminModule() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/ai/admin');
+      const res = await fetch('/api/ai/admin', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);

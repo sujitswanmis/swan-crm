@@ -112,7 +112,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
 
   const fetchMyModels = async () => {
     try {
-      const res = await fetch('/api/ai/my-models');
+      const res = await fetch('/api/ai/my-models', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (data.ai_models && data.ai_models.length > 0) {
