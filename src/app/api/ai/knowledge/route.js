@@ -10,7 +10,6 @@ import * as cheerio from 'cheerio';
 
 export async function POST(req) {
   try {
-    const pdf = require('pdf-parse');
     const formData = await req.formData();
     const title = formData.get('title');
     const type = formData.get('type') || 'text';
@@ -41,6 +40,10 @@ export async function POST(req) {
       const file = formData.get('file');
       if (!file) return NextResponse.json({ error: 'PDF file is required' }, { status: 400 });
       try {
+        if (typeof global.DOMMatrix === 'undefined') {
+          global.DOMMatrix = class DOMMatrix {};
+        }
+        const pdf = require('pdf-parse');
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         const pdfData = await pdf(buffer);
