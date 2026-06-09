@@ -259,6 +259,27 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       setLoadingLeads(false);
     }
     loadLeads();
+
+    // Setup Realtime Subscription for CRMContainer
+    const channel = supabase
+      .channel('crm_container_leads')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
+        setRawLeads((current) => {
+          if (current.some(item => item.id === payload.new.id)) return current;
+          return [payload.new, ...current];
+        });
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
+        setRawLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new } : item));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
+        setRawLeads((current) => current.filter(item => item.id !== payload.old.id));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Filter leads based on company and step assignments
