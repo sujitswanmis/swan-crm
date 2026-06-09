@@ -356,6 +356,8 @@ const columns = [
   {
     id: 'whatsapp',
     header: 'Whatsapp',
+    enableColumnFilter: false,
+    enableGlobalFilter: false,
     cell: info => {
       const lead = info.row.original;
       const phone = lead.phone || lead.business_contact_1;
@@ -380,6 +382,8 @@ const columns = [
   {
     id: 'remarks_reschedule',
     header: 'Remarks and Reschedule',
+    enableColumnFilter: false,
+    enableGlobalFilter: false,
     cell: info => {
       const lead = info.row.original;
       return (
@@ -907,7 +911,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                       <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
                       
-                      {header.column.id !== 'edit' && header.column.id !== 'remarks' && header.column.id !== 'wa' && (
+                      {header.column.getCanFilter() && (
                         <div style={{ position: 'relative' }}>
                           <button 
                             onClick={() => {
@@ -946,7 +950,8 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                                   />
                                   <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                                     {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
-                                      const currentFilterValue = header.column.getFilterValue() || [];
+                                      const rawFilterValue = header.column.getFilterValue();
+                                      const currentFilterValue = Array.isArray(rawFilterValue) ? rawFilterValue : (rawFilterValue ? [rawFilterValue] : []);
                                       const isChecked = currentFilterValue.includes(val);
                                       return (
                                         <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
@@ -955,7 +960,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                                             checked={isChecked}
                                             onChange={() => {
                                               const newValue = isChecked 
-                                                ? currentFilterValue.filter(v => v !== val)
+                                                ? currentFilterValue.filter(v => String(v) !== String(val))
                                                 : [...currentFilterValue, val];
                                               header.column.setFilterValue(newValue.length ? newValue : undefined);
                                             }}
