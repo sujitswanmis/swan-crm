@@ -498,35 +498,41 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           <span>CRM Enterprise</span>
         </div>
         <nav className="nav-list">
-          <button 
-            onClick={() => handleTabChange('dashboard')}
-            className="nav-item" 
-            data-active={activeTab === 'dashboard'}
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            <PieChart size={20} />
-            Analytics Dashboard
-          </button>
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
+            <button 
+              onClick={() => handleTabChange('dashboard')}
+              className="nav-item" 
+              data-active={activeTab === 'dashboard'}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <PieChart size={20} />
+              Analytics Dashboard
+            </button>
+          )}
 
-          <button 
-            onClick={() => handleTabChange('ai')}
-            className="nav-item" 
-            data-active={activeTab === 'ai'}
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            <Bot size={20} />
-            New Swan AI
-          </button>
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && (
+            <button 
+              onClick={() => handleTabChange('ai')}
+              className="nav-item" 
+              data-active={activeTab === 'ai'}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <Bot size={20} />
+              New Swan AI
+            </button>
+          )}
 
-          <button 
-            onClick={() => handleTabChange('callcenter')}
-            className="nav-item" 
-            data-active={activeTab === 'callcenter'}
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            <PhoneCall size={20} />
-            Call Center
-          </button>
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && (
+            <button 
+              onClick={() => handleTabChange('callcenter')}
+              className="nav-item" 
+              data-active={activeTab === 'callcenter'}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <PhoneCall size={20} />
+              Call Center
+            </button>
+          )}
 
           {['Sales', 'Purchase', 'Human Resource'].map(category => {
             const visibleModules = MODULES_CONFIG.filter(m => 
@@ -1039,19 +1045,19 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             </div>
           ) : (
             <>
-              {activeTab === 'dashboard' && <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />}
               {activeTab === 'leads' && <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />}
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'recruiter' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Recruiter Dashboard (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'registration' && <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} />}
+              {activeTab === 'registration' && <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />}
               {activeTab === 'report' && <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} />}
-              {activeTab === 'ai' && <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />}
               {activeTab === 'aiadmin' && <AiAdminModule />}
               {activeTab === 'aiknowledgebase' && <AIKnowledgeBaseModule />}
-              {activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
               {activeTab === 'calladmin' && (userRole === 'admin' || userRole === 'Admin') && <CallAdminModule />}
               {activeTab === 'aicallcenter' && (userRole === 'admin' || userRole === 'Admin') && <AiCallCenterModule />}
               {activeTab === 'team' && (userRole === 'admin' || userRole === 'Admin') && <TeamManagement />}
