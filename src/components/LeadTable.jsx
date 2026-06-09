@@ -726,7 +726,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         const cleanRemark = (d.latest_remark || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
         return [
-          d.lead_ref_id || d.id,
+          d.lead_formatted_id || d.id,
           `"${d.business_type || ''}"`,
           `"${d.company || ''}"`,
           `"${bContact}"`,
