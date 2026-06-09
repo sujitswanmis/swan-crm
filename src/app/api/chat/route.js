@@ -249,7 +249,7 @@ async function executeTool(toolCall, userId, isAdmin) {
       const { data: notes, error: notesError } = await supabase
         .from('lead_notes')
         .select('lead_id, note_text')
-        .eq('created_by', args.emp_name)
+        .ilike('created_by', `%${args.emp_name}%`)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
         
