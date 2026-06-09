@@ -542,27 +542,22 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
 
-    const vals = data.map(d => {
+    const rows = table.getCoreRowModel().rows;
+    const vals = rows.map(row => {
       if (columnId === 'assigned_to') {
         const teamMembers = table.options.meta?.teamMembers || [];
-        const member = teamMembers.find(m => m.user_id === d[columnId]);
-        return member ? member.emp_name : (d[columnId] ? 'Unknown' : 'Open Lead (Unassigned)');
+        const val = row.original[columnId];
+        const member = teamMembers.find(m => m.user_id === val);
+        return member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
       }
       if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
-        return formatDateTime(d[columnId]);
+        return formatDateTime(row.original[columnId]);
       }
       
-      // For simple accessors
-      if (d[columnId]) return String(d[columnId]);
-      
-      // Fallback for complex AIO columns (just get the string value)
-      const row = table.getRowModel().rows.find(r => r.original.id === d.id);
-      if (row) {
-         const val = row.getValue(columnId);
-         return val ? String(val) : '';
-      }
-      return '';
+      const val = row.getValue(columnId);
+      return val !== null && val !== undefined && val !== '' ? String(val) : '';
     });
+    
     return [...new Set(vals.filter(Boolean))].sort();
   };
 
