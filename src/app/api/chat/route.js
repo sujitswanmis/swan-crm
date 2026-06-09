@@ -40,7 +40,7 @@ const tools = [
           scope: {
             type: "string",
             enum: ["me", "all"],
-            description: "If searching only personal leads use 'me', if searching the entire company database use 'all'."
+            description: "If the user is an Admin, ALWAYS default to 'all' unless they specifically say 'my personal leads'. For normal users, use 'me'."
           }
         },
         required: ["query", "scope"]
@@ -156,8 +156,8 @@ async function executeTool(toolCall, userId, isAdmin) {
     if (name === 'search_leads' || name === 'search_my_leads') {
       let query = supabase
         .from('leads')
-        .select('id, name, company, phone, email, status, follow_up_date, requirement')
-        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%`);
+        .select('id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement')
+        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%,business_contact_1.ilike.%${args.query}%,business_contact_2.ilike.%${args.query}%`);
         
       if (scope === 'me') query = query.eq('assigned_to', userId);
       query = query.limit(10);
