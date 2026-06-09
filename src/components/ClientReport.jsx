@@ -74,7 +74,7 @@ const ALL_COLUMNS = [
   { key: 'buying_timeline', label: 'Buying Timeline' }
 ];
 
-export default function ClientReport({ initialData = [], teamMembers = [] }) {
+export default function ClientReport({ initialData = [], teamMembers = [], userName }) {
   const supabase = createClient();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -651,6 +651,7 @@ export default function ClientReport({ initialData = [], teamMembers = [] }) {
           isOpen={true} 
           onClose={() => { setIsProfileOpen(false); window.location.reload(); }} 
           mode="history"
+          userName={userName}
         />
       )}
     </div>

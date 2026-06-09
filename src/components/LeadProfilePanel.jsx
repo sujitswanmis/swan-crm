@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { X, Send } from 'lucide-react';
 
-export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate }) {
+export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
@@ -70,7 +70,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     if (!newNote.trim()) return;
 
     const { data: { user } } = await supabase.auth.getUser();
-    const actor = user?.email?.split('@')[0] || 'Agent';
+    const actor = userName || user?.email?.split('@')[0] || 'Agent';
 
     const { error } = await supabase
       .from('lead_notes')
@@ -91,7 +91,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
 
     const { data: { user } } = await supabase.auth.getUser();
-    const actor = user?.email?.split('@')[0] || 'System';
+    const actor = userName || user?.email?.split('@')[0] || 'System';
 
     if (onLeadUpdate) {
       onLeadUpdate({ ...lead, follow_up_date: isoDateStr });
@@ -117,7 +117,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     await supabase.from('leads').update(editForm).eq('id', lead.id);
     
     const { data: { user } } = await supabase.auth.getUser();
-    const actor = user?.email?.split('@')[0] || 'System';
+    const actor = userName || user?.email?.split('@')[0] || 'System';
     
     // Log history
     await supabase.from('lead_notes').insert([{

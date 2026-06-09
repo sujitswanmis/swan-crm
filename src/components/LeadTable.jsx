@@ -105,7 +105,7 @@ const columns = [
         const valToSet = newAssignee === '' ? null : newAssignee;
         await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
         const { data: { user } } = await supabase.auth.getUser();
-        const actor = user?.email?.split('@')[0] || 'System';
+        const actor = userName || user?.email?.split('@')[0] || 'System';
         
         const newAssigneeName = newAssignee === '' ? 'Open Lead (Unassigned)' : teamMembers.find(m => m.user_id === newAssignee)?.emp_name || 'Unknown';
         const noteText = `Lead assigned to: ${newAssigneeName}`;
@@ -235,7 +235,7 @@ const columns = [
 
         await supabase.from('leads').update(updates).eq('id', lead.id);
         const { data: { user } } = await supabase.auth.getUser();
-        const actor = user?.email?.split('@')[0] || 'System';
+        const actor = userName || user?.email?.split('@')[0] || 'System';
         await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
         
         const newNote = {
@@ -420,7 +420,7 @@ const columns = [
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
 ];
 
-export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, teamMembers = [], userRole, userId, moduleAccess = {}, globalRolePermissions }) {
+export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
 
 
   const [data, setData] = useState(() => processLeads(initialData || []));
@@ -1178,6 +1178,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           isOpen={true} 
           onClose={() => setSelectedLead(null)} 
           mode="history"
+          userName={userName}
           onLeadUpdate={(updatedRawLead) => {
              // Process just this single lead to get its new formatted fields
              // Since processLeads expects an array of raw leads, we can pass it

@@ -1103,14 +1103,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           ) : (
             <>
               {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />}
-              {activeTab === 'leads' && <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />}
+              {activeTab === 'leads' && <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />}
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'recruiter' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Recruiter Dashboard (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'registration' && <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />}
-              {activeTab === 'report' && <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} />}
+              {activeTab === 'report' && <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} userName={userName} />}
               {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />}
               {activeTab === 'aiadmin' && <AiAdminModule />}
               {activeTab === 'aiknowledgebase' && <AIKnowledgeBaseModule />}
