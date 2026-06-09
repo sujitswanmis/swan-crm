@@ -101,18 +101,27 @@ async function executeTool(toolCall, userId, isAdmin) {
   
   try {
     if (name === 'get_leads_summary' || name === 'get_my_leads_summary') {
-      let query = supabase.from('leads').select('status');
-      if (scope === 'me') query = query.eq('assigned_to', userId);
+      let allData = [];
+      let page = 0;
+      while (true) {
+        let query = supabase.from('leads').select('status').range(page * 1000, (page + 1) * 1000 - 1);
+        if (scope === 'me') query = query.eq('assigned_to', userId);
+          
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
         
-      const { data, error } = await query;
-      if (error) throw error;
+        allData = allData.concat(data);
+        if (data.length < 1000) break;
+        page++;
+      }
       
-      const summary = data.reduce((acc, lead) => {
+      const summary = allData.reduce((acc, lead) => {
         acc[lead.status] = (acc[lead.status] || 0) + 1;
         return acc;
       }, {});
       
-      return JSON.stringify({ total: data.length, summary, scope_applied: scope });
+      return JSON.stringify({ total: allData.length, summary, scope_applied: scope });
     }
     
     if (name === 'search_leads' || name === 'search_my_leads') {
