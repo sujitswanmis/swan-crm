@@ -118,20 +118,23 @@ export default function AiAdminModule() {
     }
   };
 
-  const handleModelChange = async (userId, newModel) => {
+  const handleModelChange = async (userId, newModels) => {
+    // Optimistic UI Update
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ai_models: newModels } : u));
+
     try {
       const res = await fetch('/api/ai/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, aiModel: newModel })
+        body: JSON.stringify({ userId, aiModels: newModels })
       });
-      if (res.ok) {
-        await fetchUsers();
-      } else {
+      if (!res.ok) {
         alert("Failed to update AI Model.");
+        await fetchUsers(); // Revert on failure
       }
     } catch (e) {
       alert(e.message);
+      await fetchUsers(); // Revert on failure
     }
   };
 
