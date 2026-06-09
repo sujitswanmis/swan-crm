@@ -114,6 +114,27 @@ const tools = [
         required: ["query"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_employee_daily_activity",
+      description: "Get a summary of an employee's activity (how many leads they updated, grouped by lead status) for a specific date.",
+      parameters: {
+        type: "object",
+        properties: {
+          emp_name: {
+            type: "string",
+            description: "The exact name of the employee (e.g. 'Kajal Goyal')"
+          },
+          date: {
+            type: "string",
+            description: "The date in YYYY-MM-DD format (e.g., '2026-06-09')"
+          }
+        },
+        required: ["emp_name", "date"]
+      }
+    }
   }
 ];
 
@@ -219,6 +240,40 @@ async function executeTool(toolCall, userId, isAdmin) {
       const { data, error } = await query;
       if (error) throw error;
       return JSON.stringify({ leads: data, date: args.date, scope_applied: scope });
+    }
+    
+    if (name === 'get_employee_daily_activity') {
+      const startOfDay = args.date + 'T00:00:00.000Z';
+      const endOfDay = args.date + 'T23:59:59.999Z';
+      
+      const { data: notes, error: notesError } = await supabase
+        .from('lead_notes')
+        .select('lead_id, note_text')
+        .eq('created_by', args.emp_name)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+        
+      if (notesError) throw notesError;
+      
+      if (!notes || notes.length === 0) {
+        return JSON.stringify({ summary: "No activity found for this employee on this date." });
+      }
+      
+      const leadIds = [...new Set(notes.map(n => n.lead_id))];
+      
+      const { data: leads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, status')
+        .in('id', leadIds);
+        
+      if (leadsError) throw leadsError;
+      
+      const summary = leads.reduce((acc, lead) => {
+        acc[lead.status] = (acc[lead.status] || 0) + 1;
+        return acc;
+      }, {});
+      
+      return JSON.stringify({ total_leads_interacted: leadIds.length, status_summary: summary, total_actions: notes.length });
     }
     
     return JSON.stringify({ error: 'Tool not found' });
