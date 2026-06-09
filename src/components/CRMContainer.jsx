@@ -656,86 +656,98 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             );
           })}
 
-          {(userRole === 'admin' || userRole === 'Admin') && (
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view || moduleAccess['calladmin']?.view || moduleAccess['aicallcenter']?.view || moduleAccess['whatsapp_official']?.view || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
             <>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', paddingLeft: '1rem', marginTop: '1rem' }}>
                 System
               </div>
 
-              <button 
-                onClick={() => handleTabChange('team')}
-                className="nav-item" 
-                data-active={activeTab === 'team'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <Shield size={20} />
-                Team Management
-              </button>
-
-              <div style={{ display: 'contents' }}>
+              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
                 <button 
-                  onClick={() => setAiMenuExpanded(!aiMenuExpanded)}
+                  onClick={() => handleTabChange('team')}
                   className="nav-item" 
-                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  data-active={activeTab === 'team'}
+                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <Bot size={20} />
-                    AI Admin
-                  </div>
-                  {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <Shield size={20} />
+                  Team Management
                 </button>
-                
-                {aiMenuExpanded && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
-                    <button
-                      onClick={() => handleTabChange('aiadmin')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'aiadmin' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      User AI Usage
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('aiknowledgebase')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'aiknowledgebase' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      AI Knowledge Base (RAG)
-                    </button>
-                  </div>
-                )}
-              </div>
+              )}
 
-              <button 
-                onClick={() => handleTabChange('calladmin')}
-                className="nav-item" 
-                data-active={activeTab === 'calladmin'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <Phone size={20} />
-                Call Admin
-              </button>
+              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
+                <div style={{ display: 'contents' }}>
+                  <button 
+                    onClick={() => setAiMenuExpanded(!aiMenuExpanded)}
+                    className="nav-item" 
+                    style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <Bot size={20} />
+                      AI Admin
+                    </div>
+                    {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </button>
+                  
+                  {aiMenuExpanded && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
+                      {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
+                        <button
+                          onClick={() => handleTabChange('aiadmin')}
+                          style={{
+                            background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: '0.8rem', color: activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                            fontWeight: activeTab === 'aiadmin' ? '600' : '400',
+                            padding: '0.35rem 0', transition: 'color 0.2s'
+                          }}
+                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                          onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                        >
+                          User AI Usage
+                        </button>
+                      )}
+                      {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
+                        <button
+                          onClick={() => handleTabChange('aiknowledgebase')}
+                          style={{
+                            background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: '0.8rem', color: activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                            fontWeight: activeTab === 'aiknowledgebase' ? '600' : '400',
+                            padding: '0.35rem 0', transition: 'color 0.2s'
+                          }}
+                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                          onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                        >
+                          AI Knowledge Base (RAG)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+                <button 
+                  onClick={() => handleTabChange('calladmin')}
+                  className="nav-item" 
+                  data-active={activeTab === 'calladmin'}
+                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  <Phone size={20} />
+                  Call Admin
+                </button>
+              )}
               
-              <button 
-                onClick={() => handleTabChange('aicallcenter')}
-                className="nav-item" 
-                data-active={activeTab === 'aicallcenter'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <Bot size={20} />
-                AI Call Center
-              </button>
+              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+                <button 
+                  onClick={() => handleTabChange('aicallcenter')}
+                  className="nav-item" 
+                  data-active={activeTab === 'aicallcenter'}
+                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  <Bot size={20} />
+                  AI Call Center
+                </button>
+              )}
 
               <div style={{ display: 'contents' }}>
                 <button 
@@ -1091,9 +1103,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'aiadmin' && <AiAdminModule />}
               {activeTab === 'aiknowledgebase' && <AIKnowledgeBaseModule />}
               {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
-              {activeTab === 'calladmin' && (userRole === 'admin' || userRole === 'Admin') && <CallAdminModule />}
-              {activeTab === 'aicallcenter' && (userRole === 'admin' || userRole === 'Admin') && <AiCallCenterModule />}
-              {activeTab === 'team' && (userRole === 'admin' || userRole === 'Admin') && <TeamManagement />}
+              {activeTab === 'calladmin' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && <CallAdminModule />}
+              {activeTab === 'aicallcenter' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && <AiCallCenterModule />}
+              {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && <TeamManagement />}
               {activeTab === 'whatsapp_official' && <WhatsappOfficial />}
               {activeTab === 'whatsapp_unofficial' && <WhatsappUnofficialModule userRole={userRole} userId={userId} />}
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
