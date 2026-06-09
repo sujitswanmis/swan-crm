@@ -239,10 +239,21 @@ export async function POST(req) {
       return NextResponse.json({ error: 'User ID is required for AI usage tracking. Please refresh the page.' }, { status: 400 });
     }
 
+    // Extract selectedAiModel from body
+    const selectedAiModelInput = body.selectedAiModel || 'gpt-4o-mini';
+
     // New check: Is user an Admin?
     const { data: userRoleData } = await supabase.from('user_roles').select('role, module_access').eq('user_id', userId).single();
     const isAdmin = userRoleData?.role === 'admin';
-    const assignedAiModel = (userRoleData?.module_access || {}).ai_model || 'gpt-4o-mini';
+    const assignedAiModels = (userRoleData?.module_access || {}).ai_models || ['gpt-4o-mini'];
+    const premiumLimit = (userRoleData?.module_access || {}).premium_limit || 10000;
+
+    let assignedAiModel = 'gpt-4o-mini';
+    if (assignedAiModels.includes(selectedAiModelInput)) {
+      assignedAiModel = selectedAiModelInput;
+    } else if (assignedAiModels.length > 0) {
+      assignedAiModel = assignedAiModels[0];
+    }
 
     // 1. Check AI Token Usage
     const { data: usageData, error: usageError } = await supabase
@@ -250,6 +261,19 @@ export async function POST(req) {
       .select('total_tokens, token_limit')
       .eq('user_id', userId)
       .single();
+
+    if (usageData && usageData.total_tokens >= usageData.token_limit) {
+      return NextResponse.json({ error: 'Token limit exceeded. Please contact your admin.' }, { status: 403 });
+    }
+
+    // Premium Limit Fallback Logic
+    let isPremiumFallback = false;
+    if (assignedAiModel !== 'gpt-4o-mini' && assignedAiModel !== 'gpt-3.5-turbo') {
+      if (usageData && usageData.total_tokens >= premiumLimit) {
+        assignedAiModel = 'gpt-4o-mini'; // Fallback to basic model
+        isPremiumFallback = true;
+      }
+    }
 
     if (!usageError && usageData) {
       const currentTokens = Number(usageData.total_tokens) || 0;
@@ -308,6 +332,8 @@ export async function POST(req) {
         content: `You are New Swan AI, an extremely smart and adaptive professional CRM assistant. You have FULL VISION CAPABILITIES and can analyze data, text, and uploaded images perfectly. 
 Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}${knowledgeContext}
 - If the user uploads an image, YOU MUST LOOK AT THE IMAGE and describe it or answer questions about it. Do not say you cannot see it.
+- Use the search_users tool to look up details about any specific employee, agent, or team member mentioned by the user (e.g. "Who is Sujit Kumar Gupta?").
+- Read and respect the user's intent.${isPremiumFallback ? ' Note: The user has reached their premium model limit, so you are running on a fallback basic model.' : ''}
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
 - You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools.
 ${isAdmin ? "- YOU ARE TALKING TO AN ADMIN. You have the super-power to view data for the ENTIRE TEAM. If the admin asks for team data or 'all' leads, set the scope to 'all' in your tools." : "- You ONLY see data belonging to the logged-in user."}

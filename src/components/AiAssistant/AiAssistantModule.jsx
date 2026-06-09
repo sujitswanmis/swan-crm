@@ -33,6 +33,9 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   const [editPrompt, setEditPrompt] = useState('');
   const [errorPopup, setErrorPopup] = useState(null);
   
+  const [assignedModels, setAssignedModels] = useState(["gpt-4o-mini"]);
+  const [selectedAiModel, setSelectedAiModel] = useState("gpt-4o-mini");
+  
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
   const promptRef = useRef(''); 
@@ -107,8 +110,24 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
     }
   };
 
+  const fetchMyModels = async () => {
+    try {
+      const res = await fetch('/api/ai/my-models');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ai_models && data.ai_models.length > 0) {
+          setAssignedModels(data.ai_models);
+          setSelectedAiModel(data.ai_models[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching my models:', e);
+    }
+  };
+
   useEffect(() => {
     loadSessions();
+    fetchMyModels();
   }, [userId]);
 
   const copyToClipboard = (text, index) => {
@@ -577,7 +596,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, userId: userId || 'guest' })
+        body: JSON.stringify({ messages: apiMessages, userId: userId || 'guest', selectedAiModel })
       });
 
       let responseData = null;
@@ -800,6 +819,26 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               </select>
               <Settings2 size={12} color="#888" style={{ position: 'absolute', right: '0.75rem', pointerEvents: 'none' }} />
             </div>
+
+            {assignedModels.length > 1 && (
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <select 
+                  value={selectedAiModel} 
+                  onChange={(e) => setSelectedAiModel(e.target.value)}
+                  style={{ 
+                    appearance: 'none', background: '#eef2ff', border: '1px solid #c7d2fe', 
+                    borderRadius: '20px', padding: '0.4rem 2rem 0.4rem 1rem', fontSize: '0.8rem', 
+                    color: '#4338ca', cursor: 'pointer', outline: 'none', fontWeight: 500
+                  }}
+                  title="Select AI Model"
+                >
+                  {assignedModels.map(model => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+                <Bot size={12} color="#4338ca" style={{ position: 'absolute', right: '0.75rem', pointerEvents: 'none' }} />
+              </div>
+            )}
             
             <button 
               onClick={toggleVoiceSession}

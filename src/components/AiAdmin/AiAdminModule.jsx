@@ -6,6 +6,7 @@ export default function AiAdminModule() {
   const [loading, setLoading] = useState(true);
   const [editingLimit, setEditingLimit] = useState(null);
   const [newLimitValue, setNewLimitValue] = useState("");
+  const [newPremiumLimitValue, setNewPremiumLimitValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const AI_MODELS = [
@@ -96,12 +97,17 @@ export default function AiAdminModule() {
       const res = await fetch('/api/ai/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, tokenLimit: parseInt(newLimitValue) })
+        body: JSON.stringify({ 
+          userId, 
+          tokenLimit: parseInt(newLimitValue),
+          premiumLimit: newPremiumLimitValue ? parseInt(newPremiumLimitValue) : 10000 
+        })
       });
       if (res.ok) {
         await fetchUsers();
         setEditingLimit(null);
         setNewLimitValue("");
+        setNewPremiumLimitValue("");
       } else {
         alert("Failed to update limit.");
       }
@@ -153,7 +159,8 @@ export default function AiAdminModule() {
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Role</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Usage</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Limit</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Model</th>
+              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Premium Limit</th>
+              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Models</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Actions</th>
             </tr>
           </thead>
@@ -187,23 +194,37 @@ export default function AiAdminModule() {
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {editingLimit === user.id ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <input 
-                          type="number" 
-                          value={newLimitValue} 
-                          onChange={(e) => setNewLimitValue(e.target.value)}
-                          style={{ width: '100px', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--accent-color)', outline: 'none' }}
-                          autoFocus
-                        />
-                      </div>
+                      <input 
+                        type="number" 
+                        value={newLimitValue} 
+                        onChange={(e) => setNewLimitValue(e.target.value)}
+                        style={{ width: '80px', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--accent-color)', outline: 'none' }}
+                      />
                     ) : (
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.token_limit.toLocaleString()}</span>
                     )}
                   </td>
                   <td style={{ padding: '1rem' }}>
+                    {editingLimit === user.id ? (
+                      <input 
+                        type="number" 
+                        value={newPremiumLimitValue} 
+                        onChange={(e) => setNewPremiumLimitValue(e.target.value)}
+                        placeholder="Premium limit"
+                        style={{ width: '80px', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--accent-color)', outline: 'none' }}
+                      />
+                    ) : (
+                      <span style={{ fontWeight: 600, color: '#8b5cf6' }}>{user.premium_limit ? user.premium_limit.toLocaleString() : 'N/A'}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '1rem' }}>
                     <select
-                      value={user.ai_model || 'gpt-4o-mini'}
-                      onChange={(e) => handleModelChange(user.id, e.target.value)}
+                      multiple
+                      value={user.ai_models || ['gpt-4o-mini']}
+                      onChange={(e) => {
+                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                        handleModelChange(user.id, selectedOptions);
+                      }}
                       style={{
                         padding: '0.4rem',
                         borderRadius: '6px',
@@ -212,13 +233,16 @@ export default function AiAdminModule() {
                         color: 'var(--text-primary)',
                         outline: 'none',
                         cursor: 'pointer',
-                        fontSize: '0.85rem'
+                        fontSize: '0.8rem',
+                        minWidth: '150px',
+                        height: '80px'
                       }}
                     >
                       {AI_MODELS.map(model => (
                         <option key={model} value={model}>{model}</option>
                       ))}
                     </select>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>Ctrl+Click to select multiple</div>
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {editingLimit === user.id ? (
@@ -231,7 +255,7 @@ export default function AiAdminModule() {
                           <CheckCircle2 size={16} />
                         </button>
                         <button 
-                          onClick={() => { setEditingLimit(null); setNewLimitValue(""); }}
+                          onClick={() => { setEditingLimit(null); setNewLimitValue(""); setNewPremiumLimitValue(""); }}
                           disabled={saving}
                           style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '0.4rem 0.6rem', cursor: saving ? 'not-allowed' : 'pointer' }}
                         >
@@ -240,10 +264,10 @@ export default function AiAdminModule() {
                       </div>
                     ) : (
                       <button 
-                        onClick={() => { setEditingLimit(user.id); setNewLimitValue(user.token_limit.toString()); }}
+                        onClick={() => { setEditingLimit(user.id); setNewLimitValue(user.token_limit.toString()); setNewPremiumLimitValue(user.premium_limit ? user.premium_limit.toString() : "10000"); }}
                         style={{ background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}
                       >
-                        <Edit2 size={14} /> Edit Limit
+                        <Edit2 size={14} /> Edit Limits
                       </button>
                     )}
                   </td>

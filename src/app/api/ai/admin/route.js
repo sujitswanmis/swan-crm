@@ -19,14 +19,18 @@ export async function GET() {
       usages.forEach(u => usageMap[u.user_id] = u);
     }
 
-    const merged = users.map(u => ({
-      ...u,
-      id: u.user_id,
-      name: u.emp_name,
-      ai_model: (u.module_access || {}).ai_model || 'gpt-4o-mini',
-      total_tokens: usageMap[u.user_id]?.total_tokens || 0,
-      token_limit: usageMap[u.user_id]?.token_limit || 100000,
-    }));
+    const merged = users.map(u => {
+      const ma = u.module_access || {};
+      return {
+        ...u,
+        id: u.user_id,
+        name: u.emp_name,
+        ai_models: ma.ai_models || ['gpt-4o-mini'],
+        premium_limit: ma.premium_limit || 10000,
+        total_tokens: usageMap[u.user_id]?.total_tokens || 0,
+        token_limit: usageMap[u.user_id]?.token_limit || 100000,
+      };
+    });
 
     return NextResponse.json({ users: merged });
   } catch (error) {
@@ -37,7 +41,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    const { userId, tokenLimit, aiModel } = await req.json();
+    const { userId, tokenLimit, premiumLimit, aiModels } = await req.json();
     if (!userId) throw new Error('Missing userId');
 
     // Update Token Limit if provided
@@ -55,11 +59,14 @@ export async function POST(req) {
       if (usageError) throw usageError;
     }
 
-    // Update AI Model in user_roles.module_access if provided
-    if (aiModel) {
+    // Update AI Models and Premium Limit in user_roles.module_access
+    if (aiModels || premiumLimit !== undefined) {
       const { data: userData, error: fetchErr } = await supabase.from('user_roles').select('module_access').eq('user_id', userId).single();
       if (!fetchErr && userData) {
-        const newModuleAccess = { ...(userData.module_access || {}), ai_model: aiModel };
+        const newModuleAccess = { ...(userData.module_access || {}) };
+        if (aiModels) newModuleAccess.ai_models = aiModels;
+        if (premiumLimit !== undefined) newModuleAccess.premium_limit = parseInt(premiumLimit);
+        
         const { error: roleError } = await supabase.from('user_roles').update({ module_access: newModuleAccess }).eq('user_id', userId);
         if (roleError) throw roleError;
       }
