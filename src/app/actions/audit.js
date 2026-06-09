@@ -51,7 +51,8 @@ export async function logUserSession(deviceInfo) {
     if (existing) {
       await supabase.from('user_sessions').update({
         last_active: new Date().toISOString(),
-        is_active: true
+        is_active: true,
+        emp_name: roleData?.emp_name || 'System User'
       }).eq('id', existing.id);
     } else {
       await supabase.from('user_sessions').insert([{
