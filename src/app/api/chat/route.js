@@ -229,7 +229,7 @@ async function executeTool(toolCall, userId, isAdmin) {
 
 export async function POST(req) {
   try {
-    const { messages, userId } = await req.json();
+    const { messages, userId, selectedAiModel } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
@@ -239,8 +239,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'User ID is required for AI usage tracking. Please refresh the page.' }, { status: 400 });
     }
 
-    // Extract selectedAiModel from body
-    const selectedAiModelInput = body.selectedAiModel || 'gpt-4o-mini';
+    const selectedAiModelInput = selectedAiModel || 'gpt-4o-mini';
 
     // New check: Is user an Admin?
     const { data: userRoleData } = await supabase.from('user_roles').select('role, module_access').eq('user_id', userId).single();
