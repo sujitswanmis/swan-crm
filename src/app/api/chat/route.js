@@ -307,7 +307,7 @@ export async function POST(req) {
             const embData = await embRes.json();
             const queryEmbedding = embData.data[0].embedding;
             
-            const { data: matchedDocs } = await supabase.rpc('match_company_documents', {
+            const { data: matchedDocs } = await supabase.rpc('match_company_knowledge', {
               query_embedding: queryEmbedding,
               match_threshold: 0.25,
               match_count: 3

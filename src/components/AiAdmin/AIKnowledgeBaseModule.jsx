@@ -8,9 +8,11 @@ export default function AIKnowledgeBaseModule() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   
-  const [docType, setDocType] = useState('text'); // text
+  const [docType, setDocType] = useState('text'); // text, url, pdf
   const [docTitle, setDocTitle] = useState('');
   const [docContent, setDocContent] = useState('');
+  const [docUrl, setDocUrl] = useState('');
+  const [docFile, setDocFile] = useState(null);
   
   const [viewingDoc, setViewingDoc] = useState(null);
   const [savingDoc, setSavingDoc] = useState(false);
@@ -35,20 +37,29 @@ export default function AIKnowledgeBaseModule() {
 
   const handleSaveDocument = async () => {
     if (!docTitle) return alert('Please enter a title');
-    if (!docContent) return alert('Please enter some text');
+    
+    if (docType === 'text' && !docContent) return alert('Please enter some text');
+    if (docType === 'url' && !docUrl) return alert('Please enter a valid URL');
+    if (docType === 'pdf' && !docFile) return alert('Please select a PDF file');
     
     setSavingDoc(true);
     try {
       if (viewingDoc && viewingDoc.id) {
         // Since there is no UPDATE endpoint yet, we can delete and re-insert for now
-        // A proper implementation would have a PUT endpoint in /api/ai/knowledge
         await fetch(`/api/ai/knowledge?id=${viewingDoc.id}`, { method: 'DELETE' });
       }
 
+      const formData = new FormData();
+      formData.append('title', docTitle);
+      formData.append('type', docType);
+      
+      if (docType === 'text') formData.append('content', docContent);
+      if (docType === 'url') formData.append('url', docUrl);
+      if (docType === 'pdf') formData.append('file', docFile);
+
       const res = await fetch('/api/ai/knowledge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: docTitle, content: docContent })
+        body: formData
       });
       
       if (res.ok) {
@@ -113,6 +124,9 @@ export default function AIKnowledgeBaseModule() {
   const resetForm = () => {
     setDocTitle('');
     setDocContent('');
+    setDocUrl('');
+    setDocFile(null);
+    setDocType('text');
     setViewingDoc(null);
   };
 
@@ -249,10 +263,10 @@ export default function AIKnowledgeBaseModule() {
                     <input type="radio" name="type" checked={docType === 'text'} onChange={() => setDocType('text')} /> Manual Text
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
-                    <input type="radio" name="type" disabled /> Website URL (Coming Soon)
+                    <input type="radio" name="type" checked={docType === 'url'} onChange={() => setDocType('url')} /> Website URL
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
-                    <input type="radio" name="type" disabled /> PDF Upload (Coming Soon)
+                    <input type="radio" name="type" checked={docType === 'pdf'} onChange={() => setDocType('pdf')} /> PDF Upload
                   </label>
                 </div>
               </div>
@@ -266,6 +280,33 @@ export default function AIKnowledgeBaseModule() {
                     placeholder="Paste your text content here. The AI will read this to answer queries..."
                     style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minHeight: '200px', resize: 'vertical', fontFamily: 'inherit' }} 
                   />
+                </div>
+              )}
+
+              {docType === 'url' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Website URL</label>
+                  <input 
+                    type="url" 
+                    value={docUrl} 
+                    onChange={e => setDocUrl(e.target.value)}
+                    placeholder="https://example.com/about-us"
+                    style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} 
+                  />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>The system will automatically scrape text from this URL and save it.</p>
+                </div>
+              )}
+
+              {docType === 'pdf' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Upload PDF File</label>
+                  <input 
+                    type="file" 
+                    accept=".pdf"
+                    onChange={e => setDocFile(e.target.files[0])}
+                    style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} 
+                  />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Upload a PDF containing your company rules or brochures.</p>
                 </div>
               )}
             </div>

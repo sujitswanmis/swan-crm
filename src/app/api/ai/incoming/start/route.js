@@ -45,9 +45,28 @@ export async function POST(req) {
       raw_payload: event
     });
 
+    // Fetch Knowledge Base Documents
+    let knowledgeContext = "";
+    try {
+      const { data: docs } = await adminClient
+        .from('company_documents')
+        .select('title, content')
+        .limit(20);
+      
+      if (docs && docs.length > 0) {
+        knowledgeContext = "\n\n--- COMPANY KNOWLEDGE BASE ---\nUse the following official company rules/policies to answer the caller:\n\n" + 
+          docs.map(d => `Title: ${d.title}\nContent: ${d.content}`).join('\n\n') +
+          "\n--- END KNOWLEDGE BASE ---\n";
+      }
+    } catch (err) {
+      console.error('Failed to load knowledge base for call:', err);
+    }
+
+    const fullContext = (settings.incoming_agent_prompt || "") + knowledgeContext;
+
     // Return the dynamic context for Plivo AI Agent
     return NextResponse.json({
-      context: settings.incoming_agent_prompt,
+      context: fullContext,
       language: settings.default_language,
       transfer_number: settings.human_transfer_number
     }, { status: 200 });
