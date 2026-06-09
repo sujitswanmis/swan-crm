@@ -63,6 +63,27 @@ const tools = [
         },
         required: ["scope"]
       }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_leads_by_date",
+      description: "Get leads that were created or followed up on a specific date. MUST be used when the user asks about activity on a specific day (e.g. 'yesterday', 'today', 'on Monday').",
+      parameters: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            description: "The date in YYYY-MM-DD format (e.g., '2026-06-08'). Calculate this based on the current date provided in the system prompt."
+          },
+          scope: {
+            type: "string",
+            enum: ["me", "all"],
+            description: "Scope of leads ('me' for user's own, 'all' for entire team)."
+          }
+        },
+        required: ["date", "scope"]
+      }
     }
   }
 ];
@@ -123,6 +144,22 @@ async function executeTool(toolCall, userId, isAdmin) {
       const { data, error } = await query;
       if (error) throw error;
       return JSON.stringify({ follow_ups: data, scope_applied: scope });
+    }
+    
+    if (name === 'get_leads_by_date') {
+      // Find leads created on that date or follow up date is that date
+      let query = supabase
+        .from('leads')
+        .select('id, name, company, phone, status, follow_up_date, created_at')
+        .or(`and(created_at.gte.${args.date}T00:00:00.000Z,created_at.lte.${args.date}T23:59:59.999Z),follow_up_date.eq.${args.date}`)
+        .order('created_at', { ascending: false })
+        .limit(20);
+        
+      if (scope === 'me') query = query.eq('assigned_to', userId);
+        
+      const { data, error } = await query;
+      if (error) throw error;
+      return JSON.stringify({ leads: data, date: args.date, scope_applied: scope });
     }
     
     return JSON.stringify({ error: 'Tool not found' });
