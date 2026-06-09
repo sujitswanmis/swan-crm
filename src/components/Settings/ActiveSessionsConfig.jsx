@@ -170,31 +170,46 @@ export default function ActiveSessionsConfig() {
                 No active sessions found.
               </div>
             ) : (
-              <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
-                {filteredActive.map((session, i) => (
-                  <div key={session.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: session.current ? 'var(--th-filtered-bg)' : 'var(--bg-surface)', borderBottom: i < filteredActive.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {session.user}
-                        {session.current && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', background: '#10b981', color: 'white', borderRadius: '10px', fontWeight: 500 }}>Current Device</span>}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.4rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <span style={{background: 'var(--bg-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)'}}>{session.email}</span>
-                        <span style={{background: 'var(--bg-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)'}}>{session.device}</span>
-                        <span style={{background: 'var(--bg-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)'}}>IP: {session.ip}</span>
-                        <span style={{color: '#10b981'}}>Last Active: {session.lastActive}</span>
-                      </div>
-                    </div>
-                    {!session.current && (
-                      <button 
-                        onClick={() => handleForceLogout(session.id)}
-                        style={{ background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500, padding: '0.5rem 0.75rem', borderRadius: '6px', transition: 'all 0.2s' }}
-                      >
-                        <LogOut size={16} /> Force Logout
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--th-filtered-bg)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Emp Name & Email</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device Info</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Address</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Active</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredActive.map((session, i) => (
+                      <tr key={session.id} style={{ borderBottom: i < filteredActive.length - 1 ? '1px solid var(--border-light)' : 'none', background: session.current ? 'var(--th-filtered-bg)' : 'var(--bg-surface)' }}>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {session.user}
+                            {session.current && <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', background: '#10b981', color: 'white', borderRadius: '10px', fontWeight: 500 }}>Current Device</span>}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{session.email}</div>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={session.device}>
+                          {session.device}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{session.ip}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#10b981', fontWeight: 500 }}>{session.lastActive}</td>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                          {!session.current && (
+                            <button 
+                              onClick={() => handleForceLogout(session.id)}
+                              style={{ background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 500, padding: '0.4rem 0.6rem', borderRadius: '6px', transition: 'all 0.2s' }}
+                            >
+                              <LogOut size={14} /> Force Logout
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
             
