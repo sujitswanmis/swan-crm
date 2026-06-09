@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function GET() {
   try {
-    const { data: users, error: userError } = await supabase.from('user_roles').select('user_id, emp_name, email, role');
+    const { data: users, error: userError } = await supabase.from('user_roles').select('user_id, emp_name, email, role, module_access');
     if (userError) throw userError;
 
     const { data: usages, error: usageError } = await supabase.from('ai_token_usage').select('*');
@@ -23,6 +23,7 @@ export async function GET() {
       ...u,
       id: u.user_id,
       name: u.emp_name,
+      ai_model: (u.module_access || {}).ai_model || 'gpt-4o-mini',
       total_tokens: usageMap[u.user_id]?.total_tokens || 0,
       token_limit: usageMap[u.user_id]?.token_limit || 100000,
     }));
@@ -36,27 +37,37 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    const { userId, tokenLimit } = await req.json();
-    if (!userId || tokenLimit === undefined) throw new Error('Missing params');
+    const { userId, tokenLimit, aiModel } = await req.json();
+    if (!userId) throw new Error('Missing userId');
 
-    // First ensure the row exists so upsert updates only the limit or creates a new one
-    // We can just use an upsert. Wait, upsert might overwrite total_tokens to default 0 if it's missing in payload.
-    // Let's do a SELECT first.
-    const { data: existing } = await supabase.from('ai_token_usage').select('total_tokens').eq('user_id', userId).single();
-    
-    const { error } = await supabase
-      .from('ai_token_usage')
-      .upsert({ 
-        user_id: userId, 
-        token_limit: parseInt(tokenLimit),
-        total_tokens: existing?.total_tokens || 0
-      });
-    
-    if (error) throw error;
+    // Update Token Limit if provided
+    if (tokenLimit !== undefined) {
+      const { data: existing } = await supabase.from('ai_token_usage').select('total_tokens').eq('user_id', userId).single();
+      
+      const { error: usageError } = await supabase
+        .from('ai_token_usage')
+        .upsert({ 
+          user_id: userId, 
+          token_limit: parseInt(tokenLimit),
+          total_tokens: existing?.total_tokens || 0
+        });
+      
+      if (usageError) throw usageError;
+    }
+
+    // Update AI Model in user_roles.module_access if provided
+    if (aiModel) {
+      const { data: userData, error: fetchErr } = await supabase.from('user_roles').select('module_access').eq('user_id', userId).single();
+      if (!fetchErr && userData) {
+        const newModuleAccess = { ...(userData.module_access || {}), ai_model: aiModel };
+        const { error: roleError } = await supabase.from('user_roles').update({ module_access: newModuleAccess }).eq('user_id', userId);
+        if (roleError) throw roleError;
+      }
+    }
     
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error updating AI token limit:', error);
+    console.error('Error updating AI settings:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -8,6 +8,14 @@ export default function AiAdminModule() {
   const [newLimitValue, setNewLimitValue] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const AI_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4-turbo",
+    "gpt-5.5",
+    "gpt-5.5-pro"
+  ];
+
   // Knowledge Base State
   const [documents, setDocuments] = useState([]);
   const [docTitle, setDocTitle] = useState("");
@@ -104,6 +112,23 @@ export default function AiAdminModule() {
     }
   };
 
+  const handleModelChange = async (userId, newModel) => {
+    try {
+      const res = await fetch('/api/ai/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, aiModel: newModel })
+      });
+      if (res.ok) {
+        await fetchUsers();
+      } else {
+        alert("Failed to update AI Model.");
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
   if (loading) {
     return <div style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading AI Stats...</div>;
   }
@@ -128,6 +153,7 @@ export default function AiAdminModule() {
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Role</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Usage</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Limit</th>
+              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Model</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Actions</th>
             </tr>
           </thead>
@@ -173,6 +199,26 @@ export default function AiAdminModule() {
                     ) : (
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.token_limit.toLocaleString()}</span>
                     )}
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <select
+                      value={user.ai_model || 'gpt-4o-mini'}
+                      onChange={(e) => handleModelChange(user.id, e.target.value)}
+                      style={{
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      {AI_MODELS.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {editingLimit === user.id ? (

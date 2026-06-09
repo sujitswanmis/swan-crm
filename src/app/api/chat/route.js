@@ -239,8 +239,9 @@ export async function POST(req) {
     }
 
     // New check: Is user an Admin?
-    const { data: userRoleData } = await supabase.from('user_roles').select('role').eq('user_id', userId).single();
+    const { data: userRoleData } = await supabase.from('user_roles').select('role, module_access').eq('user_id', userId).single();
     const isAdmin = userRoleData?.role === 'admin';
+    const assignedAiModel = (userRoleData?.module_access || {}).ai_model || 'gpt-4o-mini';
 
     // 1. Check AI Token Usage
     const { data: usageData, error: usageError } = await supabase
@@ -328,7 +329,7 @@ IMPORTANT BEHAVIORAL RULES:
     // Tool calling loop
     for (let i = 0; i < 4; i++) {
       const payload = {
-        model: 'gpt-4o-mini',
+        model: assignedAiModel,
         messages: currentMessages,
         temperature: 0.7,
         max_tokens: 1000,
