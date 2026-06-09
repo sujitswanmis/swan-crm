@@ -58,7 +58,24 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   // State variables
   const [activeTab, setActiveTab] = useState(() => {
     let path = pathname.replace('/', '');
-    if (!path) path = searchParams?.get('tab') || 'dashboard';
+    if (!path) path = searchParams?.get('tab');
+    
+    if (!path) {
+      const isAdmin = userRole === 'admin' || userRole === 'Admin';
+      if (isAdmin || moduleAccess['analytics']?.view) path = 'dashboard';
+      else if (moduleAccess['new_swan_ai']?.view) path = 'ai';
+      else if (moduleAccess['callcenter']?.view) path = 'callcenter';
+      else if (moduleAccess['aiadmin']?.view) path = 'aiadmin';
+      else if (moduleAccess['aiknowledgebase']?.view) path = 'aiknowledgebase';
+      else if (moduleAccess['calladmin']?.view) path = 'calladmin';
+      else if (moduleAccess['aicallcenter']?.view) path = 'aicallcenter';
+      else {
+        // Fallback to first available module access
+        const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view);
+        if (firstAllowed) path = firstAllowed;
+        else path = 'dashboard';
+      }
+    }
     return path;
   });
   const [isMounted, setIsMounted] = useState(false);
