@@ -403,77 +403,85 @@ export default function TeamManagement() {
       {/* Access Modal */}
       {accessUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
-            {(() => {
-              const u = users.find(x => x.user_id === accessUser);
-              return u ? (
-                <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || 'Unknown User'}</h3>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</div>
-                </div>
-              ) : null;
-            })()}
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Assign Processes</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              Select which modules this user is allowed to access.
-            </p>
+          <div className="card" style={{ width: '100%', maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '1.5rem' }}>
-              {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => (
-                <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                    {category === 'General' ? 'Core Features' : `${category} Department`}
+            {/* Fixed Header */}
+            <div style={{ padding: '1.5rem 1.5rem 1rem 1.5rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', zIndex: 10 }}>
+              {(() => {
+                const u = users.find(x => x.user_id === accessUser);
+                return u ? (
+                  <div style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px dashed var(--border-light)' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || 'Unknown User'}</h3>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</div>
                   </div>
-                  <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {MODULES_CONFIG.filter(m => m.category === category).map(module => (
-                      <div key={module.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: accessForm[module.id]?.view ? '#f8fafc' : 'transparent', padding: '0.75rem', borderRadius: '6px', border: '1px solid', borderColor: accessForm[module.id]?.view ? '#cbd5e1' : 'transparent' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox"
-                            checked={!!accessForm[module.id]?.view}
-                            onChange={() => handleToggleModuleAccess(module.id)}
-                            style={{ width: '1.2rem', height: '1.2rem' }}
-                          />
-                          <span style={{ fontSize: '1rem', fontWeight: accessForm[module.id]?.view ? 600 : 400 }}>{module.label}</span>
-                        </label>
+                ) : null;
+              })()}
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Assign Processes</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                Select which modules this user is allowed to access.
+              </p>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => (
+                  <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
+                      {category === 'General' ? 'Core Features' : `${category} Department`}
+                    </div>
+                    <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {MODULES_CONFIG.filter(m => m.category === category).map(module => (
+                        <div key={module.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: accessForm[module.id]?.view ? '#f8fafc' : 'transparent', padding: '0.75rem', borderRadius: '6px', border: '1px solid', borderColor: accessForm[module.id]?.view ? '#cbd5e1' : 'transparent' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox"
+                              checked={!!accessForm[module.id]?.view}
+                              onChange={() => handleToggleModuleAccess(module.id)}
+                              style={{ width: '1.2rem', height: '1.2rem' }}
+                            />
+                            <span style={{ fontSize: '1rem', fontWeight: accessForm[module.id]?.view ? 600 : 400 }}>{module.label}</span>
+                          </label>
 
-                        {/* Expand options if view is enabled and it's the leads module (or others later) */}
-                        {accessForm[module.id]?.view && module.id === 'leads' && (
-                          <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
-                              <input 
-                                type="checkbox"
-                                checked={!!accessForm[module.id]?.is_manager}
-                                onChange={() => handleToggleManagerLevel(module.id)}
-                              />
-                              Manager Access (See All Workflow Steps)
-                            </label>
+                          {/* Expand options if view is enabled and it's the leads module (or others later) */}
+                          {accessForm[module.id]?.view && module.id === 'leads' && (
+                            <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
+                                <input 
+                                  type="checkbox"
+                                  checked={!!accessForm[module.id]?.is_manager}
+                                  onChange={() => handleToggleManagerLevel(module.id)}
+                                />
+                                Manager Access (See All Workflow Steps)
+                              </label>
 
-                            {!accessForm[module.id]?.is_manager && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Assign specific steps to this user:</div>
-                                {LEAD_STAGES.map(stage => (
-                                  <label key={stage} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                    <input 
-                                      type="checkbox"
-                                      checked={(accessForm[module.id]?.assigned_steps || []).includes(stage)}
-                                      onChange={() => handleToggleStep(module.id, stage)}
-                                    />
-                                    {stage}
-                                  </label>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                              {!accessForm[module.id]?.is_manager && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Assign specific steps to this user:</div>
+                                  {LEAD_STAGES.map(stage => (
+                                    <label key={stage} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                      <input 
+                                        type="checkbox"
+                                        checked={(accessForm[module.id]?.assigned_steps || []).includes(stage)}
+                                        onChange={() => handleToggleStep(module.id, stage)}
+                                      />
+                                      {stage}
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+            {/* Fixed Footer */}
+            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', gap: '1rem', justifyContent: 'flex-end', zIndex: 10 }}>
               <button 
                 onClick={() => setAccessUser(null)}
                 style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
