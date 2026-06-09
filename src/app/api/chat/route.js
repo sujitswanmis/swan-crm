@@ -175,12 +175,29 @@ async function executeTool(toolCall, userId, isAdmin) {
     }
     
     if (name === 'search_leads' || name === 'search_my_leads') {
-      const q = (args.query || '').trim();
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+      let q = (args.query || '').trim();
+      let isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+      const is15Digit = /^\d{15}$/.test(q);
+
+      if (is15Digit) {
+        const expectedDateStr = q.substring(0, 8);
+        const seq = parseInt(q.substring(8), 10);
+        if (seq > 0) {
+          const {data} = await supabase.from('leads').select('id, created_at').order('created_at', {ascending: true}).range(seq - 1, seq - 1);
+          if (data && data.length > 0) {
+            const d = new Date(data[0].created_at || new Date());
+            const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+            if (dateStr === expectedDateStr) {
+              q = data[0].id;
+              isUUID = true;
+            }
+          }
+        }
+      }
       
       let query = supabase
         .from('leads')
-        .select('id, lead_ref_id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement');
+        .select('id, created_at, lead_ref_id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement');
         
       if (isUUID) {
         query = query.eq('id', q);
@@ -193,6 +210,16 @@ async function executeTool(toolCall, userId, isAdmin) {
         
       const { data, error } = await query;
       if (error) throw error;
+
+      // Ensure AI responds with the 15-digit UI Lead ID
+      for (let i = 0; i < data.length; i++) {
+        const {count} = await supabase.from('leads').select('*', {count: 'exact', head: true}).lt('created_at', data[i].created_at || new Date().toISOString());
+        const d = new Date(data[i].created_at || new Date());
+        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+        const seq = String(count + 1).padStart(7, '0');
+        data[i].lead_ref_id = dateStr + seq;
+      }
+
       return JSON.stringify({ results: data, scope_applied: scope });
     }
     
