@@ -14,7 +14,8 @@ import CallAdminModule from './CallCenter/CallAdminModule';
 import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, Menu, Palette, Check, Bot, PhoneCall, Phone } from 'lucide-react';
+import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -636,8 +637,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 data-active={activeTab === 'aiadmin'}
                 style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
               >
-                <Bot size={20} />
-                AI Admin
+                <LayoutDashboard size={20} />
+                AI Admin Dashboard
+              </button>
+
+              <button 
+                onClick={() => handleTabChange('aiknowledgebase')}
+                className="nav-item" 
+                data-active={activeTab === 'aiknowledgebase'}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                <BookOpen size={20} />
+                AI Knowledge Base (RAG)
               </button>
 
               <button 
@@ -1012,6 +1023,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'report' && <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} />}
               {activeTab === 'ai' && <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />}
               {activeTab === 'aiadmin' && <AiAdminModule />}
+              {activeTab === 'aiknowledgebase' && <AIKnowledgeBaseModule />}
               {activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
               {activeTab === 'calladmin' && (userRole === 'admin' || userRole === 'Admin') && <CallAdminModule />}
               {activeTab === 'aicallcenter' && (userRole === 'admin' || userRole === 'Admin') && <AiCallCenterModule />}

@@ -15,6 +15,8 @@ const MODULES_CONFIG = [
   { id: 'mrp_against', label: 'MRP Against', category: 'Purchase' },
   { id: 'recruiter', label: 'Recruiter Dashboard', category: 'Human Resource' },
   { id: 'joining', label: 'Joining Process', category: 'Human Resource' },
+  { id: 'aiadmin', label: 'AI Admin Dashboard', category: 'System' },
+  { id: 'aiknowledgebase', label: 'AI Knowledge Base (RAG)', category: 'System' },
 ];
 
 const DEPARTMENTS = [
@@ -368,7 +370,7 @@ export default function TeamManagement() {
             </p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '1.5rem' }}>
-              {['General', 'Sales', 'Purchase', 'Human Resource'].map(category => (
+              {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => (
                 <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
                   <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
                     {category === 'General' ? 'Core Features' : `${category} Department`}
