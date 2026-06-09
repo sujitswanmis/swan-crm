@@ -96,6 +96,23 @@ const tools = [
         properties: {}
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_users",
+      description: "Search for an employee, agent, or user by their name, email, or employee ID. Use this when the user asks for details about a specific employee.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The name, email, or employee ID to search for."
+          }
+        },
+        required: ["query"]
+      }
+    }
   }
 ];
 
@@ -158,6 +175,16 @@ async function executeTool(toolCall, userId, isAdmin) {
         return acc;
       }, {});
       return JSON.stringify({ total_users: data.length, breakdown: summary });
+    }
+    
+    if (name === 'search_users') {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('emp_id, emp_name, email, role, emp_department, emp_designation, is_approved')
+        .or(`emp_name.ilike.%${args.query}%,email.ilike.%${args.query}%,emp_id.ilike.%${args.query}%`)
+        .limit(10);
+      if (error) throw error;
+      return JSON.stringify({ results: data });
     }
     
     if (name === 'get_recent_follow_ups') {
