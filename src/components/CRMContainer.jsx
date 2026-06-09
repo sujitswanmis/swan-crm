@@ -749,8 +749,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 </button>
               )}
 
-              <div style={{ display: 'contents' }}>
-                <button 
+              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
+                <div style={{ display: 'contents' }}>
+                  <button 
                   onClick={() => setMessageMenuExpanded(!messageMenuExpanded)}
                   className="nav-item" 
                   style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
@@ -764,74 +765,85 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 
                 {messageMenuExpanded && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
-                    <button
-                      onClick={() => handleTabChange('whatsapp_official')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'whatsapp_official' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      WhatsApp Official
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('whatsapp_unofficial')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'whatsapp_unofficial' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      WhatsApp UnOfficial
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('sms_config')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'sms_config' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      SMS
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('rcs_config')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'rcs_config' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      RCS
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('email_config')}
-                      style={{
-                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: '0.8rem', color: activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'email_config' ? '600' : '400',
-                        padding: '0.35rem 0', transition: 'color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                    >
-                      Email
-                    </button>
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
+                      <button
+                        onClick={() => handleTabChange('whatsapp_official')}
+                        style={{
+                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: '0.8rem', color: activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'whatsapp_official' ? '600' : '400',
+                          padding: '0.35rem 0', transition: 'color 0.2s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                      >
+                        WhatsApp Official
+                      </button>
+                    )}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
+                      <button
+                        onClick={() => handleTabChange('whatsapp_unofficial')}
+                        style={{
+                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: '0.8rem', color: activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'whatsapp_unofficial' ? '600' : '400',
+                          padding: '0.35rem 0', transition: 'color 0.2s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                      >
+                        WhatsApp UnOfficial
+                      </button>
+                    )}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
+                      <button
+                        onClick={() => handleTabChange('sms_config')}
+                        style={{
+                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: '0.8rem', color: activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'sms_config' ? '600' : '400',
+                          padding: '0.35rem 0', transition: 'color 0.2s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                      >
+                        SMS
+                      </button>
+                    )}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
+                      <button
+                        onClick={() => handleTabChange('rcs_config')}
+                        style={{
+                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: '0.8rem', color: activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'rcs_config' ? '600' : '400',
+                          padding: '0.35rem 0', transition: 'color 0.2s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                      >
+                        RCS
+                      </button>
+                    )}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                      <button
+                        onClick={() => handleTabChange('email_config')}
+                        style={{
+                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          fontSize: '0.8rem', color: activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'email_config' ? '600' : '400',
+                          padding: '0.35rem 0', transition: 'color 0.2s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                      >
+                        Email
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
+            )}
             </>
           )}
 
