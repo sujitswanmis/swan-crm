@@ -29,7 +29,7 @@ const tools = [
     type: "function",
     function: {
       name: "search_leads",
-      description: "Search leads by name, email, phone, or company.",
+      description: "Search leads by name, email, phone, company, or lead ID (UUID or Ref ID).",
       parameters: {
         type: "object",
         properties: {
@@ -175,10 +175,18 @@ async function executeTool(toolCall, userId, isAdmin) {
     }
     
     if (name === 'search_leads' || name === 'search_my_leads') {
+      const q = (args.query || '').trim();
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+      
       let query = supabase
         .from('leads')
-        .select('id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement')
-        .or(`name.ilike.%${args.query}%,company.ilike.%${args.query}%,phone.ilike.%${args.query}%,business_contact_1.ilike.%${args.query}%,business_contact_2.ilike.%${args.query}%`);
+        .select('id, lead_ref_id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement');
+        
+      if (isUUID) {
+        query = query.eq('id', q);
+      } else {
+        query = query.or(`name.ilike.%${q}%,company.ilike.%${q}%,phone.ilike.%${q}%,business_contact_1.ilike.%${q}%,business_contact_2.ilike.%${q}%,lead_ref_id.ilike.%${q}%`);
+      }
         
       if (scope === 'me') query = query.eq('assigned_to', userId);
       query = query.limit(10);
