@@ -50,6 +50,7 @@ export default function TeamManagement() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [addForm, setAddForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
   const [savingAddUser, setSavingAddUser] = useState(false);
+  const [showAddUserPassword, setShowAddUserPassword] = useState(false);
 
   // Access Manage state
   const [accessUser, setAccessUser] = useState(null);
@@ -60,6 +61,7 @@ export default function TeamManagement() {
   const [passwordUser, setPasswordUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -401,12 +403,21 @@ export default function TeamManagement() {
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Password *</label>
-                <input 
-                  type="password" 
-                  value={addForm.password} 
-                  onChange={e => setAddForm({...addForm, password: e.target.value})}
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-                />
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type={showAddUserPassword ? "text" : "password"} 
+                    value={addForm.password} 
+                    onChange={e => setAddForm({...addForm, password: e.target.value})}
+                    style={{ width: '100%', padding: '0.5rem 2.5rem 0.5rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserPassword(!showAddUserPassword)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  >
+                    {showAddUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp ID *</label>
@@ -695,13 +706,22 @@ export default function TeamManagement() {
             
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>New Password</label>
-              <input 
-                type="text" 
-                value={newPassword} 
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="Enter minimum 6 characters"
-                style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-              />
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type={showResetPassword ? "text" : "password"} 
+                  value={newPassword} 
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="Enter minimum 6 characters"
+                  style={{ width: '100%', padding: '0.6rem 2.5rem 0.6rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowResetPassword(!showResetPassword)}
+                  style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                >
+                  {showResetPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
