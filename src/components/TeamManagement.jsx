@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin } from '@/app/actions/team';
+import { Eye, EyeOff } from 'lucide-react';
 
 const MODULES_CONFIG = [
   { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
