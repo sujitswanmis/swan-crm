@@ -67,7 +67,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [teamMembers, setTeamMembers] = useState([]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
+  const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [globalRolePermissions, setGlobalRolePermissions] = useState(null);
@@ -631,25 +633,50 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 Team Management
               </button>
 
-              <button 
-                onClick={() => handleTabChange('aiadmin')}
-                className="nav-item" 
-                data-active={activeTab === 'aiadmin'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <LayoutDashboard size={20} />
-                AI Admin Dashboard
-              </button>
-
-              <button 
-                onClick={() => handleTabChange('aiknowledgebase')}
-                className="nav-item" 
-                data-active={activeTab === 'aiknowledgebase'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <BookOpen size={20} />
-                AI Knowledge Base (RAG)
-              </button>
+              <div style={{ display: 'contents' }}>
+                <button 
+                  onClick={() => setAiMenuExpanded(!aiMenuExpanded)}
+                  className="nav-item" 
+                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Bot size={20} />
+                    AI Admin
+                  </div>
+                  {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
+                
+                {aiMenuExpanded && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
+                    <button
+                      onClick={() => handleTabChange('aiadmin')}
+                      style={{
+                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                        fontSize: '0.8rem', color: activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                        fontWeight: activeTab === 'aiadmin' ? '600' : '400',
+                        padding: '0.35rem 0', transition: 'color 0.2s'
+                      }}
+                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                    >
+                      User AI Usage
+                    </button>
+                    <button
+                      onClick={() => handleTabChange('aiknowledgebase')}
+                      style={{
+                        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                        fontSize: '0.8rem', color: activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                        fontWeight: activeTab === 'aiknowledgebase' ? '600' : '400',
+                        padding: '0.35rem 0', transition: 'color 0.2s'
+                      }}
+                      onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                    >
+                      AI Knowledge Base (RAG)
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <button 
                 onClick={() => handleTabChange('calladmin')}
