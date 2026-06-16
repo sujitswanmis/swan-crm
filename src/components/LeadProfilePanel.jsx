@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@/utils/supabase/client';
 import { X, Send } from 'lucide-react';
 
 export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
+  const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
@@ -38,14 +39,27 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       source: lead.source || 'Website'
     });
 
-    // Fetch existing notes
+    // Fetch ALL existing notes (paginated to bypass Supabase 1000-row default limit)
     const fetchNotes = async () => {
-      const { data } = await supabase
-        .from('lead_notes')
-        .select('*')
-        .eq('lead_id', lead.id)
-        .order('created_at', { ascending: false });
-      if (data) setNotes(data);
+      let allNotes = [];
+      let from = 0;
+      const pageSize = 1000;
+      
+      while (true) {
+        const { data, error } = await supabase
+          .from('lead_notes')
+          .select('*')
+          .eq('lead_id', lead.id)
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+        
+        if (error || !data || data.length === 0) break;
+        allNotes = [...allNotes, ...data];
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      
+      if (allNotes.length > 0) setNotes(allNotes);
     };
     fetchNotes();
 
@@ -76,19 +90,26 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       .from('lead_notes')
       .insert([{ lead_id: lead.id, note_text: newNote, created_by: actor }]);
 
-    if (!error) {
-      setNewNote('');
+    if (error) {
+      alert("Error adding note: " + error.message);
+      return;
     }
+    setNewNote('');
   };
 
   const handleFollowUpChange = async (e) => {
     const newDate = e.target.value;
+    if (!newDate) return;
+    
     setFollowUpDate(newDate);
-
     const isoDateStr = new Date(newDate).toISOString();
 
     // Update lead
-    await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
+    const { error: updateError } = await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
+    if (updateError) {
+      alert("Error updating follow-up date: " + updateError.message);
+      return;
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
     const actor = userName || user?.email?.split('@')[0] || 'System';
@@ -102,11 +123,14 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     const formattedDate = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
     // Log history
-    await supabase.from('lead_notes').insert([{
+    const { error: noteError } = await supabase.from('lead_notes').insert([{
       lead_id: lead.id,
       note_text: `Follow-up scheduled for: ${formattedDate}`,
       created_by: actor
     }]);
+    if (noteError) {
+      console.error("Error inserting follow-up note:", noteError.message);
+    }
   };
 
   const handleEditChange = (e) => {
@@ -114,17 +138,24 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
   };
 
   const handleSaveEdit = async () => {
-    await supabase.from('leads').update(editForm).eq('id', lead.id);
+    const { error: updateError } = await supabase.from('leads').update(editForm).eq('id', lead.id);
+    if (updateError) {
+      alert("Error saving changes: " + updateError.message);
+      return;
+    }
     
     const { data: { user } } = await supabase.auth.getUser();
     const actor = userName || user?.email?.split('@')[0] || 'System';
     
     // Log history
-    await supabase.from('lead_notes').insert([{
+    const { error: noteError } = await supabase.from('lead_notes').insert([{
       lead_id: lead.id,
       note_text: `Profile updated`,
       created_by: actor
     }]);
+    if (noteError) {
+      console.error("Error inserting update profile note:", noteError.message);
+    }
 
     if (onLeadUpdate) {
       onLeadUpdate({ ...lead, ...editForm });

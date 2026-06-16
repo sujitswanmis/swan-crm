@@ -8,7 +8,15 @@ import {
 import { getDashboardMetrics } from '@/app/actions/analytics';
 import { Calendar, Activity, Loader2 } from 'lucide-react';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#a855f7', '#ef4444', '#10b981'];
+const COLORS = [
+  'var(--chart-1, #3b82f6)',
+  'var(--chart-2, #10b981)',
+  'var(--chart-3, #f59e0b)',
+  'var(--chart-4, #8b5cf6)',
+  'var(--chart-5, #ec4899)',
+  'var(--chart-6, #06b6d4)',
+  'var(--chart-7, #f97316)'
+];
 
 export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
   const [dateFilter, setDateFilter] = useState('Today');
@@ -164,19 +172,19 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
 
       {/* Top Metric Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '1.5rem' }}>
-        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
+        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--chart-1, #3b82f6)' }}>
           <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Leads</h3>
           <p style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>{totalLeads}</p>
         </div>
-        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #10b981' }}>
+        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--chart-2, #10b981)' }}>
           <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Deals Won</h3>
           <p style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>{wonLeads}</p>
         </div>
-        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #f59e0b' }}>
+        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--chart-3, #f59e0b)' }}>
           <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Rescheduled Tasks</h3>
           <p style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>{rescheduledCount}</p>
         </div>
-        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #8b5cf6' }}>
+        <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--chart-4, #8b5cf6)' }}>
           <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>WhatsApp Sent ({dateFilter})</h3>
           <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', display: 'flex', alignItems: 'center' }}>
             {loading ? <Loader2 size={24} className="animate-spin" /> : metrics.whatsappStats.period}
@@ -192,12 +200,12 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
           <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Leads by Stage</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={stageData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
-              <YAxis axisLine={false} tickLine={false} />
-              <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-              <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="count" position="top" style={{ fill: '#334155', fontSize: 12, fontWeight: 600 }} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)' }} />
+              <RechartsTooltip cursor={{fill: 'var(--bg-primary)'}} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+              <Bar dataKey="count" fill="var(--accent-color)" radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="count" position="top" style={{ fill: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -205,9 +213,9 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
 
         {/* Employee Activity Column */}
         <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
-          <div style={{ padding: '1.25rem 1.5rem', backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '1.25rem 1.5rem', backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Activity size={18} style={{ color: '#3b82f6' }} /> Employee Activity
+              <Activity size={18} style={{ color: 'var(--accent-color)' }} /> Employee Activity
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{dateFilter}</span>
           </div>
@@ -222,7 +230,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
               </div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                <thead>
+                <thead style={{ backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>Employee</th>
                     <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>Unique Leads</th>
@@ -243,7 +251,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
                       <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-primary)' }}>
                         {act.uniqueLeads}
                       </td>
-                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--accent-color)' }}>
                         {act.actions}
                       </td>
                     </tr>
@@ -272,7 +280,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <RechartsTooltip formatter={(value) => `₹${value.toLocaleString('en-IN')}`} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+              <RechartsTooltip formatter={(value) => `₹${value.toLocaleString('en-IN')}`} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
               <Legend verticalAlign="bottom" height={36} />
             </PieChart>
           </ResponsiveContainer>

@@ -13,7 +13,8 @@ export default function AiAdminModule() {
     "gpt-4o-mini",
     "gpt-4o",
     "gpt-4-turbo",
-    "gpt-5.5",
+    "gpt-5.5-instant",
+    "gpt-5.5-thinking",
     "gpt-5.5-pro"
   ];
 
@@ -156,7 +157,7 @@ export default function AiAdminModule() {
 
       <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead style={{ background: 'var(--th-filtered-bg)' }}>
+          <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Employee</th>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Role</th>

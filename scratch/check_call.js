@@ -8,16 +8,25 @@ const { createClient } = require('@supabase/supabase-js');
 
 async function checkCall() {
   const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const roomName = 'room_1781076946954_f7hdq';
   
-  const { data, error } = await supabase
+  const { data: session } = await supabase
     .from('call_sessions')
     .select('*')
-    .eq('agent_call_uuid', 'a87731c8-b8d5-4e66-89b0-b01ca59cc190');
+    .eq('room_name', roomName)
+    .single();
     
-  if (data && data.length > 0) {
-    console.log('Call details:', data[0].calling_mode, data[0].agent_dial_to);
-  } else {
-    console.log('Call not found in DB', error);
-  }
+  console.log('Session Details:', JSON.stringify(session, null, 2));
+
+  const { data: events } = await supabase
+    .from('call_events')
+    .select('*')
+    .eq('room_name', roomName)
+    .order('created_at', { ascending: true });
+    
+  console.log('\n--- CALL EVENTS ---');
+  events?.forEach(e => {
+    console.log(e.created_at, e.event_type, JSON.stringify(e.raw_payload));
+  });
 }
 checkCall().catch(console.error);

@@ -171,15 +171,10 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
   useEffect(() => {
     setLoading(true);
     if (initialData && initialData.length > 0) {
-      // Create a sorted copy for consistent ID generation
-      const sorted = [...initialData].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-      const processed = sorted.map((lead, idx) => {
-         const d = new Date(lead.created_at || new Date());
-         const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-         const seq = String(idx + 1).padStart(7, '0');
+      const processed = initialData.map((lead) => {
          return {
            ...lead,
-           lead_formatted_id: dateStr + seq,
+           lead_formatted_id: lead.lead_ref_id || lead.id,
            business_contact_aio: [lead.business_contact_1, lead.business_contact_2, lead.business_alt_1, lead.business_alt_2].filter(Boolean).join(', '),
            business_email_aio: [lead.business_email_1, lead.business_email_2, lead.business_alt_email_1, lead.business_alt_email_2].filter(Boolean).join(', '),
            cp_name_aio: [lead.name, lead.cp2_name, lead.cp3_name].filter(Boolean).join(', '),
@@ -471,7 +466,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
       {/* Table Container - Horizontally Scrollable */}
       <div className="table-responsive-wrapper" style={{ flex: 1 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${visibleColumns.length * 150}px` }}>
-          <thead>
+          <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '40px' }}>
                 <input 
@@ -537,8 +532,13 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                 onClick={() => setActiveRowId(lead.id)}
                 style={{ 
                   borderBottom: '1px solid var(--border-light)', 
-                  backgroundColor: activeRowId === lead.id ? 'var(--th-filtered-bg)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'),
-                  cursor: 'pointer'
+                  backgroundColor: activeRowId === lead.id 
+                    ? 'var(--th-filtered-hover-bg)' 
+                    : (selectedRows.includes(lead.id) 
+                      ? 'var(--th-filtered-bg)' 
+                      : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)')),
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s ease'
                 }}
               >
                 <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>

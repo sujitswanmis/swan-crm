@@ -13,6 +13,7 @@ export async function POST(req) {
     const formData = await req.formData();
     const title = formData.get('title');
     const type = formData.get('type') || 'text';
+    const visibility = formData.get('visibility') || 'internal';
     let content = '';
 
     if (!title) {
@@ -38,19 +39,29 @@ export async function POST(req) {
       }
     } else if (type === 'pdf') {
       const file = formData.get('file');
-      if (!file) return NextResponse.json({ error: 'PDF file is required' }, { status: 400 });
-      try {
-        if (typeof global.DOMMatrix === 'undefined') {
-          global.DOMMatrix = class DOMMatrix {};
+      content = formData.get('content');
+      
+      if (!content && !file) {
+        return NextResponse.json({ error: 'PDF file or extracted content is required' }, { status: 400 });
+      }
+      
+      if (!content) {
+        try {
+          if (typeof global.DOMMatrix === 'undefined') {
+            global.DOMMatrix = class DOMMatrix {};
+          }
+          let pdfParser = require('pdf-parse');
+          if (pdfParser && pdfParser.default) {
+            pdfParser = pdfParser.default;
+          }
+          const bytes = await file.arrayBuffer();
+          const buffer = Buffer.from(bytes);
+          const pdfData = await pdfParser(buffer);
+          content = pdfData.text.replace(/\s+/g, ' ').trim();
+          if (!content) throw new Error("Could not extract text from PDF");
+        } catch (err) {
+          return NextResponse.json({ error: 'Failed to parse PDF: ' + err.message }, { status: 400 });
         }
-        const pdf = require('pdf-parse');
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        const pdfData = await pdf(buffer);
-        content = pdfData.text.replace(/\s+/g, ' ').trim();
-        if (!content) throw new Error("Could not extract text from PDF");
-      } catch (err) {
-        return NextResponse.json({ error: 'Failed to parse PDF: ' + err.message }, { status: 400 });
       }
     } else {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
@@ -83,10 +94,11 @@ export async function POST(req) {
     const embedding = embeddingData.data[0].embedding;
 
     // 2. Save to Supabase
+    const dbTitle = `[${visibility}][${type}]${title}`;
     const { data, error } = await supabase
       .from('company_documents')
       .insert({
-        title,
+        title: dbTitle,
         content,
         embedding
       })
@@ -97,7 +109,17 @@ export async function POST(req) {
       throw error;
     }
 
-    return NextResponse.json({ success: true, document: data });
+    // Return document with clean title and type
+    return NextResponse.json({ 
+      success: true, 
+      document: {
+        id: data.id,
+        title: title,
+        type: type,
+        visibility: visibility,
+        created_at: data.created_at
+      } 
+    });
 
   } catch (error) {
     console.error('Knowledge Base Error:', error);
@@ -114,7 +136,41 @@ export async function GET() {
 
     if (error) throw error;
     
-    return NextResponse.json({ documents: data });
+    // Parse the [visibility] and [type] prefix from titles
+    const parsedDocuments = (data || []).map(doc => {
+      const fullMatch = doc.title.match(/^\[(public|internal)\]\[(text|url|pdf)\](.*)$/);
+      if (fullMatch) {
+        return {
+          id: doc.id,
+          title: fullMatch[3],
+          type: fullMatch[2],
+          visibility: fullMatch[1],
+          created_at: doc.created_at
+        };
+      }
+
+      const typeMatch = doc.title.match(/^\[(text|url|pdf)\](.*)$/);
+      if (typeMatch) {
+        return {
+          id: doc.id,
+          title: typeMatch[2],
+          type: typeMatch[1],
+          visibility: 'internal',
+          created_at: doc.created_at
+        };
+      }
+
+      // Default fallback for old docs
+      return {
+        id: doc.id,
+        title: doc.title,
+        type: 'text',
+        visibility: 'internal',
+        created_at: doc.created_at
+      };
+    });
+
+    return NextResponse.json({ documents: parsedDocuments });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

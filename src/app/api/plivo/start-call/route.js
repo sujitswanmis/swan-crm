@@ -89,8 +89,6 @@ export async function POST(req) {
       {
         answerMethod: 'POST',
         fallbackMethod: 'POST',
-        callbackUrl: `${appBaseUrl}/api/plivo/ring-callback`,
-        callbackMethod: 'POST',
       }
     );
 

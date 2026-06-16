@@ -21,6 +21,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
+  const [agentMobile, setAgentMobile] = useState('');
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
@@ -37,6 +38,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
           setAgentData(data);
           if (data.default_calling_mode) {
              setCallingMode(data.default_calling_mode);
+          }
+          if (data.mobile_number) {
+             const cleanNum = data.mobile_number.replace(/[^0-9]/g, '');
+             setAgentMobile(cleanNum.slice(-10));
           }
         }
       } catch (err) {
@@ -259,7 +264,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           customerNumber: `+91${customerNumber}`,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
-          agentMobile: agentData?.mobile_number
+          agentMobile: callingMode === 'mobile' ? `+91${agentMobile}` : undefined
         })
       });
       const result = await res.json();
@@ -432,14 +437,36 @@ export default function GlobalSoftphoneWidget({ userId }) {
                     style={{ width: '100%', padding: '0.6rem', border: '1px solid #334155', borderRadius: '6px', outline: 'none', background: '#1e293b', color: 'white', fontSize: '0.8rem' }}
                   >
                     <option value="browser_webrtc">Browser Softphone (WebRTC)</option>
-                    <option value="mobile">Dial via my Mobile ({agentData.mobile_number})</option>
+                    <option value="mobile">Dial via my Mobile Phone</option>
                     <option value="external_softphone">External App (MicroSIP)</option>
                   </select>
                 </div>
 
+                {callingMode === 'mobile' && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>Agent Mobile (Call Landing Number)</label>
+                    <div style={{ display: 'flex', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', overflow: 'hidden' }}>
+                      <span style={{ background: '#334155', padding: '0.6rem', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                      <input 
+                        type="text" 
+                        value={agentMobile}
+                        onChange={(e) => setAgentMobile(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="Agent Mobile Number"
+                        style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'white' }}
+                        maxLength={10}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <button 
                   type="submit"
-                  disabled={!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')}
+                  disabled={
+                    !customerNumber || 
+                    customerNumber.length < 10 || 
+                    (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                    (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                  }
                   style={{ 
                     width: '100%', 
                     padding: '0.6rem', 
@@ -453,8 +480,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
                     alignItems: 'center', 
                     justifyContent: 'center', 
                     gap: '0.5rem',
-                    cursor: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')) ? 'not-allowed' : 'pointer',
-                    opacity: (!customerNumber || customerNumber.length < 10 || (callingMode === 'browser_webrtc' && connectionState !== 'online')) ? 0.5 : 1 
+                    cursor: (
+                      !customerNumber || 
+                      customerNumber.length < 10 || 
+                      (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                      (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                    ) ? 'not-allowed' : 'pointer',
+                    opacity: (
+                      !customerNumber || 
+                      customerNumber.length < 10 || 
+                      (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                      (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                    ) ? 0.5 : 1 
                   }}
                 >
                   <PhoneCall size={16} />

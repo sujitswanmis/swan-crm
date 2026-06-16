@@ -13,7 +13,7 @@ import LeadFormModal from './LeadFormModal';
 import LeadProfilePanel from './LeadProfilePanel';
 import ClientRegistration from './ClientRegistration';
 import WhatsappSendModal from './WhatsappSendModal';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import Papa from 'papaparse';
 
@@ -65,7 +65,9 @@ const processLeads = (rawLeads) => {
       latest_emp_name: latestEmpName,
       completion_count: manualNotes.length,
       last_follow_up_duration: duration,
-      last_timestamp: lastTimestamp
+      last_timestamp: lastTimestamp,
+      // Column uses 'next_follow_up_date' but DB stores as 'follow_up_date' — map both
+      next_follow_up_date: lead.follow_up_date || lead.next_follow_up_date || null
     };
   });
 };
@@ -101,15 +103,23 @@ const columns = [
       const isManager = userRole === 'admin' || userRole === 'Admin';
       
       const updateAssignee = async (newAssignee) => {
-        const { supabase } = await import('@/lib/supabase');
+        const supabase = createClient();
         const valToSet = newAssignee === '' ? null : newAssignee;
-        await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
+        const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
+        if (updateError) {
+          alert("Error updating assignee: " + updateError.message);
+          return;
+        }
+        
         const { data: { user } } = await supabase.auth.getUser();
         const actor = userName || user?.email?.split('@')[0] || 'System';
         
         const newAssigneeName = newAssignee === '' ? 'Open Lead (Unassigned)' : teamMembers.find(m => m.user_id === newAssignee)?.emp_name || 'Unknown';
         const noteText = `Lead assigned to: ${newAssigneeName}`;
-        await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
+        const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
+        if (noteError) {
+          console.error("Error creating assignee note:", noteError.message);
+        }
 
         const newNote = {
           id: Date.now(),
@@ -201,7 +211,7 @@ const columns = [
       const lead = info.row.original;
       
       const updateStatus = async (newStatus) => {
-        const { supabase } = await import('@/lib/supabase');
+        const supabase = createClient();
         const userRole = info.table.options.meta?.userRole;
         const moduleAccess = info.table.options.meta?.moduleAccess || {};
         const leadsAccess = moduleAccess?.leads || {};
@@ -233,10 +243,18 @@ const columns = [
           }
         }
 
-        await supabase.from('leads').update(updates).eq('id', lead.id);
+        const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
+        if (updateError) {
+          alert("Error updating status: " + updateError.message);
+          return;
+        }
+        
         const { data: { user } } = await supabase.auth.getUser();
         const actor = userName || user?.email?.split('@')[0] || 'System';
-        await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
+        const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
+        if (noteError) {
+          console.error("Error creating status note:", noteError.message);
+        }
         
         const newNote = {
           id: Date.now(),
@@ -421,7 +439,8 @@ const columns = [
 ];
 
 export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
-
+  // Authenticated Supabase client — used for realtime, CSV import, etc.
+  const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState(() => processLeads(initialData || []));
   const stagePrefix = stageFilter ? stageFilter.split(' - ')[0].replace(/^0/, '') + ';' : null;
@@ -485,6 +504,16 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     return {};
   });
   const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -571,7 +600,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     let val = String(row.getValue(columnId) || '');
     
     if (columnId === 'assigned_to') {
-      const teamMembers = row.table.options.meta?.teamMembers || [];
+      const teamMembers = table.options.meta?.teamMembers || [];
       const member = teamMembers.find(m => m.user_id === val);
       val = member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
     } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
@@ -626,27 +655,76 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   }, [data]);
 
   useEffect(() => {
-    // Setup Supabase Realtime Subscription
+    // Advanced Realtime Subscription — leads table + lead_notes table
     const channel = supabase
-      .channel('realtime leads')
+      .channel('realtime-crm-v2')
+
+      // ── leads INSERT ─────────────────────────────────────────────────────────
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         setData((current) => {
           if (current.some(item => item.id === payload.new.id)) return current;
-          return processLeads([payload.new, ...current]);
+          return processLeads([{ ...payload.new, lead_notes: [] }, ...current]);
         });
       })
+
+      // ── leads UPDATE ─────────────────────────────────────────────────────────
+      // Preserve lead_notes (they live in a separate table, not in payload.new)
+      // and re-run processLeads so ALL computed columns stay accurate
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
-        setData((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new } : item));
+        setData((current) => current.map(item => {
+          if (item.id !== payload.new.id) return item;
+          const mergedRaw = { ...item, ...payload.new, lead_notes: item.lead_notes || [] };
+          return processLeads([mergedRaw])[0];
+        }));
       })
+
+      // ── leads DELETE ─────────────────────────────────────────────────────────
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setData((current) => current.filter(item => item.id !== payload.old.id));
       })
+
+      // ── lead_notes INSERT ────────────────────────────────────────────────────
+      // This is the key fix: whenever ANY note is inserted (status change, manual
+      // remark, follow-up date) — update the matching lead's computed columns:
+      //   last_timestamp, last_status, latest_remark, latest_emp_name,
+      //   completion_count, last_follow_up_duration
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
+        const incoming = payload.new;
+        setData((current) => current.map(item => {
+          if (item.id !== incoming.lead_id) return item;
+
+          const existingNotes = item.lead_notes || [];
+          const incomingTime = new Date(incoming.created_at).getTime();
+
+          // Smart dedup: if there's an optimistic (fake) note with same text
+          // and author created within 30s, replace it with the real DB record
+          const optimisticIdx = existingNotes.findIndex(n =>
+            n.note_text === incoming.note_text &&
+            n.created_by === incoming.created_by &&
+            Math.abs(new Date(n.created_at).getTime() - incomingTime) < 30000
+          );
+
+          let updatedNotes;
+          if (optimisticIdx >= 0) {
+            // Swap optimistic note → real DB note (preserves correct UUID & timestamp)
+            updatedNotes = existingNotes.map((n, i) => i === optimisticIdx ? incoming : n);
+          } else {
+            // Brand-new note (e.g. added from LeadProfilePanel by another user)
+            updatedNotes = [...existingNotes, incoming];
+          }
+
+          const mergedRaw = { ...item, lead_notes: updatedNotes };
+          return processLeads([mergedRaw])[0];
+        }));
+      })
+
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [supabase]);
+
 
   const table = useReactTable({
     data,
@@ -726,7 +804,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         const cleanRemark = (d.latest_remark || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
         return [
-          d.lead_formatted_id || d.id,
+          d.lead_ref_id || d.id,
           `"${d.business_type || ''}"`,
           `"${d.company || ''}"`,
           `"${bContact}"`,
@@ -784,8 +862,16 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             source: row['Source'] || row['source'] || 'Website',
           };
           
-          const { error } = await supabase.from('leads').insert([newLead]);
-          if (!error) successCount++;
+          const { data, error } = await supabase.from('leads').insert([newLead]).select();
+          if (!error && data && data.length > 0) {
+            successCount++;
+            const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+            const d = new Date(data[0].created_at || new Date());
+            const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+            const seq = String(count).padStart(7, '0');
+            const newFormattedId = dateStr + seq;
+            await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', data[0].id);
+          }
         }
         
         setIsImporting(false);
@@ -900,114 +986,306 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         </div>
       </div>
 
-      <div className="table-responsive-wrapper" style={{ flex: 1 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1500px' }}>
-          <thead style={{ backgroundColor: 'var(--bg-primary)' }}>
-          {table.getHeaderGroups().map(headerGroup => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map(header => (
-                <th key={header.id} className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === header.id ? 100 : 10, padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                  {header.isPlaceholder ? null : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                      <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
-                      
-                      {header.column.getCanFilter() && (
-                        <div style={{ position: 'relative' }}>
-                          <button 
-                            onClick={() => {
-                              setActiveFilterColumn(activeFilterColumn === header.id ? null : header.id);
-                              setFilterSearchText('');
-                            }}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: header.column.getIsFiltered() ? 'var(--accent-color)' : 'var(--text-secondary)' }}
-                          >
-                            <Filter size={14} />
-                          </button>
-                          
-                          {activeFilterColumn === header.id && (
-                            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
-                              {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date') ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Date:</label>
-                                  <input 
-                                    type="date"
-                                    value={header.column.getFilterValue() || ''}
-                                    onChange={e => header.column.setFilterValue(e.target.value ? e.target.value : undefined)}
-                                    style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem' }}
-                                  />
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
-                                    <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
-                                    <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <input 
-                                    type="text"
-                                    placeholder="Search..."
-                                    value={filterSearchText}
-                                    onChange={e => setFilterSearchText(e.target.value)}
-                                    style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
-                                  />
-                                  <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                    {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
-                                      const rawFilterValue = header.column.getFilterValue();
-                                      const currentFilterValue = Array.isArray(rawFilterValue) ? rawFilterValue : (rawFilterValue ? [rawFilterValue] : []);
-                                      const isChecked = currentFilterValue.includes(val);
-                                      return (
-                                        <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
-                                          <input 
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={() => {
-                                              const newValue = isChecked 
-                                                ? currentFilterValue.filter(v => String(v) !== String(val))
-                                                : [...currentFilterValue, val];
-                                              header.column.setFilterValue(newValue.length ? newValue : undefined);
-                                            }}
-                                          />
-                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
-                                    <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
-                                    <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
+      {isMobile ? (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: 'var(--bg-primary)' }}>
+          {table.getRowModel().rows.length === 0 ? (
+            <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              No leads found.
+            </div>
+          ) : (
+            table.getRowModel().rows.map((row, idx) => {
+              const lead = row.original;
+              
+              const getCleanStatus = (status) => {
+                if (!status) return 'New';
+                if (status.includes('>')) return status.split('>').pop();
+                return status;
+              };
+
+              const getStatusColors = (status) => {
+                if (!status) return { bg: 'var(--status-new-bg)', text: 'var(--status-new-text)' };
+                if (status.startsWith('7;') || status.includes('Conversion') || status.includes('Converted') || status.includes('Won')) {
+                  return { bg: 'var(--status-converted-bg)', text: 'var(--status-converted-text)' };
+                }
+                if (status.startsWith('2;') || status.startsWith('3;') || status.startsWith('4;') || status.includes('Contact') || status.includes('Follow')) {
+                  return { bg: 'var(--status-contacted-bg)', text: 'var(--status-contacted-text)' };
+                }
+                return { bg: 'var(--status-new-bg)', text: 'var(--status-new-text)' };
+              };
+
+              const statusColors = getStatusColors(lead.status);
+
+              return (
+                <div 
+                  key={row.id} 
+                  onClick={() => {
+                    setActiveRowId(row.id);
+                  }}
+                  style={{
+                    backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : 'var(--bg-surface)',
+                    border: `1px solid ${activeRowId === row.id ? 'var(--accent-color)' : 'var(--border-light)'}`,
+                    borderRadius: '10px',
+                    padding: '1.25rem',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'all 0.2s ease'
+                  }}
+                  className="card-hover-lift"
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {lead.name}
+                      </h4>
+                      {lead.lead_ref_id && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem' }}>
+                          ID: {lead.lead_ref_id}
+                        </span>
                       )}
                     </div>
-                  )}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map(row => (
-            <tr 
-              key={row.id} 
-              onClick={() => setActiveRowId(row.id)}
-              style={{ 
-                borderBottom: '1px solid var(--border-light)', 
-                backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : 'transparent',
-                cursor: 'pointer'
-              }}
-            >
-              {row.getVisibleCells().map(cell => (
-                <td key={cell.id} style={{ padding: '1rem 1.25rem', fontSize: '0.9rem' }}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                    <span style={{
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      backgroundColor: statusColors.bg,
+                      color: statusColors.text,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.03em',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {getCleanStatus(lead.status)}
+                    </span>
+                  </div>
+
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 1fr', 
+                    gap: '0.6rem 1rem', 
+                    fontSize: '0.8rem', 
+                    color: 'var(--text-secondary)',
+                    borderTop: '1px solid var(--border-light)',
+                    borderBottom: '1px solid var(--border-light)',
+                    padding: '0.75rem 0',
+                    margin: '0.25rem 0'
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Company:</span>
+                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>{lead.company || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Value:</span>
+                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                        {lead.deal_value ? `₹${Number(lead.deal_value).toLocaleString('en-IN')}` : 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Assigned To:</span>
+                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                        {(() => {
+                          if (!lead.assigned_to) return 'Unassigned';
+                          const member = (teamMembers || []).find(t => t.user_id === lead.assigned_to);
+                          return member ? member.emp_name : lead.assigned_to.substring(0, 8);
+                        })()}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Source:</span>
+                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 500 }}>{lead.source || 'N/A'}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', width: '100%', marginTop: '0.25rem' }}>
+                    {lead.phone && (
+                      <a 
+                        href={`tel:${lead.phone}`}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                          color: 'var(--accent-color)',
+                          textDecoration: 'none',
+                          textAlign: 'center',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.25rem',
+                          border: '1px solid transparent'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        📞 Call
+                      </a>
+                    )}
+                    {lead.phone && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setWhatsappModalLead(lead);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                          color: '#10b981',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.25rem'
+                        }}
+                      >
+                        💬 WhatsApp
+                      </button>
+                    )}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProfileMode('history');
+                        setSelectedLead(lead);
+                      }}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-light)',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      Details
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="table-responsive-wrapper" style={{ flex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1500px' }}>
+            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map(header => (
+                  <th key={header.id} className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === header.id ? 100 : 10, padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
+                    {header.isPlaceholder ? null : (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                        
+                        {header.column.getCanFilter() && (
+                          <div style={{ position: 'relative' }}>
+                            <button 
+                              onClick={() => {
+                                setActiveFilterColumn(activeFilterColumn === header.id ? null : header.id);
+                                setFilterSearchText('');
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: header.column.getIsFiltered() ? 'var(--accent-color)' : 'var(--text-secondary)' }}
+                            >
+                              <Filter size={14} />
+                            </button>
+                            
+                            {activeFilterColumn === header.id && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
+                                {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date') ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Date:</label>
+                                    <input 
+                                      type="date"
+                                      value={header.column.getFilterValue() || ''}
+                                      onChange={e => header.column.setFilterValue(e.target.value ? e.target.value : undefined)}
+                                      style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem' }}
+                                    />
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                                      <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                                      <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <input 
+                                      type="text"
+                                      placeholder="Search..."
+                                      value={filterSearchText}
+                                      onChange={e => setFilterSearchText(e.target.value)}
+                                      style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
+                                    />
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                      {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
+                                        const rawFilterValue = header.column.getFilterValue();
+                                        const currentFilterValue = Array.isArray(rawFilterValue) ? rawFilterValue : (rawFilterValue ? [rawFilterValue] : []);
+                                        const isChecked = currentFilterValue.includes(val);
+                                        return (
+                                          <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
+                                            <input 
+                                              type="checkbox"
+                                              checked={isChecked}
+                                              onChange={() => {
+                                                const newValue = isChecked 
+                                                  ? currentFilterValue.filter(v => String(v) !== String(val))
+                                                  : [...currentFilterValue, val];
+                                                header.column.setFilterValue(newValue.length ? newValue : undefined);
+                                              }}
+                                            />
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                                      <button onClick={() => header.column.setFilterValue(undefined)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                                      <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row, idx) => (
+              <tr 
+                key={row.id} 
+                onClick={() => setActiveRowId(row.id)}
+                style={{ 
+                  borderBottom: '1px solid var(--border-light)', 
+                  backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'),
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s ease'
+                }}
+              >
+                {row.getVisibleCells().map(cell => (
+                  <td key={cell.id} style={{ padding: '1rem 1.25rem', fontSize: '0.9rem' }}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+      )}
       
       <div style={{ padding: '1rem 1.25rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>

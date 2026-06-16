@@ -11,7 +11,7 @@ async function checkAgents() {
   
   const { data, error } = await supabase
     .from('call_agents')
-    .select('id, plivo_username, plivo_sip_uri');
+    .select('*')
     
   if (data) {
     console.log(data);

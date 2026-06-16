@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin } from '@/app/actions/team';
 import { Eye, EyeOff } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const MODULES_CONFIG = [
   { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
@@ -72,6 +74,13 @@ export default function TeamManagement() {
   const [newPassword, setNewPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+
+  // Chat viewer state
+  const [viewChatUser, setViewChatUser] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [loadingChat, setLoadingChat] = useState(false);
+  const [userSessions, setUserSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState('');
 
   useEffect(() => {
     fetchUsers();
@@ -230,6 +239,36 @@ export default function TeamManagement() {
     }
   };
 
+  const handleViewChatClick = async (user) => {
+    setViewChatUser(user);
+    setUserSessions([]);
+    setSelectedSessionId('');
+    setChatMessages([]);
+    setLoadingChat(true);
+    try {
+      const res = await fetch(`/api/ai/history?userId=${user.user_id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const sessions = data.sessions || [];
+        setUserSessions(sessions);
+        if (sessions.length > 0) {
+          const latestSession = sessions[sessions.length - 1];
+          setSelectedSessionId(latestSession.id);
+          setChatMessages(latestSession.messages || []);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load chat history:", e);
+    }
+    setLoadingChat(false);
+  };
+
+  const handleSessionChange = (sessionId) => {
+    setSelectedSessionId(sessionId);
+    const selected = userSessions.find(s => s.id === sessionId);
+    setChatMessages(selected ? selected.messages || [] : []);
+  };
+
   const handleSaveAddUser = async () => {
     if (!addForm.email || !addForm.password || !addForm.emp_id || !addForm.emp_name) {
       alert("Email, Password, Emp ID, and Name are required.");
@@ -292,7 +331,7 @@ export default function TeamManagement() {
       </div>
 
       <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-        <thead style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
+        <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
           <tr>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
@@ -376,6 +415,12 @@ export default function TeamManagement() {
               </td>
               <td style={{ padding: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button 
+                    onClick={() => handleViewChatClick(user)}
+                    style={{ padding: '0.4rem 0.8rem', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                  >
+                    View Chat
+                  </button>
                   <button 
                     onClick={() => handleEditClick(user)}
                     style={{ padding: '0.4rem 0.8rem', backgroundColor: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
@@ -747,6 +792,106 @@ export default function TeamManagement() {
                 style={{ padding: '0.5rem 1.5rem', borderRadius: '4px', background: '#b91c1c', color: 'white', border: 'none', cursor: savingPassword ? 'not-allowed' : 'pointer' }}
               >
                 {savingPassword ? 'Saving...' : 'Update Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Chat Modal */}
+      {viewChatUser && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '650px', display: 'flex', flexDirection: 'column', maxHeight: '85vh', background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>Team Member Chat History</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.25rem 0 0 0' }}>
+                  User: {viewChatUser.emp_name || 'Team Member'} ({viewChatUser.emp_id || '-'})
+                </p>
+              </div>
+              <button 
+                onClick={() => setViewChatUser(null)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Session selector */}
+            {!loadingChat && userSessions.length > 0 && (
+              <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Chat Session:</span>
+                <select 
+                  value={selectedSessionId}
+                  onChange={(e) => handleSessionChange(e.target.value)}
+                  style={{ 
+                    padding: '0.4rem 0.75rem', 
+                    borderRadius: '6px', 
+                    border: '1px solid var(--border-light)', 
+                    backgroundColor: 'var(--bg-surface)', 
+                    color: 'var(--text-primary)',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {userSessions.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.title || s.id} ({s.updated_at ? new Date(s.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem', minHeight: '350px', display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              {loadingChat ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '350px', color: 'var(--text-secondary)' }}>
+                  Loading chat logs...
+                </div>
+              ) : chatMessages.length === 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '350px', color: 'var(--text-secondary)' }}>
+                  No chat history recorded yet for this team member.
+                </div>
+              ) : (
+                chatMessages.map((msg, idx) => {
+                  const isUser = msg.role === 'user';
+                  return (
+                    <div key={idx} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                      <div style={{ 
+                        maxWidth: '85%', 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '12px',
+                        fontSize: '0.85rem',
+                        lineHeight: 1.45,
+                        backgroundColor: isUser ? '#1e3a8a' : 'var(--th-bg)',
+                        color: isUser ? '#ffffff' : 'var(--text-primary)',
+                        border: isUser ? 'none' : '1px solid var(--border-light)',
+                        textAlign: 'left'
+                      }}>
+                        <div style={{ fontSize: '0.7rem', color: isUser ? 'rgba(255,255,255,0.75)' : 'var(--text-secondary)', marginBottom: '0.25rem', fontWeight: 600 }}>
+                          {isUser ? 'User' : 'Swan AI'}
+                        </div>
+                        <div className="markdown-body">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+              <button 
+                onClick={() => setViewChatUser(null)}
+                className="btn-primary"
+                style={{ padding: '0.5rem 1.5rem', borderRadius: '4px' }}
+              >
+                Close View
               </button>
             </div>
           </div>

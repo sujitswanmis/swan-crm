@@ -142,8 +142,8 @@ export default function AuditLogsConfig() {
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--th-filtered-bg)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+              <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+                <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
                   <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>User</th>
                   <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Action</th>
                   <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Target</th>

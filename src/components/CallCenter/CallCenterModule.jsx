@@ -128,8 +128,8 @@ export default function CallCenterModule({ userId }) {
           
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: '#f1f5f9', color: '#64748b' }}>
+              <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+                <tr style={{ color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>Date & Time</th>
                   <th style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>Customer</th>
                   <th style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>Status</th>

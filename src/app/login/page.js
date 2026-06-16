@@ -98,7 +98,26 @@ export default function LoginPage() {
           await logUserSession(device);
         } catch (e) { console.error('Failed to log session', e); }
         
-        window.location.href = '/';
+        let targetPath = '/';
+        try {
+          const userId = result.data?.user?.id;
+          if (userId) {
+            const { data: roleData } = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', userId)
+              .single();
+            if (roleData?.role === 'customer') {
+              targetPath = '/chat';
+            }
+          }
+        } catch (err) {
+          console.error("Failed to check user role:", err);
+        }
+
+        const searchParams = new URLSearchParams(window.location.search);
+        const nextPath = searchParams.get('next') || targetPath;
+        window.location.href = nextPath;
       }
     }
   };

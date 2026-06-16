@@ -8,6 +8,12 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [heldMembers, setHeldMembers] = useState({});
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: null
+  });
   
   useEffect(() => {
     let interval;
@@ -91,37 +97,49 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     }
   };
 
-  const handleKick = async (memberId) => {
-    if (!confirm('Are you sure you want to kick this participant?')) return;
-    setLoadingAction(`kick_${memberId}`);
-    try {
-      await fetch('/api/plivo/controls/kick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomName: session.room_name,
-          memberId
-        })
-      });
-      await fetchMembers();
-    } finally {
-      setLoadingAction(null);
-    }
+  const handleKick = (memberId) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Kick Participant?',
+      message: 'Are you sure you want to kick this participant from the call?',
+      onConfirm: async () => {
+        setLoadingAction(`kick_${memberId}`);
+        try {
+          await fetch('/api/plivo/controls/kick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomName: session.room_name,
+              memberId
+            })
+          });
+          await fetchMembers();
+        } finally {
+          setLoadingAction(null);
+        }
+      }
+    });
   };
 
-  const handleHangupAll = async () => {
-    if (!confirm('End the call for everyone?')) return;
-    setLoadingAction('hangup_all');
-    try {
-      await fetch('/api/plivo/controls/hangup-conference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomName: session.room_name })
-      });
-      // The supabase subscription will catch the end event and close the panel.
-    } finally {
-      setLoadingAction(null);
-    }
+  const handleHangupAll = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'End Call For All?',
+      message: 'This will hang up the call for all participants and end the call session. Are you sure?',
+      onConfirm: async () => {
+        setLoadingAction('hangup_all');
+        try {
+          await fetch('/api/plivo/controls/hangup-conference', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomName: session.room_name })
+          });
+          // The supabase subscription will catch the end event and close the panel.
+        } finally {
+          setLoadingAction(null);
+        }
+      }
+    });
   };
 
   const handleAddParticipant = async (e) => {
@@ -258,11 +276,108 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
         </form>
       </div>
 
+      {/* Custom Premium Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            padding: '1.75rem',
+            width: '90%',
+            maxWidth: '400px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5), 0 10px 10px -5px rgba(0,0,0,0.4)',
+            textAlign: 'center',
+            animation: 'scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)'
+          }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.75rem' }}>
+              {confirmModal.title}
+            </h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.75rem' }}>
+              {confirmModal.message}
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="confirm-btn-cancel"
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  flex: 1,
+                  padding: '0.6rem 1rem',
+                  background: '#334155',
+                  color: '#cbd5e1',
+                  border: '1px solid #475569',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-btn-danger"
+                onClick={() => {
+                  if (confirmModal.onConfirm) confirmModal.onConfirm();
+                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                }}
+                style={{
+                  flex: 1,
+                  padding: '0.6rem 1rem',
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
           70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
           100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from { transform: scale(0.9); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        .confirm-btn-cancel:hover {
+          background: #475569 !important;
+          color: #f8fafc !important;
+          border-color: #64748b !important;
+        }
+        .confirm-btn-danger:hover {
+          background: #dc2626 !important;
+          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
         }
       `}</style>
     </div>

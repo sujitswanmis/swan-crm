@@ -186,6 +186,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       delete payload.completion_count;
       delete payload.last_follow_up_duration;
       delete payload.last_timestamp;
+      delete payload.next_follow_up_date;
       delete payload.lead_notes;
       // Remove virtual AIO fields
       delete payload.business_contact_aio;
@@ -221,8 +222,19 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         
         // Log initial history
         if (data && data.length > 0) {
+          const newLead = data[0];
+          // Get the total count of leads to calculate the stable 15-digit Lead ID
+          const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+          const d = new Date(newLead.created_at || new Date());
+          const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+          const seq = String(count).padStart(7, '0');
+          const newFormattedId = dateStr + seq;
+          
+          // Save the persistent ID back to the database
+          await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', newLead.id);
+          
           await supabase.from('lead_notes').insert([{
-            lead_id: data[0].id,
+            lead_id: newLead.id,
             note_text: 'Client Registration Form Submitted',
             created_by: actor
           }]);
@@ -464,10 +476,27 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       const chunkSize = 500;
       for (let i = 0; i < filteredMappedData.length; i += chunkSize) {
         const chunk = filteredMappedData.slice(i, i + chunkSize);
-        const { error } = await supabase.from('leads').insert(chunk);
+        const { data: insertedData, error } = await supabase.from('leads').insert(chunk).select();
         if (error) {
           console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
           throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
+        }
+        
+        // Update lead_ref_id for the inserted chunk
+        if (insertedData && insertedData.length > 0) {
+          const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+          const startCount = count - insertedData.length;
+          
+          // Sort insertedData by created_at to assign sequence numbers in correct order
+          const sortedInserted = [...insertedData].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+          
+          await Promise.all(sortedInserted.map(async (lead, idx) => {
+            const d = new Date(lead.created_at || new Date());
+            const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+            const seq = String(startCount + idx + 1).padStart(7, '0');
+            const newFormattedId = dateStr + seq;
+            await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', lead.id);
+          }));
         }
       }
 

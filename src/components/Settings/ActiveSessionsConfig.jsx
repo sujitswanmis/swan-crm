@@ -172,8 +172,8 @@ export default function ActiveSessionsConfig() {
             ) : (
               <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-filtered-bg)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Emp Name & Email</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device Info</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Address</th>
@@ -239,8 +239,8 @@ export default function ActiveSessionsConfig() {
             ) : (
               <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-filtered-bg)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>User & Email</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device Info</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Address</th>

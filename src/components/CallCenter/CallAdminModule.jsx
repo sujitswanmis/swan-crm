@@ -165,8 +165,8 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
         </div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f8fafc', fontSize:'0.78rem', textTransform:'uppercase', color:'#64748b', letterSpacing:'0.05em' }}>
+            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)', letterSpacing:'0.05em' }}>
                 {['Agent','Calling Mode','SIP Endpoint','Password Set','Status','Actions'].map(h => (
                   <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>
                 ))}
@@ -297,8 +297,8 @@ function TabEndpoints() {
         </div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f8fafc', fontSize:'0.78rem', textTransform:'uppercase', color:'#64748b' }}>
+            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {['Alias','Username','SIP URI','App Linked','Status'].map(h => (
                   <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600 }}>{h}</th>
                 ))}
@@ -385,8 +385,8 @@ function TabCallLogs() {
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f8fafc', fontSize:'0.78rem', textTransform:'uppercase', color:'#64748b' }}>
+            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {source === 'db'
                   ? ['Time','CallUUID','Agent','Customer','Direction','Status','StartTime','AnswerTime','EndTime','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)
                   : ['Time','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)}

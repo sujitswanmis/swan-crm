@@ -29,6 +29,12 @@ export default async function Home() {
     .single();
 
   const userRole = roleData?.role || 'agent';
+
+  if (userRole === 'customer') {
+    const { redirect } = require('next/navigation');
+    redirect('/chat');
+  }
+
   const canImportExport = userRole === 'admin' || userRole === 'Admin' || roleData?.can_import_export;
   const canRead = userRole === 'admin' || userRole === 'Admin' || roleData?.can_read !== false;
   const canWrite = userRole === 'admin' || userRole === 'Admin' || roleData?.can_write !== false;

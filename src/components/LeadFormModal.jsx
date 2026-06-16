@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@/utils/supabase/client';
 
 export default function LeadFormModal({ isOpen, onClose }) {
+  const supabase = useMemo(() => createClient(), []);
+
   const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
   const [priorities, setPriorities] = useState([
     'LP00: None', 'LP01: Immediate', 'LP02: High', 'LP03: Medium', 
@@ -63,15 +65,24 @@ export default function LeadFormModal({ isOpen, onClose }) {
     e.preventDefault();
     setIsSubmitting(true);
     
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('leads')
-      .insert([formData]);
+      .insert([formData])
+      .select();
       
     setIsSubmitting(false);
     
     if (error) {
       alert('Error adding lead: ' + error.message);
     } else {
+      if (data && data.length > 0) {
+        const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+        const d = new Date(data[0].created_at || new Date());
+        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+        const seq = String(count).padStart(7, '0');
+        const newFormattedId = dateStr + seq;
+        await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', data[0].id);
+      }
       setFormData({
         source: '', source_name: '', priority: '', business_type: '', company: '', 
         business_contact_1: '', business_email_1: '', name: '', phone: '', email: '', status: '1;01>New Stage>New Lead'

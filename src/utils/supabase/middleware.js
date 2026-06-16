@@ -31,18 +31,29 @@ export async function updateSession(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protect the dashboard route (/)
-  if (!user && request.nextUrl.pathname === '/') {
+  const { pathname } = request.nextUrl;
+  const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/auth');
+  const isApiRoute = pathname.startsWith('/api');
+
+  const isPublicPage = pathname === '/chat';
+
+  // Protect all web routes (except auth pages, public pages and api endpoints)
+  if (!user && !isAuthPage && !isApiRoute && !isPublicPage) {
     const url = request.nextUrl.clone();
+    if (pathname === '/') {
+      url.pathname = '/chat';
+      return NextResponse.redirect(url);
+    }
+    const nextPath = request.nextUrl.pathname + request.nextUrl.search;
     url.pathname = '/login';
+    url.searchParams.set('next', nextPath);
     return NextResponse.redirect(url);
   }
 
   // If user is logged in, don't let them see the login page
-  if (user && request.nextUrl.pathname === '/login') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
+  if (user && pathname === '/login') {
+    const nextPath = request.nextUrl.searchParams.get('next') || '/';
+    return NextResponse.redirect(new URL(nextPath, request.url));
   }
 
   return supabaseResponse;

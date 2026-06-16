@@ -78,26 +78,59 @@ export async function toggleWritePermissions(userId, canWrite) {
 
 export async function registerEmployeeDetails(userId, email, details) {
   const adminClient = getAdminClient();
+  const isCustomer = details.role === 'customer';
   
-  // First check if the user already exists
+  if (isCustomer) {
+    // Auto-confirm the user's email in Supabase Auth to allow instant login!
+    try {
+      await adminClient.auth.admin.updateUserById(userId, { email_confirm: true });
+    } catch (err) {
+      console.error("Failed to auto-confirm customer email:", err);
+    }
+  }
+
+  // First check if the user already exists (e.g. created by auth trigger)
   const { data: existingUser } = await adminClient
     .from('user_roles')
-    .select('role, is_approved')
+    .select('role, is_approved, emp_id')
     .eq('user_id', userId)
     .single();
 
+  let resolvedEmpId = details.emp_id;
+  if (isCustomer) {
+    if (existingUser && existingUser.emp_id && existingUser.emp_id.startsWith('CUST-') && existingUser.emp_id.length === 15) {
+      resolvedEmpId = existingUser.emp_id;
+    } else if (!resolvedEmpId || resolvedEmpId === 'CUSTOMER') {
+      const { count } = await adminClient
+        .from('user_roles')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('role', 'customer');
+      const nextNum = (count || 0) + 1;
+      resolvedEmpId = `CUST-${String(nextNum).padStart(10, '0')}`;
+    }
+  }
+
   if (existingUser) {
-    // Just update the employee details, do NOT overwrite role or is_approved
+    // Just update the details, do NOT overwrite role or is_approved UNLESS they are a customer
+    const updatePayload = {
+      emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
+      emp_name: details.emp_name,
+      emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
+      emp_designation: details.emp_designation || (isCustomer ? 'Customer' : undefined),
+      emp_mobile: details.emp_mobile,
+      emp_official_mail_id: details.emp_official_mail_id || email
+    };
+
+    if (isCustomer) {
+      updatePayload.role = 'customer';
+      updatePayload.is_approved = true;
+      updatePayload.can_read = false;
+      updatePayload.can_write = false;
+    }
+
     const { error } = await adminClient
       .from('user_roles')
-      .update({
-        emp_id: details.emp_id,
-        emp_name: details.emp_name,
-        emp_department: details.emp_department,
-        emp_designation: details.emp_designation,
-        emp_mobile: details.emp_mobile,
-        emp_official_mail_id: details.emp_official_mail_id
-      })
+      .update(updatePayload)
       .eq('user_id', userId);
       
     if (error) return { success: false, error: error.message };
@@ -108,17 +141,17 @@ export async function registerEmployeeDetails(userId, email, details) {
       .insert({
         user_id: userId,
         email: email,
-        role: 'agent',
-        is_approved: false,
-        emp_id: details.emp_id,
+        role: isCustomer ? 'customer' : 'agent',
+        is_approved: isCustomer ? true : false, // Auto-approve customers
+        emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : ''),
         emp_name: details.emp_name,
-        emp_department: details.emp_department,
-        emp_designation: details.emp_designation,
+        emp_department: details.emp_department || (isCustomer ? 'Customer Support' : ''),
+        emp_designation: details.emp_designation || (isCustomer ? 'Customer' : ''),
         emp_mobile: details.emp_mobile,
-        company: details.company,
-        emp_official_mail_id: details.emp_official_mail_id,
-        can_read: true,
-        can_write: true,
+        company: details.company || (isCustomer ? 'Public' : ''),
+        emp_official_mail_id: details.emp_official_mail_id || email,
+        can_read: isCustomer ? false : true,
+        can_write: isCustomer ? false : true,
         can_import_export: false,
         module_access: {}
       });
@@ -240,12 +273,30 @@ export async function updateCallAgentAdmin(agentId, updates) {
 
 export async function getAgentProfile(userId) {
   const adminClient = getAdminClient();
-  const { data, error } = await adminClient
+  const { data: agentData, error: agentError } = await adminClient
     .from('call_agents')
     .select('*')
     .eq('user_id', userId)
     .single();
-  return { data, error: error?.message };
+    
+  if (agentError) return { data: null, error: agentError.message };
+  
+  // Also fetch user role to get employee mobile number (emp_mobile)
+  try {
+    const { data: roleData } = await adminClient
+      .from('user_roles')
+      .select('emp_mobile')
+      .eq('user_id', userId)
+      .single();
+      
+    if (roleData && roleData.emp_mobile) {
+      agentData.mobile_number = roleData.emp_mobile;
+    }
+  } catch (err) {
+    console.error('Error fetching role details for mobile number:', err);
+  }
+  
+  return { data: agentData, error: null };
 }
 
 export async function getRecentCalls(agentId) {

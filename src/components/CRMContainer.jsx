@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import LeadTable from '@/components/LeadTable';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import TeamManagement from '@/components/TeamManagement';
+import PublicUserManagement from '@/components/PublicUserManagement';
 import ClientRegistration from '@/components/ClientRegistration';
 import ClientReport from '@/components/ClientReport';
 import WhatsappOfficial from '@/components/WhatsappOfficial';
@@ -15,12 +16,14 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
 import html2canvas from 'html2canvas';
 import SettingsContainer from './Settings/SettingsContainer';
+import ErrorBoundary from '@/components/ErrorBoundary';
+
 const MODULES_CONFIG = [
   { id: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
   { id: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
@@ -47,6 +50,11 @@ const THEMES = [
   { id: 'theme-premium-3', name: 'Crimson Executive', icon: '🍷' },
   { id: 'theme-premium-4', name: 'Warm Amber', icon: '🔥' },
   { id: 'theme-premium-5', name: 'Monochrome Sleek', icon: '🔳' },
+  { id: 'theme-aurora', name: 'Midnight Aurora', icon: '🌌' },
+  { id: 'theme-forest', name: 'Forest Moss', icon: '🍃' },
+  { id: 'theme-carbon', name: 'Carbon Gold', icon: '🖤' },
+  { id: 'theme-sunset', name: 'Sunset Crimson', icon: '🌅' },
+  { id: 'theme-platina', name: 'Platina Clean', icon: '🥈' },
 ];
 
 export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName }) {
@@ -90,6 +98,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [globalRolePermissions, setGlobalRolePermissions] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncLoadedCount, setSyncLoadedCount] = useState(0);
+  const [syncTotalCount, setSyncTotalCount] = useState(0);
 
   useEffect(() => {
     async function loadPermissions() {
@@ -136,6 +147,71 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   const [userEmail, setUserEmail] = useState('');
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm-sidebar-collapsed') === 'true';
+    }
+    return false;
+  });
+  const [expandedCategories, setExpandedCategories] = useState({
+    'Sales': true,
+    'Purchase': true,
+    'Human Resource': true,
+    'System': true
+  });
+
+  useEffect(() => {
+    localStorage.setItem('crm-sidebar-collapsed', isSidebarCollapsed);
+  }, [isSidebarCollapsed]);
+
+  // Auto-expand categories and submenus when activeTab changes
+  useEffect(() => {
+    let categoryToExpand = null;
+    const salesTabs = ['registration', 'report', 'leads', 'orders'];
+    const purchaseTabs = ['mrp', 'mrp_against'];
+    const hrTabs = ['recruiter', 'joining'];
+    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'settings'];
+
+    if (salesTabs.includes(activeTab)) {
+      categoryToExpand = 'Sales';
+    } else if (purchaseTabs.includes(activeTab)) {
+      categoryToExpand = 'Purchase';
+    } else if (hrTabs.includes(activeTab)) {
+      categoryToExpand = 'Human Resource';
+    } else if (systemTabs.includes(activeTab)) {
+      categoryToExpand = 'System';
+    }
+
+    if (categoryToExpand) {
+      setExpandedCategories(prev => {
+        if (!prev[categoryToExpand]) {
+          return { ...prev, [categoryToExpand]: true };
+        }
+        return prev;
+      });
+    }
+
+    // Auto-expand submenus
+    if (activeTab === 'leads') {
+      setLeadDataExpanded(true);
+    }
+    if (['aiadmin', 'aiknowledgebase'].includes(activeTab)) {
+      setAiMenuExpanded(true);
+    }
+    if (['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)) {
+      setMessageMenuExpanded(true);
+    }
+  }, [activeTab]);
+
+  const toggleCategory = (categoryName) => {
+    if (isSidebarCollapsed) {
+      setIsSidebarCollapsed(false);
+    }
+    setExpandedCategories(prev => ({
+      ...prev,
+      [categoryName]: !prev[categoryName]
+    }));
+  };
   
   const [currentTheme, setCurrentTheme] = useState('default');
   const [showThemeMenu, setShowThemeMenu] = useState(false);
@@ -216,26 +292,47 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     loadTeam();
   }, []);
   
-  // Client-side fetch of all leads (Progressive Loading)
+  // Client-side fetch of all leads (Progressive Loading with sync tracking)
   useEffect(() => {
     async function loadLeads() {
       setLoadingLeads(true);
+      setIsSyncing(true);
       const supabase = createClient();
       
+      let total = 0;
+      try {
+        const { count, error: countError } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true });
+        if (!countError && count) {
+          total = count;
+          setSyncTotalCount(total);
+        }
+      } catch (e) {
+        console.error("Failed to fetch leads count:", e);
+      }
+
       let page = 0;
       const pageSize = 500; // Smaller chunk for faster initial render
       let hasMore = true;
+      let loaded = 0;
 
       while (hasMore) {
         const { data, error } = await supabase
           .from('leads')
           .select(`*, lead_notes(id, created_at, note_text, created_by)`)
           .order('created_at', { ascending: false })
+          .order('id')
           .range(page * pageSize, (page + 1) * pageSize - 1);
         
         if (error) break;
         
         if (data && data.length > 0) {
+          loaded += data.length;
+          setSyncLoadedCount(loaded);
+          if (loaded > total) {
+            setSyncTotalCount(loaded);
+          }
           // Append new chunk to existing leads
           setRawLeads(prev => {
             // Prevent duplicates just in case
@@ -257,6 +354,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       }
       // Ensure loading is turned off even if there's no data
       setLoadingLeads(false);
+      setIsSyncing(false);
     }
     loadLeads();
 
@@ -384,42 +482,56 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   useEffect(() => {
     setIsMounted(true);
+    
+    // Sync initial route path and parameters on mount
+    const path = window.location.pathname.replace('/', '');
+    const params = new URLSearchParams(window.location.search);
+    let tab = path || params.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+      let stage = params.get('stage');
+      if (stage === 'all') stage = null;
+      if (stage) setLeadsFilterStage(stage);
+    }
+
     // Keep track of time every 10 seconds to trigger exact-time notifications
     const interval = setInterval(() => setCurrentTime(Date.now()), 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for browser back/forward navigation
+  // Listen for browser back/forward popstate events
   useEffect(() => {
-    let tab = pathname.replace('/', '');
-    if (!tab) tab = searchParams?.get('tab');
-    
-    if (!tab) {
-      const isAdmin = userRole === 'admin' || userRole === 'Admin';
-      if (isAdmin || moduleAccess['analytics']?.view) tab = 'dashboard';
-      else if (moduleAccess['new_swan_ai']?.view) tab = 'ai';
-      else if (moduleAccess['callcenter']?.view) tab = 'callcenter';
-      else if (moduleAccess['aiadmin']?.view) tab = 'aiadmin';
-      else if (moduleAccess['aiknowledgebase']?.view) tab = 'aiknowledgebase';
-      else if (moduleAccess['calladmin']?.view) tab = 'calladmin';
-      else if (moduleAccess['aicallcenter']?.view) tab = 'aicallcenter';
-      else {
-        const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view);
-        if (firstAllowed) tab = firstAllowed;
-        else tab = 'dashboard';
+    const handlePopState = () => {
+      let tab = window.location.pathname.replace('/', '');
+      const params = new URLSearchParams(window.location.search);
+      if (!tab) tab = params.get('tab');
+      
+      if (!tab) {
+        const isAdmin = userRole === 'admin' || userRole === 'Admin';
+        if (isAdmin || moduleAccess['analytics']?.view) tab = 'dashboard';
+        else if (moduleAccess['new_swan_ai']?.view) tab = 'ai';
+        else if (moduleAccess['callcenter']?.view) tab = 'callcenter';
+        else if (moduleAccess['aiadmin']?.view) tab = 'aiadmin';
+        else if (moduleAccess['aiknowledgebase']?.view) tab = 'aiknowledgebase';
+        else if (moduleAccess['calladmin']?.view) tab = 'calladmin';
+        else if (moduleAccess['aicallcenter']?.view) tab = 'aicallcenter';
+        else {
+          const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view);
+          if (firstAllowed) tab = firstAllowed;
+          else tab = 'dashboard';
+        }
       }
-    }
-    
-    if (tab && tab !== activeTab) {
+      
       setActiveTab(tab);
-    }
-    
-    let stage = searchParams?.get('stage');
-    if (stage === 'all') stage = null;
-    if (stage !== leadsFilterStage) {
+      
+      let stage = params.get('stage');
+      if (stage === 'all') stage = null;
       setLeadsFilterStage(stage);
-    }
-  }, [pathname, searchParams]);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [moduleAccess, userRole]);
 
   const handleTabChange = async (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
@@ -540,16 +652,53 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     prevDueCount.current = dueFollowUps.length;
   }, [dueFollowUps.length]);
 
+  if (userRole === 'customer') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'linear-gradient(135deg, #020617 0%, #0b1329 50%, #030712 100%)' }}>
+        <header style={{ height: '64px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2rem', zIndex: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#3b82f6', fontWeight: 600 }}>
+            <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.4rem', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bot size={20} />
+            </div>
+            <span style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700 }}>Swan Customer Assistant</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>Logged in as {userName || 'Customer'}</span>
+            <button 
+              onClick={handleLogout}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.45rem 1rem', borderRadius: '8px', color: '#ef4444', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s' }}
+            >
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
+        </header>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+          <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={null} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-layout">
       {/* Mobile Overlay */}
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)}></div>
 
       {/* Sidebar */}
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-header">
-          <Database size={24} />
-          <span>CRM Enterprise</span>
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+            <Database size={24} style={{ flexShrink: 0 }} />
+            <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>CRM Enterprise</span>
+          </div>
+          <button 
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+            className="sidebar-collapse-toggle desktop-only-icon"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '4px' }}
+            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
         </div>
         <nav className="nav-list">
           {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
@@ -557,10 +706,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               onClick={() => handleTabChange('dashboard')}
               className="nav-item" 
               data-active={activeTab === 'dashboard'}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+              title={isSidebarCollapsed ? "Analytics Dashboard" : undefined}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
             >
-              <PieChart size={20} />
-              Analytics Dashboard
+              <PieChart size={20} style={{ flexShrink: 0 }} />
+              <span>Analytics Dashboard</span>
             </button>
           )}
 
@@ -569,10 +719,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               onClick={() => handleTabChange('ai')}
               className="nav-item" 
               data-active={activeTab === 'ai'}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+              title={isSidebarCollapsed ? "New Swan AI" : undefined}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
             >
-              <Bot size={20} />
-              New Swan AI
+              <Bot size={20} style={{ flexShrink: 0 }} />
+              <span>New Swan AI</span>
             </button>
           )}
 
@@ -581,10 +732,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               onClick={() => handleTabChange('callcenter')}
               className="nav-item" 
               data-active={activeTab === 'callcenter'}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+              title={isSidebarCollapsed ? "Call Center" : undefined}
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
             >
-              <PhoneCall size={20} />
-              Call Center
+              <PhoneCall size={20} style={{ flexShrink: 0 }} />
+              <span>Call Center</span>
             </button>
           )}
 
@@ -597,294 +749,309 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             if (visibleModules.length === 0) return null;
 
             return (
-              <div key={category} style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', paddingLeft: '1rem' }}>
-                  {category}
-                </div>
-                {visibleModules.map(module => (
-                  <div key={module.id} style={{ display: 'contents' }}>
-                    <button 
-                      onClick={() => { 
-                        if (module.id === 'leads') {
-                          setLeadDataExpanded(!leadDataExpanded);
-                        } else {
-                          handleTabChange(module.id); 
-                        }
-                      }}
-                      className="nav-item" 
-                      data-active={activeTab === module.id && (module.id !== 'leads' || leadsFilterStage === null) && module.id !== 'leads'}
-                      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        {module.icon}
-                        {module.label}
-                      </div>
-                      {module.id === 'leads' && (
-                        leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />
-                      )}
-                    </button>
-                    {module.id === 'leads' && leadDataExpanded && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
-                        
-                        <button
-                          onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
-                          style={{
-                            background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: '0.8rem', color: activeTab === 'leads' && leadsFilterStage === null ? 'var(--accent-color)' : 'var(--text-secondary)',
-                            fontWeight: activeTab === 'leads' && leadsFilterStage === null ? '600' : '400',
-                            padding: '0.35rem 0', transition: 'color 0.2s'
-                          }}
-                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                          onMouseOut={e => e.currentTarget.style.color = activeTab === 'leads' && leadsFilterStage === null ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                        >
-                          All Leads
-                        </button>
-
-                        {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
-                          
-                          // Hide step if user is not admin, not manager, and step is not assigned
-                          const leadsAccess = moduleAccess?.leads || {};
-                          const isAdmin = userRole === 'admin' || userRole === 'Admin';
-                          const isManager = leadsAccess.is_manager;
-                          const isAssigned = (leadsAccess.assigned_steps || []).includes(stage);
-                          
-                          if (!isAdmin && !isManager && !isAssigned) {
-                            return null;
+              <div key={category}>
+                <button
+                  onClick={() => toggleCategory(category)}
+                  className="category-header"
+                >
+                  <span>{category}</span>
+                  {expandedCategories[category] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+                
+                {(isSidebarCollapsed || expandedCategories[category]) && (
+                  visibleModules.map(module => (
+                    <div key={module.id} style={{ display: 'contents' }}>
+                      <button 
+                        onClick={() => { 
+                          if (module.id === 'leads') {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setLeadDataExpanded(true);
+                            } else {
+                              setLeadDataExpanded(!leadDataExpanded);
+                            }
+                          } else {
+                            handleTabChange(module.id); 
                           }
+                        }}
+                        className="nav-item" 
+                        data-active={activeTab === module.id}
+                        title={isSidebarCollapsed ? module.label : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
+                          <span>{module.label}</span>
+                        </div>
+                        {module.id === 'leads' && (
+                          <span className="nav-chevron">
+                            {leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
+                        )}
+                      </button>
+                      
+                      {module.id === 'leads' && (
+                        <div className="submenu-list" style={{ display: leadDataExpanded ? 'flex' : 'none' }}>
+                          <button
+                            onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
+                            className="submenu-item"
+                            data-active={activeTab === 'leads' && leadsFilterStage === null}
+                          >
+                            All Leads
+                          </button>
 
-                          return (
-                            <button
-                              key={stage}
-                              onClick={() => { handleTabChange('leads'); handleStageChange(stage); }}
-                              style={{
-                                background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                                fontSize: '0.8rem', color: leadsFilterStage === stage ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                fontWeight: leadsFilterStage === stage ? '600' : '400',
-                                padding: '0.35rem 0', transition: 'color 0.2s'
-                              }}
-                              onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                              onMouseOut={e => e.currentTarget.style.color = leadsFilterStage === stage ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                            >
-                              {stage}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
+                            const leadsAccess = moduleAccess?.leads || {};
+                            const isAdmin = userRole === 'admin' || userRole === 'Admin';
+                            const isManager = leadsAccess.is_manager;
+                            const isAssigned = (leadsAccess.assigned_steps || []).includes(stage);
+                            
+                            if (!isAdmin && !isManager && !isAssigned) {
+                              return null;
+                            }
+
+                            return (
+                              <button
+                                key={stage}
+                                onClick={() => { handleTabChange('leads'); handleStageChange(stage); }}
+                                className="submenu-item"
+                                data-active={activeTab === 'leads' && leadsFilterStage === stage}
+                              >
+                                {stage}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             );
           })}
 
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view || moduleAccess['calladmin']?.view || moduleAccess['aicallcenter']?.view || moduleAccess['whatsapp_official']?.view || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
-            <>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', paddingLeft: '1rem', marginTop: '1rem' }}>
-                System
-              </div>
-
-              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
-                <button 
-                  onClick={() => handleTabChange('team')}
-                  className="nav-item" 
-                  data-active={activeTab === 'team'}
-                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+          {/* SYSTEM CATEGORY ACCORDION */}
+          {((userRole === 'admin' || userRole === 'Admin') || 
+            moduleAccess['team']?.view || 
+            moduleAccess['aiadmin']?.view || 
+            moduleAccess['aiknowledgebase']?.view || 
+            moduleAccess['calladmin']?.view || 
+            moduleAccess['aicallcenter']?.view || 
+            moduleAccess['whatsapp_official']?.view || 
+            moduleAccess['whatsapp_unofficial']?.view || 
+            moduleAccess['sms_config']?.view || 
+            moduleAccess['rcs_config']?.view || 
+            moduleAccess['email_config']?.view ||
+            moduleAccess['settings']?.view || 
+            globalRolePermissions?.editSettings) && (
+              <div>
+                <button
+                  onClick={() => toggleCategory('System')}
+                  className="category-header"
                 >
-                  <Shield size={20} />
-                  Team Management
+                  <span>System</span>
+                  {expandedCategories['System'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
-              )}
 
-              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
-                <div style={{ display: 'contents' }}>
-                  <button 
-                    onClick={() => setAiMenuExpanded(!aiMenuExpanded)}
-                    className="nav-item" 
-                    style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <Bot size={20} />
-                      AI Admin
-                    </div>
-                    {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  </button>
-                  
-                  {aiMenuExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
-                      {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
-                        <button
-                          onClick={() => handleTabChange('aiadmin')}
-                          style={{
-                            background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: '0.8rem', color: activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                            fontWeight: activeTab === 'aiadmin' ? '600' : '400',
-                            padding: '0.35rem 0', transition: 'color 0.2s'
+                {(isSidebarCollapsed || expandedCategories['System']) && (
+                  <>
+                    {/* Team Management */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('team')}
+                        className="nav-item" 
+                        data-active={activeTab === 'team'}
+                        title={isSidebarCollapsed ? "Team Management" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Shield size={20} style={{ flexShrink: 0 }} />
+                        <span>Team Management</span>
+                      </button>
+                    )}
+
+                    {/* Public User Management */}
+                    {(userRole === 'admin' || userRole === 'Admin') && (
+                      <button 
+                        onClick={() => handleTabChange('public_users')}
+                        className="nav-item" 
+                        data-active={activeTab === 'public_users'}
+                        title={isSidebarCollapsed ? "Public User Management" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Users size={20} style={{ flexShrink: 0 }} />
+                        <span>Public User Management</span>
+                      </button>
+                    )}
+
+                    {/* AI Admin */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
+                      <div style={{ display: 'contents' }}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setAiMenuExpanded(true);
+                            } else {
+                              setAiMenuExpanded(!aiMenuExpanded);
+                            }
                           }}
-                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                          onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiadmin' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                          className="nav-item" 
+                          data-active={['aiadmin', 'aiknowledgebase'].includes(activeTab)}
+                          title={isSidebarCollapsed ? "AI Admin" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                         >
-                          User AI Usage
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <Bot size={20} style={{ flexShrink: 0 }} />
+                            <span>AI Admin</span>
+                          </div>
+                          <span className="nav-chevron">
+                            {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
                         </button>
-                      )}
-                      {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
-                        <button
-                          onClick={() => handleTabChange('aiknowledgebase')}
-                          style={{
-                            background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: '0.8rem', color: activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                            fontWeight: activeTab === 'aiknowledgebase' ? '600' : '400',
-                            padding: '0.35rem 0', transition: 'color 0.2s'
+                        
+                        <div className="submenu-list" style={{ display: aiMenuExpanded ? 'flex' : 'none' }}>
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('aiadmin')}
+                              className="submenu-item"
+                              data-active={activeTab === 'aiadmin'}
+                            >
+                              User AI Usage
+                            </button>
+                          )}
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('aiknowledgebase')}
+                              className="submenu-item"
+                              data-active={activeTab === 'aiknowledgebase'}
+                            >
+                              AI Knowledge Base (RAG)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Call Admin */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('calladmin')}
+                        className="nav-item" 
+                        data-active={activeTab === 'calladmin'}
+                        title={isSidebarCollapsed ? "Call Admin" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Phone size={20} style={{ flexShrink: 0 }} />
+                        <span>Call Admin</span>
+                      </button>
+                    )}
+                    
+                    {/* AI Call Center */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('aicallcenter')}
+                        className="nav-item" 
+                        data-active={activeTab === 'aicallcenter'}
+                        title={isSidebarCollapsed ? "AI Call Center" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Bot size={20} style={{ flexShrink: 0 }} />
+                        <span>AI Call Center</span>
+                      </button>
+                    )}
+
+                    {/* Message Config */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
+                      <div style={{ display: 'contents' }}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setMessageMenuExpanded(true);
+                            } else {
+                              setMessageMenuExpanded(!messageMenuExpanded);
+                            }
                           }}
-                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                          onMouseOut={e => e.currentTarget.style.color = activeTab === 'aiknowledgebase' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                          className="nav-item" 
+                          data-active={['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)}
+                          title={isSidebarCollapsed ? "Message Config" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                         >
-                          AI Knowledge Base (RAG)
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <MessageCircle size={20} style={{ flexShrink: 0 }} />
+                            <span>Message Config</span>
+                          </div>
+                          <span className="nav-chevron">
+                            {messageMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
                         </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                        
+                        <div className="submenu-list" style={{ display: messageMenuExpanded ? 'flex' : 'none' }}>
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('whatsapp_official')}
+                              className="submenu-item"
+                              data-active={activeTab === 'whatsapp_official'}
+                            >
+                              WhatsApp Official
+                            </button>
+                          )}
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('whatsapp_unofficial')}
+                              className="submenu-item"
+                              data-active={activeTab === 'whatsapp_unofficial'}
+                            >
+                              WhatsApp UnOfficial
+                            </button>
+                          )}
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('sms_config')}
+                              className="submenu-item"
+                              data-active={activeTab === 'sms_config'}
+                            >
+                              SMS
+                            </button>
+                          )}
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('rcs_config')}
+                              className="submenu-item"
+                              data-active={activeTab === 'rcs_config'}
+                            >
+                              RCS
+                            </button>
+                          )}
+                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                            <button
+                              onClick={() => handleTabChange('email_config')}
+                              className="submenu-item"
+                              data-active={activeTab === 'email_config'}
+                            >
+                              Email
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
-                <button 
-                  onClick={() => handleTabChange('calladmin')}
-                  className="nav-item" 
-                  data-active={activeTab === 'calladmin'}
-                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  <Phone size={20} />
-                  Call Admin
-                </button>
-              )}
-              
-              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
-                <button 
-                  onClick={() => handleTabChange('aicallcenter')}
-                  className="nav-item" 
-                  data-active={activeTab === 'aicallcenter'}
-                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  <Bot size={20} />
-                  AI Call Center
-                </button>
-              )}
-
-              {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
-                <div style={{ display: 'contents' }}>
-                  <button 
-                  onClick={() => setMessageMenuExpanded(!messageMenuExpanded)}
-                  className="nav-item" 
-                  style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <MessageCircle size={20} />
-                    Message Config
-                  </div>
-                  {messageMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </button>
-                
-                {messageMenuExpanded && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '2.5rem', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
-                      <button
-                        onClick={() => handleTabChange('whatsapp_official')}
-                        style={{
-                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                          fontSize: '0.8rem', color: activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                          fontWeight: activeTab === 'whatsapp_official' ? '600' : '400',
-                          padding: '0.35rem 0', transition: 'color 0.2s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_official' ? 'var(--accent-color)' : 'var(--text-secondary)'}
+                    {/* Settings */}
+                    {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
+                      <button 
+                        onClick={() => handleTabChange('settings')}
+                        className="nav-item" 
+                        data-active={activeTab === 'settings'}
+                        title={isSidebarCollapsed ? "Settings" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        WhatsApp Official
+                        <Settings size={20} style={{ flexShrink: 0 }} />
+                        <span>Settings</span>
                       </button>
                     )}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
-                      <button
-                        onClick={() => handleTabChange('whatsapp_unofficial')}
-                        style={{
-                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                          fontSize: '0.8rem', color: activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                          fontWeight: activeTab === 'whatsapp_unofficial' ? '600' : '400',
-                          padding: '0.35rem 0', transition: 'color 0.2s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'whatsapp_unofficial' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                      >
-                        WhatsApp UnOfficial
-                      </button>
-                    )}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
-                      <button
-                        onClick={() => handleTabChange('sms_config')}
-                        style={{
-                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                          fontSize: '0.8rem', color: activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                          fontWeight: activeTab === 'sms_config' ? '600' : '400',
-                          padding: '0.35rem 0', transition: 'color 0.2s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'sms_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                      >
-                        SMS
-                      </button>
-                    )}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
-                      <button
-                        onClick={() => handleTabChange('rcs_config')}
-                        style={{
-                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                          fontSize: '0.8rem', color: activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                          fontWeight: activeTab === 'rcs_config' ? '600' : '400',
-                          padding: '0.35rem 0', transition: 'color 0.2s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'rcs_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                      >
-                        RCS
-                      </button>
-                    )}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
-                      <button
-                        onClick={() => handleTabChange('email_config')}
-                        style={{
-                          background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                          fontSize: '0.8rem', color: activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                          fontWeight: activeTab === 'email_config' ? '600' : '400',
-                          padding: '0.35rem 0', transition: 'color 0.2s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                        onMouseOut={e => e.currentTarget.style.color = activeTab === 'email_config' ? 'var(--accent-color)' : 'var(--text-secondary)'}
-                      >
-                        Email
-                      </button>
-                    )}
-                  </div>
+                  </>
                 )}
               </div>
-            )}
-            </>
-          )}
-
-          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
-            <>
-              {!(userRole === 'admin' || userRole === 'Admin' || moduleAccess['team']?.view || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view || moduleAccess['calladmin']?.view || moduleAccess['aicallcenter']?.view || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', paddingLeft: '1rem', marginTop: '1rem' }}>
-                  System
-                </div>
-              )}
-              <button 
-                onClick={() => handleTabChange('settings')}
-                className="nav-item" 
-                data-active={activeTab === 'settings'}
-                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                <Settings size={20} />
-                Settings
-              </button>
-            </>
           )}
         </nav>
       </aside>
@@ -892,13 +1059,41 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       {/* Main Content Area */}
       <main className="main-content">
         {/* Top Header */}
-        <header className="top-header">
+        <header className="top-header" style={{ position: 'relative' }}>
+          {isSyncing && (
+            <div 
+              className="sync-progress-bar" 
+              style={{ 
+                width: `${syncTotalCount > 0 ? (syncLoadedCount / syncTotalCount) * 100 : 0}%` 
+              }} 
+              title={`Syncing Leads: ${syncLoadedCount}/${syncTotalCount}`}
+            />
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}>
             <button className="mobile-menu-toggle" onClick={() => setIsSidebarOpen(true)}>
               <Menu size={24} />
             </button>
             <Search size={20} className="desktop-only-icon" />
             <span style={{ fontSize: '0.9rem' }} className="desktop-only-text">Search leads (Cmd+K)</span>
+            {isSyncing && (
+              <span style={{ 
+                fontSize: '0.75rem', 
+                color: 'var(--accent-color)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.4rem',
+                backgroundColor: 'var(--nav-active-bg)',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '20px',
+                fontWeight: '500'
+              }} className="skeleton-glow">
+                <svg className="animate-spin" style={{ width: '12px', height: '12px' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}></circle>
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style={{ opacity: 0.75 }}></path>
+                </svg>
+                Syncing leads: {syncLoadedCount} / {syncTotalCount || '...'}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', position: 'relative' }}>
             {/* Admin Company Filter */}
@@ -1061,7 +1256,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         </header>
 
         {/* Page Content */}
-        <div className="page-content" style={{ padding: activeTab === 'ai' ? '0' : '2rem', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="page-content" style={{ padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 2rem)', display: 'flex', flexDirection: 'column', height: '100%' }}>
           
           {/* Header Title based on Active Tab */}
           {activeTab !== 'ai' && (
@@ -1123,28 +1318,89 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             </div>
           ) : (
             <>
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />}
-              {activeTab === 'leads' && <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && (
+                <ErrorBoundary>
+                  <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'leads' && (
+                <ErrorBoundary>
+                  <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
+                </ErrorBoundary>
+              )}
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'recruiter' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Recruiter Dashboard (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'registration' && <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />}
-              {activeTab === 'report' && <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} userName={userName} />}
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />}
-              {activeTab === 'aiadmin' && <AiAdminModule />}
-              {activeTab === 'aiknowledgebase' && <AIKnowledgeBaseModule />}
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && activeTab === 'callcenter' && <CallCenterModule userId={userId} />}
-              {activeTab === 'calladmin' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && <CallAdminModule />}
-              {activeTab === 'aicallcenter' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && <AiCallCenterModule />}
-              {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && <TeamManagement />}
-              {activeTab === 'whatsapp_official' && <WhatsappOfficial />}
-              {activeTab === 'whatsapp_unofficial' && <WhatsappUnofficialModule userRole={userRole} userId={userId} />}
+              {activeTab === 'registration' && (
+                <ErrorBoundary>
+                  <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'report' && (
+                <ErrorBoundary>
+                  <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} userName={userName} />
+                </ErrorBoundary>
+              )}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && (
+                <ErrorBoundary>
+                  <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'aiadmin' && (
+                <ErrorBoundary>
+                  <AiAdminModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'aiknowledgebase' && (
+                <ErrorBoundary>
+                  <AIKnowledgeBaseModule />
+                </ErrorBoundary>
+              )}
+              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && activeTab === 'callcenter' && (
+                <ErrorBoundary>
+                  <CallCenterModule userId={userId} />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'calladmin' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+                <ErrorBoundary>
+                  <CallAdminModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'aicallcenter' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+                <ErrorBoundary>
+                  <AiCallCenterModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                <ErrorBoundary>
+                  <TeamManagement />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'public_users' && (userRole === 'admin' || userRole === 'Admin') && (
+                <ErrorBoundary>
+                  <PublicUserManagement />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'whatsapp_official' && (
+                <ErrorBoundary>
+                  <WhatsappOfficial />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'whatsapp_unofficial' && (
+                <ErrorBoundary>
+                  <WhatsappUnofficialModule userRole={userRole} userId={userId} />
+                </ErrorBoundary>
+              )}
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
               {activeTab === 'rcs_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>RCS Configuration (Coming Soon)</h2><p>API setup and webhook configurations for RCS messaging.</p></div>}
               {activeTab === 'email_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Email Configuration (Coming Soon)</h2><p>SMTP server and API key configuration for email campaigns.</p></div>}
-              {activeTab === 'settings' && <SettingsContainer />}
+              {activeTab === 'settings' && (
+                <ErrorBoundary>
+                  <SettingsContainer />
+                </ErrorBoundary>
+              )}
             </>
           )}
         </div>

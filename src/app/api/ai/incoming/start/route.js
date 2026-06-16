@@ -55,7 +55,10 @@ export async function POST(req) {
       
       if (docs && docs.length > 0) {
         knowledgeContext = "\n\n--- COMPANY KNOWLEDGE BASE ---\nUse the following official company rules/policies to answer the caller:\n\n" + 
-          docs.map(d => `Title: ${d.title}\nContent: ${d.content}`).join('\n\n') +
+          docs.map(d => {
+            const cleanTitle = d.title.replace(/^\[(text|url|pdf)\]/, '');
+            return `Title: ${cleanTitle}\nContent: ${d.content}`;
+          }).join('\n\n') +
           "\n--- END KNOWLEDGE BASE ---\n";
       }
     } catch (err) {

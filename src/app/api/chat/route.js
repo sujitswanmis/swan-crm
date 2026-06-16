@@ -176,31 +176,17 @@ async function executeTool(toolCall, userId, isAdmin) {
     
     if (name === 'search_leads' || name === 'search_my_leads') {
       let q = (args.query || '').trim();
-      let isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
       const is15Digit = /^\d{15}$/.test(q);
 
-      if (is15Digit) {
-        const expectedDateStr = q.substring(0, 8);
-        const seq = parseInt(q.substring(8), 10);
-        if (seq > 0) {
-          const {data} = await supabase.from('leads').select('id, created_at').order('created_at', {ascending: true}).range(seq - 1, seq - 1);
-          if (data && data.length > 0) {
-            const d = new Date(data[0].created_at || new Date());
-            const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-            if (dateStr === expectedDateStr) {
-              q = data[0].id;
-              isUUID = true;
-            }
-          }
-        }
-      }
-      
       let query = supabase
         .from('leads')
         .select('id, created_at, lead_ref_id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement');
         
       if (isUUID) {
         query = query.eq('id', q);
+      } else if (is15Digit) {
+        query = query.eq('lead_ref_id', q);
       } else {
         query = query.or(`name.ilike.%${q}%,company.ilike.%${q}%,phone.ilike.%${q}%,business_contact_1.ilike.%${q}%,business_contact_2.ilike.%${q}%,lead_ref_id.ilike.%${q}%`);
       }
@@ -210,15 +196,6 @@ async function executeTool(toolCall, userId, isAdmin) {
         
       const { data, error } = await query;
       if (error) throw error;
-
-      // Ensure AI responds with the 15-digit UI Lead ID
-      for (let i = 0; i < data.length; i++) {
-        const {count} = await supabase.from('leads').select('*', {count: 'exact', head: true}).lt('created_at', data[i].created_at || new Date().toISOString());
-        const d = new Date(data[i].created_at || new Date());
-        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-        const seq = String(count + 1).padStart(7, '0');
-        data[i].lead_ref_id = dateStr + seq;
-      }
 
       return JSON.stringify({ results: data, scope_applied: scope });
     }
@@ -331,9 +308,10 @@ export async function POST(req) {
 
     const selectedAiModelInput = selectedAiModel || 'gpt-4o-mini';
 
-    // New check: Is user an Admin?
+    // New check: Is user an Admin or Customer?
     const { data: userRoleData } = await supabase.from('user_roles').select('role, module_access').eq('user_id', userId).single();
     const isAdmin = userRoleData?.role === 'admin';
+    const isCustomer = userRoleData?.role === 'customer';
     const assignedAiModels = (userRoleData?.module_access || {}).ai_models || ['gpt-4o-mini'];
     const premiumLimit = (userRoleData?.module_access || {}).premium_limit || 10000;
 
@@ -362,6 +340,18 @@ export async function POST(req) {
         assignedAiModel = 'gpt-4o-mini'; // Fallback to basic model
         isPremiumFallback = true;
       }
+    }
+
+    // Model translation mapping for custom model names
+    const modelMapping = {
+      'gpt-5.5-instant': 'gpt-4o-mini',
+      'gpt-5.5-thinking': 'o3-mini',
+      'gpt-5.5-pro': 'gpt-4o'
+    };
+    
+    let resolvedModel = assignedAiModel;
+    if (modelMapping[assignedAiModel]) {
+      resolvedModel = modelMapping[assignedAiModel];
     }
 
     if (!usageError && usageData) {
@@ -405,7 +395,10 @@ export async function POST(req) {
             
             if (matchedDocs && matchedDocs.length > 0) {
               knowledgeContext = "\n\n--- COMPANY KNOWLEDGE BASE ---\nUse the following official company rules/policies to answer the user if relevant:\n\n" + 
-                matchedDocs.map(d => `Title: ${d.title}\nContent: ${d.content}`).join('\n\n') +
+                matchedDocs.map(d => {
+                  const cleanTitle = d.title.replace(/^\[(text|url|pdf)\]/, '');
+                  return `Title: ${cleanTitle}\nContent: ${d.content}`;
+                }).join('\n\n') +
                 "\n--- END KNOWLEDGE BASE ---\n";
             }
           }
@@ -435,7 +428,12 @@ IMPORTANT BEHAVIORAL RULES:
    - DO NOT use phonetic spellings with diacritics (e.g., write "Computer" instead of "Kampyūtar" or "Kampyutar").
    - Use standard English spellings for common English loan words (e.g., "Computer", "Data", "Internet", "Keyboard").
    - Use natural conversational phrasing (e.g., "Computer ek electronic device hai jo data ko process karta hai").
-3. Always use Markdown to make your responses look beautiful and easy to read. Use clear Markdown tables for data. NEVER use raw HTML tags like <br> in your responses. Use bullet points or numbered lists. Use bold text for emphasis.`
+3. ALWAYS structure your responses using advanced, beautiful Markdown formatting:
+   - Use clear, descriptive headings (e.g. ### or ####) for different sections.
+   - Use bullet points (*) or numbered lists (1.) for paragraphs containing lists or points. Do NOT write list items as plain text or space-separated text blocks.
+   - Whenever you present tabular data, statistics, comparisons, lists of products, or user details, YOU MUST use a clean Markdown table format (| Header | Header |) instead of plain paragraphs.
+   - Use bold text (**text**) for emphasis on important metrics, names, or terms.
+   - Keep your layout extremely clean, organized, and highly readable so it is easy for users to scan and comprehend instantly. NEVER use raw HTML tags like <br> in your responses.`
       },
       ...messages
     ];
@@ -446,13 +444,20 @@ IMPORTANT BEHAVIORAL RULES:
     // Tool calling loop
     for (let i = 0; i < 4; i++) {
       const payload = {
-        model: assignedAiModel,
+        model: resolvedModel,
         messages: currentMessages,
-        temperature: 0.7,
-        max_tokens: 1000,
-        tools: tools,
-        tool_choice: "auto"
+        tools: isCustomer ? undefined : tools,
+        tool_choice: isCustomer ? undefined : "auto"
       };
+
+      // o-series reasoning models (like o3-mini) do not support standard temperature or max_tokens parameters
+      if (!resolvedModel.startsWith('o1') && !resolvedModel.startsWith('o3')) {
+        payload.temperature = 0.7;
+        payload.max_tokens = 1000;
+      } else {
+        // o-series reasoning model parameter
+        payload.max_completion_tokens = 2000;
+      }
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',

@@ -182,8 +182,8 @@ function CampaignsTab({ onSelectCampaign }) {
         <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><Plus size={16}/> New Campaign</button>
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ background: '#f8fafc', textAlign: 'left', color: '#64748b', fontSize: '0.85rem' }}>
+        <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+          <tr style={{ textAlign: 'left', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
             <th style={{ padding: '1rem' }}>Name</th>
             <th style={{ padding: '1rem' }}>Status</th>
             <th style={{ padding: '1rem' }}>Contacts</th>
@@ -306,8 +306,8 @@ function CampaignDetail({ id, onBack }) {
          <h3 style={{ margin: '0 0 1rem 0' }}>Contacts ({contacts.length})</h3>
          <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', textAlign: 'left', color: '#64748b' }}>
+              <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+                <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Name</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Mobile</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Status</th>
