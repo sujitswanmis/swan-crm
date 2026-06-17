@@ -17,6 +17,19 @@ export async function POST(req) {
 
     // Default Forward Number
     let routeTo = process.env.DEFAULT_FORWARD_TO || '+919988119276';
+    try {
+      const { data: dbSettings } = await adminClient
+        .from('call_agents')
+        .select('mobile_number')
+        .eq('plivo_username', 'system_settings_forward')
+        .maybeSingle();
+      if (dbSettings && dbSettings.mobile_number) {
+        routeTo = dbSettings.mobile_number;
+      }
+    } catch (dbErr) {
+      console.error('Error fetching global default forwarding number:', dbErr);
+    }
+    routeTo = routeTo.replace(/['"]/g, '').trim();
 
     const plivo = require('plivo');
     const plivoClient = new plivo.Client(
@@ -158,8 +171,25 @@ export async function POST(req) {
   } catch (error) {
     console.error('Incoming webhook error:', error);
     // Fallback Dial XML
-    const routeTo = process.env.DEFAULT_FORWARD_TO || '+919988119276';
-    const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Number>${routeTo}</Number></Dial></Response>`;
+    let routeTo = process.env.DEFAULT_FORWARD_TO || '+919988119276';
+    try {
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+      const { data: dbSettings } = await adminClient
+        .from('call_agents')
+        .select('mobile_number')
+        .eq('plivo_username', 'system_settings_forward')
+        .maybeSingle();
+      if (dbSettings && dbSettings.mobile_number) {
+        routeTo = dbSettings.mobile_number;
+      }
+    } catch (e) {
+      console.error('Catch fallback db fetch failed:', e);
+    }
+    routeTo = routeTo.replace(/['"]/g, '').trim();
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${toNumber || '+918035340622'}"><Number>${routeTo}</Number></Dial></Response>`;
     return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'application/xml' } });
   }
 }

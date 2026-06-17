@@ -676,13 +676,47 @@ function TabMonitor({ agents, onRefresh }) {
 function TabSettings() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [defaultForward, setDefaultForward] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const fetchSettings = () => {
+    setLoading(true);
     fetch('/api/plivo/admin/settings')
       .then(r => r.json())
-      .then(d => { setSettings(d); setLoading(false); })
+      .then(d => {
+        setSettings(d);
+        setDefaultForward(d.defaultForward || '');
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSettings();
   }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const cleanNum = defaultForward.replace(/['"]/g, '').trim();
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultForward: cleanNum })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Settings saved successfully!');
+        fetchSettings();
+      } else {
+        alert('Error saving settings: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error saving settings: ' + err.message);
+    }
+    setSaving(false);
+  };
 
   if (loading) return <div style={{ textAlign:'center', padding:'3rem' }}><Loader2 className="spin" size={24} color="#3b82f6" /></div>;
 
@@ -697,14 +731,54 @@ function TabSettings() {
           {[
             { label: 'Auth ID',          value: process.env.NEXT_PUBLIC_PLIVO_AUTH_ID || 'MAMJFH***' },
             { label: 'From Number',      value: settings?.fromNumber || '+918035340622' },
-            { label: 'Default Forward',  value: settings?.defaultForward || 'Not set' },
             { label: 'Data Region',      value: 'India 🇮🇳' },
           ].map(row => (
             <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px' }}>
               <span style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:500 }}>{row.label}</span>
-              <span style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, fontFamily: row.label.includes('ID')||row.label.includes('Number')||row.label.includes('Forward') ? 'monospace' : 'inherit' }}>{row.value}</span>
+              <span style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, fontFamily: row.label.includes('ID')||row.label.includes('Number') ? 'monospace' : 'inherit' }}>{row.value}</span>
             </div>
           ))}
+
+          {/* Edit Default Forward */}
+          <form onSubmit={handleSave} style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
+            <label style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:600 }}>Default Forward Number</label>
+            <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.25rem' }}>
+              <input 
+                type="text" 
+                value={defaultForward} 
+                onChange={e => setDefaultForward(e.target.value)}
+                placeholder="+917888399954"
+                style={{
+                  flex: 1,
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.85rem',
+                  fontFamily: 'monospace',
+                  boxSizing: 'border-box',
+                  background: 'white'
+                }}
+              />
+              <button 
+                type="submit" 
+                disabled={saving}
+                style={{
+                  padding: '0.4rem 1rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#3b82f6',
+                  color: 'white',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  opacity: saving ? 0.7 : 1
+                }}
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+            <span style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem' }}>Calls will dial this number when agents are offline.</span>
+          </form>
         </div>
       </div>
 
