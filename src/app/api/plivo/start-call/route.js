@@ -65,7 +65,8 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
     }
 
-    let appBaseUrl = 'https://swan-hosting.vercel.app';
+    const url = new URL(req.url);
+    let appBaseUrl = url.origin;
     // We only initiate the call to the AGENT first.
     // The answer URL will put the agent in the conference.
     // The conference callback will then dial the customer.

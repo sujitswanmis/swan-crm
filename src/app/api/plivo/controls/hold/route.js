@@ -9,8 +9,6 @@ export async function POST(req) {
     }
 
     const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-    const appBaseUrl = 'https://swan-hosting.vercel.app';
-
     if (action === 'hold') {
       // Do NOT deafen the member, otherwise they cannot hear the hold music!
       await client.conferences.muteMember(roomName, memberId);

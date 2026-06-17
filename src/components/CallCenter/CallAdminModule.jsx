@@ -4,6 +4,7 @@ import {
   Settings, Users, Phone, Loader2, RefreshCw, PhoneCall,
   PhoneOff, Clock, Activity, Shield, Wifi, WifiOff,
   CheckCircle, XCircle, AlertCircle, BarChart2, Download,
+  Play, Pause,
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell
@@ -338,6 +339,75 @@ function TabCallLogs() {
   const [page, setPage] = useState(0);
   const PAGE = 20;
 
+  const [playingCallId, setPlayingCallId] = useState(null);
+  const [audio] = useState(() => typeof window !== 'undefined' ? new Audio() : null);
+  const [selectedCallIds, setSelectedCallIds] = useState(new Set());
+
+  useEffect(() => {
+    if (!audio) return;
+    const handleEnded = () => setPlayingCallId(null);
+    audio.addEventListener('ended', handleEnded);
+    return () => audio.removeEventListener('ended', handleEnded);
+  }, [audio]);
+
+  const togglePlay = (callId, url) => {
+    if (playingCallId === callId) {
+      audio.pause();
+      setPlayingCallId(null);
+    } else {
+      audio.src = url;
+      audio.play().catch(err => console.error("Playback failed:", err));
+      setPlayingCallId(callId);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCallIds.size === filtered.length) {
+      setSelectedCallIds(new Set());
+    } else {
+      setSelectedCallIds(new Set(filtered.map(c => c.id)));
+    }
+  };
+
+  const toggleSelectRow = (id) => {
+    const next = new Set(selectedCallIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedCallIds(next);
+  };
+
+  const downloadBulkRecordings = () => {
+    const callsToDownload = filtered.filter(c => selectedCallIds.has(c.id) && c.recording_url);
+    if (callsToDownload.length === 0) {
+      alert("No call recordings selected for download.");
+      return;
+    }
+    
+    callsToDownload.forEach((c, index) => {
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.href = c.recording_url;
+        link.download = `recording_${c.id}.mp3`;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }, index * 300);
+    });
+  };
+
+  // Clear selections and pause audio when switching source or page
+  useEffect(() => {
+    setSelectedCallIds(new Set());
+    if (audio) {
+      audio.pause();
+      setPlayingCallId(null);
+    }
+  }, [source, page, audio]);
+
   const fetchLogs = useCallback(async (src, pg) => {
     setLoading(true);
     try {
@@ -376,6 +446,11 @@ function TabCallLogs() {
             style={{ width:'100%', padding:'0.6rem 1rem 0.6rem 2.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.9rem', background:'white', boxSizing:'border-box' }}
           />
         </div>
+        {source === 'db' && selectedCallIds.size > 0 && (
+          <button onClick={downloadBulkRecordings} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'#10b981', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:600, fontSize:'0.85rem' }}>
+            <Download size={14} /> Download Selected ({selectedCallIds.size})
+          </button>
+        )}
         <button onClick={() => fetchLogs(source, page)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:600, fontSize:'0.85rem' }}>
           <RefreshCw size={14} className={loading?'spin':''} /> Refresh
         </button>
@@ -387,6 +462,16 @@ function TabCallLogs() {
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
+                {source === 'db' && (
+                  <th style={{ padding:'0.75rem 1rem', width:'40px', textAlign:'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filtered.length > 0 && selectedCallIds.size === filtered.length} 
+                      onChange={toggleSelectAll} 
+                      style={{ cursor:'pointer' }}
+                    />
+                  </th>
+                )}
                 {source === 'db'
                   ? ['Time','CallUUID','Agent','Customer','Direction','Status','StartTime','AnswerTime','EndTime','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)
                   : ['Time','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)}
@@ -394,11 +479,19 @@ function TabCallLogs() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="13" style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
+                <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan="13" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
+                <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
               ) : source === 'db' ? filtered.map((c, i) => (
                 <tr key={c.id} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                  <td style={{ padding:'0.85rem 1rem', textAlign:'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedCallIds.has(c.id)} 
+                      onChange={() => toggleSelectRow(c.id)} 
+                      style={{ cursor:'pointer' }}
+                    />
+                  </td>
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
                   <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
@@ -410,7 +503,56 @@ function TabCallLogs() {
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.end_time)}</td>
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
                   <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#3b82f6' }}>{c.recording_url ? <a href={c.recording_url} target="_blank" rel="noopener noreferrer">Play</a> : '—'}</td>
+                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap' }}>
+                    {c.recording_url ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <button 
+                          onClick={() => togglePlay(c.id, c.recording_url)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
+                            color: 'white',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s'
+                          }}
+                          title={playingCallId === c.id ? "Pause Recording" : "Play Recording"}
+                        >
+                          {playingCallId === c.id ? <Pause size={12} /> : <Play size={12} />}
+                        </button>
+                        
+                        <a 
+                          href={c.recording_url} 
+                          download={`recording_${c.id}.mp3`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            border: '1px solid #cbd5e1',
+                            background: 'white',
+                            color: '#475569',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                            transition: 'all 0.2s'
+                          }}
+                          title="Download Recording"
+                        >
+                          <Download size={12} />
+                        </a>
+                      </div>
+                    ) : '—'}
+                  </td>
                   <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'120px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
                 </tr>
               )) : filtered.map((c, i) => (

@@ -196,6 +196,12 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
               }
            }
         }
-     }
+    }
+  } else if (eventType === 'record') {
+    if (event.RecordUrl) {
+      await adminClient.from('call_sessions').update({
+        recording_url: event.RecordUrl
+      }).eq('room_name', roomName);
+    }
   }
 }

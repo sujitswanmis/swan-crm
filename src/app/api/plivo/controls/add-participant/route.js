@@ -13,7 +13,8 @@ export async function POST(req) {
     const authToken = process.env.PLIVO_AUTH_TOKEN;
     const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
     const client = new plivo.Client(authId, authToken);
-    const appBaseUrl = 'https://swan-hosting.vercel.app';
+    const url = new URL(req.url);
+    const appBaseUrl = url.origin;
 
     // Dial the new participant and route them into the SAME conference
     // We pass role=guest so that endConferenceOnExit is false
