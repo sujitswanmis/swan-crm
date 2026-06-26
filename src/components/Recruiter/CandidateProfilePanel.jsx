@@ -4,12 +4,71 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { X, Send, User, Briefcase, FileText, ClipboardList, CheckCircle2, DollarSign, Calendar, ShieldCheck, Mail, Phone, Loader2 } from 'lucide-react';
 
+const getStatusOptions = (stage) => {
+  switch (stage) {
+    case 'S02':
+      return ['Awaiting Screening', 'Resume Selected', 'Resume Rejected', 'No Response', 'ReSchedule'];
+    case 'S03':
+      return ['Interview Scheduled', 'Interview Cleared', 'Interview Rejected', 'No Response', 'ReSchedule'];
+    case 'S04':
+      return ['Test Pending', 'Test Passed', 'Test Failed', 'No Response', 'ReSchedule'];
+    case 'S05':
+      return ['Pending ED', 'ED Approved', 'ED Rejected', 'No Response', 'ReSchedule'];
+    case 'S06':
+      return ['Negotiation Pending', 'Salary Agreed', 'Salary Rejected', 'No Response', 'ReSchedule'];
+    case 'S07':
+      return ['Shortlisted', 'Dropped', 'No Response', 'ReSchedule'];
+    case 'S08':
+      return ['LOI Released', 'LOI Accepted', 'LOI Declined', 'No Response', 'ReSchedule'];
+    case 'S09':
+      return ['Joining Pending', 'Joined', 'No Show', 'No Response', 'ReSchedule'];
+    default:
+      return ['Pending', 'No Response', 'ReSchedule'];
+  }
+};
+
 export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCandidateUpdate, userName }) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [uploadingResume, setUploadingResume] = useState(false);
+
+  const handleResumeUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingResume(true);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+    const filePath = `resumes/${fileName}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('recruitment_resumes')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error('Upload error details:', uploadError);
+        alert(`Error uploading resume: ${uploadError.message}\n\nPlease verify that the 'recruitment_resumes' storage bucket exists in your Supabase project and is set to Public.`);
+        setUploadingResume(false);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('recruitment_resumes')
+        .getPublicUrl(filePath);
+
+      setEditForm(prev => ({ ...prev, resume_url: publicUrlData.publicUrl }));
+    } catch (err) {
+      console.error('Resume upload error:', err);
+      alert('An unexpected error occurred during upload: ' + err.message);
+    } finally {
+      setUploadingResume(false);
+    }
+  };
+
 
   const STAGES = [
     { id: 'S02', label: 'S02 - Resume Filtered' },
@@ -31,6 +90,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
       email: candidate.email || '',
       phone: candidate.phone || '',
       current_stage: candidate.current_stage || 'S02',
+      candidate_status: candidate.candidate_status || 'Awaiting Screening',
       interview_feedback: candidate.interview_feedback || '',
       test_results: candidate.test_results || '',
       ed_approval_status: candidate.ed_approval_status || 'Pending',
@@ -38,7 +98,8 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
       formal_structure_approved: candidate.formal_structure_approved || false,
       loi_status: candidate.loi_status || 'Not Offered',
       joining_details: candidate.joining_details || '',
-      resume_url: candidate.resume_url || ''
+      resume_url: candidate.resume_url || '',
+      interviewer_name: candidate.interviewer_name || ''
     });
 
     // Fetch notes for candidate
@@ -74,10 +135,16 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setEditForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setEditForm(prev => {
+      const updated = {
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      };
+      if (name === 'current_stage') {
+        updated.candidate_status = getStatusOptions(value)[0];
+      }
+      return updated;
+    });
   };
 
   const handleSave = async () => {
@@ -199,8 +266,21 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Resume URL / CV Link</label>
-              <input name="resume_url" value={editForm.resume_url || ''} onChange={handleInputChange} placeholder="https://drive.google.com/... or upload link" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Resume URL / CV Link</span>
+                {editForm.resume_url && (
+                  <a href={editForm.resume_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem' }}>
+                    <FileText size={12} /> Open Resume
+                  </a>
+                )}
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input name="resume_url" value={editForm.resume_url || ''} onChange={handleInputChange} placeholder="https://drive.google.com/... or upload link" style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: 0 }} />
+                <label className="btn-secondary" style={{ display: 'inline-flex', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface-variant)', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
+                  {uploadingResume ? 'Uploading...' : 'Upload File'}
+                  <input type="file" accept=".pdf,.doc,.docx,.rtf,.txt" onChange={handleResumeUpload} style={{ display: 'none' }} disabled={uploadingResume} />
+                </label>
+              </div>
             </div>
           </div>
 
@@ -219,11 +299,26 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               </select>
             </div>
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Candidate Status</label>
+              <select name="candidate_status" value={editForm.candidate_status || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                {getStatusOptions(editForm.current_stage || 'S02').map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+
             {/* S03 Details */}
             {editForm.current_stage >= 'S03' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ClipboardList size={14} /> Interview Feedback (S03)</label>
-                <textarea name="interview_feedback" value={editForm.interview_feedback || ''} onChange={handleInputChange} rows={2} placeholder="Log interview comments..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name (S03)</label>
+                  <input name="interviewer_name" value={editForm.interviewer_name || ''} onChange={handleInputChange} placeholder="Enter interviewer name..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ClipboardList size={14} /> Interview Feedback (S03)</label>
+                  <textarea name="interview_feedback" value={editForm.interview_feedback || ''} onChange={handleInputChange} rows={2} placeholder="Log interview comments..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                </div>
               </div>
             )}
 

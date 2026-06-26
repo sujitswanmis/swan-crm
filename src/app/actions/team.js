@@ -23,6 +23,21 @@ export async function getTeamMembers() {
   return data;
 }
 
+export async function getRecruitersList() {
+  const adminClient = getAdminClient();
+  const { data, error } = await adminClient
+    .from('user_roles')
+    .select('emp_name, emp_designation, user_id, emp_id')
+    .ilike('emp_designation', '%recruiter%')
+    .order('emp_name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching recruiters list:', error);
+    return [];
+  }
+  return (data || []).filter(u => u.emp_name);
+}
+
 export async function updateUserRole(userId, newRole) {
   const adminClient = getAdminClient();
   const { error } = await adminClient

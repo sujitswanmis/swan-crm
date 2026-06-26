@@ -47,6 +47,16 @@ const LEAD_STAGES = [
   '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'
 ];
 
+const DESIGNATIONS = [
+  'Recruiter', 'Senior Recruiter', 'HR Manager', 'HR Executive',
+  'Sales Manager', 'Sales Executive', 'Sales Officer',
+  'Purchase Manager', 'Purchase Executive',
+  'Operations Manager', 'Team Lead', 'Supervisor',
+  'Director', 'General Manager', 'Assistant Manager',
+  'IT Manager', 'System Administrator', 'Data Analyst',
+  'Accountant', 'Finance Manager', 'Other'
+];
+
 export default function TeamManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -612,12 +622,14 @@ export default function TeamManagement() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Designation</label>
-                <input 
-                  type="text" 
+                <select 
                   value={addForm.emp_designation} 
                   onChange={e => setAddForm({...addForm, emp_designation: e.target.value})}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-                />
+                >
+                  <option value="">Select Designation...</option>
+                  {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
               </div>
             </div>
 
@@ -679,12 +691,14 @@ export default function TeamManagement() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Designation</label>
-                <input 
-                  type="text" 
+                <select 
                   value={editForm.emp_designation} 
                   onChange={e => setEditForm({...editForm, emp_designation: e.target.value})}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-                />
+                >
+                  <option value="">Select Designation...</option>
+                  {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Email Address</label>
@@ -781,7 +795,7 @@ export default function TeamManagement() {
                             <span style={{ fontSize: '1rem', fontWeight: accessForm[module.id]?.view ? 600 : 400 }}>{module.label}</span>
                           </label>
 
-                          {/* Expand options if view is enabled and it's the leads module (or others later) */}
+                          {/* Leads module: stage-wise access */}
                           {accessForm[module.id]?.view && module.id === 'leads' && (
                             <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
@@ -804,6 +818,52 @@ export default function TeamManagement() {
                                         onChange={() => handleToggleStep(module.id, stage)}
                                       />
                                       {stage}
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Recruiter module: stage-wise access */}
+                          {accessForm[module.id]?.view && module.id === 'recruiter' && (
+                            <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem', borderLeft: '2px solid #e0e7ff', marginLeft: '0.5rem' }}>
+                              <div style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 600, paddingBottom: '0.25rem' }}>🎯 Recruiter Stage Access</div>
+                              
+                              {/* Full Access toggle */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
+                                <input 
+                                  type="checkbox"
+                                  checked={!!accessForm[module.id]?.is_manager}
+                                  onChange={() => handleToggleManagerLevel(module.id)}
+                                />
+                                Full Access (All Stages — Admin Level)
+                              </label>
+
+                              {/* Stage-wise access when not full admin */}
+                              {!accessForm[module.id]?.is_manager && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Allow access to specific stages:</div>
+                                  {[
+                                    { id: 'S00', label: 'S00 — Requirements Received' },
+                                    { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
+                                    { id: 'S02', label: 'S02 — Resume Filtered' },
+                                    { id: 'S03', label: 'S03 — Interview Executed' },
+                                    { id: 'S04', label: 'S04 — Test Results' },
+                                    { id: 'S05', label: 'S05 — ED Approval' },
+                                    { id: 'S06', label: 'S06 — Salary Negotiation' },
+                                    { id: 'S07', label: 'S07 — Shortlisted' },
+                                    { id: 'S08', label: 'S08 — LOI Released' },
+                                    { id: 'S09', label: 'S09 — Joined' },
+                                  ].map(stage => (
+                                    <label key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.82rem' }}>
+                                      <input 
+                                        type="checkbox"
+                                        checked={(accessForm[module.id]?.assigned_steps || []).includes(stage.id)}
+                                        onChange={() => handleToggleStep(module.id, stage.id)}
+                                        style={{ accentColor: '#6366f1' }}
+                                      />
+                                      <span style={{ fontWeight: (accessForm[module.id]?.assigned_steps || []).includes(stage.id) ? 600 : 400 }}>{stage.label}</span>
                                     </label>
                                   ))}
                                 </div>

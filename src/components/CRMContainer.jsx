@@ -160,6 +160,8 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   const [userEmail, setUserEmail] = useState('');
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
+  const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
+  const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({
     'Sales': false,
@@ -201,6 +203,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
     // Auto-expand submenus
     setLeadDataExpanded(activeTab === 'leads');
+    setRecruiterMenuExpanded(activeTab === 'recruiter');
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
   }, [activeTab]);
@@ -914,6 +917,13 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                               } else {
                                 setLeadDataExpanded(!leadDataExpanded);
                               }
+                            } else if (module.id === 'recruiter') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setRecruiterMenuExpanded(true);
+                              } else {
+                                setRecruiterMenuExpanded(!recruiterMenuExpanded);
+                              }
                             } else {
                               handleTabChange(module.id); 
                             }
@@ -928,9 +938,98 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                               {leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </span>
                           )}
+                          {module.id === 'recruiter' && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {recruiterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
                           {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
                           <span>{module.label}</span>
                         </button>
+                        
+                        {module.id === 'recruiter' && (
+                          <div className={`submenu-list ${recruiterMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
+                              {/* Determine allowed stages for this user */}
+                              {(() => {
+                                const isAdmin = userRole === 'admin' || userRole === 'Admin';
+                                const recruiterAccess = moduleAccess['recruiter'];
+                                const isFullAccess = isAdmin || recruiterAccess?.is_manager;
+                                const allowedSteps = recruiterAccess?.assigned_steps || [];
+
+                                const canSeeStage = (stageId) => isFullAccess || allowedSteps.includes(stageId);
+
+                                return (
+                                  <>
+                                    {/* Dashboard & All Stages - always for admins/full access */}
+                                    {isFullAccess && (
+                                      <>
+                                        <button
+                                          onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('dashboard'); }}
+                                          className="submenu-item"
+                                          data-active={activeTab === 'recruiter' && recruiterFilterStage === 'dashboard'}
+                                          style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}
+                                        >
+                                          📊 Recruiter Dashboard
+                                        </button>
+                                        <button
+                                          onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('all_stages'); }}
+                                          className="submenu-item"
+                                          data-active={activeTab === 'recruiter' && recruiterFilterStage === 'all_stages'}
+                                          style={{ fontWeight: 'bold' }}
+                                        >
+                                          🔍 Recruiter All Stage
+                                        </button>
+                                        <div style={{ height: '1px', backgroundColor: 'var(--border-light)', margin: '0.4rem 0.75rem' }} />
+                                      </>
+                                    )}
+
+                                    {/* S00 & S01 */}
+                                    {canSeeStage('S00') && (
+                                      <button
+                                        onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('S00'); }}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'recruiter' && recruiterFilterStage === 'S00'}
+                                      >
+                                        S00 - Requirements Received
+                                      </button>
+                                    )}
+                                    {canSeeStage('S01') && (
+                                      <button
+                                        onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('S01'); }}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'recruiter' && recruiterFilterStage === 'S01'}
+                                      >
+                                        S01 - JDs Prepared & Posted
+                                      </button>
+                                    )}
+
+                                    {/* S02–S09 */}
+                                    {[
+                                      { id: 'S02', label: 'S02 - Resume Filtered' },
+                                      { id: 'S03', label: 'S03 - Interview Executed' },
+                                      { id: 'S04', label: 'S04 - Test Result Updated' },
+                                      { id: 'S05', label: 'S05 - ED Approval Pending' },
+                                      { id: 'S06', label: 'S06 - Salary Negotiating' },
+                                      { id: 'S07', label: 'S07 - Shortlisted' },
+                                      { id: 'S08', label: 'S08 - LOI Released' },
+                                      { id: 'S09', label: 'S09 - Joined' }
+                                    ].filter(stage => canSeeStage(stage.id)).map(stage => (
+                                      <button
+                                        key={stage.id}
+                                        onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage(stage.id); }}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'recruiter' && recruiterFilterStage === stage.id}
+                                      >
+                                        {stage.label}
+                                      </button>
+                                    ))}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
                         
                         {module.id === 'leads' && (
                           <div className={`submenu-list ${leadDataExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
@@ -1485,7 +1584,13 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'recruiter' && (
                 <ErrorBoundary>
-                  <RecruiterDashboard userRole={userRole} userName={userName} />
+                  <RecruiterDashboard 
+                    userRole={userRole} 
+                    userName={userName} 
+                    selectedStage={recruiterFilterStage}
+                    recruiterAccess={moduleAccess['recruiter'] || null}
+                    isAdmin={userRole === 'admin' || userRole === 'Admin'}
+                  />
                 </ErrorBoundary>
               )}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
