@@ -99,6 +99,9 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
       loi_status: candidate.loi_status || 'Not Offered',
       joining_date: candidate.joining_date || '',
       actual_joining_date: candidate.actual_joining_date || '',
+      expected_salary_min: candidate.expected_salary_min || '',
+      expected_salary_max: candidate.expected_salary_max || '',
+      actual_salary: candidate.actual_salary || '',
       joining_details: candidate.joining_details || '',
       resume_url: candidate.resume_url || '',
       interviewer_name: candidate.interviewer_name || ''
@@ -267,6 +270,17 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               </div>
             </div>
 
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Min (₹/yr)</label>
+                <input name="expected_salary_min" value={editForm.expected_salary_min || ''} onChange={handleInputChange} type="number" placeholder="Min salary" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Max (₹/yr)</label>
+                <input name="expected_salary_max" value={editForm.expected_salary_max || ''} onChange={handleInputChange} type="number" placeholder="Max salary" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+              </div>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>Resume URL / CV Link</span>
@@ -346,9 +360,15 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
             {/* S06 Details */}
             {editForm.current_stage >= 'S06' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><DollarSign size={14} /> Salary Negotiation (S06)</label>
-                <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><DollarSign size={14} /> Salary Negotiation (S06)</label>
+                  <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Actual Negotiated Salary (₹/yr)</label>
+                  <input name="actual_salary" value={editForm.actual_salary || ''} onChange={handleInputChange} type="number" placeholder="Enter actual negotiated salary..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
               </div>
             )}
 

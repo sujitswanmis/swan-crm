@@ -67,8 +67,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   const [savingEditPos, setSavingEditPos] = useState(false);
   
   // Form State
-  const [newPosition, setNewPosition] = useState({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All' });
-  const [newCandidate, setNewCandidate] = useState({ name: '', email: '', phone: '', position_id: '', resume_url: '' });
+  const [newPosition, setNewPosition] = useState({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
+  const [newCandidate, setNewCandidate] = useState({ name: '', email: '', phone: '', position_id: '', resume_url: '', expected_salary_min: '', expected_salary_max: '' });
   const [uploadingResume, setUploadingResume] = useState(false);
 
   const handleResumeUpload = async (e) => {
@@ -192,12 +192,14 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         .from('recruitment_positions')
         .insert([{
           ...newPosition,
+          salary_min: newPosition.salary_min ? parseInt(newPosition.salary_min) : null,
+          salary_max: newPosition.salary_max ? parseInt(newPosition.salary_max) : null,
           status: selectedStage === 'S01' ? 'S01' : 'S00',
           created_by: creator
         }]);
 
       if (error) throw error;
-      setNewPosition({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All' });
+      setNewPosition({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
       setIsPositionModalOpen(false);
       loadData();
     } catch (err) {
@@ -232,6 +234,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       deadline_date: pos.deadline_date || '',
       interviewer_name: pos.interviewer_name || '',
       recruiter_assigned: pos.recruiter_assigned || 'All',
+      salary_min: pos.salary_min !== null && pos.salary_min !== undefined ? pos.salary_min.toString() : '',
+      salary_max: pos.salary_max !== null && pos.salary_max !== undefined ? pos.salary_max.toString() : '',
     });
   };
 
@@ -243,7 +247,11 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     try {
       const { error } = await supabase
         .from('recruitment_positions')
-        .update({ ...editPositionForm })
+        .update({
+          ...editPositionForm,
+          salary_min: editPositionForm.salary_min ? parseInt(editPositionForm.salary_min) : null,
+          salary_max: editPositionForm.salary_max ? parseInt(editPositionForm.salary_max) : null
+        })
         .eq('id', editingPosition.id);
       if (error) throw error;
       setEditingPosition(null);
@@ -268,6 +276,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         .from('recruitment_candidates')
         .insert([{
           ...newCandidate,
+          expected_salary_min: newCandidate.expected_salary_min ? parseInt(newCandidate.expected_salary_min) : null,
+          expected_salary_max: newCandidate.expected_salary_max ? parseInt(newCandidate.expected_salary_max) : null,
           current_stage: 'S02',
           created_by: creator
         }])
@@ -283,7 +293,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         created_by: creator
       }]);
 
-      setNewCandidate({ name: '', email: '', phone: '', position_id: '', resume_url: '' });
+      setNewCandidate({ name: '', email: '', phone: '', position_id: '', resume_url: '', expected_salary_min: '', expected_salary_max: '' });
       setIsCandidateModalOpen(false);
       loadData();
     } catch (err) {
@@ -643,6 +653,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Job Title</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Department</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '100px' }}>Openings</th>
+                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Salary Range</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px' }}>Status</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '130px' }}>Deadline Date</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Interviewer</th>
@@ -658,6 +669,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <td style={{ padding: '1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{pos.title}</td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.department}</td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.openings}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                      {pos.salary_min || pos.salary_max ? (
+                        <span>
+                          {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'}
+                        </span>
+                      ) : (
+                        <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Disclosed</span>
+                      )}
+                    </td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
                       <span style={{ 
                         fontSize: '0.7rem', 
@@ -827,10 +847,11 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         </span>
                       );
                     } else if (cand.current_stage === 'S06') {
-                      stageDetailsText = cand.salary_negotiation_details ? (
-                        <span>💰 Structure: {cand.salary_negotiation_details}</span>
-                      ) : (
-                        <span style={{ color: '#86198f' }}>Salary Negotiation in progress</span>
+                      stageDetailsText = (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                          {cand.actual_salary && <div style={{ fontWeight: 600, color: '#166534' }}>💵 Actual Salary: ₹{cand.actual_salary.toLocaleString('en-IN')}</div>}
+                          <div>💰 Structure: {cand.salary_negotiation_details || <span style={{ color: '#86198f', fontStyle: 'italic' }}>Negotiation in progress</span>}</div>
+                        </div>
                       );
                     } else if (cand.current_stage === 'S07') {
                       stageDetailsText = <span style={{ color: '#166534', fontWeight: 600 }}>✓ Structure Approved (ED Shortlisted)</span>;
@@ -870,6 +891,11 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             {cand.phone && <span style={{ marginRight: '0.75rem' }}>📞 {cand.phone}</span>}
                             {cand.email && <span>✉️ {cand.email}</span>}
                           </div>
+                          {(cand.expected_salary_min || cand.expected_salary_max) && (
+                            <div style={{ fontSize: '0.72rem', color: '#0f766e', marginTop: '0.2rem', fontWeight: 500 }}>
+                              💰 Exp: {cand.expected_salary_min ? `₹${cand.expected_salary_min.toLocaleString('en-IN')}` : '0'} - {cand.expected_salary_max ? `₹${cand.expected_salary_max.toLocaleString('en-IN')}` : 'Any'}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                           <div>{cand.recruitment_positions?.title || 'Unknown'}</div>
@@ -1024,6 +1050,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
 
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
+                  <input type="number" value={newPosition.salary_min} onChange={e => setNewPosition({...newPosition, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
+                  <input type="number" value={newPosition.salary_max} onChange={e => setNewPosition({...newPosition, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Deadline Date</label>
                   <input type="date" value={newPosition.deadline_date || ''} onChange={e => setNewPosition({...newPosition, deadline_date: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }} />
                 </div>
@@ -1093,6 +1130,18 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   <input type="number" min="1" value={editPositionForm.openings} onChange={e => setEditPositionForm({...editPositionForm, openings: parseInt(e.target.value) || 1})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
+                  <input type="number" value={editPositionForm.salary_min || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
+                  <input type="number" value={editPositionForm.salary_max || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Deadline Date</label>
@@ -1170,6 +1219,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <option key={pos.id} value={pos.id}>{pos.title} ({pos.department})</option>
                   ))}
                 </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Min (₹/yr)</label>
+                  <input type="number" value={newCandidate.expected_salary_min} onChange={e => setNewCandidate({...newCandidate, expected_salary_min: e.target.value})} placeholder="Min expected" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Max (₹/yr)</label>
+                  <input type="number" value={newCandidate.expected_salary_max} onChange={e => setNewCandidate({...newCandidate, expected_salary_max: e.target.value})} placeholder="Max expected" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
