@@ -24,6 +24,7 @@ import html2canvas from 'html2canvas';
 import SettingsContainer from './Settings/SettingsContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
+import RecruiterDashboard from './Recruiter/RecruiterDashboard';
 
 const MODULES_CONFIG = [
   { id: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
@@ -1482,7 +1483,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'recruiter' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Recruiter Dashboard (Coming Soon)</h2><p>This module is under development.</p></div>}
+              {activeTab === 'recruiter' && (
+                <ErrorBoundary>
+                  <RecruiterDashboard userRole={userRole} userName={userName} />
+                </ErrorBoundary>
+              )}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'registration' && (
                 <ErrorBoundary>
