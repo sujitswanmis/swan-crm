@@ -70,6 +70,14 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   const [newPosition, setNewPosition] = useState({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
   const [newCandidate, setNewCandidate] = useState({ name: '', email: '', phone: '', position_id: '', resume_url: '', expected_salary_min: '', expected_salary_max: '' });
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+    confirmText: '',
+    cancelText: ''
+  });
 
   const handleResumeUpload = async (e) => {
     const file = e.target.files[0];
@@ -808,7 +816,27 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                           >🙋 Claim</button>
                         )}
                         <button 
-                          onClick={() => handleTogglePositionStatus(pos.id, pos.status)}
+                          onClick={() => {
+                            if (pos.status === 'S00') {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Mark Job Description as Ready?',
+                                message: `Are you sure you want to mark the Job Description for "${pos.title}" as ready? This will move the position from S00 (Requirements) to S01 (Posted).`,
+                                confirmText: 'Yes, JD is Ready',
+                                cancelText: 'Cancel',
+                                onConfirm: () => handleTogglePositionStatus(pos.id, 'S00')
+                              });
+                            } else {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Revert Position to Requirements?',
+                                message: `Are you sure you want to revert "${pos.title}" back to S00 (Requirements)? This will remove it from active postings.`,
+                                confirmText: 'Yes, Revert',
+                                cancelText: 'Cancel',
+                                onConfirm: () => handleTogglePositionStatus(pos.id, 'S01')
+                              });
+                            }
+                          }}
                           style={{ 
                             fontSize: '0.72rem', padding: '0.35rem 0.75rem', borderRadius: '6px',
                             border: '1px solid var(--border-light)', background: 'var(--bg-surface)',
@@ -1344,6 +1372,69 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1.25rem' }}>Register Candidate</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div 
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(9, 13, 22, 0.65)', backdropFilter: 'blur(8px)',
+            zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center'
+          }}
+          onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            style={{
+              width: '100%', maxWidth: '420px', backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)', borderRadius: '16px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)', padding: '1.5rem 1.75rem',
+              display: 'flex', flexDirection: 'column', gap: '1.25rem', zIndex: 10000,
+              transform: 'scale(1)', transition: 'transform 0.2s ease', margin: '1rem'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {confirmModal.title}
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {confirmModal.message}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', justifyItems: 'flex-end', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)',
+                  backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '0.85rem',
+                  fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s'
+                }}
+              >
+                {confirmModal.cancelText || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (confirmModal.onConfirm) {
+                    await confirmModal.onConfirm();
+                  }
+                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                }}
+                style={{
+                  padding: '0.5rem 1.25rem', borderRadius: '8px', border: 'none',
+                  backgroundColor: 'var(--accent-color)', color: 'white', fontSize: '0.85rem',
+                  fontWeight: 700, cursor: 'pointer', transition: 'background-color 0.2s',
+                  boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
+                }}
+              >
+                {confirmModal.confirmText || 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
       )}
