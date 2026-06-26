@@ -653,6 +653,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Job Title</th>
+                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px' }}>Position ID</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Department</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '100px' }}>Openings</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Salary Range</th>
@@ -661,6 +662,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Interviewer</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>🎯 Recruiter Assigned</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Job Description (JD Summary)</th>
+                  {selectedStage === 'S01' && <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>🔗 Apply Link</th>}
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '130px' }}>Created By</th>
                   <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '220px', textAlign: 'center' }}>Actions</th>
                 </tr>
@@ -669,6 +671,26 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 {filteredPositions.map(pos => (
                   <tr key={pos.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{pos.title}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span title={pos.id}>{pos.id ? `${pos.id.substring(0, 8)}...` : 'N/A'}</span>
+                        {pos.id && (
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(pos.id);
+                              alert('Position ID copied!');
+                            }}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.25rem',
+                              color: 'var(--text-secondary)', fontSize: '0.75rem'
+                            }}
+                            title="Copy Full ID"
+                          >
+                            📋
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.department}</td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.openings}</td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
@@ -716,6 +738,34 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <td style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={pos.jd_text}>
                       {pos.jd_text || <span style={{ fontStyle: 'italic', color: '#c2410c' }}>⚠️ No JD logged — please edit.</span>}
                     </td>
+                    {selectedStage === 'S01' && (
+                      <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <button
+                            onClick={() => {
+                              const link = `${window.location.origin}/apply/${pos.id}`;
+                              navigator.clipboard.writeText(link);
+                              alert('Apply link copied to clipboard!');
+                            }}
+                            style={{
+                              fontSize: '0.72rem', padding: '0.3rem 0.6rem', borderRadius: '6px',
+                              border: '1px solid var(--accent-color)', background: 'var(--accent-color)',
+                              cursor: 'pointer', fontWeight: 600, color: 'white', display: 'inline-flex', alignItems: 'center', gap: '0.2rem'
+                            }}
+                          >
+                            Copy
+                          </button>
+                          <a 
+                            href={`/apply/${pos.id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: 'var(--accent-color)', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600 }}
+                          >
+                            Open ↗
+                          </a>
+                        </div>
+                      </td>
+                    )}
                     <td style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{pos.created_by || 'System'}</td>
                     <td style={{ padding: '1rem', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center', flexWrap: 'wrap' }}>
