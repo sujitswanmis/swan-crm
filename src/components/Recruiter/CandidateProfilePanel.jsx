@@ -97,6 +97,8 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
       salary_negotiation_details: candidate.salary_negotiation_details || '',
       formal_structure_approved: candidate.formal_structure_approved || false,
       loi_status: candidate.loi_status || 'Not Offered',
+      joining_date: candidate.joining_date || '',
+      actual_joining_date: candidate.actual_joining_date || '',
       joining_details: candidate.joining_details || '',
       resume_url: candidate.resume_url || '',
       interviewer_name: candidate.interviewer_name || ''
@@ -360,22 +362,34 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
             {/* S08 Details */}
             {editForm.current_stage >= 'S08' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Mail size={14} /> LOI / Offer Letter Status (S08)</label>
-                <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                  <option value="Not Offered">LOI Not Offered</option>
-                  <option value="Sent">LOI Sent to Candidate</option>
-                  <option value="Accepted">LOI Accepted</option>
-                  <option value="Declined">LOI Declined</option>
-                </select>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Mail size={14} /> LOI / Offer Letter Status (S08)</label>
+                  <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                    <option value="Not Offered">LOI Not Offered</option>
+                    <option value="Sent">LOI Sent to Candidate</option>
+                    <option value="Accepted">LOI Accepted</option>
+                    <option value="Declined">LOI Declined</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Expected Joining Date (S08)</label>
+                  <input type="date" name="joining_date" value={editForm.joining_date || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', width: '100%' }} />
+                </div>
               </div>
             )}
 
             {/* S09 Details */}
             {editForm.current_stage >= 'S09' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><CheckCircle2 size={14} /> Joining Details & Formalities (S09)</label>
-                <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} rows={2} placeholder="Document checklist, joining date, induction status..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Actual Joined Date (S09)</label>
+                  <input type="date" name="actual_joining_date" value={editForm.actual_joining_date || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', width: '100%' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><CheckCircle2 size={14} /> Joining Details & Formalities (S09)</label>
+                  <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} rows={2} placeholder="Document checklist, induction status..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                </div>
               </div>
             )}
           </div>

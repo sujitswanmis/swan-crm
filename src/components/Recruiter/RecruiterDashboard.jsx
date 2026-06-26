@@ -836,15 +836,21 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                       stageDetailsText = <span style={{ color: '#166534', fontWeight: 600 }}>✓ Structure Approved (ED Shortlisted)</span>;
                     } else if (cand.current_stage === 'S08') {
                       stageDetailsText = (
-                        <span>
-                          ✉️ Offer/LOI Status: <strong>{cand.loi_status}</strong>
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span>✉️ Offer/LOI Status: <strong>{cand.loi_status}</strong></span>
+                          {cand.joining_date && <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>📅 Expected Joining: <strong>{cand.joining_date}</strong></span>}
+                        </div>
                       );
                     } else if (cand.current_stage === 'S09') {
-                      stageDetailsText = cand.joining_details ? (
-                        <span>🤝 Joining Details: {cand.joining_details}</span>
-                      ) : (
-                        <span style={{ color: '#166534' }}>Joined - Awaiting onboarding checklist</span>
+                      stageDetailsText = (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          {cand.actual_joining_date && <span style={{ color: '#166534', fontSize: '0.75rem', fontWeight: 600 }}>📅 Joined Date: {cand.actual_joining_date}</span>}
+                          {cand.joining_details ? (
+                            <span>🤝 Details: {cand.joining_details}</span>
+                          ) : (
+                            <span style={{ color: '#166534' }}>Joined - Awaiting onboarding checklist</span>
+                          )}
+                        </div>
                       );
                     }
 
