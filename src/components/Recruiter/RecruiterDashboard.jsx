@@ -373,10 +373,16 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
 
       const matchesStage = selectedStage === 'all_stages' || c.current_stage === selectedStage;
       
+      const cleanSearch = searchTerm.toLowerCase().trim();
+      const posCode = c.position_id ? `POS-${c.position_id.substring(0, 8).toUpperCase()}` : '';
+      const posTitle = c.recruitment_positions?.title || '';
+
       const matchesSearch = 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (c.phone || '').includes(searchTerm);
+        c.name.toLowerCase().includes(cleanSearch) ||
+        (c.email || '').toLowerCase().includes(cleanSearch) ||
+        (c.phone || '').includes(cleanSearch) ||
+        posTitle.toLowerCase().includes(cleanSearch) ||
+        posCode.toLowerCase().includes(cleanSearch);
       
       const matchesPosition = 
         selectedPositionFilter === 'All' || c.position_id === selectedPositionFilter;
@@ -673,18 +679,18 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <td style={{ padding: '1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{pos.title}</td>
                     <td style={{ padding: '1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span title={pos.id}>{pos.id ? `${pos.id.substring(0, 8)}...` : 'N/A'}</span>
+                        <span title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
                         {pos.id && (
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(pos.id);
-                              alert('Position ID copied!');
+                              navigator.clipboard.writeText(`POS-${pos.id.substring(0, 8).toUpperCase()}`);
+                              alert('Position Code copied!');
                             }}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.25rem',
                               color: 'var(--text-secondary)', fontSize: '0.75rem'
                             }}
-                            title="Copy Full ID"
+                            title="Copy Position Code"
                           >
                             📋
                           </button>
@@ -951,7 +957,19 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         </td>
                         <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                           <div>{cand.recruitment_positions?.title || 'Unknown'}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{cand.recruitment_positions?.department}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.2rem' }}>
+                            <span>{cand.recruitment_positions?.department}</span>
+                            {cand.position_id && (
+                              <span style={{ 
+                                fontSize: '0.68rem', fontFamily: 'monospace', 
+                                padding: '0.1rem 0.35rem', borderRadius: '4px',
+                                background: 'var(--bg-surface-variant)', border: '1px solid var(--border-light)',
+                                color: 'var(--text-secondary)'
+                              }} title={`Full Position ID: ${cand.position_id}`}>
+                                {`POS-${cand.position_id.substring(0, 8).toUpperCase()}`}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: '1rem', textAlign: 'center' }}>
                           {cand.resume_url ? (
