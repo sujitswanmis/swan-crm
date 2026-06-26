@@ -27,7 +27,7 @@ const getStatusOptions = (stage) => {
   }
 };
 
-export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCandidateUpdate, userName }) {
+export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCandidateUpdate, userName, canEdit = true }) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
@@ -275,28 +275,28 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Candidate Name</label>
-              <input name="name" value={editForm.name || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+              <input name="name" value={editForm.name || ''} onChange={handleInputChange} disabled={!canEdit} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Email</label>
-                <input name="email" value={editForm.email || ''} onChange={handleInputChange} type="email" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="email" value={editForm.email || ''} onChange={handleInputChange} disabled={!canEdit} type="email" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Phone</label>
-                <input name="phone" value={editForm.phone || ''} onChange={handleInputChange} type="tel" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="phone" value={editForm.phone || ''} onChange={handleInputChange} disabled={!canEdit} type="tel" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Min (₹/month)</label>
-                <input name="expected_salary_min" value={editForm.expected_salary_min || ''} onChange={handleInputChange} type="number" placeholder="Min salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="expected_salary_min" value={editForm.expected_salary_min || ''} onChange={handleInputChange} disabled={!canEdit} type="number" placeholder="Min salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Max (₹/month)</label>
-                <input name="expected_salary_max" value={editForm.expected_salary_max || ''} onChange={handleInputChange} type="number" placeholder="Max salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="expected_salary_max" value={editForm.expected_salary_max || ''} onChange={handleInputChange} disabled={!canEdit} type="number" placeholder="Max salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
             </div>
 
@@ -310,10 +310,10 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
                 )}
               </label>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input name="resume_url" value={editForm.resume_url || ''} onChange={handleInputChange} placeholder="https://drive.google.com/... or upload link" style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: 0 }} />
-                <label className="btn-secondary" style={{ display: 'inline-flex', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface-variant)', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
+                <input name="resume_url" value={editForm.resume_url || ''} onChange={handleInputChange} disabled={!canEdit} placeholder="https://drive.google.com/... or upload link" style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: 0 }} />
+                <label className="btn-secondary" style={{ display: 'inline-flex', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface-variant)', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', cursor: !canEdit ? 'not-allowed' : 'pointer', opacity: !canEdit ? 0.6 : 1, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   {uploadingResume ? 'Uploading...' : 'Upload File'}
-                  <input type="file" accept=".pdf,.doc,.docx,.rtf,.txt" onChange={handleResumeUpload} style={{ display: 'none' }} disabled={uploadingResume} />
+                  <input type="file" accept=".pdf,.doc,.docx,.rtf,.txt" onChange={handleResumeUpload} style={{ display: 'none' }} disabled={uploadingResume || !canEdit} />
                 </label>
               </div>
             </div>
@@ -327,7 +327,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Current Stage</label>
-              <select name="current_stage" value={editForm.current_stage || 'S02'} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+              <select name="current_stage" value={editForm.current_stage || 'S02'} onChange={handleInputChange} disabled={!canEdit} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                 {STAGES.map(s => (
                   <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
@@ -336,7 +336,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Candidate Status</label>
-              <select name="candidate_status" value={editForm.candidate_status || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+              <select name="candidate_status" value={editForm.candidate_status || ''} onChange={handleInputChange} disabled={!canEdit} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                 {getStatusOptions(editForm.current_stage || 'S02').map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -348,11 +348,11 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name (S03)</label>
-                  <input name="interviewer_name" value={editForm.interviewer_name || ''} onChange={handleInputChange} placeholder="Enter interviewer name..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input name="interviewer_name" value={editForm.interviewer_name || ''} onChange={handleInputChange} disabled={!canEdit} placeholder="Enter interviewer name..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ClipboardList size={14} /> Interview Feedback (S03)</label>
-                  <textarea name="interview_feedback" value={editForm.interview_feedback || ''} onChange={handleInputChange} rows={2} placeholder="Log interview comments..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                  <textarea name="interview_feedback" value={editForm.interview_feedback || ''} onChange={handleInputChange} disabled={!canEdit} rows={2} placeholder="Log interview comments..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
                 </div>
               </div>
             )}
@@ -361,7 +361,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             {editForm.current_stage >= 'S04' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><FileText size={14} /> Test Results (S04)</label>
-                <input name="test_results" value={editForm.test_results || ''} onChange={handleInputChange} placeholder="Enter test marks, status, or results..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="test_results" value={editForm.test_results || ''} onChange={handleInputChange} disabled={!canEdit} placeholder="Enter test marks, status, or results..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
             )}
 
@@ -369,7 +369,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             {editForm.current_stage >= 'S05' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ShieldCheck size={14} /> ED Sir Approval Status (S05)</label>
-                <select name="ed_approval_status" value={editForm.ed_approval_status || 'Pending'} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                <select name="ed_approval_status" value={editForm.ed_approval_status || 'Pending'} onChange={handleInputChange} disabled={!canEdit} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                   <option value="Pending">Approval Pending</option>
                   <option value="Approved">Approved by ED Sir</option>
                   <option value="Rejected">Rejected by ED Sir</option>
@@ -380,13 +380,13 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             {/* S06 Details */}
             {editForm.current_stage >= 'S06' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><DollarSign size={14} /> Salary Negotiation (S06)</label>
-                  <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                  <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} disabled={!canEdit} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Actual Negotiated Salary (₹/month)</label>
-                  <input name="actual_salary" value={editForm.actual_salary || ''} onChange={handleInputChange} type="number" placeholder="Enter actual negotiated salary..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input name="actual_salary" value={editForm.actual_salary || ''} onChange={handleInputChange} disabled={!canEdit} type="number" placeholder="Enter actual negotiated salary..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
             )}
@@ -394,8 +394,8 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             {/* S07 Details */}
             {editForm.current_stage >= 'S07' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <input type="checkbox" id="formal_structure_approved" name="formal_structure_approved" checked={editForm.formal_structure_approved || false} onChange={handleInputChange} style={{ width: '16px', height: '16px' }} />
-                <label htmlFor="formal_structure_approved" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>Formal Structure Approved for Shortlist (S07)</label>
+                <input type="checkbox" id="formal_structure_approved" name="formal_structure_approved" checked={editForm.formal_structure_approved || false} onChange={handleInputChange} disabled={!canEdit} style={{ width: '16px', height: '16px' }} />
+                <label htmlFor="formal_structure_approved" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', cursor: !canEdit ? 'not-allowed' : 'pointer' }}>Formal Structure Approved for Shortlist (S07)</label>
               </div>
             )}
 
@@ -404,7 +404,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem', width: '100%' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Mail size={14} /> LOI / Offer Letter Status (S08)</label>
-                  <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                  <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} disabled={!canEdit} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                     <option value="Not Offered">LOI Not Offered</option>
                     <option value="Sent">LOI Sent to Candidate</option>
                     <option value="Accepted">LOI Accepted</option>
@@ -413,7 +413,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Expected Joining Date (S08)</label>
-                  <input type="date" name="joining_date" value={editForm.joining_date || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
+                  <input type="date" name="joining_date" value={editForm.joining_date || ''} onChange={handleInputChange} disabled={!canEdit} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
             )}
@@ -423,20 +423,31 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem', width: '100%' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Actual Joined Date (S09)</label>
-                  <input type="date" name="actual_joining_date" value={editForm.actual_joining_date || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
+                  <input type="date" name="actual_joining_date" value={editForm.actual_joining_date || ''} onChange={handleInputChange} disabled={!canEdit} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><CheckCircle2 size={14} /> Joining Details & Formalities (S09)</label>
-                  <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} rows={2} placeholder="Document checklist, induction status..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                  <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} disabled={!canEdit} rows={2} placeholder="Document checklist, induction status..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
                 </div>
               </div>
             )}
           </div>
 
           {/* Save Button */}
-          <button onClick={handleSave} disabled={isSaving} className="btn-primary" style={{ justifyContent: 'center', width: '100%', padding: '0.75rem' }}>
-            {isSaving ? <Loader2 size={18} className="animate-spin" /> : "Save Profile Updates"}
-          </button>
+          {canEdit ? (
+            <button onClick={handleSave} disabled={isSaving} className="btn-primary" style={{ justifyContent: 'center', width: '100%', padding: '0.75rem' }}>
+              {isSaving ? <Loader2 size={18} className="animate-spin" /> : "Save Profile Updates"}
+            </button>
+          ) : (
+            <div style={{ 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              padding: '0.75rem', borderRadius: '8px', backgroundColor: 'var(--bg-primary)',
+              border: '1px solid var(--border-light)', color: 'var(--text-secondary)',
+              fontSize: '0.85rem', fontWeight: 600, width: '100%', boxSizing: 'border-box'
+            }}>
+              🔒 Read-Only (Stage View Access Only)
+            </div>
+          )}
 
           {/* Interaction History / Notes Log */}
           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -449,10 +460,11 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
                 type="text" 
                 value={newNote} 
                 onChange={e => setNewNote(e.target.value)} 
-                placeholder="Log activity or add notes..." 
-                style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }} 
+                disabled={!canEdit}
+                placeholder={canEdit ? "Log activity or add notes..." : "Log entries disabled (Read-Only)"} 
+                style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: !canEdit ? 'var(--bg-primary)' : 'var(--bg-surface)' }} 
               />
-              <button type="submit" style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', padding: '0 0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="submit" disabled={!canEdit || !newNote.trim()} style={{ background: !canEdit ? 'var(--border-light)' : 'var(--accent-color)', color: !canEdit ? 'var(--text-secondary)' : 'white', border: 'none', borderRadius: '8px', padding: '0 0.75rem', cursor: !canEdit || !newNote.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Send size={14} />
               </button>
             </form>

@@ -6,6 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
+import { createClient } from '@/utils/supabase/client';
 
 const MODULES_CONFIG = [
   { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
@@ -32,7 +33,7 @@ const MODULES_CONFIG = [
   { id: 'settings', label: 'Settings', category: 'System' },
 ];
 
-const DEPARTMENTS = [
+const DEFAULT_DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
   "Corporate Strategy and Planning", "Electrical & Maintenance", "Human Resource",
   "Human Resource & Administration", "Information Technology", "Logistics",
@@ -93,6 +94,9 @@ export default function TeamManagement() {
   const [userSessions, setUserSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
 
+  const supabase = React.useMemo(() => createClient(), []);
+  const [departments, setDepartments] = useState([]);
+
   const [confirmModal, setConfirmModal] = useState({
     show: false,
     userId: null,
@@ -102,7 +106,25 @@ export default function TeamManagement() {
 
   useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
+
+  const fetchDepartments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('name')
+        .order('name', { ascending: true });
+      if (!error && data && data.length > 0) {
+        setDepartments(data.map(d => d.name));
+      } else {
+        setDepartments(DEFAULT_DEPARTMENTS);
+      }
+    } catch (e) {
+      console.error('Error fetching departments:', e);
+      setDepartments(DEFAULT_DEPARTMENTS);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -241,6 +263,45 @@ export default function TeamManagement() {
         [moduleId]: {
           ...prev[moduleId],
           assigned_steps: newSteps
+        }
+      };
+    });
+  };
+
+  const handleToggleRecruiterStep = (type, stageId) => {
+    setAccessForm(prev => {
+      const moduleAccess = prev['recruiter'] || { view: true, is_manager: false, assigned_steps: [], assigned_steps_view: [], assigned_steps_edit: [] };
+      
+      let currentView = [...(moduleAccess.assigned_steps_view || moduleAccess.assigned_steps || [])];
+      let currentEdit = [...(moduleAccess.assigned_steps_edit || moduleAccess.assigned_steps || [])];
+
+      if (type === 'view') {
+        const hasView = currentView.includes(stageId);
+        if (hasView) {
+          currentView = currentView.filter(s => s !== stageId);
+          currentEdit = currentEdit.filter(s => s !== stageId);
+        } else {
+          currentView.push(stageId);
+        }
+      } else if (type === 'edit') {
+        const hasEdit = currentEdit.includes(stageId);
+        if (hasEdit) {
+          currentEdit = currentEdit.filter(s => s !== stageId);
+        } else {
+          currentEdit.push(stageId);
+          if (!currentView.includes(stageId)) {
+            currentView.push(stageId);
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        recruiter: {
+          ...moduleAccess,
+          assigned_steps_view: currentView,
+          assigned_steps_edit: currentEdit,
+          assigned_steps: currentView
         }
       };
     });
@@ -451,28 +512,8 @@ export default function TeamManagement() {
                   >
                     Manage Access
                   </button>
-                  
+
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={user.can_read !== false} 
-                      onChange={() => toggleReadAccess(user.user_id, user.can_read)}
-                      disabled={user.role === 'Admin' || user.role === 'admin'}
-                    />
-                    View Access (Read)
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={user.can_write !== false} 
-                      onChange={() => toggleWriteAccess(user.user_id, user.can_write)}
-                      disabled={user.role === 'Admin' || user.role === 'admin'}
-                    />
-                    Edit Access (Write)
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}>
                     <input 
                       type="checkbox" 
                       checked={user.can_import_export} 
@@ -650,7 +691,7 @@ export default function TeamManagement() {
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
                 >
                   <option value="">Select Department...</option>
-                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
@@ -719,7 +760,7 @@ export default function TeamManagement() {
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
                 >
                   <option value="">Select Department...</option>
-                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
@@ -814,45 +855,23 @@ export default function TeamManagement() {
                 {/* Global Permissions Section */}
                 <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
                   <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                    Global Permissions
+                    Additional Permissions
                   </div>
                   <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {(() => {
                       const u = users.find(x => x.user_id === accessUser);
                       if (!u) return null;
                       return (
-                        <>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox"
-                              checked={u.can_read !== false}
-                              onChange={() => toggleReadAccess(u.user_id, u.can_read)}
-                              disabled={u.role === 'Admin' || u.role === 'admin'}
-                              style={{ width: '1.1rem', height: '1.1rem' }}
-                            />
-                            <span style={{ fontSize: '0.95rem' }}>View Access (Read)</span>
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox"
-                              checked={u.can_write !== false}
-                              onChange={() => toggleWriteAccess(u.user_id, u.can_write)}
-                              disabled={u.role === 'Admin' || u.role === 'admin'}
-                              style={{ width: '1.1rem', height: '1.1rem' }}
-                            />
-                            <span style={{ fontSize: '0.95rem' }}>Edit Access (Write)</span>
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox"
-                              checked={u.can_import_export}
-                              onChange={() => toggleImportExport(u.user_id, u.can_import_export)}
-                              disabled={u.role === 'Admin' || u.role === 'admin'}
-                              style={{ width: '1.1rem', height: '1.1rem' }}
-                            />
-                            <span style={{ fontSize: '0.95rem' }}>Import/Export Power</span>
-                          </label>
-                        </>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={!!u.can_import_export} 
+                            onChange={() => toggleImportExport(u.user_id, !!u.can_import_export)}
+                            disabled={u.role === 'Admin' || u.role === 'admin'}
+                            style={{ width: '1.1rem', height: '1.1rem' }}
+                          />
+                          <span style={{ fontSize: '0.95rem' }}>Import/Export Power</span>
+                        </label>
                       );
                     })()}
                   </div>
@@ -925,28 +944,58 @@ export default function TeamManagement() {
                               {!accessForm[module.id]?.is_manager && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
                                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Allow access to specific stages:</div>
-                                  {[
-                                    { id: 'S00', label: 'S00 — Requirements Received' },
-                                    { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
-                                    { id: 'S02', label: 'S02 — Resume Filtered' },
-                                    { id: 'S03', label: 'S03 — Interview Executed' },
-                                    { id: 'S04', label: 'S04 — Test Results' },
-                                    { id: 'S05', label: 'S05 — ED Approval' },
-                                    { id: 'S06', label: 'S06 — Salary Negotiation' },
-                                    { id: 'S07', label: 'S07 — Shortlisted' },
-                                    { id: 'S08', label: 'S08 — LOI Released' },
-                                    { id: 'S09', label: 'S09 — Joined' },
-                                  ].map(stage => (
-                                    <label key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.82rem' }}>
-                                      <input 
-                                        type="checkbox"
-                                        checked={(accessForm[module.id]?.assigned_steps || []).includes(stage.id)}
-                                        onChange={() => handleToggleStep(module.id, stage.id)}
-                                        style={{ accentColor: '#6366f1' }}
-                                      />
-                                      <span style={{ fontWeight: (accessForm[module.id]?.assigned_steps || []).includes(stage.id) ? 600 : 400 }}>{stage.label}</span>
-                                    </label>
-                                  ))}
+                                  <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                      <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                                          <th style={{ padding: '0.4rem 0', textAlign: 'left', color: 'var(--text-secondary)' }}>Stage</th>
+                                          <th style={{ padding: '0.4rem', textAlign: 'center', width: '60px', color: 'var(--text-secondary)' }}>View</th>
+                                          <th style={{ padding: '0.4rem', textAlign: 'center', width: '60px', color: 'var(--text-secondary)' }}>Edit</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {[
+                                          { id: 'S00', label: 'S00 — Requirements Received' },
+                                          { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
+                                          { id: 'S02', label: 'S02 — Resume Filtered' },
+                                          { id: 'S03', label: 'S03 — Interview Executed' },
+                                          { id: 'S04', label: 'S04 — Test Results' },
+                                          { id: 'S05', label: 'S05 — ED Approval' },
+                                          { id: 'S06', label: 'S06 — Salary Negotiation' },
+                                          { id: 'S07', label: 'S07 — Shortlisted' },
+                                          { id: 'S08', label: 'S08 — LOI Released' },
+                                          { id: 'S09', label: 'S09 — Joined' },
+                                        ].map(stage => {
+                                          const stepsView = accessForm['recruiter']?.assigned_steps_view || accessForm['recruiter']?.assigned_steps || [];
+                                          const stepsEdit = accessForm['recruiter']?.assigned_steps_edit || accessForm['recruiter']?.assigned_steps || [];
+                                          const isViewChecked = stepsView.includes(stage.id);
+                                          const isEditChecked = stepsEdit.includes(stage.id);
+
+                                          return (
+                                            <tr key={stage.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.1s' }}>
+                                              <td style={{ padding: '0.4rem 0', fontWeight: isViewChecked ? 600 : 400 }}>{stage.label}</td>
+                                              <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                                                <input 
+                                                  type="checkbox"
+                                                  checked={isViewChecked}
+                                                  onChange={() => handleToggleRecruiterStep('view', stage.id)}
+                                                  style={{ accentColor: '#6366f1', cursor: 'pointer' }}
+                                                />
+                                              </td>
+                                              <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                                                <input 
+                                                  type="checkbox"
+                                                  checked={isEditChecked}
+                                                  onChange={() => handleToggleRecruiterStep('edit', stage.id)}
+                                                  style={{ accentColor: '#6366f1', cursor: 'pointer' }}
+                                                />
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
                               )}
                             </div>

@@ -29,6 +29,16 @@ const getStatusOptions = (stage) => {
   }
 };
 
+const DEFAULT_DEPARTMENTS = [
+  "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
+  "Corporate Strategy and Planning", "Electrical & Maintenance", "Human Resource",
+  "Human Resource & Administration", "Information Technology", "Logistics",
+  "Manufacturing Engineering", "Marketing", "Operations", "Production",
+  "Purchase", "Quality Assurance", "Research & Development", "Sales",
+  "Sales & Marketing", "Service", "Store", "Tool Room", "Training and Development",
+  "Transport", "Security", "Production Planning and Control", "Vendor Development"
+];
+
 export default function RecruiterDashboard({ userRole, userName, selectedStage = 'positions', recruiterAccess = null, isAdmin = false }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -37,7 +47,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     if (isAdmin || userRole === 'admin' || userRole === 'Admin') return true;
     if (!recruiterAccess) return true; // fallback: allow all if no access config
     if (recruiterAccess.is_manager) return true; // full access
-    const steps = recruiterAccess.assigned_steps || [];
+    const steps = recruiterAccess.assigned_steps_view || recruiterAccess.assigned_steps || [];
+    if (steps.length === 0) return true; // no restriction set
+    return steps.includes(stageId);
+  };
+
+  // Compute if user has edit permission for a stage
+  const canEditStage = (stageId) => {
+    if (isAdmin || userRole === 'admin' || userRole === 'Admin') return true;
+    if (!recruiterAccess) return true; // fallback: allow all if no access config
+    if (recruiterAccess.is_manager) return true; // full access
+    const steps = recruiterAccess.assigned_steps_edit || recruiterAccess.assigned_steps || [];
     if (steps.length === 0) return true; // no restriction set
     return steps.includes(stageId);
   };
@@ -48,6 +68,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   // Data State
   const [positions, setPositions] = useState([]);
   const [candidates, setCandidates] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recruitersList, setRecruitersList] = useState([]);
   
@@ -162,9 +183,27 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('name')
+        .order('name', { ascending: true });
+      if (!error && data && data.length > 0) {
+        setDepartments(data.map(d => d.name));
+      } else {
+        setDepartments(DEFAULT_DEPARTMENTS);
+      }
+    } catch (e) {
+      console.error('Error fetching departments:', e);
+      setDepartments(DEFAULT_DEPARTMENTS);
+    }
+  };
+
   useEffect(() => {
     loadData();
     loadRecruiters();
+    fetchDepartments();
 
     // Set up Realtime subscriptions
     const channel1 = supabase
@@ -181,9 +220,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       })
       .subscribe();
 
+    const channel3 = supabase
+      .channel('departments_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, () => {
+        fetchDepartments();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel1);
       supabase.removeChannel(channel2);
+      supabase.removeChannel(channel3);
     };
   }, [supabase]);
 
@@ -508,16 +555,26 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
           {selectedStage === 'dashboard' ? null : selectedStage === 'S00' || selectedStage === 'S01' ? (
             <button 
               onClick={() => setIsPositionModalOpen(true)}
+              disabled={!canEditStage(selectedStage)}
               className="btn-primary"
-              style={{ fontSize: '0.85rem', padding: '0.5rem 1.25rem' }}
+              style={{ 
+                fontSize: '0.85rem', padding: '0.5rem 1.25rem',
+                cursor: !canEditStage(selectedStage) ? 'not-allowed' : 'pointer',
+                opacity: !canEditStage(selectedStage) ? 0.6 : 1
+              }}
             >
               <Plus size={16} /> Create Position
             </button>
           ) : (
             <button 
               onClick={() => setIsCandidateModalOpen(true)}
+              disabled={!canEditStage('S02')}
               className="btn-primary"
-              style={{ fontSize: '0.85rem', padding: '0.5rem 1.25rem' }}
+              style={{ 
+                fontSize: '0.85rem', padding: '0.5rem 1.25rem',
+                cursor: !canEditStage('S02') ? 'not-allowed' : 'pointer',
+                opacity: !canEditStage('S02') ? 0.6 : 1
+              }}
             >
               <UserPlus size={16} /> Add Candidate
             </button>
@@ -799,24 +856,31 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                       <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <button
                           onClick={() => handleOpenEditPosition(pos)}
+                          disabled={!canEditStage(pos.status)}
                           style={{
                             fontSize: '0.72rem', padding: '0.35rem 0.75rem', borderRadius: '6px',
                             border: '1px solid #6366f1', background: 'transparent',
-                            cursor: 'pointer', fontWeight: 600, color: '#6366f1', whiteSpace: 'nowrap'
+                            cursor: !canEditStage(pos.status) ? 'not-allowed' : 'pointer',
+                            opacity: !canEditStage(pos.status) ? 0.5 : 1,
+                            fontWeight: 600, color: '#6366f1', whiteSpace: 'nowrap'
                           }}
                         >✏️ Edit</button>
                         {(!pos.recruiter_assigned || pos.recruiter_assigned === 'All') && (
                           <button
                             onClick={() => handleClaimPosition(pos.id)}
+                            disabled={!canEditStage(pos.status)}
                             style={{
                               fontSize: '0.72rem', padding: '0.35rem 0.75rem', borderRadius: '6px',
                               border: '1px solid #10b981', background: '#ecfdf5',
-                              cursor: 'pointer', fontWeight: 600, color: '#065f46', whiteSpace: 'nowrap'
+                              cursor: !canEditStage(pos.status) ? 'not-allowed' : 'pointer',
+                              opacity: !canEditStage(pos.status) ? 0.5 : 1,
+                              fontWeight: 600, color: '#065f46', whiteSpace: 'nowrap'
                             }}
                           >🙋 Claim</button>
                         )}
                         <button 
                           onClick={() => {
+                            if (!canEditStage(pos.status)) return;
                             if (pos.status === 'S00') {
                               setConfirmModal({
                                 isOpen: true,
@@ -837,10 +901,13 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                               });
                             }
                           }}
+                          disabled={!canEditStage(pos.status)}
                           style={{ 
                             fontSize: '0.72rem', padding: '0.35rem 0.75rem', borderRadius: '6px',
                             border: '1px solid var(--border-light)', background: 'var(--bg-surface)',
-                            cursor: 'pointer', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap'
+                            cursor: !canEditStage(pos.status) ? 'not-allowed' : 'pointer',
+                            opacity: !canEditStage(pos.status) ? 0.5 : 1,
+                            fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap'
                           }}
                         >
                           {pos.status === 'S00' ? 'JD Ready →' : '← Revert'}
@@ -1055,6 +1122,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                           <select 
                             value={cand.current_stage || 'S02'}
                             onChange={(e) => handleUpdateCandidateStage(cand.id, e.target.value)}
+                            disabled={!canEditStage(cand.current_stage)}
                             style={{ 
                               padding: '0.25rem 0.5rem', 
                               borderRadius: '6px', 
@@ -1063,7 +1131,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                               backgroundColor: 'var(--bg-surface)',
                               color: 'var(--text-primary)',
                               fontWeight: 600,
-                              cursor: 'pointer'
+                              cursor: !canEditStage(cand.current_stage) ? 'not-allowed' : 'pointer',
+                              opacity: !canEditStage(cand.current_stage) ? 0.7 : 1
                             }}
                           >
                             <option value="S02">S02</option>
@@ -1080,13 +1149,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                           <select 
                             value={cand.candidate_status || getStatusOptions(cand.current_stage || 'S02')[0]}
                             onChange={(e) => handleUpdateCandidateStatus(cand.id, e.target.value)}
+                            disabled={!canEditStage(cand.current_stage)}
                             style={{ 
                               padding: '0.25rem 0.6rem', 
                               borderRadius: '12px', 
                               border: 'none', 
                               fontSize: '0.75rem',
                               fontWeight: 'bold',
-                              cursor: 'pointer',
+                              cursor: !canEditStage(cand.current_stage) ? 'not-allowed' : 'pointer',
+                              opacity: !canEditStage(cand.current_stage) ? 0.7 : 1,
                               background: cand.candidate_status?.includes('Rejected') || cand.candidate_status?.includes('Failed') || cand.candidate_status?.includes('Dropped') || cand.candidate_status?.includes('No Show') ? '#fee2e2' : cand.candidate_status?.includes('Cleared') || cand.candidate_status?.includes('Passed') || cand.candidate_status?.includes('Approved') || cand.candidate_status?.includes('Agreed') || cand.candidate_status?.includes('Shortlisted') || cand.candidate_status?.includes('Joined') || cand.candidate_status?.includes('Selected') ? '#dcfce7' : '#fef9c3',
                               color: cand.candidate_status?.includes('Rejected') || cand.candidate_status?.includes('Failed') || cand.candidate_status?.includes('Dropped') || cand.candidate_status?.includes('No Show') ? '#991b1b' : cand.candidate_status?.includes('Cleared') || cand.candidate_status?.includes('Passed') || cand.candidate_status?.includes('Approved') || cand.candidate_status?.includes('Agreed') || cand.candidate_status?.includes('Shortlisted') || cand.candidate_status?.includes('Joined') || cand.candidate_status?.includes('Selected') ? '#166534' : '#854d0e',
                               outline: 'none',
@@ -1140,6 +1211,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
           onClose={() => { setIsProfileOpen(false); setSelectedCandidate(null); }}
           onCandidateUpdate={() => { loadData(); }}
           userName={userName}
+          canEdit={canEditStage(selectedCandidate.current_stage)}
         />
       )}
 
@@ -1159,11 +1231,9 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department</label>
                 <select value={newPosition.department} onChange={e => setNewPosition({...newPosition, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                   <option value="">Select Department</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Purchase">Purchase</option>
-                  <option value="Human Resource">Human Resource</option>
-                  <option value="Production">Production</option>
-                  <option value="System">System</option>
+                  {departments.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1242,11 +1312,9 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department *</label>
                   <select value={editPositionForm.department} onChange={e => setEditPositionForm({...editPositionForm, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                     <option value="">Select Department</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Purchase">Purchase</option>
-                    <option value="Human Resource">Human Resource</option>
-                    <option value="Production">Production</option>
-                    <option value="System">System</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
                   </select>
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>

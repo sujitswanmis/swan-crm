@@ -14,6 +14,7 @@ import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
 import PageNavigationConfig from './PageNavigationConfig';
+import ManageDepartments from './ManageDepartments';
 
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile', icon: <Building2 size={18} /> },
@@ -27,7 +28,8 @@ const SETTINGS_TABS = [
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
-  { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> }
+  { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> },
+  { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> }
 ];
 
 export default function SettingsContainer() {
@@ -111,6 +113,7 @@ export default function SettingsContainer() {
           {activeTab === 'targets' && <TargetPerformance />}
           {activeTab === 'media' && <FileMedia />}
           {activeTab === 'navigation' && <PageNavigationConfig />}
+          {activeTab === 'departments' && <ManageDepartments />}
         </div>
       </div>
 
