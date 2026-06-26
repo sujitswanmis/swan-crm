@@ -254,30 +254,30 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
               <User size={16} /> Contact Details
             </h3>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Candidate Name</label>
-              <input name="name" value={editForm.name || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+              <input name="name" value={editForm.name || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Email</label>
-                <input name="email" value={editForm.email || ''} onChange={handleInputChange} type="email" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="email" value={editForm.email || ''} onChange={handleInputChange} type="email" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Phone</label>
-                <input name="phone" value={editForm.phone || ''} onChange={handleInputChange} type="tel" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="phone" value={editForm.phone || ''} onChange={handleInputChange} type="tel" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Min (₹/yr)</label>
-                <input name="expected_salary_min" value={editForm.expected_salary_min || ''} onChange={handleInputChange} type="number" placeholder="Min salary" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="expected_salary_min" value={editForm.expected_salary_min || ''} onChange={handleInputChange} type="number" placeholder="Min salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Expected Salary Max (₹/yr)</label>
-                <input name="expected_salary_max" value={editForm.expected_salary_max || ''} onChange={handleInputChange} type="number" placeholder="Max salary" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input name="expected_salary_max" value={editForm.expected_salary_max || ''} onChange={handleInputChange} type="number" placeholder="Max salary" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
             </div>
 
@@ -361,13 +361,13 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
             {/* S06 Details */}
             {editForm.current_stage >= 'S06' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><DollarSign size={14} /> Salary Negotiation (S06)</label>
-                  <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                  <textarea name="salary_negotiation_details" value={editForm.salary_negotiation_details || ''} onChange={handleInputChange} rows={2} placeholder="Offered salary, perks, notice period discussion..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Actual Negotiated Salary (₹/yr)</label>
-                  <input name="actual_salary" value={editForm.actual_salary || ''} onChange={handleInputChange} type="number" placeholder="Enter actual negotiated salary..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input name="actual_salary" value={editForm.actual_salary || ''} onChange={handleInputChange} type="number" placeholder="Enter actual negotiated salary..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
             )}
@@ -382,33 +382,33 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
 
             {/* S08 Details */}
             {editForm.current_stage >= 'S08' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Mail size={14} /> LOI / Offer Letter Status (S08)</label>
-                  <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                  <select name="loi_status" value={editForm.loi_status || 'Not Offered'} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                     <option value="Not Offered">LOI Not Offered</option>
                     <option value="Sent">LOI Sent to Candidate</option>
                     <option value="Accepted">LOI Accepted</option>
                     <option value="Declined">LOI Declined</option>
                   </select>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Expected Joining Date (S08)</label>
-                  <input type="date" name="joining_date" value={editForm.joining_date || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', width: '100%' }} />
+                  <input type="date" name="joining_date" value={editForm.joining_date || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
             )}
 
             {/* S09 Details */}
             {editForm.current_stage >= 'S09' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Calendar size={14} /> Actual Joined Date (S09)</label>
-                  <input type="date" name="actual_joining_date" value={editForm.actual_joining_date || ''} onChange={handleInputChange} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', width: '100%' }} />
+                  <input type="date" name="actual_joining_date" value={editForm.actual_joining_date || ''} onChange={handleInputChange} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><CheckCircle2 size={14} /> Joining Details & Formalities (S09)</label>
-                  <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} rows={2} placeholder="Document checklist, induction status..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                  <textarea name="joining_details" value={editForm.joining_details || ''} onChange={handleInputChange} rows={2} placeholder="Document checklist, induction status..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
                 </div>
               </div>
             )}

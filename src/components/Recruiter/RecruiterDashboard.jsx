@@ -1025,15 +1025,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
           <div className="card" style={{ width: '400px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Create Job Requirement</h3>
             
-            <form onSubmit={handleCreatePosition} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <form onSubmit={handleCreatePosition} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Position Title</label>
-                <input required type="text" value={newPosition.title} onChange={e => setNewPosition({...newPosition, title: e.target.value})} placeholder="e.g. Sales Manager, Recruiter" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input required type="text" value={newPosition.title} onChange={e => setNewPosition({...newPosition, title: e.target.value})} placeholder="e.g. Sales Manager, Recruiter" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department</label>
-                <select value={newPosition.department} onChange={e => setNewPosition({...newPosition, department: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                <select value={newPosition.department} onChange={e => setNewPosition({...newPosition, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                   <option value="">Select Department</option>
                   <option value="Sales">Sales</option>
                   <option value="Purchase">Purchase</option>
@@ -1043,40 +1043,40 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 </select>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>No. of Openings</label>
-                <input required type="number" min="1" value={newPosition.openings} onChange={e => setNewPosition({...newPosition, openings: parseInt(e.target.value) || 1})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input required type="number" min="1" value={newPosition.openings} onChange={e => setNewPosition({...newPosition, openings: parseInt(e.target.value) || 1})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
-                  <input type="number" value={newPosition.salary_min} onChange={e => setNewPosition({...newPosition, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={newPosition.salary_min} onChange={e => setNewPosition({...newPosition, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
-                  <input type="number" value={newPosition.salary_max} onChange={e => setNewPosition({...newPosition, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={newPosition.salary_max} onChange={e => setNewPosition({...newPosition, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Deadline Date</label>
-                  <input type="date" value={newPosition.deadline_date || ''} onChange={e => setNewPosition({...newPosition, deadline_date: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }} />
+                  <input type="date" value={newPosition.deadline_date || ''} onChange={e => setNewPosition({...newPosition, deadline_date: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name</label>
-                  <input type="text" value={newPosition.interviewer_name || ''} onChange={e => setNewPosition({...newPosition, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="text" value={newPosition.interviewer_name || ''} onChange={e => setNewPosition({...newPosition, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
               {/* Recruiter Assigned */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter</label>
                 <select 
                   value={newPosition.recruiter_assigned || 'All'} 
                   onChange={e => setNewPosition({...newPosition, recruiter_assigned: e.target.value})} 
-                  style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
                 >
                   <option value="All">📢 All Recruiters (Anyone can Claim)</option>
                   {recruitersList.map(r => (
@@ -1086,12 +1086,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Select "All" if unsure — any recruiter can claim it from S00.</span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Job Description (JD Summary)</label>
-                <textarea rows="3" value={newPosition.jd_text} onChange={e => setNewPosition({...newPosition, jd_text: e.target.value})} placeholder="Key roles and qualifications required..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
+                <textarea rows="3" value={newPosition.jd_text} onChange={e => setNewPosition({...newPosition, jd_text: e.target.value})} placeholder="Key roles and qualifications required..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }} />
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem', width: '100%' }}>
                 <button type="button" onClick={() => setIsPositionModalOpen(false)} style={{ padding: '0.5rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1.25rem' }}>Create Requirement</button>
               </div>
@@ -1108,15 +1108,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>✏️ Edit Position — {editingPosition.title}</h3>
               <button onClick={() => setEditingPosition(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', color: 'var(--text-secondary)' }}>✕</button>
             </div>
-            <form onSubmit={handleSaveEditPosition} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <form onSubmit={handleSaveEditPosition} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Position Title *</label>
-                <input required type="text" value={editPositionForm.title} onChange={e => setEditPositionForm({...editPositionForm, title: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input required type="text" value={editPositionForm.title} onChange={e => setEditPositionForm({...editPositionForm, title: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department *</label>
-                  <select value={editPositionForm.department} onChange={e => setEditPositionForm({...editPositionForm, department: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                  <select value={editPositionForm.department} onChange={e => setEditPositionForm({...editPositionForm, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                     <option value="">Select Department</option>
                     <option value="Sales">Sales</option>
                     <option value="Purchase">Purchase</option>
@@ -1125,40 +1125,40 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <option value="System">System</option>
                   </select>
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>No. of Openings</label>
-                  <input type="number" min="1" value={editPositionForm.openings} onChange={e => setEditPositionForm({...editPositionForm, openings: parseInt(e.target.value) || 1})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" min="1" value={editPositionForm.openings} onChange={e => setEditPositionForm({...editPositionForm, openings: parseInt(e.target.value) || 1})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
-                  <input type="number" value={editPositionForm.salary_min || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={editPositionForm.salary_min || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
-                  <input type="number" value={editPositionForm.salary_max || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={editPositionForm.salary_max || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Deadline Date</label>
-                  <input type="date" value={editPositionForm.deadline_date || ''} onChange={e => setEditPositionForm({...editPositionForm, deadline_date: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }} />
+                  <input type="date" value={editPositionForm.deadline_date || ''} onChange={e => setEditPositionForm({...editPositionForm, deadline_date: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name</label>
-                  <input type="text" value={editPositionForm.interviewer_name || ''} onChange={e => setEditPositionForm({...editPositionForm, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="text" value={editPositionForm.interviewer_name || ''} onChange={e => setEditPositionForm({...editPositionForm, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
               {/* Recruiter Assigned */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter</label>
                 <select 
                   value={editPositionForm.recruiter_assigned || 'All'} 
                   onChange={e => setEditPositionForm({...editPositionForm, recruiter_assigned: e.target.value})} 
-                  style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
                 >
                   <option value="All">📢 All Recruiters (Anyone can Claim)</option>
                   {recruitersList.map(r => (
@@ -1167,17 +1167,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 </select>
               </div>
               {/* JD */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Job Description (JD Summary)</label>
                 <textarea 
                   rows="5" 
                   value={editPositionForm.jd_text} 
                   onChange={e => setEditPositionForm({...editPositionForm, jd_text: e.target.value})} 
                   placeholder="Add detailed job roles, skills required, experience, qualifications etc..."
-                  style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', resize: 'vertical' }}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem', width: '100%' }}>
                 <button type="button" onClick={() => setEditingPosition(null)} style={{ padding: '0.5rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" disabled={savingEditPos} className="btn-primary" style={{ padding: '0.5rem 1.25rem' }}>
                   {savingEditPos ? 'Saving...' : '💾 Save Changes'}
@@ -1194,26 +1194,26 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
           <div className="card" style={{ width: '400px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Register Candidate Profile</h3>
             
-            <form onSubmit={handleCreateCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <form onSubmit={handleCreateCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Full Name</label>
-                <input required type="text" value={newCandidate.name} onChange={e => setNewCandidate({...newCandidate, name: e.target.value})} placeholder="Applicant full name..." style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                <input required type="text" value={newCandidate.name} onChange={e => setNewCandidate({...newCandidate, name: e.target.value})} placeholder="Applicant full name..." style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Email</label>
-                  <input type="email" value={newCandidate.email} onChange={e => setNewCandidate({...newCandidate, email: e.target.value})} placeholder="email@address.com" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="email" value={newCandidate.email} onChange={e => setNewCandidate({...newCandidate, email: e.target.value})} placeholder="email@address.com" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Phone</label>
-                  <input type="tel" value={newCandidate.phone} onChange={e => setNewCandidate({...newCandidate, phone: e.target.value})} placeholder="Phone number" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="tel" value={newCandidate.phone} onChange={e => setNewCandidate({...newCandidate, phone: e.target.value})} placeholder="Phone number" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Applying For Position</label>
-                <select required value={newCandidate.position_id} onChange={e => setNewCandidate({...newCandidate, position_id: e.target.value})} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                <select required value={newCandidate.position_id} onChange={e => setNewCandidate({...newCandidate, position_id: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                   <option value="">Select Open Position</option>
                   {positions.map(pos => (
                     <option key={pos.id} value={pos.id}>{pos.title} ({pos.department})</option>
@@ -1221,21 +1221,21 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 </select>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Min (₹/yr)</label>
-                  <input type="number" value={newCandidate.expected_salary_min} onChange={e => setNewCandidate({...newCandidate, expected_salary_min: e.target.value})} placeholder="Min expected" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={newCandidate.expected_salary_min} onChange={e => setNewCandidate({...newCandidate, expected_salary_min: e.target.value})} placeholder="Min expected" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Max (₹/yr)</label>
-                  <input type="number" value={newCandidate.expected_salary_max} onChange={e => setNewCandidate({...newCandidate, expected_salary_max: e.target.value})} placeholder="Max expected" style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <input type="number" value={newCandidate.expected_salary_max} onChange={e => setNewCandidate({...newCandidate, expected_salary_max: e.target.value})} placeholder="Max expected" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Resume/CV Link</label>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <input type="url" value={newCandidate.resume_url} onChange={e => setNewCandidate({...newCandidate, resume_url: e.target.value})} placeholder="e.g. Paste link or upload file" style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: 0 }} />
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', width: '100%' }}>
+                  <input type="url" value={newCandidate.resume_url} onChange={e => setNewCandidate({...newCandidate, resume_url: e.target.value})} placeholder="e.g. Paste link or upload file" style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: 0 }} />
                   <label className="btn-secondary" style={{ display: 'inline-flex', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface-variant)', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
                     {uploadingResume ? 'Uploading...' : 'Upload File'}
                     <input type="file" accept=".pdf,.doc,.docx,.rtf,.txt" onChange={handleResumeUpload} style={{ display: 'none' }} disabled={uploadingResume} />
@@ -1243,7 +1243,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem', width: '100%' }}>
                 <button type="button" onClick={() => setIsCandidateModalOpen(false)} style={{ padding: '0.5rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1.25rem' }}>Register Candidate</button>
               </div>
