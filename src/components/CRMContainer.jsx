@@ -23,6 +23,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import html2canvas from 'html2canvas';
 import SettingsContainer from './Settings/SettingsContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { PremiumProgressLoader } from './PremiumProgressLoader';
 
 const MODULES_CONFIG = [
   { id: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
@@ -40,6 +41,8 @@ const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
   { id: 'theme-light', name: 'Light', icon: '⚪' },
   { id: 'theme-dark', name: 'Dark', icon: '⚫' },
+  { id: 'theme-m3-light', name: 'Material 3 Light', icon: '🎨' },
+  { id: 'theme-m3-dark', name: 'Material 3 Dark', icon: '🌌' },
   { id: 'theme-stylish-1', name: 'Ocean Blue', icon: '🌊' },
   { id: 'theme-stylish-2', name: 'Cyberpunk', icon: '🚀' },
   { id: 'theme-stylish-3', name: 'Emerald', icon: '🌲' },
@@ -55,6 +58,7 @@ const THEMES = [
   { id: 'theme-carbon', name: 'Carbon Gold', icon: '🖤' },
   { id: 'theme-sunset', name: 'Sunset Crimson', icon: '🌅' },
   { id: 'theme-platina', name: 'Platina Clean', icon: '🥈' },
+  { id: 'theme-neumorphism', name: 'Neumorphic Soft', icon: '🎨' },
 ];
 
 export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName }) {
@@ -63,6 +67,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const pathname = usePathname();
   const supabase = createClient();
   
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const hasLeadsAccess = isAdmin || 
+    !!(moduleAccess?.['leads']?.view || 
+      moduleAccess?.['callcenter']?.view || 
+      moduleAccess?.['analytics']?.view ||
+      moduleAccess?.['calladmin']?.view ||
+      moduleAccess?.['aicallcenter']?.view);
+
   // State variables
   const [activeTab, setActiveTab] = useState(() => {
     let path = pathname.replace('/', '');
@@ -147,17 +159,12 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   const [userEmail, setUserEmail] = useState('');
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('crm-sidebar-collapsed') === 'true';
-    }
-    return false;
-  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({
-    'Sales': true,
-    'Purchase': true,
-    'Human Resource': true,
-    'System': true
+    'Sales': false,
+    'Purchase': false,
+    'Human Resource': false,
+    'System': false
   });
 
   useEffect(() => {
@@ -183,24 +190,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     }
 
     if (categoryToExpand) {
-      setExpandedCategories(prev => {
-        if (!prev[categoryToExpand]) {
-          return { ...prev, [categoryToExpand]: true };
-        }
-        return prev;
+      setExpandedCategories({
+        'Sales': categoryToExpand === 'Sales',
+        'Purchase': categoryToExpand === 'Purchase',
+        'Human Resource': categoryToExpand === 'Human Resource',
+        'System': categoryToExpand === 'System'
       });
     }
 
     // Auto-expand submenus
-    if (activeTab === 'leads') {
-      setLeadDataExpanded(true);
-    }
-    if (['aiadmin', 'aiknowledgebase'].includes(activeTab)) {
-      setAiMenuExpanded(true);
-    }
-    if (['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)) {
-      setMessageMenuExpanded(true);
-    }
+    setLeadDataExpanded(activeTab === 'leads');
+    setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
+    setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
   }, [activeTab]);
 
   const toggleCategory = (categoryName) => {
@@ -294,6 +295,12 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   
   // Client-side fetch of all leads (Progressive Loading with sync tracking)
   useEffect(() => {
+    if (!hasLeadsAccess) {
+      setLoadingLeads(false);
+      setIsSyncing(false);
+      return;
+    }
+
     async function loadLeads() {
       setLoadingLeads(true);
       setIsSyncing(true);
@@ -312,49 +319,154 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         console.error("Failed to fetch leads count:", e);
       }
 
-      let page = 0;
-      const pageSize = 500; // Smaller chunk for faster initial render
-      let hasMore = true;
-      let loaded = 0;
-
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('leads')
-          .select(`*, lead_notes(id, created_at, note_text, created_by)`)
-          .order('created_at', { ascending: false })
-          .order('id')
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-        
-        if (error) break;
-        
-        if (data && data.length > 0) {
-          loaded += data.length;
-          setSyncLoadedCount(loaded);
-          if (loaded > total) {
-            setSyncTotalCount(loaded);
+      // Default to optimal 1000 pageSize to minimize HTTP requests
+      let pageSize = 1000;
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.leadSyncChunkSize) {
+            if (parsed.leadSyncChunkSize === 'all') {
+              pageSize = 100000;
+            } else {
+              pageSize = parseInt(parsed.leadSyncChunkSize, 10) || 1000;
+            }
           }
-          // Append new chunk to existing leads
+        }
+      } catch (e) {
+        console.error("Failed to load leadSyncChunkSize:", e);
+      }
+      
+      // Cap at Supabase page size limit (1000)
+      const queryPageSize = Math.min(1000, pageSize);
+      const numPages = total > 0 ? Math.ceil(total / queryPageSize) : 1;
+      
+      let loadedLeads = [];
+      
+      // Helper function to fetch a single page of leads with retry logic
+      const fetchLeadsPageWithRetry = async (p, retries = 3) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            const { data, error } = await supabase
+              .from('leads')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .order('id')
+              .range(p * queryPageSize, (p + 1) * queryPageSize - 1);
+            
+            if (error) throw error;
+            return data || [];
+          } catch (err) {
+            console.warn(`Attempt ${attempt} failed for leads Page ${p}:`, err);
+            if (attempt === retries) throw err;
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        }
+      };
+
+      // Helper function to fetch a single page of notes with retry logic
+      const fetchNotesPageWithRetry = async (p, notesPageSize, retries = 3) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            const { data, error } = await supabase
+              .from('lead_notes')
+              .select('id, lead_id, created_at, note_text, created_by')
+              .range(p * notesPageSize, (p + 1) * notesPageSize - 1);
+            
+            if (error) throw error;
+            return data || [];
+          } catch (err) {
+            console.warn(`Attempt ${attempt} failed for notes Page ${p}:`, err);
+            if (attempt === retries) throw err;
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        }
+      };
+
+      try {
+        // 1. Fetch Page 0 of leads first for instant UI response
+        const page0Data = await fetchLeadsPageWithRetry(0);
+        loadedLeads = [...page0Data];
+        
+        // Render first chunk immediately
+        setRawLeads(loadedLeads.map(l => ({ ...l, lead_notes: [] })));
+        setSyncLoadedCount(loadedLeads.length);
+        setLoadingLeads(false);
+
+        // 2. Fetch remaining pages of leads in parallel batches of 2
+        const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
+        const leadsBatchSize = 2;
+        
+        for (let i = 0; i < remainingPages.length; i += leadsBatchSize) {
+          const batch = remainingPages.slice(i, i + leadsBatchSize);
+          const batchResults = await Promise.all(batch.map(p => fetchLeadsPageWithRetry(p)));
+          for (const data of batchResults) {
+            loadedLeads = loadedLeads.concat(data);
+          }
+          setSyncLoadedCount(loadedLeads.length);
+          
+          // Deduplicate and update state dynamically
           setRawLeads(prev => {
-            // Prevent duplicates just in case
-            const existingIds = new Set(prev.map(l => l.id));
-            const newUnique = data.filter(l => !existingIds.has(l.id));
-            return [...prev, ...newUnique];
+            const combined = [...prev, ...loadedLeads.map(l => ({ ...l, lead_notes: [] }))];
+            const unique = [];
+            const seen = new Set();
+            for (const lead of combined) {
+              if (!seen.has(lead.id)) {
+                seen.add(lead.id);
+                unique.push(lead);
+              }
+            }
+            return unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
           });
         }
-        
-        // Turn off loading spinner as soon as the first chunk arrives
-        if (page === 0) {
-          setLoadingLeads(false);
+
+        // 3. Fetch notes in background batches of 3
+        let loadedNotes = [];
+        try {
+          const { count: notesCount, error: notesCountError } = await supabase
+            .from('lead_notes')
+            .select('*', { count: 'exact', head: true });
+          
+          if (!notesCountError && notesCount) {
+            const notesPageSize = 1000;
+            const numNotesPages = Math.ceil(notesCount / notesPageSize);
+            const notesPages = Array.from({ length: numNotesPages }, (_, i) => i);
+            const notesBatchSize = 3;
+            
+            for (let i = 0; i < notesPages.length; i += notesBatchSize) {
+              const batch = notesPages.slice(i, i + notesBatchSize);
+              const batchResults = await Promise.all(batch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
+              for (const data of batchResults) {
+                loadedNotes = loadedNotes.concat(data);
+              }
+            }
+          }
+        } catch (notesErr) {
+          console.error("Failed to fetch lead notes:", notesErr);
         }
 
-        if (!data || data.length < pageSize) {
-          hasMore = false;
+        // 4. Merge leads and notes in memory
+        const notesMap = {};
+        for (const note of loadedNotes) {
+          if (!notesMap[note.lead_id]) {
+            notesMap[note.lead_id] = [];
+          }
+          notesMap[note.lead_id].push(note);
         }
-        page++;
+
+        setRawLeads(prev => {
+          return prev.map(lead => ({
+            ...lead,
+            lead_notes: notesMap[lead.id] || []
+          })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        });
+
+      } catch (err) {
+        console.error("Lead sync failed:", err);
+      } finally {
+        setLoadingLeads(false);
+        setIsSyncing(false);
       }
-      // Ensure loading is turned off even if there's no data
-      setLoadingLeads(false);
-      setIsSyncing(false);
     }
     loadLeads();
 
@@ -364,7 +476,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => {
           if (current.some(item => item.id === payload.new.id)) return current;
-          return [payload.new, ...current];
+          return [{ ...payload.new, lead_notes: [] }, ...current];
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
@@ -373,12 +485,21 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => current.filter(item => item.id !== payload.old.id));
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
+        const incoming = payload.new;
+        setRawLeads((current) => current.map(item => {
+          if (item.id !== incoming.lead_id) return item;
+          const existingNotes = item.lead_notes || [];
+          if (existingNotes.some(n => n.id === incoming.id)) return item;
+          return { ...item, lead_notes: [...existingNotes, incoming] };
+        }));
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [hasLeadsAccess]);
 
   // Filter leads based on company and step assignments
   useEffect(() => {
@@ -457,19 +578,12 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     });
   };
 
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [currentTime, setCurrentTime] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
-  const [leadsFilterStage, setLeadsFilterStage] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const urlStage = new URLSearchParams(window.location.search).get('stage');
-      if (urlStage) return urlStage === 'all' ? null : urlStage;
-      return localStorage.getItem('crmActiveStage') || null;
-    }
-    return null;
-  });
+  const [leadsFilterStage, setLeadsFilterStage] = useState(null);
 
   // Sync stage with localStorage when it changes (initial load covered by state initializer)
   useEffect(() => {
@@ -483,6 +597,10 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   useEffect(() => {
     setIsMounted(true);
     
+    // Sync initial sidebar collapse state from localStorage on mount
+    const collapsed = localStorage.getItem('crm-sidebar-collapsed') === 'true';
+    setIsSidebarCollapsed(collapsed);
+
     // Sync initial route path and parameters on mount
     const path = window.location.pathname.replace('/', '');
     const params = new URLSearchParams(window.location.search);
@@ -491,8 +609,19 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       setActiveTab(tab);
       let stage = params.get('stage');
       if (stage === 'all') stage = null;
-      if (stage) setLeadsFilterStage(stage);
+      if (stage) {
+        setLeadsFilterStage(stage);
+      } else {
+        const savedStage = localStorage.getItem('crmActiveStage');
+        if (savedStage) setLeadsFilterStage(savedStage);
+      }
+    } else {
+      const savedStage = localStorage.getItem('crmActiveStage');
+      if (savedStage) setLeadsFilterStage(savedStage);
     }
+
+    // Set client-safe current time
+    setCurrentTime(Date.now());
 
     // Keep track of time every 10 seconds to trigger exact-time notifications
     const interval = setInterval(() => setCurrentTime(Date.now()), 10000);
@@ -587,11 +716,24 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   // Calculate upcoming or overdue follow-ups
   const dueFollowUps = leads.filter(lead => {
-    if (!lead.follow_up_date || ['Converted', 'Closed', 'Order Received'].includes(lead.status)) return false;
+    if (!lead.follow_up_date) return false;
+
+    // Filter out finished leads
+    const statusLower = (lead.status || '').toLowerCase();
+    if (['converted', 'closed', 'order received', 'won', 'lost'].some(keyword => statusLower.includes(keyword))) {
+      return false;
+    }
     
     // Compare exact timestamps to trigger exactly on time
+    if (!currentTime) return false;
     const followUpTime = new Date(lead.follow_up_date).getTime();
-    return followUpTime <= currentTime;
+    if (followUpTime > currentTime) return false;
+
+    // Filter out if there is a note/interaction created on or after the follow-up date
+    const notes = lead.lead_notes || [];
+    const hasBeenWorkedOn = notes.some(note => new Date(note.created_at).getTime() >= followUpTime);
+    
+    return !hasBeenWorkedOn;
   });
 
   const prevDueCount = useRef(dueFollowUps.length);
@@ -754,78 +896,80 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   onClick={() => toggleCategory(category)}
                   className="category-header"
                 >
-                  <span>{category}</span>
                   {expandedCategories[category] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span>{category}</span>
                 </button>
                 
-                {(isSidebarCollapsed || expandedCategories[category]) && (
-                  visibleModules.map(module => (
-                    <div key={module.id} style={{ display: 'contents' }}>
-                      <button 
-                        onClick={() => { 
-                          if (module.id === 'leads') {
-                            if (isSidebarCollapsed) {
-                              setIsSidebarCollapsed(false);
-                              setLeadDataExpanded(true);
+                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories[category]) ? 'expanded' : ''}`}>
+                  <div className="category-modules-inner">
+                    {visibleModules.map(module => (
+                      <div key={module.id} className="nav-item-wrapper" style={{ position: 'relative' }}>
+                        <button 
+                          onClick={() => { 
+                            if (module.id === 'leads') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setLeadDataExpanded(true);
+                              } else {
+                                setLeadDataExpanded(!leadDataExpanded);
+                              }
                             } else {
-                              setLeadDataExpanded(!leadDataExpanded);
+                              handleTabChange(module.id); 
                             }
-                          } else {
-                            handleTabChange(module.id); 
-                          }
-                        }}
-                        className="nav-item" 
-                        data-active={activeTab === module.id}
-                        title={isSidebarCollapsed ? module.label : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          }}
+                          className="nav-item" 
+                          data-active={activeTab === module.id}
+                          title={isSidebarCollapsed ? module.label : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                        >
+                          {module.id === 'leads' && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
                           {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
                           <span>{module.label}</span>
-                        </div>
+                        </button>
+                        
                         {module.id === 'leads' && (
-                          <span className="nav-chevron">
-                            {leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </span>
-                        )}
-                      </button>
-                      
-                      {module.id === 'leads' && (
-                        <div className="submenu-list" style={{ display: leadDataExpanded ? 'flex' : 'none' }}>
-                          <button
-                            onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
-                            className="submenu-item"
-                            data-active={activeTab === 'leads' && leadsFilterStage === null}
-                          >
-                            All Leads
-                          </button>
-
-                          {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
-                            const leadsAccess = moduleAccess?.leads || {};
-                            const isAdmin = userRole === 'admin' || userRole === 'Admin';
-                            const isManager = leadsAccess.is_manager;
-                            const isAssigned = (leadsAccess.assigned_steps || []).includes(stage);
-                            
-                            if (!isAdmin && !isManager && !isAssigned) {
-                              return null;
-                            }
-
-                            return (
+                          <div className={`submenu-list ${leadDataExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
                               <button
-                                key={stage}
-                                onClick={() => { handleTabChange('leads'); handleStageChange(stage); }}
+                                onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
                                 className="submenu-item"
-                                data-active={activeTab === 'leads' && leadsFilterStage === stage}
+                                data-active={activeTab === 'leads' && leadsFilterStage === null}
                               >
-                                {stage}
+                                All Leads
                               </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+
+                              {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
+                                const leadsAccess = moduleAccess?.leads || {};
+                                const isAdmin = userRole === 'admin' || userRole === 'Admin';
+                                const isManager = leadsAccess.is_manager;
+                                const isAssigned = (leadsAccess.assigned_steps || []).includes(stage);
+                                
+                                if (!isAdmin && !isManager && !isAssigned) {
+                                  return null;
+                                }
+
+                                return (
+                                  <button
+                                    key={stage}
+                                    onClick={() => { handleTabChange('leads'); handleStageChange(stage); }}
+                                    className="submenu-item"
+                                    data-active={activeTab === 'leads' && leadsFilterStage === stage}
+                                  >
+                                    {stage}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -849,12 +993,12 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   onClick={() => toggleCategory('System')}
                   className="category-header"
                 >
-                  <span>System</span>
                   {expandedCategories['System'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span>System</span>
                 </button>
 
-                {(isSidebarCollapsed || expandedCategories['System']) && (
-                  <>
+                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['System']) ? 'expanded' : ''}`}>
+                  <div className="category-modules-inner">
                     {/* Team Management */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
                       <button 
@@ -885,7 +1029,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
                     {/* AI Admin */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
-                      <div style={{ display: 'contents' }}>
+                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
                         <button 
                           onClick={() => {
                             if (isSidebarCollapsed) {
@@ -898,36 +1042,36 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           className="nav-item" 
                           data-active={['aiadmin', 'aiknowledgebase'].includes(activeTab)}
                           title={isSidebarCollapsed ? "AI Admin" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <Bot size={20} style={{ flexShrink: 0 }} />
-                            <span>AI Admin</span>
-                          </div>
-                          <span className="nav-chevron">
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                             {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                           </span>
+                          <Bot size={20} style={{ flexShrink: 0 }} />
+                          <span>AI Admin</span>
                         </button>
                         
-                        <div className="submenu-list" style={{ display: aiMenuExpanded ? 'flex' : 'none' }}>
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('aiadmin')}
-                              className="submenu-item"
-                              data-active={activeTab === 'aiadmin'}
-                            >
-                              User AI Usage
-                            </button>
-                          )}
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('aiknowledgebase')}
-                              className="submenu-item"
-                              data-active={activeTab === 'aiknowledgebase'}
-                            >
-                              AI Knowledge Base (RAG)
-                            </button>
-                          )}
+                        <div className={`submenu-list ${aiMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('aiadmin')}
+                                className="submenu-item"
+                                data-active={activeTab === 'aiadmin'}
+                              >
+                                User AI Usage
+                              </button>
+                            )}
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('aiknowledgebase')}
+                                className="submenu-item"
+                                data-active={activeTab === 'aiknowledgebase'}
+                              >
+                                AI Knowledge Base (RAG)
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -962,7 +1106,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
                     {/* Message Config */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
-                      <div style={{ display: 'contents' }}>
+                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
                         <button 
                           onClick={() => {
                             if (isSidebarCollapsed) {
@@ -975,63 +1119,63 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           className="nav-item" 
                           data-active={['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)}
                           title={isSidebarCollapsed ? "Message Config" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <MessageCircle size={20} style={{ flexShrink: 0 }} />
-                            <span>Message Config</span>
-                          </div>
-                          <span className="nav-chevron">
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                             {messageMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                           </span>
+                          <MessageCircle size={20} style={{ flexShrink: 0 }} />
+                          <span>Message Config</span>
                         </button>
                         
-                        <div className="submenu-list" style={{ display: messageMenuExpanded ? 'flex' : 'none' }}>
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('whatsapp_official')}
-                              className="submenu-item"
-                              data-active={activeTab === 'whatsapp_official'}
-                            >
-                              WhatsApp Official
-                            </button>
-                          )}
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('whatsapp_unofficial')}
-                              className="submenu-item"
-                              data-active={activeTab === 'whatsapp_unofficial'}
-                            >
-                              WhatsApp UnOfficial
-                            </button>
-                          )}
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('sms_config')}
-                              className="submenu-item"
-                              data-active={activeTab === 'sms_config'}
-                            >
-                              SMS
-                            </button>
-                          )}
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('rcs_config')}
-                              className="submenu-item"
-                              data-active={activeTab === 'rcs_config'}
-                            >
-                              RCS
-                            </button>
-                          )}
-                          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
-                            <button
-                              onClick={() => handleTabChange('email_config')}
-                              className="submenu-item"
-                              data-active={activeTab === 'email_config'}
-                            >
-                              Email
-                            </button>
-                          )}
+                        <div className={`submenu-list ${messageMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('whatsapp_official')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official'}
+                              >
+                                WhatsApp Official
+                              </button>
+                            )}
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('whatsapp_unofficial')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_unofficial'}
+                              >
+                                WhatsApp UnOfficial
+                              </button>
+                            )}
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('sms_config')}
+                                className="submenu-item"
+                                data-active={activeTab === 'sms_config'}
+                              >
+                                SMS
+                              </button>
+                            )}
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('rcs_config')}
+                                className="submenu-item"
+                                data-active={activeTab === 'rcs_config'}
+                              >
+                                RCS
+                              </button>
+                            )}
+                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                              <button
+                                onClick={() => handleTabChange('email_config')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config'}
+                              >
+                                Email
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1049,8 +1193,8 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                         <span>Settings</span>
                       </button>
                     )}
-                  </>
-                )}
+                  </div>
+                </div>
               </div>
           )}
         </nav>
@@ -1069,12 +1213,62 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               title={`Syncing Leads: ${syncLoadedCount}/${syncTotalCount}`}
             />
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
             <button className="mobile-menu-toggle" onClick={() => setIsSidebarOpen(true)}>
               <Menu size={24} />
             </button>
-            <Search size={20} className="desktop-only-icon" />
-            <span style={{ fontSize: '0.9rem' }} className="desktop-only-text">Search leads (Cmd+K)</span>
+            
+            {activeTab !== 'ai' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}>
+                <h1 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0 }}>
+                  {activeTab === 'dashboard' && 'Analytics Dashboard'}
+                  {activeTab === 'leads' && 'Leads Database'}
+                  {activeTab === 'orders' && 'Order Management'}
+                  {activeTab === 'mrp' && 'MRP System'}
+                  {activeTab === 'mrp_against' && 'MRP Against'}
+                  {activeTab === 'recruiter' && 'Recruiter'}
+                  {activeTab === 'joining' && 'Joining Process'}
+                  {activeTab === 'registration' && 'Client Registration'}
+                  {activeTab === 'report' && 'Client Registered Report'}
+                  {activeTab === 'aiadmin' && 'AI Admin'}
+                  {activeTab === 'aiknowledgebase' && 'AI Knowledge Base'}
+                  {activeTab === 'callcenter' && 'Telecalling'}
+                  {activeTab === 'calladmin' && 'Call Admin'}
+                  {activeTab === 'aicallcenter' && 'AI Call Center'}
+                  {activeTab === 'team' && 'Team Management'}
+                  {activeTab === 'whatsapp_official' && 'WhatsApp Official'}
+                  {activeTab === 'whatsapp_unofficial' && 'WhatsApp UnOfficial'}
+                  {activeTab === 'sms_config' && 'SMS Config'}
+                  {activeTab === 'rcs_config' && 'RCS Config'}
+                  {activeTab === 'email_config' && 'Email Config'}
+                  {activeTab === 'settings' && 'Enterprise Settings'}
+                </h1>
+                
+                <span style={{ 
+                  fontSize: '0.65rem', 
+                  padding: '0.1rem 0.35rem', 
+                  borderRadius: '4px', 
+                  background: (userRole === 'admin' || userRole === 'Admin') ? '#fef08a' : '#e0f2fe', 
+                  color: (userRole === 'admin' || userRole === 'Admin') ? '#854d0e' : '#0369a1', 
+                  textTransform: 'uppercase', 
+                  fontWeight: 'bold',
+                  letterSpacing: '0.02em'
+                }}>
+                  {userRole}
+                </span>
+              </div>
+            )}
+
+            {activeTab !== 'ai' && (
+              <div style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
+            )}
+
+            {hasLeadsAccess && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+                <Search size={18} />
+                <span style={{ fontSize: '0.85rem' }} className="desktop-only-text">Search leads (Cmd+K)</span>
+              </div>
+            )}
             {isSyncing && (
               <span style={{ 
                 fontSize: '0.75rem', 
@@ -1258,52 +1452,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         {/* Page Content */}
         <div className="page-content" style={{ padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 2rem)', display: 'flex', flexDirection: 'column', height: '100%' }}>
           
-          {/* Header Title based on Active Tab */}
-          {activeTab !== 'ai' && (
-            <div style={{ marginBottom: '2rem' }}>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {activeTab === 'dashboard' && 'Analytics Dashboard'}
-              {activeTab === 'leads' && 'Leads Database'}
-              {activeTab === 'orders' && 'Order Management'}
-              {activeTab === 'mrp' && 'MRP System'}
-              {activeTab === 'mrp_against' && 'MRP Against'}
-              {activeTab === 'recruiter' && 'Recruiter'}
-              {activeTab === 'joining' && 'Joining Process'}
-              {activeTab === 'registration' && 'Client Registration'}
-              {activeTab === 'report' && 'Client Registered Report'}
-              {activeTab === 'ai' && 'New Swan AI'}
-              {activeTab === 'aiadmin' && <span style={{display:'flex', alignItems:'center', gap:'0.5rem', background: 'rgba(255,165,0,0.2)', padding:'0.25rem 0.5rem', borderRadius:'6px', color:'#d97706', fontSize:'0.75rem', fontWeight:'bold'}}>ADMIN</span>}
-              {activeTab === 'callcenter' && 'Telecalling Dashboard'}
-              {activeTab === 'calladmin' && 'Call Center Administration'}
-              {activeTab === 'team' && 'Team Management'}
-              {activeTab === 'whatsapp_official' && 'WhatsApp Official Configuration'}
-              {activeTab === 'whatsapp_unofficial' && 'WhatsApp UnOfficial Configuration'}
-              {activeTab === 'sms_config' && 'SMS Configuration'}
-              {activeTab === 'rcs_config' && 'RCS Configuration'}
-              {activeTab === 'email_config' && 'Email Configuration'}
-              {activeTab === 'settings' && 'Enterprise Settings'}
-              <span style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: (userRole === 'admin' || userRole === 'Admin') ? '#fef08a' : '#e0f2fe', color: (userRole === 'admin' || userRole === 'Admin') ? '#854d0e' : '#0369a1', textTransform: 'uppercase', marginLeft: '0.5rem' }}>
-                {userRole}
-              </span>
-            </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>
-              {activeTab === 'dashboard' && 'Overview of your sales pipeline and metrics'}
-              {activeTab === 'leads' && 'Manage and track your leads'}
-              {activeTab === 'registration' && 'Register a new comprehensive client profile'}
-              {activeTab === 'report' && 'View and export customized client data reports'}
-              {activeTab === 'ai' && 'Leverage AI for lead insights and communication'}
-              {activeTab === 'callcenter' && 'Make and receive calls directly from your browser'}
-              {activeTab === 'calladmin' && 'Manage call center agents and SIP endpoints'}
-              {activeTab === 'aicallcenter' && 'Manage AI agents for incoming and outgoing campaigns'}
-              {activeTab === 'team' && 'Manage user roles and permissions'}
-              {activeTab === 'whatsapp_official' && 'Configure Cloud API setup for Official WhatsApp'}
-              {activeTab === 'whatsapp_unofficial' && 'Configure Web session setup for UnOfficial WhatsApp'}
-              {activeTab === 'sms_config' && 'Configure gateway settings and templates for SMS delivery'}
-              {activeTab === 'rcs_config' && 'Configure Rich Communication Services API credentials'}
-              {activeTab === 'email_config' && 'Configure SMTP, API keys, and templates for Email delivery'}
-            </p>
-          </div>
-          )}
+
 
 
 
@@ -1313,9 +1462,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               <h2 style={{ color: 'var(--text-secondary)' }}>You do not have permission to view leads.</h2>
             </div>
           ) : !isMounted ? (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', color: 'var(--text-secondary)' }}>
-              Loading workspace...
-            </div>
+            <PremiumProgressLoader message="Loading workspace" active={!isMounted} />
           ) : (
             <>
               {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && (
@@ -1325,7 +1472,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
               {activeTab === 'leads' && (
                 <ErrorBoundary>
-                  <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
+                  {loadingLeads ? (
+                    <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
+                  ) : (
+                    <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
+                  )}
                 </ErrorBoundary>
               )}
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}

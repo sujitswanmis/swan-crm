@@ -469,11 +469,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [globalFilter, setGlobalFilter] = useState('');
   
   useEffect(() => {
-    // Robust check to stop infinite loops: only update data if the list of leads actually changed (e.g., from a filter)
-    const currentIds = data.map(d => d.id).sort().join(',');
-    const newIds = (initialData || []).map(d => d.id).sort().join(',');
+    // Robust check to stop infinite loops: only update data if key properties or the list of leads actually changed
+    const currentSignature = data.map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
+    const newSignature = (initialData || []).map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
     
-    if (currentIds === newIds) return;
+    if (currentSignature === newSignature) return;
     
     setData(processLeads(initialData || []));
   }, [initialData]);

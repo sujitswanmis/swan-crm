@@ -164,17 +164,36 @@ export async function registerEmployeeDetails(userId, email, details) {
 
 export async function updateEmployeeDetailsAdmin(userId, details) {
   const adminClient = getAdminClient();
+
+  // If email is provided and is different, update it in auth.users
+  if (details.email) {
+    const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+      email: details.email,
+      email_confirm: true // Auto confirm so they don't get stuck
+    });
+    if (authError) {
+      console.error('Error updating auth email:', authError);
+      return { success: false, error: 'Auth Error: ' + authError.message };
+    }
+  }
+
+  const updateData = {
+    emp_id: details.emp_id,
+    emp_name: details.emp_name,
+    emp_department: details.emp_department,
+    emp_designation: details.emp_designation,
+    emp_mobile: details.emp_mobile,
+    company: details.company,
+  };
+
+  if (details.email) {
+    updateData.email = details.email;
+    updateData.emp_official_mail_id = details.email;
+  }
+
   const { error } = await adminClient
     .from('user_roles')
-    .update({
-      emp_id: details.emp_id,
-      emp_name: details.emp_name,
-      emp_department: details.emp_department,
-      emp_designation: details.emp_designation,
-      emp_mobile: details.emp_mobile,
-      company: details.company,
-      // intentionally not updating email here since that's tied to Auth
-    })
+    .update(updateData)
     .eq('user_id', userId);
     
   if (error) {
@@ -205,7 +224,57 @@ export async function createAccountAdmin(email, password, details) {
     password,
     email_confirm: true
   });
-  if (authError) return { success: false, error: authError.message };
+  
+  if (authError) {
+    // Check if user already exists
+    const isAlreadyRegistered = authError.status === 422 || 
+      authError.message.includes('already been registered') || 
+      authError.message.includes('already exists');
+
+    if (isAlreadyRegistered) {
+      // Search for the existing customer in user_roles
+      const { data: existingUser, error: findError } = await adminClient
+        .from('user_roles')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (!findError && existingUser) {
+        // If the user currently has the customer role, promote them to agent
+        if (existingUser.role === 'customer') {
+          const { error: updateError } = await adminClient
+            .from('user_roles')
+            .update({
+              role: 'agent',
+              emp_id: details.emp_id,
+              emp_name: details.emp_name,
+              emp_department: details.emp_department || 'Sales',
+              emp_designation: details.emp_designation || 'Agent',
+              emp_mobile: details.emp_mobile,
+              company: details.company,
+              is_approved: true,
+              can_read: true,
+              can_write: true
+            })
+            .eq('user_id', existingUser.user_id);
+
+          if (updateError) {
+            return { success: false, error: 'Failed to update existing user role: ' + updateError.message };
+          }
+
+          // Update password if a new one is provided
+          if (password) {
+            await adminClient.auth.admin.updateUserById(existingUser.user_id, { password });
+          }
+
+          return { success: true };
+        } else {
+          return { success: false, error: 'A staff member with this email is already registered.' };
+        }
+      }
+    }
+    return { success: false, error: authError.message };
+  }
   
   // Register employee details
   const regResult = await registerEmployeeDetails(authData.user.id, email, details);

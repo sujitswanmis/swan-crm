@@ -98,7 +98,7 @@ export default function LoginPage() {
           await logUserSession(device);
         } catch (e) { console.error('Failed to log session', e); }
         
-        let targetPath = '/';
+        let targetPath = '/dashboard';
         try {
           const userId = result.data?.user?.id;
           if (userId) {

@@ -30,6 +30,7 @@ export default function CRMConfig() {
   const [newPriority, setNewPriority] = useState('');
 
   const [assignmentRule, setAssignmentRule] = useState('round_robin');
+  const [leadSyncChunkSize, setLeadSyncChunkSize] = useState('500');
 
   // Load from LocalStorage on mount
   useEffect(() => {
@@ -51,6 +52,7 @@ export default function CRMConfig() {
         if (parsed.clientStatuses) setClientStatuses(parsed.clientStatuses);
         if (parsed.priorities) setPriorities(parsed.priorities);
         if (parsed.assignmentRule) setAssignmentRule(parsed.assignmentRule);
+        if (parsed.leadSyncChunkSize) setLeadSyncChunkSize(parsed.leadSyncChunkSize);
       } catch (e) { console.error(e); }
     }
     
@@ -61,7 +63,7 @@ export default function CRMConfig() {
 
   const handleSave = () => {
     setLoading(true);
-    const config = { sources, stages, clientStatuses, priorities, assignmentRule };
+    const config = { sources, stages, clientStatuses, priorities, assignmentRule, leadSyncChunkSize };
     
     // Preserve existing alertSound/Duration if present
     const saved = localStorage.getItem('crm_config');
@@ -126,6 +128,7 @@ export default function CRMConfig() {
     { id: 'client_status', label: 'Client Statuses' },
     { id: 'priority', label: 'Priority Types' },
     { id: 'assignment', label: 'Auto-Assignment' },
+    { id: 'sync', label: 'Lead Sync Settings' },
   ];
 
   return (
@@ -377,6 +380,26 @@ export default function CRMConfig() {
               <option value="round_robin">Round Robin (Equal distribution to all active sales team)</option>
               <option value="manual">Manual (Admin assigns every new lead)</option>
               <option value="weighted">Weighted (Based on individual target goals)</option>
+            </select>
+          </div>
+        )}
+
+        {/* TAB: SYNC SETTINGS */}
+        {activeSubTab === 'sync' && (
+          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+            <h3 style={{ marginTop: 0, fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '1rem' }}>Lead Synchronization Chunk Size</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Choose how many leads are fetched in each step when refreshing/syncing. Larger chunks mean fewer requests but might slow down the initial render.
+            </p>
+            <select 
+              value={leadSyncChunkSize}
+              onChange={(e) => setLeadSyncChunkSize(e.target.value)}
+              style={{ width: '100%', padding: '0.75rem 1rem', border: '1px solid var(--border-light)', borderRadius: '6px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none' }}
+            >
+              <option value="500">500 Leads per chunk (Default)</option>
+              <option value="1000">1000 Leads per chunk</option>
+              <option value="2000">2000 Leads per chunk</option>
+              <option value="all">Load All at Once (One single request)</option>
             </select>
           </div>
         )}

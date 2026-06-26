@@ -6,6 +6,7 @@ import { Download, Columns, ChevronDown, Loader2, Edit2, FileText, Search, Chevr
 import LeadProfilePanel from './LeadProfilePanel';
 import ClientRegistration from './ClientRegistration';
 import { logAuditAction } from '@/app/actions/audit';
+import { PremiumProgressLoader } from './PremiumProgressLoader';
 
 const ALL_COLUMNS = [
   { key: 'lead_formatted_id', label: 'Lead ID' },
@@ -308,7 +309,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
   };
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}><Loader2 className="animate-spin" /></div>;
+    return <PremiumProgressLoader message="Loading Client Report" active={loading} />;
   }
 
   // Apply Search & Filters

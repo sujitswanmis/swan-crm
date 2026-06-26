@@ -22,10 +22,81 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
   const [agentMobile, setAgentMobile] = useState('');
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
   const nodeRef = useRef(null);
+
+  // Load saved position on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('softphone_position');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          setPosition(parsed);
+        }
+      } catch (e) {
+        console.error("Error loading softphone position:", e);
+      }
+    }
+  }, []);
+
+  // Auto-adjust position when minimized state changes to prevent off-screen overflow
+  useEffect(() => {
+    const height = isMinimized ? 50 : 520;
+    const width = isMinimized ? 280 : 360;
+    
+    const x_min = 40 + width - window.innerWidth;
+    const y_min = 40 + height - window.innerHeight;
+    
+    setPosition(prev => {
+      const clampedX = Math.max(x_min, Math.min(0, prev.x));
+      const clampedY = Math.max(y_min, Math.min(0, prev.y));
+      if (clampedX !== prev.x || clampedY !== prev.y) {
+        const newPos = { x: clampedX, y: clampedY };
+        localStorage.setItem('softphone_position', JSON.stringify(newPos));
+        return newPos;
+      }
+      return prev;
+    });
+  }, [isMinimized]);
+
+  // Keep widget within screen bounds on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const height = isMinimized ? 50 : 520;
+      const width = isMinimized ? 280 : 360;
+      
+      const x_min = 40 + width - window.innerWidth;
+      const y_min = 40 + height - window.innerHeight;
+      
+      setPosition(prev => {
+        const clampedX = Math.max(x_min, Math.min(0, prev.x));
+        const clampedY = Math.max(y_min, Math.min(0, prev.y));
+        if (clampedX !== prev.x || clampedY !== prev.y) {
+          const newPos = { x: clampedX, y: clampedY };
+          localStorage.setItem('softphone_position', JSON.stringify(newPos));
+          return newPos;
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isMinimized]);
+
+  const handleDrag = (e, data) => {
+    setPosition({ x: data.x, y: data.y });
+  };
+
+  const handleDragStop = (e, data) => {
+    const newPos = { x: data.x, y: data.y };
+    setPosition(newPos);
+    localStorage.setItem('softphone_position', JSON.stringify(newPos));
+  };
 
   // Fetch agent profile
   useEffect(() => {
@@ -283,7 +354,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
   return (
-    <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds="body">
+    <Draggable 
+      nodeRef={nodeRef} 
+      handle=".drag-handle" 
+      position={position}
+      onDrag={handleDrag}
+      onStop={handleDragStop}
+    >
       <div ref={nodeRef} style={{
         position: 'fixed',
         bottom: '20px',

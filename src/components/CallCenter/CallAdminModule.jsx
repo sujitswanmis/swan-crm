@@ -10,6 +10,7 @@ import {
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
+import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 // ─── Helpers ────────────────────────────────────────────────
 const TABS = [
@@ -718,7 +719,7 @@ function TabSettings() {
     setSaving(false);
   };
 
-  if (loading) return <div style={{ textAlign:'center', padding:'3rem' }}><Loader2 className="spin" size={24} color="#3b82f6" /></div>;
+  if (loading) return <PremiumProgressLoader message="Loading Call Settings" active={loading} />;
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1.5rem' }}>
@@ -887,12 +888,7 @@ export default function CallAdminModule() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', flexDirection:'column', gap:'1rem', color:'#64748b' }}>
-      <Loader2 size={32} className="spin" color="#3b82f6" />
-      <span>Loading Call Center Administration…</span>
-    </div>
-  );
+  if (loading) return <PremiumProgressLoader message="Loading Call Center Administration" active={loading} />;
 
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#f8fafc' }}>

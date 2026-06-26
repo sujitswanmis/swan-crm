@@ -35,15 +35,11 @@ export async function updateSession(request) {
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/auth');
   const isApiRoute = pathname.startsWith('/api');
 
-  const isPublicPage = pathname === '/chat';
+  const isPublicPage = pathname === '/chat' || pathname === '/';
 
   // Protect all web routes (except auth pages, public pages and api endpoints)
   if (!user && !isAuthPage && !isApiRoute && !isPublicPage) {
     const url = request.nextUrl.clone();
-    if (pathname === '/') {
-      url.pathname = '/chat';
-      return NextResponse.redirect(url);
-    }
     const nextPath = request.nextUrl.pathname + request.nextUrl.search;
     url.pathname = '/login';
     url.searchParams.set('next', nextPath);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getInstances, getInstanceAuths, getChats, getMessages, sendLiveMessage } from '@/app/actions/whatsappUnofficialDb';
 import { createClient } from '@/utils/supabase/client';
 import { Search, Send, Paperclip, Loader2, Check, CheckCheck, Clock, MessageSquare } from 'lucide-react';
+import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 export default function LiveChat({ userId, isAdmin }) {
   const [instances, setInstances] = useState([]);
@@ -156,7 +157,7 @@ export default function LiveChat({ userId, isAdmin }) {
     }
   };
 
-  if (loading) return <div style={{ padding: '2rem' }}>Loading Chat Interface...</div>;
+  if (loading) return <PremiumProgressLoader message="Loading Chat Interface" active={loading} />;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

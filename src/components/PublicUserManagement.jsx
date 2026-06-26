@@ -5,10 +5,18 @@ import { getTeamMembers, toggleUserApproval, updateEmployeeDetailsAdmin } from '
 import { Eye, EyeOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { PremiumProgressLoader } from './PremiumProgressLoader';
 
 export default function PublicUserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [confirmModal, setConfirmModal] = useState({
+    show: false,
+    userId: null,
+    currentValue: null,
+    userName: ''
+  });
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
@@ -48,7 +56,18 @@ export default function PublicUserManagement() {
     setLoading(false);
   };
 
-  const toggleApproval = async (userId, currentValue) => {
+  const toggleApproval = (userId, currentValue, userName) => {
+    setConfirmModal({
+      show: true,
+      userId,
+      currentValue,
+      userName
+    });
+  };
+
+  const confirmToggleApproval = async () => {
+    const { userId, currentValue } = confirmModal;
+    setConfirmModal({ show: false, userId: null, currentValue: null, userName: '' });
     try {
       await toggleUserApproval(userId, !currentValue);
       fetchUsers();
@@ -172,7 +191,7 @@ export default function PublicUserManagement() {
     }
   };
 
-  if (loading) return <div style={{ padding: '2rem' }}>Loading public users...</div>;
+  if (loading) return <PremiumProgressLoader message="Loading Public User Management" active={loading} />;
 
   return (
     <div className="card" style={{ padding: '1.5rem', overflowX: 'auto' }}>
@@ -219,7 +238,7 @@ export default function PublicUserManagement() {
                 </td>
                 <td style={{ padding: '1rem' }}>
                   <button 
-                    onClick={() => toggleApproval(user.user_id, user.is_approved)}
+                    onClick={() => toggleApproval(user.user_id, user.is_approved, user.emp_name || user.email)}
                     style={{ 
                       padding: '0.3rem 0.6rem', 
                       borderRadius: '99px', 
@@ -264,6 +283,65 @@ export default function PublicUserManagement() {
           )}
         </tbody>
       </table>
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '430px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>❓</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem' }}>Confirm Status Change</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to {confirmModal.currentValue ? 'suspend/unapprove' : 'approve'} <strong>{confirmModal.userName}</strong>?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button 
+                onClick={() => setConfirmModal({ show: false, userId: null, currentValue: null, userName: '' })}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmToggleApproval}
+                className="btn-primary"
+                style={{ 
+                  padding: '0.6rem 1.5rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: confirmModal.currentValue ? '#dc2626' : '#16a34a',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes, {confirmModal.currentValue ? 'Unapprove' : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingUser && (

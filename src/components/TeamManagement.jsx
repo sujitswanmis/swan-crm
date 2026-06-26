@@ -5,6 +5,7 @@ import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissio
 import { Eye, EyeOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { PremiumProgressLoader } from './PremiumProgressLoader';
 
 const MODULES_CONFIG = [
   { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
@@ -82,6 +83,13 @@ export default function TeamManagement() {
   const [userSessions, setUserSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
 
+  const [confirmModal, setConfirmModal] = useState({
+    show: false,
+    userId: null,
+    currentValue: null,
+    userName: ''
+  });
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -107,9 +115,24 @@ export default function TeamManagement() {
     fetchUsers();
   };
 
-  const toggleApproval = async (userId, currentValue) => {
-    await toggleUserApproval(userId, !currentValue);
-    fetchUsers();
+  const toggleApproval = (userId, currentValue, userName) => {
+    setConfirmModal({
+      show: true,
+      userId,
+      currentValue,
+      userName
+    });
+  };
+
+  const confirmToggleApproval = async () => {
+    const { userId, currentValue } = confirmModal;
+    setConfirmModal({ show: false, userId: null, currentValue: null, userName: '' });
+    try {
+      await toggleUserApproval(userId, !currentValue);
+      fetchUsers();
+    } catch (e) {
+      alert("Error toggling approval: " + e.message);
+    }
   };
 
   const toggleRead = async (userId, currentValue) => {
@@ -130,7 +153,8 @@ export default function TeamManagement() {
       emp_department: user.emp_department || '',
       emp_designation: user.emp_designation || '',
       company: user.company || '',
-      emp_mobile: user.emp_mobile || ''
+      emp_mobile: user.emp_mobile || '',
+      email: user.email || ''
     });
   };
 
@@ -295,6 +319,9 @@ export default function TeamManagement() {
   };
 
   const filteredUsers = users.filter(u => {
+    // Filter out public customers from Team Management list
+    if (u.role === 'customer') return false;
+
     const q = searchQuery.toLowerCase();
     return (
       (u.emp_name || '').toLowerCase().includes(q) ||
@@ -304,7 +331,7 @@ export default function TeamManagement() {
     );
   });
 
-  if (loading) return <div style={{ padding: '2rem' }}>Loading team members...</div>;
+  if (loading) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
 
   return (
     <div className="card" style={{ padding: '1.5rem', overflowX: 'auto' }}>
@@ -361,7 +388,7 @@ export default function TeamManagement() {
               </td>
               <td style={{ padding: '1rem' }}>
                 <button 
-                  onClick={() => toggleApproval(user.user_id, user.is_approved)}
+                  onClick={() => toggleApproval(user.user_id, user.is_approved, user.emp_name || user.email)}
                   disabled={user.role === 'admin'}
                   style={{ 
                     padding: '0.3rem 0.6rem', 
@@ -439,6 +466,65 @@ export default function TeamManagement() {
           ))}
         </tbody>
       </table>
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '430px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>❓</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem' }}>Confirm Status Change</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to {confirmModal.currentValue ? 'suspend/unapprove' : 'approve'} <strong>{confirmModal.userName}</strong>?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button 
+                onClick={() => setConfirmModal({ show: false, userId: null, currentValue: null, userName: '' })}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmToggleApproval}
+                className="btn-primary"
+                style={{ 
+                  padding: '0.6rem 1.5rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: confirmModal.currentValue ? '#dc2626' : '#16a34a',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes, {confirmModal.currentValue ? 'Unapprove' : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add User Modal */}
       {showAddUserModal && (
@@ -597,6 +683,15 @@ export default function TeamManagement() {
                   type="text" 
                   value={editForm.emp_designation} 
                   onChange={e => setEditForm({...editForm, emp_designation: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Email Address</label>
+                <input 
+                  type="email" 
+                  value={editForm.email || ''} 
+                  onChange={e => setEditForm({...editForm, email: e.target.value})}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
                 />
               </div>

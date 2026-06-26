@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Sparkles, Send, Loader2, MessageSquare, Zap, Mic, MicOff, Camera, Paperclip, Volume2, X, PhoneCall, PhoneOff, Plus, MessageCircle, MoreVertical, Menu, Settings2, Copy, Check, Pencil, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import ReactMarkdown from 'react-markdown';
+import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import remarkGfm from 'remark-gfm';
 
 export default function AiAssistantModule({ userRole, userId, lastScreenCapture }) {
@@ -769,10 +770,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', background: isDragging ? '#f0fdf4' : 'transparent', transition: 'background 0.2s' }}
       >
         {!isHistoryLoaded ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#888' }}>
-            <Loader2 size={32} className="spin" style={{ marginBottom: '1rem' }} />
-            <p>Loading your chat history...</p>
-          </div>
+          <PremiumProgressLoader message="Loading Chat History" active={!isHistoryLoaded} />
         ) : (
           <>
         {isDragging && (

@@ -99,7 +99,32 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
 
   const handleFollowUpChange = async (e) => {
     const newDate = e.target.value;
-    if (!newDate) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const actor = userName || user?.email?.split('@')[0] || 'System';
+
+    if (!newDate) {
+      setFollowUpDate('');
+      const { error: updateError } = await supabase.from('leads').update({ follow_up_date: null }).eq('id', lead.id);
+      if (updateError) {
+        alert("Error clearing follow-up date: " + updateError.message);
+        return;
+      }
+
+      if (onLeadUpdate) {
+        onLeadUpdate({ ...lead, follow_up_date: null });
+      }
+
+      // Log history
+      const { error: noteError } = await supabase.from('lead_notes').insert([{
+        lead_id: lead.id,
+        note_text: 'Follow-up date cleared',
+        created_by: actor
+      }]);
+      if (noteError) {
+        console.error("Error inserting follow-up note:", noteError.message);
+      }
+      return;
+    }
     
     setFollowUpDate(newDate);
     const isoDateStr = new Date(newDate).toISOString();
@@ -110,9 +135,6 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       alert("Error updating follow-up date: " + updateError.message);
       return;
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = userName || user?.email?.split('@')[0] || 'System';
 
     if (onLeadUpdate) {
       onLeadUpdate({ ...lead, follow_up_date: isoDateStr });

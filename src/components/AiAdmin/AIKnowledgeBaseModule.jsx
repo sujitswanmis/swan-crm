@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Upload, FileText, Link as LinkIcon, Trash2, Edit3, Plus, Search, File, Database, Check, Loader2, Globe, Eye } from 'lucide-react';
+import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 const loadPdfJs = () => {
   return new Promise((resolve, reject) => {
@@ -545,10 +546,7 @@ export default function AIKnowledgeBaseModule() {
 
       {/* Documents Grid / Main Section */}
       {loading ? (
-        <div style={{ padding: '5rem 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          <Loader2 size={40} className="spin" style={{ marginBottom: '1.25rem', color: 'var(--accent-color)' }} />
-          <div style={{ fontSize: '1.1rem', fontWeight: 500 }}>Loading knowledge base...</div>
-        </div>
+        <PremiumProgressLoader message="Loading Knowledge Base" active={loading} />
       ) : documents.length === 0 ? (
         <div style={{ background: 'var(--bg-surface)', padding: '5rem 2rem', textAlign: 'center', borderRadius: '16px', border: '2px dashed var(--border-light)' }}>
           <div style={{ background: 'rgba(37, 99, 235, 0.05)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', color: 'var(--accent-color)' }}>

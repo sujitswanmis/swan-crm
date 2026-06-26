@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2 } from 'lucide-react';
+import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 export default function AiAdminModule() {
   const [users, setUsers] = useState([]);
@@ -140,7 +141,7 @@ export default function AiAdminModule() {
   };
 
   if (loading) {
-    return <div style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading AI Stats...</div>;
+    return <PremiumProgressLoader message="Loading AI Stats" active={loading} />;
   }
 
   return (
