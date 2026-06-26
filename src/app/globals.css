@@ -463,6 +463,11 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.sidebar.collapsed,
+.sidebar.collapsed .category-modules-list {
+  overflow: visible !important;
+}
+
 .sidebar.collapsed {
   width: 72px !important;
 }
@@ -1054,6 +1059,10 @@ table th:hover, .table-header-cell:hover {
   }
   .sidebar.collapsed {
     width: 280px !important;
+    overflow-y: auto !important;
+  }
+  .sidebar.collapsed .category-modules-list {
+    overflow: hidden !important;
   }
   .sidebar.collapsed .sidebar-header {
     padding: 1.5rem !important;
