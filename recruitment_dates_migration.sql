@@ -12,3 +12,4 @@ ALTER TABLE recruitment_positions ADD COLUMN IF NOT EXISTS salary_max INT;
 ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS expected_salary_min INT;
 ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS expected_salary_max INT;
 ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS actual_salary INT;
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS candidate_code TEXT;

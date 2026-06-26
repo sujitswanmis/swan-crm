@@ -64,6 +64,18 @@ export async function submitApplication(positionId, formData) {
     const expected_salary_min = formData.expected_salary_min ? parseInt(formData.expected_salary_min) : null;
     const expected_salary_max = formData.expected_salary_max ? parseInt(formData.expected_salary_max) : null;
 
+    // Get count of existing candidates for this position to generate display ID
+    const { count, error: countError } = await adminClient
+      .from('recruitment_candidates')
+      .select('*', { count: 'exact', head: true })
+      .eq('position_id', positionId);
+
+    if (countError) throw countError;
+
+    const nextSeq = (count || 0) + 1;
+    const posShort = positionId.substring(0, 8).toUpperCase();
+    const candidateCode = `POS-${posShort}-${String(nextSeq).padStart(3, '0')}`;
+
     // Insert candidate
     const { data, error } = await adminClient
       .from('recruitment_candidates')
@@ -75,6 +87,7 @@ export async function submitApplication(positionId, formData) {
         expected_salary_min,
         expected_salary_max,
         resume_url: formData.resume_url || '',
+        candidate_code: candidateCode,
         current_stage: 'S02',
         candidate_status: 'Awaiting Screening',
         created_by: 'Online Application'

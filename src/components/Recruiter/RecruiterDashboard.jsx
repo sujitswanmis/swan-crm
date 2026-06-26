@@ -274,12 +274,25 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       const { data: { user } } = await supabase.auth.getUser();
       const creator = userName || user?.email?.split('@')[0] || 'Recruiter';
 
+      // Get count of existing candidates for this position to generate display ID
+      const { count, error: countError } = await supabase
+        .from('recruitment_candidates')
+        .select('*', { count: 'exact', head: true })
+        .eq('position_id', newCandidate.position_id);
+
+      if (countError) throw countError;
+
+      const nextSeq = (count || 0) + 1;
+      const posShort = newCandidate.position_id.substring(0, 8).toUpperCase();
+      const candidateCode = `POS-${posShort}-${String(nextSeq).padStart(3, '0')}`;
+
       const { data, error } = await supabase
         .from('recruitment_candidates')
         .insert([{
           ...newCandidate,
           expected_salary_min: newCandidate.expected_salary_min ? parseInt(newCandidate.expected_salary_min) : null,
           expected_salary_max: newCandidate.expected_salary_max ? parseInt(newCandidate.expected_salary_max) : null,
+          candidate_code: candidateCode,
           current_stage: 'S02',
           created_by: creator
         }])
@@ -291,7 +304,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       // Add default filtration note log
       await supabase.from('recruitment_candidate_notes').insert([{
         candidate_id: data.id,
-        note_text: 'Candidate Resume Filtered and Registered (S02)',
+        note_text: `Candidate Resume Filtered and Registered (S02) with ID: ${candidateCode}`,
         created_by: creator
       }]);
 
@@ -382,7 +395,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         (c.email || '').toLowerCase().includes(cleanSearch) ||
         (c.phone || '').includes(cleanSearch) ||
         posTitle.toLowerCase().includes(cleanSearch) ||
-        posCode.toLowerCase().includes(cleanSearch);
+        posCode.toLowerCase().includes(cleanSearch) ||
+        (c.candidate_code || '').toLowerCase().includes(cleanSearch);
       
       const matchesPosition = 
         selectedPositionFilter === 'All' || c.position_id === selectedPositionFilter;
@@ -939,11 +953,23 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}
                       >
                         <td style={{ padding: '1rem' }}>
-                          <div 
-                            onClick={() => { setSelectedCandidate(cand); setIsProfileOpen(true); }}
-                            style={{ fontWeight: 600, color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.875rem' }}
-                          >
-                            {cand.name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span 
+                              onClick={() => { setSelectedCandidate(cand); setIsProfileOpen(true); }}
+                              style={{ fontWeight: 600, color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.875rem' }}
+                            >
+                              {cand.name}
+                            </span>
+                            {cand.candidate_code && (
+                              <span style={{ 
+                                fontSize: '0.68rem', fontFamily: 'monospace', 
+                                padding: '0.1rem 0.35rem', borderRadius: '4px',
+                                background: 'var(--bg-surface-variant)', border: '1px solid var(--border-light)',
+                                color: 'var(--text-secondary)'
+                              }}>
+                                {cand.candidate_code}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                             {cand.phone && <span style={{ marginRight: '0.75rem' }}>📞 {cand.phone}</span>}

@@ -245,9 +245,19 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Candidate Profile</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-              {editForm.name}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.2rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{editForm.name}</span>
+              {candidate.candidate_code && (
+                <span style={{ 
+                  fontSize: '0.68rem', fontFamily: 'monospace', 
+                  padding: '0.1rem 0.35rem', borderRadius: '4px',
+                  background: 'var(--bg-surface-variant)', border: '1px solid var(--border-light)',
+                  color: 'var(--text-secondary)'
+                }}>
+                  {candidate.candidate_code}
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--text-secondary)' }}>
             <X size={20} />
