@@ -125,6 +125,18 @@ export default function TeamManagement() {
     fetchUsers();
   };
 
+  const toggleReadAccess = async (userId, currentValue) => {
+    const newValue = currentValue === false ? true : false;
+    await toggleReadPermissions(userId, newValue);
+    fetchUsers();
+  };
+
+  const toggleWriteAccess = async (userId, currentValue) => {
+    const newValue = currentValue === false ? true : false;
+    await toggleWritePermissions(userId, newValue);
+    fetchUsers();
+  };
+
   const toggleApproval = (userId, currentValue, userName) => {
     setConfirmModal({
       show: true,
@@ -439,7 +451,28 @@ export default function TeamManagement() {
                   >
                     Manage Access
                   </button>
+                  
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={user.can_read !== false} 
+                      onChange={() => toggleReadAccess(user.user_id, user.can_read)}
+                      disabled={user.role === 'Admin' || user.role === 'admin'}
+                    />
+                    View Access (Read)
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={user.can_write !== false} 
+                      onChange={() => toggleWriteAccess(user.user_id, user.can_write)}
+                      disabled={user.role === 'Admin' || user.role === 'admin'}
+                    />
+                    Edit Access (Write)
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}>
                     <input 
                       type="checkbox" 
                       checked={user.can_import_export} 
@@ -777,6 +810,54 @@ export default function TeamManagement() {
             {/* Scrollable Content */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                
+                {/* Global Permissions Section */}
+                <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
+                    Global Permissions
+                  </div>
+                  <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {(() => {
+                      const u = users.find(x => x.user_id === accessUser);
+                      if (!u) return null;
+                      return (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox"
+                              checked={u.can_read !== false}
+                              onChange={() => toggleReadAccess(u.user_id, u.can_read)}
+                              disabled={u.role === 'Admin' || u.role === 'admin'}
+                              style={{ width: '1.1rem', height: '1.1rem' }}
+                            />
+                            <span style={{ fontSize: '0.95rem' }}>View Access (Read)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox"
+                              checked={u.can_write !== false}
+                              onChange={() => toggleWriteAccess(u.user_id, u.can_write)}
+                              disabled={u.role === 'Admin' || u.role === 'admin'}
+                              style={{ width: '1.1rem', height: '1.1rem' }}
+                            />
+                            <span style={{ fontSize: '0.95rem' }}>Edit Access (Write)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox"
+                              checked={u.can_import_export}
+                              onChange={() => toggleImportExport(u.user_id, u.can_import_export)}
+                              disabled={u.role === 'Admin' || u.role === 'admin'}
+                              style={{ width: '1.1rem', height: '1.1rem' }}
+                            />
+                            <span style={{ fontSize: '0.95rem' }}>Import/Export Power</span>
+                          </label>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
                 {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => (
                   <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
                     <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
