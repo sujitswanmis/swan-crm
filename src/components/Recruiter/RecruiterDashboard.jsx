@@ -192,6 +192,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         .from('recruitment_positions')
         .insert([{
           ...newPosition,
+          deadline_date: newPosition.deadline_date || null,
           salary_min: newPosition.salary_min ? parseInt(newPosition.salary_min) : null,
           salary_max: newPosition.salary_max ? parseInt(newPosition.salary_max) : null,
           status: selectedStage === 'S01' ? 'S01' : 'S00',
@@ -249,6 +250,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
         .from('recruitment_positions')
         .update({
           ...editPositionForm,
+          deadline_date: editPositionForm.deadline_date || null,
           salary_min: editPositionForm.salary_min ? parseInt(editPositionForm.salary_min) : null,
           salary_max: editPositionForm.salary_max ? parseInt(editPositionForm.salary_max) : null
         })

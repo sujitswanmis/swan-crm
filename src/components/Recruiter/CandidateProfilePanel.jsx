@@ -155,9 +155,18 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const payload = {
+        ...editForm,
+        joining_date: editForm.joining_date || null,
+        actual_joining_date: editForm.actual_joining_date || null,
+        expected_salary_min: editForm.expected_salary_min ? parseInt(editForm.expected_salary_min) : null,
+        expected_salary_max: editForm.expected_salary_max ? parseInt(editForm.expected_salary_max) : null,
+        actual_salary: editForm.actual_salary ? parseInt(editForm.actual_salary) : null
+      };
+
       const { error } = await supabase
         .from('recruitment_candidates')
-        .update(editForm)
+        .update(payload)
         .eq('id', candidate.id);
 
       if (error) throw error;
@@ -175,7 +184,7 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
       }
 
       if (onCandidateUpdate) {
-        onCandidateUpdate({ ...candidate, ...editForm });
+        onCandidateUpdate({ ...candidate, ...payload });
       }
       onClose();
     } catch (err) {
