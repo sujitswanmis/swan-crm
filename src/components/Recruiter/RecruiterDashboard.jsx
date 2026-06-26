@@ -672,7 +672,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                       {pos.salary_min || pos.salary_max ? (
                         <span>
-                          {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'}
+                          {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month
                         </span>
                       ) : (
                         <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Disclosed</span>
@@ -849,7 +849,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     } else if (cand.current_stage === 'S06') {
                       stageDetailsText = (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                          {cand.actual_salary && <div style={{ fontWeight: 600, color: '#166534' }}>💵 Actual Salary: ₹{cand.actual_salary.toLocaleString('en-IN')}</div>}
+                          {cand.actual_salary && <div style={{ fontWeight: 600, color: '#166534' }}>💵 Actual Salary: ₹{cand.actual_salary.toLocaleString('en-IN')} / month</div>}
                           <div>💰 Structure: {cand.salary_negotiation_details || <span style={{ color: '#86198f', fontStyle: 'italic' }}>Negotiation in progress</span>}</div>
                         </div>
                       );
@@ -893,7 +893,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                           </div>
                           {(cand.expected_salary_min || cand.expected_salary_max) && (
                             <div style={{ fontSize: '0.72rem', color: '#0f766e', marginTop: '0.2rem', fontWeight: 500 }}>
-                              💰 Exp: {cand.expected_salary_min ? `₹${cand.expected_salary_min.toLocaleString('en-IN')}` : '0'} - {cand.expected_salary_max ? `₹${cand.expected_salary_max.toLocaleString('en-IN')}` : 'Any'}
+                              💰 Exp: {cand.expected_salary_min ? `₹${cand.expected_salary_min.toLocaleString('en-IN')}` : '0'} - {cand.expected_salary_max ? `₹${cand.expected_salary_max.toLocaleString('en-IN')}` : 'Any'} / month
                             </div>
                           )}
                         </td>
@@ -1050,12 +1050,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
 
               <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
-                  <input type="number" value={newPosition.salary_min} onChange={e => setNewPosition({...newPosition, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/month)</label>
+                  <input type="number" value={newPosition.salary_min} onChange={e => setNewPosition({...newPosition, salary_min: e.target.value})} placeholder="e.g. 35000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
-                  <input type="number" value={newPosition.salary_max} onChange={e => setNewPosition({...newPosition, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/month)</label>
+                  <input type="number" value={newPosition.salary_max} onChange={e => setNewPosition({...newPosition, salary_max: e.target.value})} placeholder="e.g. 60000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
@@ -1133,12 +1133,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
 
               <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/yr)</label>
-                  <input type="number" value={editPositionForm.salary_min || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_min: e.target.value})} placeholder="e.g. 400000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Min (₹/month)</label>
+                  <input type="number" value={editPositionForm.salary_min || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_min: e.target.value})} placeholder="e.g. 35000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/yr)</label>
-                  <input type="number" value={editPositionForm.salary_max || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_max: e.target.value})} placeholder="e.g. 700000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Salary Range Max (₹/month)</label>
+                  <input type="number" value={editPositionForm.salary_max || ''} onChange={e => setEditPositionForm({...editPositionForm, salary_max: e.target.value})} placeholder="e.g. 60000" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
 
@@ -1223,11 +1223,11 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
 
               <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Min (₹/yr)</label>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Min (₹/month)</label>
                   <input type="number" value={newCandidate.expected_salary_min} onChange={e => setNewCandidate({...newCandidate, expected_salary_min: e.target.value})} placeholder="Min expected" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Max (₹/yr)</label>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Exp. Salary Max (₹/month)</label>
                   <input type="number" value={newCandidate.expected_salary_max} onChange={e => setNewCandidate({...newCandidate, expected_salary_max: e.target.value})} placeholder="Max expected" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
                 </div>
               </div>
