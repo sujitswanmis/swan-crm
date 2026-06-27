@@ -353,6 +353,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
   };
 
+  // Cleanup WebRTC call if active session ends
+  useEffect(() => {
+    if (!activeSession && activeCall) {
+      hangupCall();
+    }
+  }, [activeSession, activeCall]);
+
   const toggleMute = () => {
     if (plivoClient && activeCall) {
       if (isMuted) plivoClient.unmute();
