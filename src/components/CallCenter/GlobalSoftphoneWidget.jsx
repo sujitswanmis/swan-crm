@@ -19,19 +19,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [activeSession, setActiveSession] = useState(null);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
   const [agentData, setAgentData] = useState(null);
-  
-  const updateActiveSession = useCallback((newSession) => {
-    setActiveSession(prev => {
-      if (!prev && !newSession) return null;
-      if (!prev && newSession) return newSession;
-      if (prev && !newSession) return null;
-      if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
-        return prev;
-      }
-      return newSession;
-    });
-  }, []);
-  
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
@@ -41,6 +28,33 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
   const nodeRef = useRef(null);
+
+  const hangupCall = useCallback(() => {
+    if (plivoClientRef.current) {
+      try {
+        plivoClientRef.current.hangup();
+      } catch (e) {
+        console.error("Error during WebRTC hangup:", e);
+      }
+    }
+    setActiveCall(null);
+  }, []);
+
+  const updateActiveSession = useCallback((newSession) => {
+    setActiveSession(prev => {
+      if (!prev && !newSession) return null;
+      if (!prev && newSession) return newSession;
+      if (prev && !newSession) {
+        // Session ended! Clean up browser WebRTC call!
+        hangupCall();
+        return null;
+      }
+      if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
+        return prev;
+      }
+      return newSession;
+    });
+  }, [hangupCall]);
 
   // Load saved position on mount
   useEffect(() => {
@@ -366,21 +380,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
       setIncomingCall(null);
     }
   };
-
-  const hangupCall = () => {
-    if (plivoClient) {
-      plivoClient.hangup();
-      setActiveCall(null);
-      stopDurationTimer();
-    }
-  };
-
-  // Cleanup WebRTC call if active session ends
-  useEffect(() => {
-    if (!activeSession && activeCall) {
-      hangupCall();
-    }
-  }, [activeSession, activeCall]);
 
   const toggleMute = () => {
     if (plivoClient && activeCall) {
