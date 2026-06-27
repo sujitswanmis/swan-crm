@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MoreVertical, Trash2, Edit2, ChevronDown, Filter } from 'lucide-react';
 import {
   useReactTable,
@@ -464,6 +464,12 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState(() => processLeads(initialData || []));
+
+  const getSignature = (leadsList) => {
+    return (leadsList || []).map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
+  };
+
+  const lastProcessedInitialDataRef = useRef(getSignature(initialData));
   const stagePrefix = stageFilter ? stageFilter.split(' - ')[0].replace(/^0/, '') + ';' : null;
   const showStage = (prefix) => !stagePrefix || stagePrefix === prefix;
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
@@ -490,12 +496,10 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [globalFilter, setGlobalFilter] = useState('');
   
   useEffect(() => {
-    // Robust check to stop infinite loops: only update data if key properties or the list of leads actually changed
-    const currentSignature = data.map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
-    const newSignature = (initialData || []).map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
+    const newSignature = getSignature(initialData);
+    if (newSignature === lastProcessedInitialDataRef.current) return;
     
-    if (currentSignature === newSignature) return;
-    
+    lastProcessedInitialDataRef.current = newSignature;
     setData(processLeads(initialData || []));
   }, [initialData]);
 
@@ -733,6 +737,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     if (onLeadsChange) {
       onLeadsChange(data);
     }
+    lastProcessedInitialDataRef.current = getSignature(data);
   }, [data]);
 
   useEffect(() => {
