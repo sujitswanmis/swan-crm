@@ -143,7 +143,15 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
     }
   } else if (eventType === 'exit') {
      const isAgentExit = memberId === session.agent_member_id || (session.agent_call_uuid && callUuid === session.agent_call_uuid);
-     const membersCount = event.ConferenceMembersCount ? parseInt(event.ConferenceMembersCount, 10) : 0;
+     
+     let membersCount = 0;
+     try {
+        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+        const confDetails = await client.conferences.get(conferenceName);
+        membersCount = confDetails.members ? confDetails.members.length : 0;
+     } catch (err) {
+        console.log('Conference exit check: Conference not found or empty, count = 0');
+     }
 
      // End the conference if the agent leaves, or if anyone else leaves and only the agent is left (membersCount <= 1)
      const shouldEndConference = isAgentExit || membersCount <= 1;
