@@ -142,12 +142,11 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       }
     }
   } else if (eventType === 'exit') {
-     // End the conference for everyone if either the agent leaves, or the customer leaves and no other guest is left
-     const isAgentExit = memberId === session.agent_member_id;
-     const isCustomerExit = (session.customer_call_uuid && callUuid === session.customer_call_uuid) || (session.customer_member_id && memberId === session.customer_member_id);
+     const isAgentExit = memberId === session.agent_member_id || (session.agent_call_uuid && callUuid === session.agent_call_uuid);
      const membersCount = event.ConferenceMembersCount ? parseInt(event.ConferenceMembersCount, 10) : 0;
 
-     const shouldEndConference = isAgentExit || (isCustomerExit && membersCount <= 1);
+     // End the conference if the agent leaves, or if anyone else leaves and only the agent is left (membersCount <= 1)
+     const shouldEndConference = isAgentExit || membersCount <= 1;
 
      if (shouldEndConference && session.status !== 'ended') {
         const endTime = new Date();
