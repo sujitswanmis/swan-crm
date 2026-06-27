@@ -40,7 +40,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       const authToken = process.env.PLIVO_AUTH_TOKEN;
       const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
       const client = new plivo.Client(authId, authToken);
-      const appBaseUrl = 'https://swan-hosting.vercel.app';
+      const appBaseUrl = originUrl;
       
       // Play ringback tone to the agent while they wait
       try {
@@ -142,8 +142,11 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       }
     }
   } else if (eventType === 'exit') {
-     // If the AGENT leaves, end the conference for everyone
-     if (memberId === session.agent_member_id && session.status !== 'ended') {
+     // End the conference for everyone if either the agent or the customer leaves
+     const isAgentExit = memberId === session.agent_member_id;
+     const isCustomerExit = (session.customer_call_uuid && callUuid === session.customer_call_uuid) || (session.customer_member_id && memberId === session.customer_member_id);
+
+     if ((isAgentExit || isCustomerExit) && session.status !== 'ended') {
         const endTime = new Date();
         const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
         const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
@@ -196,7 +199,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
               }
            }
         }
-    }
+     }
   } else if (eventType === 'record') {
     if (event.RecordUrl) {
       await adminClient.from('call_sessions').update({

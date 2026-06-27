@@ -4,9 +4,11 @@ import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2,
 import Draggable from 'react-draggable';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
+import { createClient } from '@/utils/supabase/client';
 
 export default function GlobalSoftphoneWidget({ userId }) {
   const [isMinimized, setIsMinimized] = useState(false);
+  const supabase = createClient();
   const [plivoClient, setPlivoClient] = useState(null);
   const [connectionState, setConnectionState] = useState('offline'); // offline, connecting, online, error
   const [errorMessage, setErrorMessage] = useState('');
@@ -122,28 +124,61 @@ export default function GlobalSoftphoneWidget({ userId }) {
     fetchAgent();
   }, [userId]);
 
-  // Track recent active session in database
+  // Realtime Active Session listener and polling backup
   useEffect(() => {
     if (!agentData) return;
-    let interval;
+
     const fetchSession = async () => {
       const { data } = await getRecentCalls(agentData.id);
       if (data) {
         const active = data.find(c => {
           const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
           const ageInMs = new Date() - new Date(c.created_at);
-          // If status is initiated/ringing, timeout after 2 mins to prevent stuck dialer
           if (['initiated', 'ringing'].includes(c.status) && ageInMs > 120000) return false;
-          const isRecent = ageInMs < 1000 * 60 * 60; // strictly within 1 hour for connected calls
+          const isRecent = ageInMs < 1000 * 60 * 60;
           return isStatusActive && isRecent;
         });
         setActiveSession(active || null);
       }
     };
+
     fetchSession();
-    interval = setInterval(fetchSession, 5000);
-    return () => clearInterval(interval);
-  }, [agentData]);
+
+    // Subscribe to realtime database changes for call_sessions
+    const channel = supabase
+      .channel(`agent_call_sessions_${agentData.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'call_sessions',
+        filter: `agent_id=eq.${agentData.id}`
+      }, (payload) => {
+        const updated = payload.new;
+        if (payload.eventType === 'DELETE' || !updated) {
+          setActiveSession(null);
+          return;
+        }
+
+        const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(updated.status);
+        const ageInMs = new Date() - new Date(updated.created_at);
+        const isRecent = ageInMs < 1000 * 60 * 60;
+
+        if (isStatusActive && isRecent) {
+          setActiveSession(updated);
+        } else {
+          setActiveSession(null);
+        }
+      })
+      .subscribe();
+
+    // 5-second polling fallback to ensure state remains in sync even if websocket drops
+    const interval = setInterval(fetchSession, 5000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [agentData, supabase]);
 
   const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
     if (!clientInstance) return;
@@ -267,7 +302,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
     stopDurationTimer();
     setCallDuration(0);
     durationTimerRef.current = setInterval(() => {
-      setCallDuration(prev => prev + 1);
+      // Only increment duration if the customer is connected
+      setActiveSession(currentSession => {
+        if (currentSession && currentSession.status === 'connected') {
+          setCallDuration(prev => prev + 1);
+        }
+        return currentSession;
+      });
     }, 1000);
   };
 
@@ -461,8 +502,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
           {/* Active Plivo Call Controls */}
           {activeCall && (
             <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem' }}>
-              <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Call Connected</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>{formatDuration(callDuration)}</div>
+              <div style={{ color: activeSession?.status === 'connected' ? '#10b981' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                {activeSession?.status === 'connected' ? 'Call Connected' : 'Ringing Customer...'}
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                {activeSession?.status === 'connected' ? formatDuration(callDuration) : '00:00'}
+              </div>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                 <button 
                   onClick={toggleMute}
