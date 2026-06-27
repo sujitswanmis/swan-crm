@@ -86,6 +86,22 @@ const columns = [
     }
   },
   { accessorKey: 'lead_ref_id', header: 'Lead ID', cell: info => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'monospace' }}>{info.getValue()}</span> },
+  {
+    accessorKey: 'lead_date',
+    header: 'Lead Date',
+    cell: info => {
+      const val = info.getValue();
+      if (!val) return '';
+      try {
+        const parts = val.split('-');
+        if (parts.length === 3) {
+          const pad = (n) => String(n).padStart(2, '0');
+          return `${parts[0]}-${pad(parts[1])}-${pad(parts[2])}`; // YYYY-MM-DD
+        }
+      } catch (e) {}
+      return val;
+    }
+  },
   { accessorKey: 'source', header: 'Lead Source' },
   { accessorKey: 'source_name', header: 'Source Name' },
   { accessorKey: 'entry_by', header: 'Lead Entry By' },
@@ -203,6 +219,11 @@ const columns = [
   { accessorKey: 'our_company', header: 'Our Company' },
   { accessorKey: 'state_name', header: 'State Name' },
   { accessorKey: 'district_name', header: 'District Name' },
+  { accessorKey: 'priority', header: 'Lead Priority Type' },
+  { accessorKey: 'address', header: 'Full Address' },
+  { accessorKey: 'requirement', header: 'Requirement' },
+  { accessorKey: 'investment', header: 'Investment' },
+  { accessorKey: 'buying_timeline', header: 'Buying Timeline' },
   {
     accessorKey: 'status',
     header: 'Lead Status',
@@ -586,6 +607,17 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
         return formatDateTime(row.original[columnId]);
       }
+      if (columnId === 'lead_date') {
+        const val = row.original[columnId];
+        if (!val) return '';
+        try {
+          const parts = val.split('-');
+          if (parts.length === 3) {
+            return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`; // YYYY-MM-DD
+          }
+        } catch (e) {}
+        return val;
+      }
       
       const val = row.getValue(columnId);
       return val !== null && val !== undefined && val !== '' ? String(val) : '';
@@ -616,6 +648,19 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         const pad = (n) => String(n).padStart(2, '0');
         const d = new Date(val);
         val = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    } else if (columnId === 'lead_date') {
+      if (typeof filterValue === 'string' && filterValue.includes('-')) {
+        const rawDate = row.original[columnId];
+        return rawDate === filterValue;
+      }
+      if (val) {
+        try {
+          const parts = val.split('-');
+          if (parts.length === 3) {
+            val = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          }
+        } catch (e) {}
       }
     }
     
@@ -772,10 +817,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     
     // Define headers
     const headers = [
-      'Lead ID', 'Business Type', 'Business Name', 
+      'Lead ID', 'Lead Date', 'Business Type', 'Business Name', 
       'Business Contact in AIO', 'Business Mail in AIO', 
       'CP Name in AIO', 'CP Mobile in AIO', 'CP Mail in AIO', 
-      'State', 'District', 'Status', 'Last Status',
+      'State', 'District', 'Lead Priority Type', 'Full Address', 
+      'Requirement', 'Investment', 'Buying Timeline', 'Status', 'Last Status',
       'Last Timestamp', 'Next Follow-up Date', 'Remarks', 
       'Emp Name', 'Actual Completion of Count', 'Last Follow-UP Duration in Minute'
     ];
@@ -805,6 +851,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
 
         return [
           d.lead_ref_id || d.id,
+          `"${d.lead_date || ''}"`,
           `"${d.business_type || ''}"`,
           `"${d.company || ''}"`,
           `"${bContact}"`,
@@ -814,6 +861,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           `"${cpMail}"`,
           `"${d.state_name || ''}"`,
           `"${d.district_name || ''}"`,
+          `"${d.priority || ''}"`,
+          `"${(d.address || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+          `"${(d.requirement || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+          `"${d.investment || ''}"`,
+          `"${d.buying_timeline || ''}"`,
           `"${d.status || ''}"`,
           `"${d.last_status || ''}"`,
           `"${d.last_timestamp || ''}"`,
@@ -1201,7 +1253,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                             
                             {activeFilterColumn === header.id && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
-                                {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date') ? (
+                                {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date' || header.id === 'lead_date') ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                     <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Date:</label>
                                     <input 
