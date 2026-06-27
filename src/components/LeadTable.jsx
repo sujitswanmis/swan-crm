@@ -541,6 +541,42 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       localStorage.setItem('leadTableColumnVisibility', JSON.stringify(columnVisibility));
     }
   }, [columnVisibility]);
+
+  const [columnOrder, setColumnOrder] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('leadTableColumnOrder');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error reading leadTableColumnOrder from localStorage', e);
+      }
+    }
+    return columns.map(c => c.accessorKey || c.id);
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('leadTableColumnOrder', JSON.stringify(columnOrder));
+    }
+  }, [columnOrder]);
+
+  const moveColumn = (columnId, direction) => {
+    setColumnOrder(prev => {
+      const newOrder = [...prev];
+      const index = newOrder.indexOf(columnId);
+      if (index === -1) return prev;
+      
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= newOrder.length) return prev;
+      
+      // Swap elements
+      const temp = newOrder[index];
+      newOrder[index] = newOrder[targetIndex];
+      newOrder[targetIndex] = temp;
+      
+      return newOrder;
+    });
+  };
   
   // Phase 2: Pagination State
   const [pagination, setPagination] = useState(() => {
@@ -780,11 +816,13 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       columnFilters,
       columnVisibility,
       pagination,
+      columnOrder,
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
+    onColumnOrderChange: setColumnOrder,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -992,22 +1030,55 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             
             {showColumnMenu && (
               <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', zIndex: 50, width: '300px', maxHeight: '400px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between' }}>
-                  <button onClick={() => table.toggleAllColumnsVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.85rem' }}>Select All</button>
-                  <button onClick={() => table.toggleAllColumnsVisible(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem' }}>Deselect All</button>
+                <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <button onClick={() => table.toggleAllColumnsVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>All</button>
+                  <button onClick={() => table.toggleAllColumnsVisible(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>None</button>
+                  <button onClick={() => {
+                    table.toggleAllColumnsVisible(true);
+                    const defaultOrder = columns.map(c => c.accessorKey || c.id);
+                    setColumnOrder(defaultOrder);
+                    setColumnVisibility({});
+                    localStorage.removeItem('leadTableColumnOrder');
+                    localStorage.removeItem('leadTableColumnVisibility');
+                  }} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>Reset</button>
                 </div>
                 <div style={{ overflowY: 'auto', padding: '0.5rem' }}>
-                  {table.getAllLeafColumns().map(column => {
+                  {table.getAllLeafColumns().map((column, idx, arr) => {
+                    const headerText = typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id;
+                    const isSystemColumn = column.id === 'edit';
+                    
                     return (
-                      <label key={column.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', cursor: 'pointer', borderRadius: '4px', transition: 'background 0.2s', fontSize: '0.85rem' }} onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                        <input
-                          type="checkbox"
-                          checked={column.getIsVisible()}
-                          onChange={column.getToggleVisibilityHandler()}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        {typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}
-                      </label>
+                      <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderRadius: '4px', transition: 'background 0.2s', fontSize: '0.85rem' }} onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', flex: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={column.getIsVisible()}
+                            onChange={column.getToggleVisibilityHandler()}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          {headerText}
+                        </label>
+                        {!isSystemColumn && (
+                          <div style={{ display: 'flex', gap: '2px' }}>
+                            <button 
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveColumn(column.id, 'up'); }}
+                              disabled={idx <= 1}
+                              style={{ background: 'none', border: 'none', cursor: idx <= 1 ? 'not-allowed' : 'pointer', opacity: idx <= 1 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
+                              title="Move Up"
+                            >
+                              ▲
+                            </button>
+                            <button 
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveColumn(column.id, 'down'); }}
+                              disabled={idx === arr.length - 1}
+                              style={{ background: 'none', border: 'none', cursor: idx === arr.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === arr.length - 1 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
+                              title="Move Down"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

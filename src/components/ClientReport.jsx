@@ -163,11 +163,56 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
     return ALL_COLUMNS.slice(0, 13).map(c => c.key);
   });
 
+  const [reportColumns, setReportColumns] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedOrder = localStorage.getItem('clientReportColumnsOrder');
+        if (savedOrder) {
+          const orderKeys = JSON.parse(savedOrder);
+          return [...ALL_COLUMNS].sort((a, b) => {
+            const idxA = orderKeys.indexOf(a.key);
+            const idxB = orderKeys.indexOf(b.key);
+            if (idxA === -1 && idxB === -1) return 0;
+            if (idxA === -1) return 1;
+            if (idxB === -1) return -1;
+            return idxA - idxB;
+          });
+        }
+      } catch (e) {
+        console.error('Error reading clientReportColumnsOrder', e);
+      }
+    }
+    return ALL_COLUMNS;
+  });
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('clientReportVisibleColumns', JSON.stringify(visibleColumns));
     }
   }, [visibleColumns]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('clientReportColumnsOrder', JSON.stringify(reportColumns.map(c => c.key)));
+    }
+  }, [reportColumns]);
+
+  const moveReportColumn = (key, direction) => {
+    setReportColumns(prev => {
+      const newOrder = [...prev];
+      const index = newOrder.findIndex(c => c.key === key);
+      if (index === -1) return prev;
+      
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= newOrder.length) return prev;
+      
+      const temp = newOrder[index];
+      newOrder[index] = newOrder[targetIndex];
+      newOrder[targetIndex] = temp;
+      
+      return newOrder;
+    });
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -277,14 +322,14 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
     );
   };
 
-  const selectAll = () => setVisibleColumns(ALL_COLUMNS.map(c => c.key));
+  const selectAll = () => setVisibleColumns(reportColumns.map(c => c.key));
   const deselectAll = () => setVisibleColumns([]);
 
   const handleExportCSV = () => {
     if (leads.length === 0) return;
 
     // Filter headers based on visibility
-    const activeHeaders = ALL_COLUMNS.filter(c => visibleColumns.includes(c.key));
+    const activeHeaders = reportColumns.filter(c => visibleColumns.includes(c.key));
     const headerRow = activeHeaders.map(h => `"${h.label}"`).join(',');
 
     const rows = leads.map(lead => {
@@ -405,20 +450,46 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
 
           {showColumnSelector && (
             <div style={{ position: 'absolute', top: '100%', right: '120px', marginTop: '0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 100, width: '300px', maxHeight: '400px', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={selectAll} style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.85rem' }}>Select All</button>
-                <button onClick={deselectAll} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem' }}>Deselect All</button>
+              <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <button onClick={selectAll} style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>All</button>
+                <button onClick={deselectAll} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>None</button>
+                <button onClick={() => {
+                  setVisibleColumns(ALL_COLUMNS.slice(0, 13).map(c => c.key));
+                  setReportColumns(ALL_COLUMNS);
+                  localStorage.removeItem('clientReportVisibleColumns');
+                  localStorage.removeItem('clientReportColumnsOrder');
+                }} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>Reset</button>
               </div>
               <div style={{ overflowY: 'auto', padding: '0.5rem' }}>
-                {ALL_COLUMNS.map(col => (
-                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={visibleColumns.includes(col.key)}
-                      onChange={() => toggleColumn(col.key)}
-                    />
-                    {col.label}
-                  </label>
+                {reportColumns.map((col, idx) => (
+                  <div key={col.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderRadius: '4px', transition: 'background 0.2s', fontSize: '0.85rem' }} onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', flex: 1 }}>
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.includes(col.key)}
+                        onChange={() => toggleColumn(col.key)}
+                      />
+                      {col.label}
+                    </label>
+                    <div style={{ display: 'flex', gap: '2px' }}>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveReportColumn(col.key, 'up'); }}
+                        disabled={idx === 0}
+                        style={{ background: 'none', border: 'none', cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
+                        title="Move Up"
+                      >
+                        ▲
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveReportColumn(col.key, 'down'); }}
+                        disabled={idx === reportColumns.length - 1}
+                        style={{ background: 'none', border: 'none', cursor: idx === reportColumns.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === reportColumns.length - 1 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
+                        title="Move Down"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -480,7 +551,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
               <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '60px' }}>
                 Actions
               </th>
-              {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(col => (
+              {reportColumns.filter(c => visibleColumns.includes(c.key)).map(col => (
                 <th key={col.key} className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                     <span>{col.label}</span>
@@ -560,7 +631,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                     </button>
                   </div>
                 </td>
-                {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(col => {
+                {reportColumns.filter(c => visibleColumns.includes(c.key)).map(col => {
                   let val = lead[col.key];
                   if (col.key === 'created_at' && val) val = new Date(val).toLocaleString();
                   return (
