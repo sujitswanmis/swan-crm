@@ -20,6 +20,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
   const [agentData, setAgentData] = useState(null);
   
+  const updateActiveSession = useCallback((newSession) => {
+    setActiveSession(prev => {
+      if (!prev && !newSession) return null;
+      if (!prev && newSession) return newSession;
+      if (prev && !newSession) return null;
+      if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
+        return prev;
+      }
+      return newSession;
+    });
+  }, []);
+  
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
@@ -138,7 +150,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           const isRecent = ageInMs < 1000 * 60 * 60;
           return isStatusActive && isRecent;
         });
-        setActiveSession(active || null);
+        updateActiveSession(active || null);
       }
     };
 
@@ -155,7 +167,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }, (payload) => {
         const updated = payload.new;
         if (payload.eventType === 'DELETE' || !updated) {
-          setActiveSession(null);
+          updateActiveSession(null);
           return;
         }
 
@@ -164,9 +176,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         const isRecent = ageInMs < 1000 * 60 * 60;
 
         if (isStatusActive && isRecent) {
-          setActiveSession(updated);
+          updateActiveSession(updated);
         } else {
-          setActiveSession(null);
+          updateActiveSession(null);
         }
       })
       .subscribe();
@@ -178,7 +190,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [agentData, supabase]);
+  }, [agentData, supabase, updateActiveSession]);
 
   const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
     if (!clientInstance) return;
@@ -298,22 +310,32 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, []);
 
+  // Declarative Call Duration Timer based on activeSession status
+  useEffect(() => {
+    let timerInterval = null;
+    if (activeSession && activeSession.status === 'connected') {
+      if (activeSession.customer_answer_time) {
+        const elapsed = Math.floor((new Date() - new Date(activeSession.customer_answer_time)) / 1000);
+        setCallDuration(Math.max(0, elapsed));
+      }
+      timerInterval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [activeSession?.status, activeSession === null]);
+
   const startDurationTimer = () => {
-    stopDurationTimer();
-    setCallDuration(0);
-    durationTimerRef.current = setInterval(() => {
-      // Only increment duration if the customer is connected
-      setActiveSession(currentSession => {
-        if (currentSession && currentSession.status === 'connected') {
-          setCallDuration(prev => prev + 1);
-        }
-        return currentSession;
-      });
-    }, 1000);
+    // Handled declaratively
   };
 
   const stopDurationTimer = () => {
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    // Handled declaratively
   };
 
   const formatDuration = (seconds) => {
@@ -414,11 +436,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
         bottom: '20px',
         right: '20px',
         width: isMinimized ? '280px' : '360px',
-        background: '#1e293b',
+        background: 'var(--bg-surface)',
         borderRadius: '12px',
-        color: 'white',
-        border: '1px solid #334155',
-        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        color: 'var(--text-primary)',
+        border: '1px solid var(--border-light)',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
         zIndex: 9999,
         transition: 'width 0.3s ease',
         display: 'flex',
@@ -429,23 +451,23 @@ export default function GlobalSoftphoneWidget({ userId }) {
       <div 
         style={{ 
           padding: '0.75rem 1rem', 
-          background: '#0f172a', 
+          background: 'var(--bg-primary)', 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
-          borderBottom: isMinimized ? 'none' : '1px solid #334155'
+          borderBottom: isMinimized ? 'none' : '1px solid var(--border-light)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div className="drag-handle" style={{ cursor: 'move', display: 'flex', alignItems: 'center', color: '#94a3b8' }}>
+          <div className="drag-handle" style={{ cursor: 'move', display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
             <GripHorizontal size={16} />
           </div>
-          <PhoneCall size={18} color={connectionState === 'online' ? '#10b981' : '#64748b'} />
+          <PhoneCall size={18} color={connectionState === 'online' ? '#10b981' : 'var(--text-secondary)'} />
           <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>CRM Softphone</span>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : '#64748b' }} />
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : 'var(--text-secondary)' }} />
         </div>
         <div style={{ cursor: 'pointer' }} onClick={() => setIsMinimized(!isMinimized)}>
-          {isMinimized ? <Maximize2 size={16} color="#94a3b8" /> : <Minimize2 size={16} color="#94a3b8" />}
+          {isMinimized ? <Maximize2 size={16} color="var(--text-secondary)" /> : <Minimize2 size={16} color="var(--text-secondary)" />}
         </div>
       </div>
 
@@ -453,14 +475,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
       {!isMinimized && (
         <div style={{ padding: '1rem', maxHeight: '70vh', overflowY: 'auto' }}>
           {/* Connection Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.5rem', background: '#0f172a', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.5rem', background: 'var(--bg-primary)', borderRadius: '8px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
                 {connectionState === 'online' ? 'Online' : 
                  connectionState === 'connecting' ? 'Connecting...' : 
                  connectionState === 'error' ? 'Connection Error' : 'Offline'}
               </span>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 SIP: {agentData.plivo_sip_uri || 'N/A'}
               </span>
             </div>
@@ -469,14 +491,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 <button 
                   onClick={() => connectSoftphone(plivoClient)}
                   disabled={connectionState === 'connecting'}
-                  style={{ padding: '0.4rem 0.75rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                  style={{ padding: '0.4rem 0.75rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                 >
                   {connectionState === 'connecting' ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} Connect
                 </button>
               ) : (
                 <button 
                   onClick={disconnectSoftphone}
-                  style={{ padding: '0.4rem 0.75rem', background: '#475569', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
+                  style={{ padding: '0.4rem 0.75rem', background: 'var(--text-secondary)', color: 'var(--bg-surface)', border: 'none', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
                 >
                   Disconnect
                 </button>
@@ -506,9 +528,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
             </div>
           )}
 
-          {/* Active Plivo Call Controls */}
-          {activeCall && (
-            <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem' }}>
+          {/* Active Call Status & Controls */}
+          {(activeCall || (activeSession && activeSession.status !== 'ended')) && (
+            <div style={{ background: 'var(--bg-primary)', padding: '1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem', border: '1px solid var(--border-light)' }}>
               <div style={{ color: activeSession?.status === 'connected' ? '#10b981' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
                 {activeSession?.status === 'connected' ? 'Call Connected' : 'Ringing Customer...'}
               </div>
@@ -516,12 +538,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 {activeSession?.status === 'connected' ? formatDuration(callDuration) : '00:00'}
               </div>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                <button 
-                  onClick={toggleMute}
-                  style={{ width: '40px', height: '40px', borderRadius: '50%', background: isMuted ? '#f59e0b' : '#334155', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                </button>
+                {activeCall && (
+                  <button 
+                    onClick={toggleMute}
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', background: isMuted ? '#f59e0b' : 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+                  </button>
+                )}
                 <button 
                   onClick={hangupCall}
                   style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ef4444', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -541,19 +565,19 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
           {/* Outbound Dialer (Only visible when no active calls) */}
           {!hasActiveInteraction && (
-            <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem' }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#f8fafc' }}>Make Outbound Call</div>
+            <div style={{ background: 'var(--bg-primary)', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-primary)' }}>Make Outbound Call</div>
               
               <form onSubmit={handleStartCall}>
                 <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', overflow: 'hidden' }}>
-                    <span style={{ background: '#334155', padding: '0.6rem', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                  <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
+                    <span style={{ background: 'var(--border-light)', padding: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
                     <input 
                       type="text" 
                       value={customerNumber}
                       onChange={(e) => setCustomerNumber(e.target.value.replace(/[^0-9]/g, ''))}
                       placeholder="Mobile Number"
-                      style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'white' }}
+                      style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'var(--text-primary)' }}
                       maxLength={10}
                     />
                   </div>
@@ -563,7 +587,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                   <select 
                     value={callingMode}
                     onChange={(e) => setCallingMode(e.target.value)}
-                    style={{ width: '100%', padding: '0.6rem', border: '1px solid #334155', borderRadius: '6px', outline: 'none', background: '#1e293b', color: 'white', fontSize: '0.8rem' }}
+                    style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-light)', borderRadius: '6px', outline: 'none', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
                   >
                     <option value="browser_webrtc">Browser Softphone (WebRTC)</option>
                     <option value="mobile">Dial via my Mobile Phone</option>
@@ -573,15 +597,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
                 {callingMode === 'mobile' && (
                   <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>Agent Mobile (Call Landing Number)</label>
-                    <div style={{ display: 'flex', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', overflow: 'hidden' }}>
-                      <span style={{ background: '#334155', padding: '0.6rem', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Agent Mobile (Call Landing Number)</label>
+                    <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
+                      <span style={{ background: 'var(--border-light)', padding: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
                       <input 
                         type="text" 
                         value={agentMobile}
                         onChange={(e) => setAgentMobile(e.target.value.replace(/[^0-9]/g, ''))}
                         placeholder="Agent Mobile Number"
-                        style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'white' }}
+                        style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'var(--text-primary)' }}
                         maxLength={10}
                       />
                     </div>
@@ -601,7 +625,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                     padding: '0.6rem', 
                     fontSize: '0.85rem', 
                     fontWeight: 600,
-                    background: '#3b82f6',
+                    background: 'var(--accent-color)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '6px',
