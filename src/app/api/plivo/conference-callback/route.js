@@ -110,7 +110,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       isCustomer = true;
     } else if (!session.agent_answer_time || session.status === 'initiated') {
       isAgent = true;
-    } else {
+    } else if (!session.customer_call_uuid || session.status === 'agent_answered') {
       isCustomer = true;
     }
 
