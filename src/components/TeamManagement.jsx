@@ -696,14 +696,17 @@ export default function TeamManagement() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Designation</label>
-                <select 
+                <input 
+                  type="text"
+                  list="designation_options"
                   value={addForm.emp_designation} 
                   onChange={e => setAddForm({...addForm, emp_designation: e.target.value})}
+                  placeholder="Enter designation (e.g. Sales Executive)"
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-                >
-                  <option value="">Select Designation...</option>
-                  {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+                />
+                <datalist id="designation_options">
+                  {DESIGNATIONS.map(d => <option key={d} value={d} />)}
+                </datalist>
               </div>
             </div>
 
@@ -765,14 +768,14 @@ export default function TeamManagement() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Designation</label>
-                <select 
+                <input 
+                  type="text"
+                  list="designation_options"
                   value={editForm.emp_designation} 
                   onChange={e => setEditForm({...editForm, emp_designation: e.target.value})}
+                  placeholder="Enter designation (e.g. Sales Executive)"
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
-                >
-                  <option value="">Select Designation...</option>
-                  {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+                />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Email Address</label>
