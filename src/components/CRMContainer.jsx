@@ -16,7 +16,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -25,17 +25,24 @@ import SettingsContainer from './Settings/SettingsContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
 import RecruiterDashboard from './Recruiter/RecruiterDashboard';
+import UniversalWorkplaceModule from './Workplace/UniversalWorkplaceModule';
+import PartyMasterModule from './Party/PartyMasterModule';
+import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
+import LocationManagementModule from './Location/LocationManagementModule';
 
 const MODULES_CONFIG = [
   { id: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
   { id: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
   { id: 'leads', label: 'Lead Data', category: 'Sales', icon: <Users size={20} /> },
+  { id: 'party', label: 'Party Master', category: 'Sales', icon: <Building2 size={20} /> },
+  { id: 'location_territory', label: 'Location & Territory Master', category: 'Sales', icon: <MapPin size={20} /> },
   { id: 'orders', label: 'Order', category: 'Sales', icon: <CheckCircle size={20} /> },
   { id: 'mrp', label: 'MRP', category: 'Purchase', icon: <Archive size={20} /> },
   { id: 'mrp_against', label: 'MRP Against', category: 'Purchase', icon: <FileText size={20} /> },
   { id: 'recruiter', label: 'Recruiter', category: 'Human Resource', icon: <Users size={20} /> },
   { id: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
   { id: 'ai', label: 'New Swan AI', category: 'System', icon: <Bot size={20} /> },
+  { id: 'location_master', label: 'Central Location Master', category: 'System', icon: <Globe size={20} /> },
 ];
 
 const THEMES = [
@@ -1113,6 +1120,20 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                       </button>
                     )}
 
+                    {/* Universal Workplace Management */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('workplace')}
+                        className="nav-item" 
+                        data-active={activeTab === 'workplace'}
+                        title={isSidebarCollapsed ? "Workplace WMS" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Building2 size={20} style={{ flexShrink: 0 }} />
+                        <span>Workplace (WMS)</span>
+                      </button>
+                    )}
+
                     {/* Public User Management */}
                     {(userRole === 'admin' || userRole === 'Admin') && (
                       <button 
@@ -1336,6 +1357,10 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   {activeTab === 'calladmin' && 'Call Admin'}
                   {activeTab === 'aicallcenter' && 'AI Call Center'}
                   {activeTab === 'team' && 'Team Management'}
+                  {activeTab === 'workplace' && 'Universal Workplace (WMS)'}
+                  {activeTab === 'party' && 'Fully Managed Party Master'}
+                  {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
+                  {activeTab === 'location_master' && 'Central Location Master'}
                   {activeTab === 'whatsapp_official' && 'WhatsApp Official'}
                   {activeTab === 'whatsapp_unofficial' && 'WhatsApp UnOfficial'}
                   {activeTab === 'sms_config' && 'SMS Config'}
@@ -1637,6 +1662,26 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
                 <ErrorBoundary>
                   <TeamManagement />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'workplace' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                <ErrorBoundary>
+                  <UniversalWorkplaceModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'party' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                <ErrorBoundary>
+                  <PartyMasterModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'location_territory' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                <ErrorBoundary>
+                  <LocationTerritoryModule />
+                </ErrorBoundary>
+              )}
+              {activeTab === 'location_master' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                <ErrorBoundary>
+                  <LocationManagementModule />
                 </ErrorBoundary>
               )}
               {activeTab === 'public_users' && (userRole === 'admin' || userRole === 'Admin') && (

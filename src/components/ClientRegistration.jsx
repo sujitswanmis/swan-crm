@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckC
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
+import LocationPicker from './Location/LocationPicker';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -897,15 +898,34 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               {expandedSections.location ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </button>
             {expandedSections.location && (
-              <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
-                {renderInput('State Name', 'state_name')}
-                {renderInput('District Name', 'district_name')}
-                {renderInput('PIN Code', 'pin_code')}
-                {renderInput('City Name', 'city_name')}
-                {renderInput('Tehsil Name', 'tehsil_name')}
-                {renderInput('Block Name', 'block_name')}
-                <div style={{ gridColumn: '1 / -1' }}>
-                  {renderInput('Full Address', 'address')}
+              <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--bg-surface)' }}>
+                <LocationPicker
+                  initialValue={{
+                    country_id: formData.country_id,
+                    state_id: formData.state_id,
+                    district_id: formData.district_id,
+                    subdistrict_id: formData.subdistrict_id,
+                    block_id: formData.block_id,
+                    settlement_id: formData.settlement_id,
+                    post_office_id: formData.post_office_id,
+                    pin_code: formData.pin_code
+                  }}
+                  onChange={(locData) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      country_id: locData.country_id,
+                      state_id: locData.state_id,
+                      district_id: locData.district_id,
+                      subdistrict_id: locData.subdistrict_id,
+                      block_id: locData.block_id,
+                      settlement_id: locData.settlement_id,
+                      post_office_id: locData.post_office_id,
+                      pin_code: locData.pin_code || prev.pin_code
+                    }));
+                  }}
+                />
+                <div>
+                  {renderInput('Full Address / Landmark', 'address')}
                 </div>
               </div>
             )}
