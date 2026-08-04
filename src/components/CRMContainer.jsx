@@ -841,7 +841,10 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
             <Database size={24} style={{ flexShrink: 0 }} />
-            <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>CRM Enterprise</span>
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>CRM Enterprise</span>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', opacity: 0.7, letterSpacing: '0.03em' }}>v{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.154'}</span>
+            </div>
           </div>
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
