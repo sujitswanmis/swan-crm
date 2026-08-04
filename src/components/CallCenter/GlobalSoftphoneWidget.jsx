@@ -168,32 +168,50 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   // Realtime Active Session listener and polling backup
   useEffect(() => {
-    if (!agentData) return;
-
     const fetchSession = async () => {
-      const { data } = await getRecentCalls(agentData.id);
-      if (data) {
-        const active = data.find(c => {
-          const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
-          const ageInMs = new Date() - new Date(c.created_at);
-          if (['initiated', 'ringing'].includes(c.status) && ageInMs > 120000) return false;
-          const isRecent = ageInMs < 1000 * 60 * 60;
-          return isStatusActive && isRecent;
-        });
-        updateActiveSession(active || null);
+      let active = null;
+      if (agentData?.id) {
+        const { data } = await getRecentCalls(agentData.id);
+        if (data) {
+          active = data.find(c => {
+            const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
+            const ageInMs = new Date() - new Date(c.created_at);
+            if (['initiated', 'ringing'].includes(c.status) && ageInMs > 120000) return false;
+            return isStatusActive && ageInMs < 1000 * 60 * 60;
+          });
+        }
       }
+
+      // Fallback: if no active session found by agent_id, query latest active call session in system
+      if (!active) {
+        const { data: globalActive } = await supabase
+          .from('call_sessions')
+          .select('*')
+          .in('status', ['initiated', 'ringing', 'agent_answered', 'connected'])
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (globalActive && globalActive.length > 0) {
+          const c = globalActive[0];
+          const ageInMs = new Date() - new Date(c.created_at);
+          if (ageInMs < 1000 * 60 * 60) {
+            active = c;
+          }
+        }
+      }
+
+      updateActiveSession(active || null);
     };
 
     fetchSession();
 
     // Subscribe to realtime database changes for call_sessions
     const channel = supabase
-      .channel(`agent_call_sessions_${agentData.id}`)
+      .channel('global_call_sessions_listener')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'call_sessions',
-        filter: `agent_id=eq.${agentData.id}`
+        table: 'call_sessions'
       }, (payload) => {
         const updated = payload.new;
         if (payload.eventType === 'DELETE' || !updated) {
@@ -207,14 +225,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
         if (isStatusActive && isRecent) {
           updateActiveSession(updated);
-        } else {
-          updateActiveSession(null);
+        } else if (updated.status === 'ended' || updated.status === 'failed') {
+          setActiveSession(prev => (prev?.id === updated.id ? null : prev));
         }
       })
       .subscribe();
 
-    // 5-second polling fallback to ensure state remains in sync even if websocket drops
-    const interval = setInterval(fetchSession, 5000);
+    const interval = setInterval(fetchSession, 3000);
 
     return () => {
       supabase.removeChannel(channel);
