@@ -146,47 +146,30 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
   if (!session) return;
 
   if (eventType === 'enter') {
-    // Determine if the entering call is agent or customer.
-    let isAgent = false;
-    let isCustomer = false;
-
-    if (session.agent_call_uuid && callUuid === session.agent_call_uuid) {
-      isAgent = true;
-    } else if (session.customer_call_uuid && callUuid === session.customer_call_uuid) {
-      isCustomer = true;
-    } else if (!session.agent_answer_time || session.status === 'initiated') {
-      isAgent = true;
-    } else if (!session.customer_call_uuid || session.status === 'agent_answered' || session.status === 'customer_ringing') {
-      isCustomer = true;
-    }
-
-    if (isAgent) {
-      // Agent joined
+    const isFirstMember = event.ConferenceFirstMember === 'true';
+    if (isFirstMember) {
+      // Agent joined as first member
       await adminClient.from('call_sessions').update({
         agent_call_uuid: callUuid,
         agent_member_id: memberId,
         conference_name: conferenceName,
         agent_answer_time: new Date().toISOString(),
         status: 'agent_answered'
-      }).eq('id', session.id);
-
-    } else if (isCustomer) {
-      // Customer joined — stop any lingering audio and mark connected
+      }).eq('room_name', roomName);
+    } else {
+      // Customer joined as second member — mark connected!
       await adminClient.from('call_sessions').update({
         customer_call_uuid: callUuid,
         customer_member_id: memberId,
         customer_answer_time: new Date().toISOString(),
         status: 'connected'
-      }).eq('id', session.id);
+      }).eq('room_name', roomName);
 
-      // Stop any residual audio that may still be playing for the agent member
-      if (session.agent_member_id) {
+      if (session && session.agent_member_id) {
         try {
           const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
           await client.conferences.stopPlayingAudioToMember(roomName, session.agent_member_id);
-        } catch (_e) {
-          // Ignore — waitSound already stops when conference starts; this is belt-and-suspenders
-        }
+        } catch (_e) {}
       }
     }
   } else if (eventType === 'exit') {

@@ -337,14 +337,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, [connectSoftphone]);
 
-  const isCallConnected = activeSession?.status === 'connected';
+  const isCallConnected = activeSession?.status === 'connected' || (activeCall && activeCall.status === 'connected');
   const isCallActive = activeCall || (activeSession && activeSession.status !== 'ended');
 
-  // Declarative Call Duration Timer: RUNS ONLY WHEN CUSTOMER CALL IS CONNECTED!
+  // Declarative Call Duration Timer: RUNS WHEN CALL IS CONNECTED!
   useEffect(() => {
     let timerInterval = null;
-    if (activeSession && activeSession.status === 'connected') {
-      if (activeSession.customer_answer_time) {
+    if (isCallConnected) {
+      if (activeSession?.customer_answer_time) {
         const elapsed = Math.floor((new Date() - new Date(activeSession.customer_answer_time)) / 1000);
         setCallDuration(Math.max(0, elapsed));
       }
@@ -358,7 +358,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [activeSession?.status, activeSession?.customer_answer_time]);
+  }, [isCallConnected, activeSession?.customer_answer_time]);
 
   const formatDuration = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -543,7 +543,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                       : 'Connecting Call...'}
                 </div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  {activeSession?.customer_number || activeCall?.remote || customerNumber || 'Customer Call'}
+                  {activeSession?.customer_number || (activeCall?.remote && !activeCall.remote.includes('@phone.plivo.com') ? activeCall.remote : (customerNumber ? (customerNumber.startsWith('+') ? customerNumber : `+91${customerNumber}`) : 'Customer Call'))}
                 </div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
                   {formatDuration(callDuration)}
