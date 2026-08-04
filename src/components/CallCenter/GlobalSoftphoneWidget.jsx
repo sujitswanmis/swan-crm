@@ -17,14 +17,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [activeSession, setActiveSession] = useState(null);
-  const [callNotice, setCallNotice] = useState(null); // Notice banner for Busy, Switched Off, Rejected, etc.
-  const [isCalling, setIsCalling] = useState(false);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
-  const [agentData, setAgentData] = useState({
-    id: 'default_agent',
-    display_name: 'Agent',
-    plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
-  });
+  const [agentData, setAgentData] = useState(null);
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
@@ -34,43 +28,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
   const nodeRef = useRef(null);
-
-  const getCallStatusText = useCallback((session) => {
-    if (!session) return { text: 'Ringing Customer...', color: '#3b82f6' };
-    const s = session.status;
-    const cause = (session.hangup_cause || '').toUpperCase();
-
-    if (s === 'connected') return { text: 'Call Connected', color: '#10b981' };
-    if (s === 'initiated') return { text: 'Connecting Employee...', color: '#f59e0b' };
-    if (s === 'agent_answered' || s === 'customer_ringing' || s === 'ringing') {
-      return { text: 'Ringing Customer...', color: '#3b82f6' };
-    }
-
-    if (s === 'busy' || cause.includes('BUSY')) {
-      return { text: 'Customer Busy (User Busy)', color: '#ef4444' };
-    }
-    if (s === 'rejected' || cause.includes('REJECT')) {
-      return { text: 'Call Rejected by Customer', color: '#ef4444' };
-    }
-    if (s === 'no_answer' || cause.includes('NO_ANSWER') || cause.includes('TIMEOUT')) {
-      return { text: 'No Answer / Ring Timeout', color: '#f59e0b' };
-    }
-    if (s === 'switched_off' || cause.includes('ABSENT') || cause.includes('UNALLOCATED') || cause.includes('CONGESTION')) {
-      return { text: 'Switched Off / Out of Network / Unreachable', color: '#ef4444' };
-    }
-    if (s === 'ended') {
-      if (session.talk_duration_sec > 0) return { text: 'Call Ended', color: '#6b7280' };
-      return { text: 'Call Ended / Unanswered', color: '#ef4444' };
-    }
-    return { text: 'Call Failed / Not Answered', color: '#ef4444' };
-  }, []);
-
-  const showNotice = useCallback((text, color = '#ef4444') => {
-    setCallNotice({ text, color });
-    setTimeout(() => {
-      setCallNotice(null);
-    }, 4000);
-  }, []);
 
   const hangupCall = useCallback(() => {
     if (activeSession?.room_name) {
@@ -94,34 +51,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const updateActiveSession = useCallback((newSession) => {
     setActiveSession(prev => {
       if (!prev && !newSession) return null;
-      
-      const isTerminalState = (s) => ['ended', 'failed', 'busy', 'rejected', 'no_answer', 'switched_off'].includes(s?.status);
-
-      if (!prev && newSession) {
-        if (isTerminalState(newSession)) {
-          const info = getCallStatusText(newSession);
-          showNotice(info.text, info.color);
-          return null;
-        }
-        return newSession;
-      }
-
-      if (prev && (!newSession || isTerminalState(newSession))) {
-        const info = getCallStatusText(newSession || prev);
-        showNotice(info.text, info.color);
-        if (plivoClientRef.current) {
-          try { plivoClientRef.current.hangup(); } catch (_e) {}
-        }
-        setActiveCall(null);
+      if (!prev && newSession) return newSession;
+      if (prev && !newSession) {
+        // Session ended! Clean up browser WebRTC call!
+        hangupCall();
         return null;
       }
-
       if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
         return prev;
       }
       return newSession;
     });
-  }, [getCallStatusText, showNotice]);
+  }, [hangupCall]);
 
   // Load saved position on mount
   useEffect(() => {
@@ -201,30 +142,25 @@ export default function GlobalSoftphoneWidget({ userId }) {
           process.env.NEXT_PUBLIC_SUPABASE_URL,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
         );
-        
-        let foundAgent = null;
+        let found = null;
         if (userId) {
           const { data } = await adminClient
             .from('call_agents')
             .select('*')
             .eq('user_id', userId)
-            .limit(1);
-          if (data && data.length > 0) foundAgent = data[0];
+            .single();
+          if (data) found = data;
         }
-
-        if (!foundAgent) {
+        if (!found) {
           const { data: anyAgents } = await adminClient
             .from('call_agents')
             .select('*')
             .limit(1);
-          if (anyAgents && anyAgents.length > 0) foundAgent = anyAgents[0];
+          if (anyAgents && anyAgents.length > 0) found = anyAgents[0];
         }
-
-        if (foundAgent) {
-          setAgentData(foundAgent);
-        }
-      } catch (err) {
-        console.error("Error fetching agent profile:", err);
+        if (found) setAgentData(found);
+      } catch (e) {
+        console.error("Error fetching agent profile:", e);
       }
     };
     fetchAgent();
@@ -232,13 +168,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   // Realtime Active Session listener and polling backup
   useEffect(() => {
-    if (!agentData?.id) return;
+    if (!agentData) return;
 
     const fetchSession = async () => {
       const { data } = await getRecentCalls(agentData.id);
       if (data) {
         const active = data.find(c => {
-          const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected'].includes(c.status);
+          const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status);
           const ageInMs = new Date() - new Date(c.created_at);
           if (['initiated', 'ringing'].includes(c.status) && ageInMs > 120000) return false;
           const isRecent = ageInMs < 1000 * 60 * 60;
@@ -265,7 +201,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           return;
         }
 
-        const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected'].includes(updated.status);
+        const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected'].includes(updated.status);
         const ageInMs = new Date() - new Date(updated.created_at);
         const isRecent = ageInMs < 1000 * 60 * 60;
 
@@ -454,50 +390,40 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const handleStartCall = async (e) => {
     e.preventDefault();
     if (!customerNumber) return;
-    setIsCalling(true);
 
     try {
       if (callingMode === 'browser_webrtc') {
         localStorage.setItem('pendingOutboundCall', 'true');
-        if (connectionState !== 'online' && plivoClientRef.current) {
-          connectSoftphone();
-        }
       }
+
+      const formattedCustomer = customerNumber.startsWith('+') ? customerNumber : `+91${customerNumber}`;
+      const formattedAgentMobile = agentMobile ? (agentMobile.startsWith('+') ? agentMobile : `+91${agentMobile}`) : '';
 
       const res = await fetch('/api/plivo/start-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerNumber,
+          customerNumber: formattedCustomer,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
-          agentMobile
+          agentMobile: formattedAgentMobile
         })
       });
 
       const data = await res.json();
       if (!res.ok) {
         alert(data.error || 'Failed to initiate call');
-        setIsCalling(false);
       } else {
-        // Optimistically transition UI immediately to Calling state
-        setActiveSession({
-          id: `temp_${Date.now()}`,
-          room_name: data.roomName,
-          status: 'initiated',
-          customer_number: customerNumber,
-          created_at: new Date().toISOString()
-        });
-        setIsCalling(false);
+        // Softphone state will auto-update via Realtime listener / polling
       }
     } catch (err) {
       alert("Failed to start call");
-      setIsCalling(false);
     }
   };
 
-  const isSessionActive = activeSession && !['ended', 'failed', 'busy', 'rejected', 'no_answer', 'switched_off'].includes(activeSession.status);
-  const hasActiveInteraction = activeCall || incomingCall || isSessionActive;
+  if (!agentData) return null; // Don't show widget if not an agent
+
+  const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
   return (
     <Draggable 
@@ -586,13 +512,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
             )}
 
-            {/* Status Feedback Notice Banner (Busy, Switched Off, Rejected, No Answer) */}
-            {callNotice && (
-              <div style={{ background: callNotice.color === '#10b981' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${callNotice.color}`, padding: '0.75rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem', color: callNotice.color, fontWeight: 700, fontSize: '0.85rem' }}>
-                {callNotice.text}
-              </div>
-            )}
-
             {/* Incoming Call */}
             {incomingCall && (
               <div className="pulse" style={{ background: '#3b82f6', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
@@ -610,11 +529,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
             )}
 
             {/* Active Call Status & Controls */}
-            {(activeCall || isSessionActive) && (
+            {(activeCall || (activeSession && activeSession.status !== 'ended')) && (
               <div style={{ background: 'var(--bg-primary)', padding: '1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem', border: '1px solid var(--border-light)' }}>
-                <div style={{ color: getCallStatusText(activeSession).color, fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  {activeSession?.status !== 'connected' && <Loader2 size={14} className="animate-spin" />}
-                  {getCallStatusText(activeSession).text}
+                <div style={{ color: activeSession?.status === 'connected' ? '#10b981' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                  {activeSession?.status === 'connected' ? 'Call Connected' : 'Ringing Customer...'}
                 </div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
                   {activeSession?.status === 'connected' ? formatDuration(callDuration) : '00:00'}
@@ -630,7 +548,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
                   )}
                   <button 
                     onClick={hangupCall}
-                    title="End Call"
                     style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ef4444', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     <PhoneOff size={18} />
@@ -640,9 +557,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
             )}
 
             {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
-            {isSessionActive && (
+            {activeSession && (
               <div style={{ marginTop: '0.5rem' }}>
-                <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={hangupCall} />
+                <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={() => setActiveSession(null)} />
               </div>
             )}
 
@@ -653,70 +570,87 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 
                 <form onSubmit={handleStartCall}>
                   <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Calling Mode</label>
+                    <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
+                      <span style={{ background: 'var(--border-light)', padding: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                      <input 
+                        type="text" 
+                        value={customerNumber}
+                        onChange={(e) => setCustomerNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="Mobile Number"
+                        style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'var(--text-primary)' }}
+                        maxLength={10}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
                     <select 
-                      value={callingMode} 
+                      value={callingMode}
                       onChange={(e) => setCallingMode(e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                      style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-light)', borderRadius: '6px', outline: 'none', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
                     >
                       <option value="browser_webrtc">Browser Softphone (WebRTC)</option>
-                      <option value="external_webrtc">External Softphone (Zoiper/MicroSIP)</option>
-                      <option value="mobile">Dial via Mobile (SIM Call)</option>
+                      <option value="mobile">Dial via my Mobile Phone</option>
+                      <option value="external_softphone">External App (MicroSIP)</option>
                     </select>
                   </div>
 
                   {callingMode === 'mobile' && (
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Your Mobile Number</label>
-                      <input 
-                        type="text" 
-                        placeholder="+919876543210" 
-                        value={agentMobile}
-                        onChange={(e) => setAgentMobile(e.target.value)}
-                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                      />
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Agent Mobile (Call Landing Number)</label>
+                      <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
+                        <span style={{ background: 'var(--border-light)', padding: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 500 }}>+91</span>
+                        <input 
+                          type="text" 
+                          value={agentMobile}
+                          onChange={(e) => setAgentMobile(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="Agent Mobile Number"
+                          style={{ flex: 1, padding: '0.6rem', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: 'var(--text-primary)' }}
+                          maxLength={10}
+                        />
+                      </div>
                     </div>
                   )}
 
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Customer Mobile Number</label>
-                    <input 
-                      type="text" 
-                      placeholder="+919876543210" 
-                      value={customerNumber}
-                      onChange={(e) => setCustomerNumber(e.target.value)}
-                      required
-                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-
                   <button 
-                    type="submit" 
-                    disabled={isCalling}
+                    type="submit"
+                    disabled={
+                      !customerNumber || 
+                      customerNumber.length < 10 || 
+                      (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                      (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                    }
                     style={{ 
                       width: '100%', 
-                      padding: '0.75rem', 
-                      background: isCalling ? 'var(--border-light)' : '#3b82f6', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '6px', 
-                      cursor: isCalling ? 'wait' : 'pointer', 
-                      fontWeight: 600, 
+                      padding: '0.6rem', 
+                      fontSize: '0.85rem', 
+                      fontWeight: 600,
+                      background: 'var(--accent-color)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
                       display: 'flex', 
                       alignItems: 'center', 
                       justify: 'center', 
-                      gap: '0.5rem' 
+                      gap: '0.5rem',
+                      cursor: (
+                        !customerNumber || 
+                        customerNumber.length < 10 || 
+                        (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                        (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                      ) ? 'not-allowed' : 'pointer',
+                      opacity: (
+                        !customerNumber || 
+                        customerNumber.length < 10 || 
+                        (callingMode === 'browser_webrtc' && connectionState !== 'online') ||
+                        (callingMode === 'mobile' && (!agentMobile || agentMobile.length < 10))
+                      ) ? 0.5 : 1 
                     }}
                   >
-                    {isCalling ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" /> Calling...
-                      </>
-                    ) : (
-                      <>
-                        <PhoneCall size={18} /> Call Customer
-                      </>
-                    )}
+                    <PhoneCall size={16} />
+                    {callingMode === 'browser_webrtc' && connectionState !== 'online' 
+                      ? 'Connect Softphone First' 
+                      : 'Call Customer'}
                   </button>
                 </form>
               </div>
