@@ -35,40 +35,27 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Get Agent ID (with fallback for admin/unassigned users)
+    // Get Agent ID
     const { data: agentData } = await adminClient
       .from('call_agents')
       .select('id, plivo_sip_uri')
       .eq('user_id', user.id)
-      .limit(1);
+      .single();
 
-    let foundAgent = (agentData && agentData.length > 0) ? agentData[0] : null;
-
-    if (!foundAgent) {
-      const { data: fallbackList } = await adminClient
-        .from('call_agents')
-        .select('id, plivo_sip_uri')
-        .not('plivo_sip_uri', 'is', null)
-        .limit(1);
-      if (fallbackList && fallbackList.length > 0) {
-        foundAgent = fallbackList[0];
-      }
-    }
-
-    if (!foundAgent) {
-      return NextResponse.json({ error: 'No active Plivo agent endpoint found in database' }, { status: 404 });
+    if (!agentData) {
+      return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
     }
 
     const { data: sessionData, error: sessionError } = await adminClient
       .from('call_sessions')
       .insert({
         room_name: roomName,
-        agent_id: foundAgent.id,
+        agent_id: agentData.id,
         customer_number: customerNumber,
         calling_mode: callingMode,
         status: 'initiated',
         start_time: new Date().toISOString(),
-        agent_dial_to: callingMode === 'mobile' ? agentMobile : (agentEndpoint || foundAgent.plivo_sip_uri)
+        agent_dial_to: callingMode === 'mobile' ? agentMobile : (agentEndpoint || agentData.plivo_sip_uri)
       })
       .select()
       .single();
@@ -80,12 +67,16 @@ export async function POST(req) {
 
     const url = new URL(req.url);
     let appBaseUrl = url.origin;
+    // We only initiate the call to the AGENT first.
+    // The answer URL will put the agent in the conference.
+    // The conference callback will then dial the customer.
     
     let dialTo = '';
     if (callingMode === 'mobile') {
       dialTo = agentMobile;
     } else {
-      dialTo = agentEndpoint || foundAgent.plivo_sip_uri;
+      // Browser WebRTC or External Softphone uses SIP URI
+      dialTo = agentEndpoint || agentData.plivo_sip_uri;
     }
 
     if (!dialTo) {
@@ -107,11 +98,7 @@ export async function POST(req) {
       .update({ agent_call_uuid: response.requestUuid })
       .eq('id', sessionData.id);
 
-    return NextResponse.json({
-      success: true,
-      roomName,
-      callUuid: response.requestUuid
-    });
+    return NextResponse.json({ success: true, roomName, callUuid: response.requestUuid });
 
   } catch (error) {
     console.error('Start call error:', error);
