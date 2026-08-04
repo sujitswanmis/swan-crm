@@ -227,7 +227,14 @@ export default function LocationTerritoryModule() {
                         alignItems: 'center'
                       }}
                     >
-                      <span>{st.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span>{st.name}</span>
+                        {st.code && (
+                          <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: selectedState === st.id ? 'rgba(255,255,255,0.2)' : 'rgba(56,189,248,0.15)', color: selectedState === st.id ? '#ffffff' : '#38bdf8', border: '1px solid rgba(56,189,248,0.3)' }}>
+                            {st.code}
+                          </span>
+                        )}
+                      </div>
                       <ArrowRight size={14} style={{ opacity: selectedState === st.id ? 1 : 0.4 }} />
                     </div>
                   ))

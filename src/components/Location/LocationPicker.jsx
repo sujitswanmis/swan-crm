@@ -1,9 +1,9 @@
+'use me';
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { MapPin, Globe, Compass, Plus, AlertCircle, CheckCircle2, Search, X, Building2 } from 'lucide-react';
+import { MapPin, Globe, AlertTriangle, Plus, Search, CheckCircle2, ChevronRight, X } from 'lucide-react';
 import {
-  getCountriesCentral,
   getStatesCentral,
   getDistrictsCentral,
   getSubdistrictsCentral,
@@ -14,427 +14,326 @@ import {
 } from '@/app/actions/centralLocationMaster';
 
 export default function LocationPicker({
+  value = {},
+  onChange = () => {},
   countryRequired = true,
   stateRequired = true,
   districtRequired = true,
   subdistrictEnabled = true,
   blockEnabled = true,
   settlementEnabled = true,
+  postOfficeEnabled = true,
   pinEnabled = true,
   allowLocationRequest = true,
+  disabled = false,
   readOnly = false,
-  initialValue = {},
-  onChange = () => {}
+  validationMode = 'strict'
 }) {
-  // Cascading Selection State
-  const [countries, setCountries] = useState([]);
-  const [selectedCountryId, setSelectedCountryId] = useState(initialValue.country_id || '');
-
   const [states, setStates] = useState([]);
-  const [selectedStateId, setSelectedStateId] = useState(initialValue.state_id || '');
-
   const [districts, setDistricts] = useState([]);
-  const [selectedDistrictId, setSelectedDistrictId] = useState(initialValue.district_id || '');
-
   const [subdistricts, setSubdistricts] = useState([]);
-  const [selectedSubdistrictId, setSelectedSubdistrictId] = useState(initialValue.subdistrict_id || '');
-
   const [blocks, setBlocks] = useState([]);
-  const [selectedBlockId, setSelectedBlockId] = useState(initialValue.block_id || '');
-
   const [settlements, setSettlements] = useState([]);
-  const [selectedSettlementId, setSelectedSettlementId] = useState(initialValue.settlement_id || '');
-
   const [postOffices, setPostOffices] = useState([]);
-  const [selectedPostOfficeId, setSelectedPostOfficeId] = useState(initialValue.post_office_id || '');
-  const [pinCodeInput, setPinCodeInput] = useState(initialValue.pin_code || '');
 
-  // Validation Guard Alert
-  const [validationError, setValidationError] = useState('');
+  const [selectedState, setSelectedState] = useState(value.state_id || '');
+  const [selectedDistrict, setSelectedDistrict] = useState(value.district_id || '');
+  const [selectedSubdistrict, setSelectedSubdistrict] = useState(value.subdistrict_id || '');
+  const [selectedBlock, setSelectedBlock] = useState(value.block_id || '');
+  const [selectedSettlement, setSelectedSettlement] = useState(value.settlement_id || '');
+  const [selectedPostOffice, setSelectedPostOffice] = useState(value.post_office_id || '');
+  const [pinCodeInput, setPinCodeInput] = useState(value.pin_code || '');
+
+  // Guard warning for cross-state invalid combination
+  const [hierarchyMismatch, setHierarchyMismatch] = useState('');
 
   // Location Not Found Modal
-  const [showReqModal, setShowReqModal] = useState(false);
-  const [reqForm, setReqForm] = useState({
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestForm, setRequestForm] = useState({
+    requested_location_type: 'SETTLEMENT',
     proposed_name: '',
-    requested_location_type: 'DISTRICT',
-    proposed_pin_code: '',
-    reason: ''
+    reason: '',
+    proposed_pin_code: ''
   });
-  const [reqSuccessId, setReqSuccessId] = useState(null);
 
-  // 1. Initial Load: Countries & Auto-Select India if empty
   useEffect(() => {
-    loadCountries();
+    loadStates();
   }, []);
 
-  const loadCountries = async () => {
-    const data = await getCountriesCentral();
-    setCountries(data || []);
-    if (data && data.length > 0 && !selectedCountryId) {
-      setSelectedCountryId(data[0].id);
-      loadStates(data[0].id);
-    } else if (selectedCountryId) {
-      loadStates(selectedCountryId);
-    }
+  const loadStates = async () => {
+    const data = await getStatesCentral('00000000-0000-0000-0000-000000000001');
+    setStates(data || []);
   };
 
-  // 2. Country Changed -> Load States, Clear Children
-  const handleCountryChange = (cId) => {
-    setSelectedCountryId(cId);
-    setSelectedStateId('');
-    setSelectedDistrictId('');
-    setSelectedSubdistrictId('');
-    setSelectedBlockId('');
-    setSelectedSettlementId('');
-    setSelectedPostOfficeId('');
-    setPinCodeInput('');
+  // State Change Handler
+  const handleStateChange = async (e) => {
+    const stId = e.target.value;
+    setSelectedState(stId);
+    setSelectedDistrict('');
+    setSelectedSubdistrict('');
+    setSelectedBlock('');
+    setSelectedSettlement('');
+    setSelectedPostOffice('');
     setDistricts([]);
     setSubdistricts([]);
     setBlocks([]);
     setSettlements([]);
     setPostOffices([]);
-    setValidationError('');
+    setHierarchyMismatch('');
 
-    if (cId) loadStates(cId);
-    emitChange({ country_id: cId, state_id: '', district_id: '' });
+    if (stId) {
+      const dists = await getDistrictsCentral(stId);
+      setDistricts(dists || []);
+    }
+    emitChange({ state_id: stId, district_id: '', subdistrict_id: '', block_id: '', settlement_id: '', post_office_id: '', pin_code: pinCodeInput });
   };
 
-  const loadStates = async (cId) => {
-    const data = await getStatesCentral(cId);
-    setStates(data || []);
-  };
-
-  // 3. State Changed -> Load Districts, Clear Children & Guard Invalid Combos
-  const handleStateChange = (stId) => {
-    setSelectedStateId(stId);
-    setSelectedDistrictId('');
-    setSelectedSubdistrictId('');
-    setSelectedBlockId('');
-    setSelectedSettlementId('');
-    setSelectedPostOfficeId('');
-    setPinCodeInput('');
+  // District Change Handler
+  const handleDistrictChange = async (e) => {
+    const distId = e.target.value;
+    setSelectedDistrict(distId);
+    setSelectedSubdistrict('');
+    setSelectedBlock('');
+    setSelectedSettlement('');
+    setSelectedPostOffice('');
     setSubdistricts([]);
     setBlocks([]);
     setSettlements([]);
     setPostOffices([]);
-    setValidationError('');
-
-    if (stId) loadDistricts(stId);
-    emitChange({ country_id: selectedCountryId, state_id: stId, district_id: '' });
-  };
-
-  const loadDistricts = async (stId) => {
-    const data = await getDistrictsCentral(stId, selectedCountryId);
-    setDistricts(data || []);
-  };
-
-  // 4. District Changed -> Load Subdistricts & Blocks Independently
-  const handleDistrictChange = (distId) => {
-    // Cross-State Validation Guard Check
-    const selectedDistObj = districts.find(d => d.id === distId);
-    if (selectedDistObj && selectedDistObj.state_id !== selectedStateId) {
-      setValidationError(`Invalid Location Combination! District "${selectedDistObj.district_name}" does not belong to the selected State.`);
-      return;
-    }
-
-    setSelectedDistrictId(distId);
-    setSelectedSubdistrictId('');
-    setSelectedBlockId('');
-    setSelectedSettlementId('');
-    setSelectedPostOfficeId('');
-    setValidationError('');
+    setHierarchyMismatch('');
 
     if (distId) {
-      loadSubdistricts(distId);
-      loadBlocks(distId);
-      loadSettlements(distId, null, null);
-    }
-
-    emitChange({ country_id: selectedCountryId, state_id: selectedStateId, district_id: distId });
-  };
-
-  const loadSubdistricts = async (dId) => {
-    const data = await getSubdistrictsCentral(dId);
-    setSubdistricts(data || []);
-  };
-
-  const loadBlocks = async (dId) => {
-    const data = await getBlocksCentral(dId);
-    setBlocks(data || []);
-  };
-
-  const loadSettlements = async (dId, subId, blkId) => {
-    const data = await getSettlementsCentral(dId, subId, blkId);
-    setSettlements(data || []);
-  };
-
-  // 5. Subdistrict Changed -> Filter Settlements
-  const handleSubdistrictChange = (subId) => {
-    setSelectedSubdistrictId(subId);
-    if (selectedDistrictId) {
-      loadSettlements(selectedDistrictId, subId, selectedBlockId);
-    }
-    emitChange({ subdistrict_id: subId });
-  };
-
-  // 6. Block Changed -> Filter Settlements (Block is Independent of Tehsil!)
-  const handleBlockChange = (blkId) => {
-    setSelectedBlockId(blkId);
-    if (selectedDistrictId) {
-      loadSettlements(selectedDistrictId, selectedSubdistrictId, blkId);
-    }
-    emitChange({ block_id: blkId });
-  };
-
-  // 7. Settlement Changed -> Load Post Offices
-  const handleSettlementChange = (settleId) => {
-    setSelectedSettlementId(settleId);
-    emitChange({ settlement_id: settleId });
-  };
-
-  // 8. PIN Search -> Returns Multiple Post Offices
-  const handlePinInput = async (e) => {
-    const pin = e.target.value;
-    setPinCodeInput(pin);
-    if (pin.trim().length === 6) {
-      const pos = await getPostOfficesCentral(pin, selectedDistrictId);
+      const [subs, blks, setts, pos] = await Promise.all([
+        subdistrictEnabled ? getSubdistrictsCentral(distId) : Promise.resolve([]),
+        blockEnabled ? getBlocksCentral(distId) : Promise.resolve([]),
+        settlementEnabled ? getSettlementsCentral(distId) : Promise.resolve([]),
+        postOfficeEnabled ? getPostOfficesCentral('', distId) : Promise.resolve([])
+      ]);
+      setSubdistricts(subs || []);
+      setBlocks(blks || []);
+      setSettlements(setts || []);
       setPostOffices(pos || []);
     }
-    emitChange({ pin_code: pin });
+    emitChange({ state_id: selectedState, district_id: distId, subdistrict_id: '', block_id: '', settlement_id: '', post_office_id: '', pin_code: pinCodeInput });
   };
 
-  const emitChange = (overrides = {}) => {
+  // PIN Code Lookup Handler
+  const handlePinLookup = async (pin) => {
+    setPinCodeInput(pin);
+    if (pin.length === 6) {
+      const pos = await getPostOfficesCentral(pin);
+      if (pos && pos.length > 0) {
+        setPostOffices(pos);
+      }
+    }
+    emitChange({ state_id: selectedState, district_id: selectedDistrict, subdistrict_id: selectedSubdistrict, block_id: selectedBlock, settlement_id: selectedSettlement, post_office_id: selectedPostOffice, pin_code: pin });
+  };
+
+  const emitChange = (newVal) => {
     onChange({
-      country_id: selectedCountryId,
-      state_id: selectedStateId,
-      district_id: selectedDistrictId,
-      subdistrict_id: selectedSubdistrictId,
-      block_id: selectedBlockId,
-      settlement_id: selectedSettlementId,
-      post_office_id: selectedPostOfficeId,
-      pin_code: pinCodeInput,
-      ...overrides
+      country_id: '00000000-0000-0000-0000-000000000001',
+      ...newVal
     });
   };
 
-  const handleRequestSubmit = async (e) => {
+  const handleSubmitRequest = async (e) => {
     e.preventDefault();
     try {
-      const res = await submitLocationRequest({
-        ...reqForm,
-        country_id: selectedCountryId,
-        state_id: selectedStateId,
-        district_id: selectedDistrictId
+      await submitLocationRequest({
+        ...requestForm,
+        state_id: selectedState || null,
+        district_id: selectedDistrict || null,
+        reason: requestForm.reason || 'Location not found in Central Master'
       });
-      setReqSuccessId(res.id);
-      setReqForm({ proposed_name: '', requested_location_type: 'DISTRICT', proposed_pin_code: '', reason: '' });
-      setTimeout(() => {
-        setReqSuccessId(null);
-        setShowReqModal(false);
-      }, 3000);
+      setShowRequestModal(false);
+      setRequestForm({ requested_location_type: 'SETTLEMENT', proposed_name: '', reason: '', proposed_pin_code: '' });
+      alert('Location Request submitted to Location Admin successfully!');
     } catch (err) {
-      alert('Error submitting location request: ' + err.message);
+      alert('Failed to submit request: ' + err.message);
     }
   };
 
   return (
-    <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '1.25rem', color: '#ffffff' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.6rem' }}>
-        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Globe size={18} /> Central Cascading Location Picker
+    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <MapPin size={18} className="text-blue-600" /> Cascading Location Picker (Central Master)
         </h4>
-        {allowLocationRequest && !readOnly && (
+        {allowLocationRequest && (
           <button
             type="button"
-            onClick={() => setShowReqModal(true)}
-            style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', padding: '0.25rem 0.6rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+            onClick={() => setShowRequestModal(true)}
+            style={{ fontSize: '0.78rem', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', fontWeight: 700, padding: '0.3rem 0.65rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
           >
-            <Plus size={14} /> Location Not Found?
+            <Plus size={12} /> Location Not Found?
           </button>
         )}
       </div>
 
-      {/* Validation Alert */}
-      {validationError && (
-        <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#f87171', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <AlertCircle size={16} /> {validationError}
+      {hierarchyMismatch && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '0.6rem 0.8rem', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <AlertTriangle size={14} /> {hierarchyMismatch}
         </div>
       )}
 
-      {/* Grid Cascading Pickers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem', fontSize: '0.85rem' }}>
-        {/* Country Picker */}
+      {/* Cascading Picker Form */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+        {/* Country */}
         <div>
-          <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-            Country {countryRequired && <span style={{ color: '#ef4444' }}>*</span>}
-          </label>
-          <select
-            disabled={readOnly}
-            value={selectedCountryId}
-            onChange={e => handleCountryChange(e.target.value)}
-            style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
-          >
-            <option value="">-- Select Country --</option>
-            {countries.map(c => <option key={c.id} value={c.id}>{c.country_name} ({c.country_code})</option>)}
+          <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Country *</label>
+          <select disabled style={{ width: '100%', padding: '0.55rem', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem' }}>
+            <option>India (IN)</option>
           </select>
         </div>
 
-        {/* State Picker */}
+        {/* State */}
         <div>
-          <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-            State / UT {stateRequired && <span style={{ color: '#ef4444' }}>*</span>}
-          </label>
+          <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>State / UT {stateRequired && '*'}</label>
           <select
-            disabled={readOnly || !selectedCountryId}
-            value={selectedStateId}
-            onChange={e => handleStateChange(e.target.value)}
-            style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+            value={selectedState}
+            onChange={handleStateChange}
+            disabled={disabled || readOnly}
+            style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
           >
-            <option value="">-- Select State --</option>
-            {states.map(s => <option key={s.id} value={s.id}>{s.state_name}</option>)}
+            <option value="">Select State / UT...</option>
+            {states.map(s => (
+              <option key={s.id} value={s.id}>{s.state_name} ({s.state_code})</option>
+            ))}
           </select>
         </div>
 
-        {/* District Picker */}
+        {/* District */}
         <div>
-          <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-            District {districtRequired && <span style={{ color: '#ef4444' }}>*</span>}
-          </label>
+          <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>District {districtRequired && '*'}</label>
           <select
-            disabled={readOnly || !selectedStateId}
-            value={selectedDistrictId}
-            onChange={e => handleDistrictChange(e.target.value)}
-            style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+            value={selectedDistrict}
+            onChange={handleDistrictChange}
+            disabled={disabled || readOnly || !selectedState}
+            style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
           >
-            <option value="">-- Select District --</option>
-            {districts.map(d => <option key={d.id} value={d.id}>{d.district_name}</option>)}
+            <option value="">{selectedState ? 'Select District...' : 'Select State First'}</option>
+            {districts.map(d => (
+              <option key={d.id} value={d.id}>{d.district_name}</option>
+            ))}
           </select>
         </div>
 
-        {/* Tehsil / Subdistrict Picker */}
+        {/* Tehsil / Sub-District */}
         {subdistrictEnabled && (
           <div>
-            <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-              Tehsil / Mandal
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Tehsil / Sub-District</label>
             <select
-              disabled={readOnly || !selectedDistrictId}
-              value={selectedSubdistrictId}
-              onChange={e => handleSubdistrictChange(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+              value={selectedSubdistrict}
+              onChange={e => {
+                setSelectedSubdistrict(e.target.value);
+                emitChange({ state_id: selectedState, district_id: selectedDistrict, subdistrict_id: e.target.value, block_id: selectedBlock, settlement_id: selectedSettlement, post_office_id: selectedPostOffice, pin_code: pinCodeInput });
+              }}
+              disabled={disabled || readOnly || !selectedDistrict}
+              style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
             >
-              <option value="">-- Select Tehsil --</option>
-              {subdistricts.map(sub => <option key={sub.id} value={sub.id}>{sub.subdistrict_name} ({sub.subdistrict_type})</option>)}
+              <option value="">{selectedDistrict ? 'Select Tehsil / Mandal...' : 'Select District First'}</option>
+              {subdistricts.map(sub => (
+                <option key={sub.id} value={sub.id}>{sub.subdistrict_name} ({sub.subdistrict_type})</option>
+              ))}
             </select>
           </div>
         )}
 
-        {/* Development Block Picker (Independent of Tehsil) */}
+        {/* Development Block */}
         {blockEnabled && (
           <div>
-            <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-              Development Block
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Development Block</label>
             <select
-              disabled={readOnly || !selectedDistrictId}
-              value={selectedBlockId}
-              onChange={e => handleBlockChange(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+              value={selectedBlock}
+              onChange={e => {
+                setSelectedBlock(e.target.value);
+                emitChange({ state_id: selectedState, district_id: selectedDistrict, subdistrict_id: selectedSubdistrict, block_id: e.target.value, settlement_id: selectedSettlement, post_office_id: selectedPostOffice, pin_code: pinCodeInput });
+              }}
+              disabled={disabled || readOnly || !selectedDistrict}
+              style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
             >
-              <option value="">-- Select Block --</option>
-              {blocks.map(b => <option key={b.id} value={b.id}>{b.block_name}</option>)}
+              <option value="">{selectedDistrict ? 'Select Block...' : 'Select District First'}</option>
+              {blocks.map(b => (
+                <option key={b.id} value={b.id}>{b.block_name}</option>
+              ))}
             </select>
           </div>
         )}
 
-        {/* Settlement / Village / City Picker */}
+        {/* City / Village */}
         {settlementEnabled && (
           <div>
-            <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-              City / Village / Town
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>City / Town / Village</label>
             <select
-              disabled={readOnly || !selectedDistrictId}
-              value={selectedSettlementId}
-              onChange={e => handleSettlementChange(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+              value={selectedSettlement}
+              onChange={e => {
+                setSelectedSettlement(e.target.value);
+                emitChange({ state_id: selectedState, district_id: selectedDistrict, subdistrict_id: selectedSubdistrict, block_id: selectedBlock, settlement_id: e.target.value, post_office_id: selectedPostOffice, pin_code: pinCodeInput });
+              }}
+              disabled={disabled || readOnly || !selectedDistrict}
+              style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
             >
-              <option value="">-- Select Settlement --</option>
-              {settlements.map(st => <option key={st.id} value={st.id}>{st.settlement_name} ({st.settlement_type})</option>)}
+              <option value="">{selectedDistrict ? 'Select City / Village...' : 'Select District First'}</option>
+              {settlements.map(st => (
+                <option key={st.id} value={st.id}>{st.settlement_name} ({st.settlement_type})</option>
+              ))}
             </select>
           </div>
         )}
 
-        {/* PIN Code Search Input */}
+        {/* PIN Code Lookup */}
         {pinEnabled && (
           <div>
-            <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.3rem', fontWeight: 500 }}>
-              PIN Code
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>PIN Code</label>
             <input
               type="text"
-              readOnly={readOnly}
-              value={pinCodeInput}
-              onChange={handlePinInput}
-              placeholder="e.g. 125104"
               maxLength={6}
-              style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+              value={pinCodeInput}
+              onChange={e => handlePinLookup(e.target.value)}
+              placeholder="e.g. 141001"
+              disabled={disabled || readOnly}
+              style={{ width: '100%', padding: '0.55rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontSize: '0.85rem', outline: 'none' }}
             />
           </div>
         )}
       </div>
 
       {/* MODAL: LOCATION NOT FOUND REQUEST */}
-      {showReqModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '480px' }}>
+      {showRequestModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '440px', color: '#0f172a' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fbbf24' }}>Submit Location Not Found Request</h3>
-              <button type="button" onClick={() => setShowReqModal(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={20} /></button>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Request New Location Registration</h3>
+              <button onClick={() => setShowRequestModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={18} /></button>
             </div>
-
-            {reqSuccessId ? (
-              <div style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid #10b981', color: '#34d399', padding: '1rem', borderRadius: '8px', textAlign: 'center', fontSize: '0.9rem' }}>
-                <CheckCircle2 size={32} style={{ margin: '0 auto 0.5rem auto' }} />
-                Request Submitted Successfully!
-                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '0.3rem' }}>Request ID: {reqSuccessId}</div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>Location Admin will review and approve your request.</div>
+            <form onSubmit={handleSubmitRequest}>
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Location Type</label>
+                <select value={requestForm.requested_location_type} onChange={e => setRequestForm({ ...requestForm, requested_location_type: e.target.value })} style={{ width: '100%', padding: '0.55rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="DISTRICT">District</option>
+                  <option value="SUBDISTRICT">Tehsil / Sub-District</option>
+                  <option value="BLOCK">Development Block</option>
+                  <option value="SETTLEMENT">City / Village</option>
+                  <option value="POST_OFFICE">Post Office / PIN</option>
+                </select>
               </div>
-            ) : (
-              <form onSubmit={handleRequestSubmit}>
-                <div style={{ display: 'grid', gap: '0.85rem', fontSize: '0.85rem' }}>
-                  <div>
-                    <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.2rem' }}>Requested Location Type</label>
-                    <select value={reqForm.requested_location_type} onChange={e => setReqForm({ ...reqForm, requested_location_type: e.target.value })} style={{ width: '100%', padding: '0.55rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}>
-                      <option value="DISTRICT">District</option>
-                      <option value="SUBDISTRICT">Tehsil / Mandal</option>
-                      <option value="BLOCK">Development Block</option>
-                      <option value="SETTLEMENT">Village / Town / City</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.2rem' }}>Proposed Location Name *</label>
-                    <input type="text" required value={reqForm.proposed_name} onChange={e => setReqForm({ ...reqForm, proposed_name: e.target.value })} placeholder="e.g. Mandi Dabwali Rural" style={{ width: '100%', padding: '0.55rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.2rem' }}>PIN Code (Optional)</label>
-                    <input type="text" value={reqForm.proposed_pin_code} onChange={e => setReqForm({ ...reqForm, proposed_pin_code: e.target.value })} placeholder="6-digit PIN" style={{ width: '100%', padding: '0.55rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', color: '#cbd5e1', marginBottom: '0.2rem' }}>Reason / Reference</label>
-                    <textarea value={reqForm.reason} onChange={e => setReqForm({ ...reqForm, reason: e.target.value })} placeholder="New client location not listed in dropdown" style={{ width: '100%', padding: '0.55rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', minHeight: '50px' }} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
-                  <button type="button" onClick={() => setShowReqModal(false)} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                  <button type="submit" style={{ padding: '0.5rem 1rem', background: '#fbbf24', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}>Submit Request</button>
-                </div>
-              </form>
-            )}
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Proposed Location Name *</label>
+                <input type="text" required value={requestForm.proposed_name} onChange={e => setRequestForm({ ...requestForm, proposed_name: e.target.value })} placeholder="e.g. New Industrial Focal Point" style={{ width: '100%', padding: '0.55rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>PIN Code (Optional)</label>
+                <input type="text" value={requestForm.proposed_pin_code} onChange={e => setRequestForm({ ...requestForm, proposed_pin_code: e.target.value })} placeholder="6-digit PIN" style={{ width: '100%', padding: '0.55rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Reason / Details *</label>
+                <textarea required rows={3} value={requestForm.reason} onChange={e => setRequestForm({ ...requestForm, reason: e.target.value })} placeholder="Why is this location required?" style={{ width: '100%', padding: '0.55rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button type="button" onClick={() => setShowRequestModal(false)} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #cbd5e1', borderRadius: '6px' }}>Cancel</button>
+                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700 }}>Submit to Admin</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -34,51 +34,104 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
   const callUuid = event.CallUUID;
   const conferenceName = event.ConferenceName;
 
-  // 1. FAST PATH: Dial customer instantly before ANY database operations to guarantee 0 latency!
+  // 1. FAST PATH: Dial customer instantly when agent is first member in conference
   if (eventType === 'enter' && event.ConferenceFirstMember === 'true' && customerNumber) {
-      const authId = process.env.PLIVO_AUTH_ID;
-      const authToken = process.env.PLIVO_AUTH_TOKEN;
-      const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
-      const client = new plivo.Client(authId, authToken);
-      const appBaseUrl = originUrl;
-      
-      // Play ringback tone to the agent while they wait
+    const authId = process.env.PLIVO_AUTH_ID;
+    const authToken = process.env.PLIVO_AUTH_TOKEN;
+    const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
+    const client = new plivo.Client(authId, authToken);
+    const appBaseUrl = originUrl;
+
+    // NOTE: waitSound on the agent's Conference XML (answer/route.js) already handles
+    // continuous ringback. The one-time playAudioToMember call is intentionally
+    // removed to avoid duplicate/overlapping audio.
+
+    // Dial customer with ring/hangup callbacks and explicit ring timeout.
+    // SDK verified params: hangupUrl, hangupMethod, ringTimeout (call.js lines 704, 705, 718)
+    try {
+      console.log(`Dialing customer: from=${fromNumber}, to=${customerNumber}, room=${roomName}`);
+
+      // Guard: check if customer call already exists for this session
+      const { data: existingSession } = await adminClient
+        .from('call_sessions')
+        .select('id, customer_call_uuid, status')
+        .eq('room_name', roomName)
+        .single();
+
+      if (existingSession && (
+        existingSession.customer_call_uuid ||
+        existingSession.status === 'customer_ringing' ||
+        existingSession.status === 'connected'
+      )) {
+        console.log('Customer call already exists, skipping duplicate dial:', existingSession.status);
+      } else {
+        const ringCallbackUrl = `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`;
+        const dialResponse = await client.calls.create(
+          fromNumber,
+          customerNumber,
+          `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
+          {
+            answerMethod: 'POST',
+            fallbackMethod: 'POST',
+            hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`,
+            hangupMethod: 'POST',
+            ringUrl: ringCallbackUrl,
+            ringMethod: 'POST',
+            ringTimeout: 25,
+          }
+        );
+
+        console.log('Dial response object:', JSON.stringify(dialResponse));
+
+        if (dialResponse && dialResponse.requestUuid) {
+          const dbResult = await adminClient
+            .from('call_sessions')
+            .update({
+              customer_call_uuid: dialResponse.requestUuid,
+              status: 'customer_ringing',
+            })
+            .eq('room_name', roomName)
+            .select();
+
+          console.log('DB update for customer_call_uuid:', JSON.stringify(dbResult));
+        } else {
+          console.warn('Dial response missing requestUuid!');
+        }
+      }
+    } catch (dialErr) {
+      console.error('Error dialing customer outbound leg:', dialErr);
+
+      // Customer call creation failed — clean up employee leg immediately
       try {
-         await client.conferences.playAudioToMember(roomName, memberId, `${appBaseUrl}/ringback.wav`);
-      } catch (audioErr) {
-         console.error('Error playing ringback tone:', audioErr);
+        const { data: failSession } = await adminClient
+          .from('call_sessions')
+          .select('id, agent_call_uuid, agent_member_id')
+          .eq('room_name', roomName)
+          .single();
+
+        if (failSession && failSession.status !== 'ended' && failSession.status !== 'failed') {
+          await adminClient.from('call_sessions').update({
+            status: 'failed',
+            hangup_cause: 'customer_dial_error',
+            end_time: new Date().toISOString(),
+            talk_duration_sec: 0,
+          }).eq('id', failSession.id);
+        }
+
+        const cleanupClient = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+        try { await cleanupClient.conferences.hangup(roomName); } catch (_e) {}
+        if (failSession?.agent_call_uuid) {
+          try { await cleanupClient.calls.hangup(failSession.agent_call_uuid); } catch (_e) {}
+        }
+      } catch (cleanupErr) {
+        console.error('Cleanup after dial error failed:', cleanupErr);
       }
 
-      // Dial customer, obtain call UUID and save to DB (Awaited to prevent early freeze)
-      try {
-         console.log(`Dialing customer: from=${fromNumber}, to=${customerNumber}, roomName=${roomName}`);
-         const dialResponse = await client.calls.create(
-           fromNumber,
-           customerNumber,
-           `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
-           {
-             answerMethod: 'POST',
-             fallbackMethod: 'POST',
-           }
-         );
-         
-         console.log('Dial response object:', JSON.stringify(dialResponse));
-         
-         if (dialResponse && dialResponse.requestUuid) {
-            const dbResult = await adminClient.from('call_sessions').update({
-              customer_call_uuid: dialResponse.requestUuid
-            }).eq('room_name', roomName).select();
-            
-            console.log('Database update result for customer_call_uuid:', JSON.stringify(dbResult));
-         } else {
-            console.warn('Dial response is empty or requestUuid is missing!');
-         }
-      } catch (dialErr) {
-         console.error('Error dialing customer outbound leg:', dialErr);
-      }
+      return;
+    }
   }
 
-  // 2. BACKGROUND DATABASE OPERATIONS (Runs after dialing)
+  // 2. BACKGROUND DATABASE OPERATIONS
   // Save event
   await adminClient.from('call_events').insert({
     room_name: roomName,
@@ -96,21 +149,17 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
   if (!session) return;
 
   if (eventType === 'enter') {
-    // Determine if the entering call is the agent or customer.
-    // 1. If callUuid matches agent_call_uuid, it's definitely the agent.
-    // 2. If callUuid matches customer_call_uuid, it's definitely the customer.
-    // 3. Fallback: If agent hasn't joined yet (status is 'initiated' or agent_call_uuid is null), it's the agent.
-    // 4. Otherwise, if agent has already joined, it's the customer.
+    // Determine if the entering call is agent or customer.
     let isAgent = false;
     let isCustomer = false;
-    
+
     if (session.agent_call_uuid && callUuid === session.agent_call_uuid) {
       isAgent = true;
     } else if (session.customer_call_uuid && callUuid === session.customer_call_uuid) {
       isCustomer = true;
     } else if (!session.agent_answer_time || session.status === 'initiated') {
       isAgent = true;
-    } else if (!session.customer_call_uuid || session.status === 'agent_answered') {
+    } else if (!session.customer_call_uuid || session.status === 'agent_answered' || session.status === 'customer_ringing') {
       isCustomer = true;
     }
 
@@ -123,93 +172,94 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         agent_answer_time: new Date().toISOString(),
         status: 'agent_answered'
       }).eq('id', session.id);
-      
+
     } else if (isCustomer) {
-      // Customer joined
+      // Customer joined — stop any lingering audio and mark connected
       await adminClient.from('call_sessions').update({
-        customer_call_uuid: callUuid, // Save it just in case
+        customer_call_uuid: callUuid,
         customer_member_id: memberId,
         customer_answer_time: new Date().toISOString(),
         status: 'connected'
       }).eq('id', session.id);
-      
-      // Stop ringback for the agent
+
+      // Stop any residual audio that may still be playing for the agent member
       if (session.agent_member_id) {
-         try {
-             const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-             await client.conferences.stopPlayingAudioToMember(roomName, session.agent_member_id);
-         } catch(e) {}
+        try {
+          const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+          await client.conferences.stopPlayingAudioToMember(roomName, session.agent_member_id);
+        } catch (_e) {
+          // Ignore — waitSound already stops when conference starts; this is belt-and-suspenders
+        }
       }
     }
   } else if (eventType === 'exit') {
-     const isAgentExit = memberId === session.agent_member_id || (session.agent_call_uuid && callUuid === session.agent_call_uuid);
-     
-     let membersCount = 0;
-     try {
-        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-        const confDetails = await client.conferences.get(conferenceName);
-        membersCount = confDetails.members ? confDetails.members.length : 0;
-     } catch (err) {
-        console.log('Conference exit check: Conference not found or empty, count = 0');
-     }
+    const isAgentExit = memberId === session.agent_member_id ||
+      (session.agent_call_uuid && callUuid === session.agent_call_uuid);
 
-     // End the conference if the agent leaves, or if anyone else leaves and only the agent is left (membersCount <= 1)
-     const shouldEndConference = isAgentExit || membersCount <= 1;
+    let membersCount = 0;
+    try {
+      const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+      const confDetails = await client.conferences.get(conferenceName);
+      membersCount = confDetails.members ? confDetails.members.length : 0;
+    } catch (_err) {
+      console.log('Conference exit check: Conference not found or empty, count = 0');
+    }
 
-     if (shouldEndConference && session.status !== 'ended') {
-        const endTime = new Date();
-        const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
-        const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
-        const startTime = session.start_time ? new Date(session.start_time) : (agentAnsTime || endTime);
-        
-        let ringingSec = null;
-        let talkSec = null;
+    // End the conference if the agent leaves, or if only one person remains
+    const shouldEndConference = isAgentExit || membersCount <= 1;
 
-        if (customerAnsTime) {
-           talkSec = Math.floor((endTime - customerAnsTime) / 1000);
-           ringingSec = Math.floor((customerAnsTime - (agentAnsTime || startTime)) / 1000);
-        } else {
-           // Missed call / not answered by customer
-           ringingSec = Math.floor((endTime - (agentAnsTime || startTime)) / 1000);
-           talkSec = 0;
-        }
+    if (shouldEndConference && session.status !== 'ended') {
+      const endTime = new Date();
+      const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
+      const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
+      const startTime = session.start_time ? new Date(session.start_time) : (agentAnsTime || endTime);
 
-        if (ringingSec < 0) ringingSec = 0;
-        if (talkSec < 0) talkSec = 0;
+      let ringingSec = null;
+      let talkSec = null;
 
-        await adminClient.from('call_sessions').update({
-           status: 'ended',
-           end_time: endTime.toISOString(),
-           ringing_duration_sec: ringingSec,
-           talk_duration_sec: talkSec
-        }).eq('id', session.id);
-        
-        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+      if (customerAnsTime) {
+        talkSec = Math.floor((endTime - customerAnsTime) / 1000);
+        ringingSec = Math.floor((customerAnsTime - (agentAnsTime || startTime)) / 1000);
+      } else {
+        ringingSec = Math.floor((endTime - (agentAnsTime || startTime)) / 1000);
+        talkSec = 0;
+      }
 
-        // 1. End the conference
+      if (ringingSec < 0) ringingSec = 0;
+      if (talkSec < 0) talkSec = 0;
+
+      await adminClient.from('call_sessions').update({
+        status: 'ended',
+        end_time: endTime.toISOString(),
+        ringing_duration_sec: ringingSec,
+        talk_duration_sec: talkSec
+      }).eq('id', session.id);
+
+      const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+
+      // 1. End the conference
+      try {
+        await client.conferences.hangup(conferenceName);
+        console.log(`Hung up conference: ${conferenceName}`);
+      } catch (confErr) {
+        console.error('Error ending conference:', confErr.message);
+      }
+
+      // 2. Cancel/hangup customer call if still ringing (not answered)
+      if (session.status !== 'connected' && session.customer_call_uuid) {
         try {
-           await client.conferences.hangup(conferenceName);
-           console.log(`Successfully hung up conference: ${conferenceName}`);
-        } catch (confErr) {
-           console.error('Error ending conference:', confErr.message);
+          await client.calls.cancel(session.customer_call_uuid);
+          console.log(`Canceled customer call: ${session.customer_call_uuid}`);
+        } catch (cancelErr) {
+          console.log(`Cancel failed, trying hangup: ${cancelErr.message}`);
+          try {
+            await client.calls.hangup(session.customer_call_uuid);
+          } catch (hangupErr) {
+            console.error(`Failed to cancel/hangup customer call: ${hangupErr.message}`);
+          }
         }
-
-        // 2. If the customer hasn't answered yet, cancel/hang up their call leg directly to stop ringing!
-        if (session.status !== 'connected' && session.customer_call_uuid) {
-           try {
-              await client.calls.cancel(session.customer_call_uuid);
-              console.log(`Successfully canceled customer call request: ${session.customer_call_uuid}`);
-           } catch (cancelErr) {
-              console.log(`Could not cancel request, trying hangup: ${cancelErr.message}`);
-              try {
-                 await client.calls.hangup(session.customer_call_uuid);
-                 console.log(`Successfully hung up customer call uuid: ${session.customer_call_uuid}`);
-              } catch (hangupErr) {
-                 console.error(`Failed to cancel or hang up call: ${hangupErr.message}`);
-              }
-           }
-        }
-     }
+      }
+    }
   } else if (eventType === 'record') {
     if (event.RecordUrl) {
       await adminClient.from('call_sessions').update({

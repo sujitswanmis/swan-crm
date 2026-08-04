@@ -9,58 +9,41 @@ const getAdminClient = () => {
   );
 };
 
-const DEFAULT_INDIAN_STATES = [
-  { code: 'PB', name: 'Punjab' },
-  { code: 'HR', name: 'Haryana' },
-  { code: 'UP', name: 'Uttar Pradesh' },
-  { code: 'RJ', name: 'Rajasthan' },
-  { code: 'DL', name: 'Delhi' },
-  { code: 'MH', name: 'Maharashtra' },
-  { code: 'GJ', name: 'Gujarat' },
-  { code: 'MP', name: 'Madhya Pradesh' },
-  { code: 'BR', name: 'Bihar' },
-  { code: 'WB', name: 'West Bengal' },
-  { code: 'KA', name: 'Karnataka' },
-  { code: 'TN', name: 'Tamil Nadu' },
-  { code: 'TS', name: 'Telangana' },
-  { code: 'AP', name: 'Andhra Pradesh' },
-  { code: 'HP', name: 'Himachal Pradesh' },
-  { code: 'UK', name: 'Uttarakhand' }
-];
-
-const DEFAULT_DISTRICTS_MAP = {
-  'Punjab': ['Ludhiana', 'Jalandhar', 'Amritsar', 'Patiala', 'Bathinda', 'Sahibzada Ajit Singh Nagar (Mohali)', 'Sangrur', 'Gurdaspur', 'Hoshiarpur', 'Firozpur'],
-  'Haryana': ['Gurugram', 'Faridabad', 'Ambala', 'Karnal', 'Panipat', 'Hisar', 'Rohtak', 'Sonipat', 'Sirsa', 'Yamunanagar'],
-  'Uttar Pradesh': ['Noida', 'Ghaziabad', 'Lucknow', 'Kanpur', 'Agra', 'Varanasi', 'Meerut', 'Prayagraj', 'Bareilly', 'Aligarh'],
-  'Rajasthan': ['Jaipur', 'Jodhpur', 'Udaipur', 'Kota', 'Ajmer', 'Bikaner', 'Alwar', 'Bhilwara', 'Sikar', 'Sri Ganganagar'],
-  'Delhi': ['Central Delhi', 'East Delhi', 'New Delhi', 'North Delhi', 'South Delhi', 'West Delhi']
-};
+/**
+ * 100% DATABASE-DRIVEN LOCATION MASTER ACTIONS
+ * Absolutely ZERO hardcoded state/district arrays or fake fallbacks!
+ */
 
 export async function getStates() {
   const adminClient = getAdminClient();
-  let { data, error } = await adminClient
+  const { data, error } = await adminClient
     .from('location_states')
     .select('*')
-    .order('name', { ascending: true });
+    .eq('is_active', true)
+    .order('state_name', { ascending: true });
 
-  if (error || !data || data.length === 0) {
-    const { data: inserted } = await adminClient
-      .from('location_states')
-      .insert(DEFAULT_INDIAN_STATES)
-      .select();
-
-    return inserted || DEFAULT_INDIAN_STATES.map((s, idx) => ({ id: `st-${idx}`, ...s }));
+  if (error) {
+    console.error('Error fetching location_states from DB:', error.message);
+    return [];
   }
-
   return data || [];
 }
 
 export async function createState(stateData) {
   const adminClient = getAdminClient();
-  const stateCode = stateData.code || stateData.name.slice(0, 3).toUpperCase();
+  const stateCode = stateData.code ? stateData.code.toUpperCase() : stateData.name.slice(0, 3).toUpperCase();
+  const nameNorm = stateData.name.trim().toLowerCase();
+
   const { data, error } = await adminClient
     .from('location_states')
-    .insert([{ name: stateData.name, code: stateCode }])
+    .insert([{
+      country_id: stateData.country_id || '00000000-0000-0000-0000-000000000001',
+      state_code: stateCode,
+      state_name: stateData.name,
+      name_normalized: nameNorm,
+      state_type: stateData.state_type || 'STATE',
+      official_code: stateData.official_code || null
+    }])
     .select()
     .single();
 
@@ -69,50 +52,36 @@ export async function createState(stateData) {
 }
 
 export async function getDistricts(stateId) {
+  if (!stateId) return [];
   const adminClient = getAdminClient();
-  let { data } = await adminClient
+  const { data, error } = await adminClient
     .from('location_districts')
     .select('*')
     .eq('state_id', stateId)
-    .order('name', { ascending: true });
+    .eq('is_active', true)
+    .order('district_name', { ascending: true });
 
-  if (!data || data.length === 0) {
-    const { data: stateData } = await adminClient
-      .from('location_states')
-      .select('name')
-      .eq('id', stateId)
-      .single();
-
-    const stateName = stateData?.name;
-    const defaultDistricts = DEFAULT_DISTRICTS_MAP[stateName] || ['Central District', 'North District', 'South District', 'East District', 'West District'];
-
-    const districtPayload = defaultDistricts.map((dName, idx) => ({
-      state_id: stateId,
-      code: `DIST-${idx + 1}`,
-      name: dName
-    }));
-
-    const { data: insertedDistricts } = await adminClient
-      .from('location_districts')
-      .insert(districtPayload)
-      .select();
-
-    return insertedDistricts || districtPayload.map((d, idx) => ({ id: `dst-${idx}`, ...d }));
+  if (error) {
+    console.error('Error fetching location_districts from DB:', error.message);
+    return [];
   }
-
   return data || [];
 }
 
 export async function createDistrict(districtData) {
   const adminClient = getAdminClient();
-  const distCode = districtData.code || `DIST-${Date.now().toString(36).toUpperCase()}`;
+  const distCode = districtData.code ? districtData.code.toUpperCase() : `DIST-${Date.now().toString(36).toUpperCase()}`;
+  const nameNorm = districtData.name.trim().toLowerCase();
 
   const { data, error } = await adminClient
     .from('location_districts')
     .insert([{
+      country_id: districtData.country_id || '00000000-0000-0000-0000-000000000001',
       state_id: districtData.state_id,
-      name: districtData.name,
-      code: distCode
+      district_code: distCode,
+      district_name: districtData.name,
+      name_normalized: nameNorm,
+      official_code: districtData.official_code || null
     }])
     .select()
     .single();
@@ -123,14 +92,20 @@ export async function createDistrict(districtData) {
 
 export async function createSubdistrict(subdistrictData) {
   const adminClient = getAdminClient();
-  const subCode = subdistrictData.code || `SUB-${Date.now().toString(36).toUpperCase()}`;
+  const subCode = subdistrictData.code ? subdistrictData.code.toUpperCase() : `SUB-${Date.now().toString(36).toUpperCase()}`;
+  const nameNorm = subdistrictData.name.trim().toLowerCase();
 
   const { data, error } = await adminClient
     .from('location_subdistricts')
     .insert([{
+      country_id: subdistrictData.country_id || '00000000-0000-0000-0000-000000000001',
+      state_id: subdistrictData.state_id,
       district_id: subdistrictData.district_id,
-      name: subdistrictData.name,
-      code: subCode
+      subdistrict_code: subCode,
+      subdistrict_name: subdistrictData.name,
+      subdistrict_type: subdistrictData.subdistrict_type || 'TEHSIL',
+      name_normalized: nameNorm,
+      official_code: subdistrictData.official_code || null
     }])
     .select()
     .single();
@@ -140,24 +115,20 @@ export async function createSubdistrict(subdistrictData) {
 }
 
 export async function resolveLocationAlias(rawName) {
-  const adminClient = getAdminClient();
   if (!rawName) return null;
+  const adminClient = getAdminClient();
+  const norm = rawName.trim().toLowerCase();
 
   const { data } = await adminClient
     .from('location_aliases')
     .select('*')
-    .ilike('raw_alias', rawName.trim())
-    .single();
+    .ilike('alias_normalized', norm)
+    .eq('is_active', true)
+    .maybeSingle();
 
-  if (data?.official_name) return data.official_name;
-
-  const lower = rawName.trim().toLowerCase();
-  if (lower.includes('gurgaon')) return 'Gurugram';
-  if (lower.includes('mohali')) return 'Sahibzada Ajit Singh Nagar (Mohali)';
-  if (lower.includes('dist sirsa') || lower === 'sirsa') return 'Sirsa';
-  if (lower.includes('bombay')) return 'Mumbai';
-  if (lower.includes('calcutta')) return 'Kolkata';
-
+  if (data?.canonical_location_id) {
+    return data.alias_name;
+  }
   return rawName.trim();
 }
 

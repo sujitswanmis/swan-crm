@@ -72,7 +72,7 @@ export async function GET() {
       offset += currentPageEndpoints.length;
     }
 
-    // Remove duplicate endpoints, if any.
+
     const uniqueEndpoints = Array.from(
       new Map(
         allEndpoints.map((endpoint) => [
