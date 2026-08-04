@@ -17,7 +17,7 @@ export async function POST(req) {
 
     let { data: agentData } = await adminClient
       .from('call_agents')
-      .select('plivo_username, plivo_password')
+      .select('plivo_username, plivo_password, plivo_sip_uri')
       .eq('user_id', user.id)
       .single();
 
@@ -25,7 +25,7 @@ export async function POST(req) {
     if (!agentData || !agentData.plivo_username || !agentData.plivo_password) {
       const { data: fallbackList } = await adminClient
         .from('call_agents')
-        .select('plivo_username, plivo_password')
+        .select('plivo_username, plivo_password, plivo_sip_uri')
         .not('plivo_username', 'is', null)
         .not('plivo_password', 'is', null)
         .limit(1);
@@ -43,10 +43,13 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo password in database. Please contact admin.' }, { status: 400 });
     }
 
-    console.log(`[Token API] Returning credentials for username: ${agentData.plivo_username}`);
+    const sipUri = agentData.plivo_sip_uri || `sip:${agentData.plivo_username}@phone.plivo.com`;
+    console.log(`[Token API] Returning credentials for username: ${agentData.plivo_username}, sipUri: ${sipUri}`);
+
     return NextResponse.json({
       username: agentData.plivo_username,
-      password: agentData.plivo_password
+      password: agentData.plivo_password,
+      sipUri: sipUri
     });
 
   } catch (error) {

@@ -18,6 +18,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [callDuration, setCallDuration] = useState(0);
   const [activeSession, setActiveSession] = useState(null);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
+  const [activeSipUri, setActiveSipUri] = useState('');
   const [agentData, setAgentData] = useState(null);
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
@@ -158,22 +159,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
             .limit(1);
           if (anyAgents && anyAgents.length > 0) found = anyAgents[0];
         }
-        if (found) {
-          setAgentData(found);
-        } else {
-          setAgentData({
-            id: 'default_agent',
-            display_name: 'Agent',
-            plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
-          });
-        }
+        if (found) setAgentData(found);
       } catch (e) {
         console.error("Error fetching agent profile:", e);
-        setAgentData({
-          id: 'default_agent',
-          display_name: 'Agent',
-          plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
-        });
       }
     };
     fetchAgent();
@@ -243,6 +231,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
       const data = await res.json();
       if (data.username && data.password) {
+        if (data.sipUri) setActiveSipUri(data.sipUri);
+        else setActiveSipUri(`sip:${data.username}@phone.plivo.com`);
         clientInstance.login(data.username, data.password);
       } else if (data.token) {
         clientInstance.loginWithAccessToken(data.token);
@@ -411,6 +401,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
       const formattedCustomer = customerNumber.startsWith('+') ? customerNumber : `+91${customerNumber}`;
       const formattedAgentMobile = agentMobile ? (agentMobile.startsWith('+') ? agentMobile : `+91${agentMobile}`) : '';
+      const sipUriToDial = activeSipUri || agentData?.plivo_sip_uri;
 
       const res = await fetch('/api/plivo/start-call', {
         method: 'POST',
@@ -418,7 +409,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         body: JSON.stringify({
           customerNumber: formattedCustomer,
           callingMode,
-          agentEndpoint: agentData?.plivo_sip_uri,
+          agentEndpoint: sipUriToDial,
           agentMobile: formattedAgentMobile
         })
       });
@@ -499,7 +490,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
             <div style={{ background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.8rem', border: '1px solid var(--border-light)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>SIP Endpoint:</span>
-                <span style={{ fontWeight: 600 }}>{agentData?.plivo_sip_uri?.split('@')[0] || 'Unassigned'}</span>
+                <span style={{ fontWeight: 600 }}>{(activeSipUri || agentData?.plivo_sip_uri)?.split('@')[0] || 'Unassigned'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
