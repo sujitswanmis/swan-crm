@@ -584,8 +584,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
             )}
 
-            {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) - ONLY WHEN CONNECTED */}
-            {activeSession && activeSession.status === 'connected' && (
+            {/* Call Center Active Session Panel (Merge, Mute Participants, Add Guest, etc.) */}
+            {activeSession && (activeSession.status === 'connected' || isCallConnected) && (
               <div style={{ marginTop: '0.5rem' }}>
                 <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={() => setActiveSession(null)} />
               </div>
