@@ -65,7 +65,6 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       )) {
         console.log('Customer call already exists, skipping duplicate dial:', existingSession.status);
       } else {
-        const ringCallbackUrl = `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`;
         const dialResponse = await client.calls.create(
           fromNumber,
           customerNumber,
@@ -75,9 +74,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
             fallbackMethod: 'POST',
             hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`,
             hangupMethod: 'POST',
-            ringUrl: ringCallbackUrl,
-            ringMethod: 'POST',
-            ringTimeout: 25,
+            ringTimeout: 30,
           }
         );
 

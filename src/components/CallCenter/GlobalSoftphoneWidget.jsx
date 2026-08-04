@@ -337,14 +337,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, [connectSoftphone]);
 
-  const isCallConnected = activeSession?.status === 'connected' || (activeCall && activeCall.status === 'connected');
+  const isCallConnected = activeSession?.status === 'connected';
   const isCallActive = activeCall || (activeSession && activeSession.status !== 'ended');
 
-  // Declarative Call Duration Timer based on active call / active session status
+  // Declarative Call Duration Timer: RUNS ONLY WHEN CUSTOMER CALL IS CONNECTED!
   useEffect(() => {
     let timerInterval = null;
-    if (isCallConnected || isCallActive) {
-      if (activeSession?.customer_answer_time) {
+    if (activeSession && activeSession.status === 'connected') {
+      if (activeSession.customer_answer_time) {
         const elapsed = Math.floor((new Date() - new Date(activeSession.customer_answer_time)) / 1000);
         setCallDuration(Math.max(0, elapsed));
       }
@@ -358,7 +358,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [isCallConnected, isCallActive, activeSession?.customer_answer_time]);
+  }, [activeSession?.status, activeSession?.customer_answer_time]);
 
   const formatDuration = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -567,8 +567,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
             )}
 
-            {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
-            {activeSession && (
+            {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) - ONLY WHEN CONNECTED */}
+            {activeSession && activeSession.status === 'connected' && (
               <div style={{ marginTop: '0.5rem' }}>
                 <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={() => setActiveSession(null)} />
               </div>
