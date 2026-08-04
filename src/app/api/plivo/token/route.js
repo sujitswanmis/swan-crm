@@ -15,27 +15,11 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: agentRows } = await adminClient
+    const { data: agentData } = await adminClient
       .from('call_agents')
-      .select('plivo_username, plivo_password, plivo_sip_uri')
+      .select('plivo_username, plivo_password')
       .eq('user_id', user.id)
-      .limit(1);
-
-    let agentData = (agentRows && agentRows.length > 0) ? agentRows[0] : null;
-
-    // Fallback: if logged-in user is admin or unassigned agent, pick first active Plivo SIP endpoint
-    if (!agentData || !agentData.plivo_username || !agentData.plivo_password) {
-      const { data: fallbackRows } = await adminClient
-        .from('call_agents')
-        .select('plivo_username, plivo_password, plivo_sip_uri')
-        .not('plivo_username', 'is', null)
-        .not('plivo_password', 'is', null)
-        .limit(1);
-
-      if (fallbackRows && fallbackRows.length > 0) {
-        agentData = fallbackRows[0];
-      }
-    }
+      .single();
 
     if (!agentData || !agentData.plivo_username) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
@@ -48,8 +32,7 @@ export async function POST(req) {
     console.log(`[Token API] Returning credentials for username: ${agentData.plivo_username}`);
     return NextResponse.json({
       username: agentData.plivo_username,
-      password: agentData.plivo_password,
-      sipUri: agentData.plivo_sip_uri || `sip:${agentData.plivo_username}@phone.plivo.com`
+      password: agentData.plivo_password
     });
 
   } catch (error) {
