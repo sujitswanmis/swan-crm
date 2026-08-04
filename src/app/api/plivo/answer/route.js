@@ -16,11 +16,16 @@ export async function POST(req) {
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
 
-    // waitSound loops ringback.wav for the AGENT while waiting for customer.
-    // Only set on the agent leg — customer leg has no waitSound.
+    // Reliable public ringback audio URL fallback (prevents silence on localhost or unreachable servers)
+    let ringbackAudioUrl = 'https://s3.amazonaws.com/plivocloud/us_ringback.mp3';
+    if (appBaseUrl && !appBaseUrl.includes('localhost') && !appBaseUrl.includes('127.0.0.1') && appBaseUrl.startsWith('https://')) {
+      ringbackAudioUrl = `${appBaseUrl}/ringback.wav`;
+    }
+
+    // waitSound loops ringback tone for the AGENT while waiting for customer.
     // Audio stops automatically when startConferenceOnEnter fires (customer joins).
     const waitSoundAttr = (role === 'agent')
-      ? ` waitSound="${appBaseUrl}/ringback.wav"`
+      ? ` waitSound="${ringbackAudioUrl}"`
       : '';
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
