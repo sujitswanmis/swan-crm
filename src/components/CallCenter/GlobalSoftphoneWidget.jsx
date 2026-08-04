@@ -148,8 +148,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
             .from('call_agents')
             .select('*')
             .eq('user_id', userId)
-            .single();
-          if (data) found = data;
+            .limit(1);
+          if (data && data.length > 0) found = data[0];
         }
         if (!found) {
           const { data: anyAgents } = await adminClient
@@ -158,9 +158,22 @@ export default function GlobalSoftphoneWidget({ userId }) {
             .limit(1);
           if (anyAgents && anyAgents.length > 0) found = anyAgents[0];
         }
-        if (found) setAgentData(found);
+        if (found) {
+          setAgentData(found);
+        } else {
+          setAgentData({
+            id: 'default_agent',
+            display_name: 'Agent',
+            plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
+          });
+        }
       } catch (e) {
         console.error("Error fetching agent profile:", e);
+        setAgentData({
+          id: 'default_agent',
+          display_name: 'Agent',
+          plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
+        });
       }
     };
     fetchAgent();
@@ -420,8 +433,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
       alert("Failed to start call");
     }
   };
-
-  if (!agentData) return null; // Don't show widget if not an agent
 
   const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
