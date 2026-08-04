@@ -35,15 +35,28 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Get Agent ID
-    const { data: agentData } = await adminClient
+    // Get Agent ID (with fallback for admin/unassigned users)
+    const { data: agentRows } = await adminClient
       .from('call_agents')
       .select('id, plivo_sip_uri')
       .eq('user_id', user.id)
-      .single();
+      .limit(1);
+
+    let agentData = (agentRows && agentRows.length > 0) ? agentRows[0] : null;
 
     if (!agentData) {
-      return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
+      const { data: fallbackRows } = await adminClient
+        .from('call_agents')
+        .select('id, plivo_sip_uri')
+        .not('plivo_sip_uri', 'is', null)
+        .limit(1);
+      if (fallbackRows && fallbackRows.length > 0) {
+        agentData = fallbackRows[0];
+      }
+    }
+
+    if (!agentData) {
+      return NextResponse.json({ error: 'No Plivo SIP agent endpoint configured in system' }, { status: 404 });
     }
 
     const { data: sessionData, error: sessionError } = await adminClient
@@ -67,15 +80,11 @@ export async function POST(req) {
 
     const url = new URL(req.url);
     let appBaseUrl = url.origin;
-    // We only initiate the call to the AGENT first.
-    // The answer URL will put the agent in the conference.
-    // The conference callback will then dial the customer.
     
     let dialTo = '';
     if (callingMode === 'mobile') {
       dialTo = agentMobile;
     } else {
-      // Browser WebRTC or External Softphone uses SIP URI
       dialTo = agentEndpoint || agentData.plivo_sip_uri;
     }
 
