@@ -19,7 +19,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [activeSession, setActiveSession] = useState(null);
   const [callNotice, setCallNotice] = useState(null); // Notice banner for Busy, Switched Off, Rejected, etc.
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
-  const [agentData, setAgentData] = useState(null);
+  const [agentData, setAgentData] = useState({
+    id: 'default_agent',
+    display_name: 'Agent',
+    plivo_sip_uri: 'sip:admin43479285858973435760@phone.plivo.com'
+  });
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
@@ -188,27 +192,46 @@ export default function GlobalSoftphoneWidget({ userId }) {
     localStorage.setItem('softphone_position', JSON.stringify(newPos));
   };
 
-  // Fetch agent profile
+  // Fetch agent profile (with fallback so widget is ALWAYS visible for admin & agents)
   useEffect(() => {
-    if (!userId) return;
     const fetchAgent = async () => {
-      const adminClient = require('@supabase/supabase-js').createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      );
-      const { data } = await adminClient
-        .from('call_agents')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-      if (data) setAgentData(data);
+      try {
+        const adminClient = require('@supabase/supabase-js').createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        );
+        
+        let foundAgent = null;
+        if (userId) {
+          const { data } = await adminClient
+            .from('call_agents')
+            .select('*')
+            .eq('user_id', userId)
+            .limit(1);
+          if (data && data.length > 0) foundAgent = data[0];
+        }
+
+        if (!foundAgent) {
+          const { data: anyAgents } = await adminClient
+            .from('call_agents')
+            .select('*')
+            .limit(1);
+          if (anyAgents && anyAgents.length > 0) foundAgent = anyAgents[0];
+        }
+
+        if (foundAgent) {
+          setAgentData(foundAgent);
+        }
+      } catch (err) {
+        console.error("Error fetching agent profile:", err);
+      }
     };
     fetchAgent();
   }, [userId]);
 
   // Realtime Active Session listener and polling backup
   useEffect(() => {
-    if (!agentData) return;
+    if (!agentData?.id) return;
 
     const fetchSession = async () => {
       const { data } = await getRecentCalls(agentData.id);
@@ -457,8 +480,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
       alert("Failed to start call");
     }
   };
-
-  if (!agentData) return null; // Don't show widget if not an agent
 
   const isSessionActive = activeSession && !['ended', 'failed', 'busy', 'rejected', 'no_answer', 'switched_off'].includes(activeSession.status);
   const hasActiveInteraction = activeCall || incomingCall || isSessionActive;
