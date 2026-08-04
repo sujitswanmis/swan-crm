@@ -222,6 +222,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, [agentData, supabase, updateActiveSession]);
 
+  const [activeSipUsername, setActiveSipUsername] = useState('');
+
   const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
     if (!clientInstance) return;
     setConnectionState('connecting');
@@ -230,6 +232,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
       const data = await res.json();
       if (data.username && data.password) {
+        setActiveSipUsername(data.username);
         clientInstance.login(data.username, data.password);
       } else if (data.token) {
         clientInstance.loginWithAccessToken(data.token);
@@ -402,13 +405,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
       const formattedCustomer = customerNumber.startsWith('+') ? customerNumber : `+91${customerNumber}`;
       const formattedAgentMobile = agentMobile ? (agentMobile.startsWith('+') ? agentMobile : `+91${agentMobile}`) : '';
 
+      const sipUriToDial = activeSipUsername ? `sip:${activeSipUsername}@phone.plivo.com` : agentData?.plivo_sip_uri;
+
       const res = await fetch('/api/plivo/start-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerNumber: formattedCustomer,
           callingMode,
-          agentEndpoint: agentData?.plivo_sip_uri,
+          agentEndpoint: sipUriToDial,
           agentMobile: formattedAgentMobile
         })
       });
@@ -487,7 +492,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
             <div style={{ background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.8rem', border: '1px solid var(--border-light)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>SIP Endpoint:</span>
-                <span style={{ fontWeight: 600 }}>{agentData?.plivo_sip_uri?.split('@')[0] || 'Unassigned'}</span>
+                <span style={{ fontWeight: 600 }}>{activeSipUsername || agentData?.plivo_sip_uri?.split('@')[0] || 'Unassigned'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
