@@ -18,6 +18,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [callDuration, setCallDuration] = useState(0);
   const [activeSession, setActiveSession] = useState(null);
   const [callNotice, setCallNotice] = useState(null); // Notice banner for Busy, Switched Off, Rejected, etc.
+  const [isCalling, setIsCalling] = useState(false);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
   const [agentData, setAgentData] = useState({
     id: 'default_agent',
@@ -453,10 +454,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const handleStartCall = async (e) => {
     e.preventDefault();
     if (!customerNumber) return;
+    setIsCalling(true);
 
     try {
       if (callingMode === 'browser_webrtc') {
         localStorage.setItem('pendingOutboundCall', 'true');
+        if (connectionState !== 'online' && plivoClientRef.current) {
+          connectSoftphone();
+        }
       }
 
       const res = await fetch('/api/plivo/start-call', {
@@ -473,11 +478,21 @@ export default function GlobalSoftphoneWidget({ userId }) {
       const data = await res.json();
       if (!res.ok) {
         alert(data.error || 'Failed to initiate call');
+        setIsCalling(false);
       } else {
-        // Softphone state will auto-update via Realtime listener / polling
+        // Optimistically transition UI immediately to Calling state
+        setActiveSession({
+          id: `temp_${Date.now()}`,
+          room_name: data.roomName,
+          status: 'initiated',
+          customer_number: customerNumber,
+          created_at: new Date().toISOString()
+        });
+        setIsCalling(false);
       }
     } catch (err) {
       alert("Failed to start call");
+      setIsCalling(false);
     }
   };
 
@@ -677,15 +692,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
                   <button 
                     type="submit" 
-                    disabled={connectionState !== 'online' && callingMode === 'browser_webrtc'}
+                    disabled={isCalling}
                     style={{ 
                       width: '100%', 
                       padding: '0.75rem', 
-                      background: (connectionState === 'online' || callingMode !== 'browser_webrtc') ? '#3b82f6' : 'var(--border-light)', 
+                      background: isCalling ? 'var(--border-light)' : '#3b82f6', 
                       color: 'white', 
                       border: 'none', 
                       borderRadius: '6px', 
-                      cursor: (connectionState === 'online' || callingMode !== 'browser_webrtc') ? 'pointer' : 'not-allowed', 
+                      cursor: isCalling ? 'wait' : 'pointer', 
                       fontWeight: 600, 
                       display: 'flex', 
                       alignItems: 'center', 
@@ -693,7 +708,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
                       gap: '0.5rem' 
                     }}
                   >
-                    <PhoneCall size={18} /> Call Customer
+                    {isCalling ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" /> Calling...
+                      </>
+                    ) : (
+                      <>
+                        <PhoneCall size={18} /> Call Customer
+                      </>
+                    )}
                   </button>
                 </form>
               </div>
