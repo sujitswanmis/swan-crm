@@ -15,11 +15,25 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: agentData } = await adminClient
+    let { data: agentData } = await adminClient
       .from('call_agents')
       .select('plivo_username, plivo_password')
       .eq('user_id', user.id)
       .single();
+
+    // Fallback: if logged-in user is admin or unassigned agent, pick first active Plivo SIP endpoint
+    if (!agentData || !agentData.plivo_username || !agentData.plivo_password) {
+      const { data: fallbackList } = await adminClient
+        .from('call_agents')
+        .select('plivo_username, plivo_password')
+        .not('plivo_username', 'is', null)
+        .not('plivo_password', 'is', null)
+        .limit(1);
+
+      if (fallbackList && fallbackList.length > 0) {
+        agentData = fallbackList[0];
+      }
+    }
 
     if (!agentData || !agentData.plivo_username) {
       return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
