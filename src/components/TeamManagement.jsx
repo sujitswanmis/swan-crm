@@ -8,30 +8,7 @@ import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
 import { createClient } from '@/utils/supabase/client';
 
-const MODULES_CONFIG = [
-  { id: 'analytics', label: 'Analytics Dashboard', category: 'General' },
-  { id: 'new_swan_ai', label: 'New Swan AI', category: 'General' },
-  { id: 'callcenter', label: 'Call Center', category: 'General' },
-  { id: 'registration', label: 'New Client Registration', category: 'Sales' },
-  { id: 'report', label: 'Client Registered Report', category: 'Sales' },
-  { id: 'leads', label: 'Lead Data', category: 'Sales' },
-  { id: 'orders', label: 'Order Management', category: 'Sales' },
-  { id: 'mrp', label: 'MRP System', category: 'Purchase' },
-  { id: 'mrp_against', label: 'MRP Against', category: 'Purchase' },
-  { id: 'recruiter', label: 'Recruiter Dashboard', category: 'Human Resource' },
-  { id: 'joining', label: 'Joining Process', category: 'Human Resource' },
-  { id: 'team', label: 'Team Management', category: 'System' },
-  { id: 'aiadmin', label: 'User AI Usage', category: 'System' },
-  { id: 'aiknowledgebase', label: 'AI Knowledge Base (RAG)', category: 'System' },
-  { id: 'calladmin', label: 'Call Admin', category: 'System' },
-  { id: 'aicallcenter', label: 'AI Call Center', category: 'System' },
-  { id: 'whatsapp_official', label: 'WhatsApp Official', category: 'System' },
-  { id: 'whatsapp_unofficial', label: 'WhatsApp UnOfficial', category: 'System' },
-  { id: 'sms_config', label: 'SMS Configuration', category: 'System' },
-  { id: 'rcs_config', label: 'RCS Configuration', category: 'System' },
-  { id: 'email_config', label: 'Email Configuration', category: 'System' },
-  { id: 'settings', label: 'Settings', category: 'System' },
-];
+import { MODULES_CONFIG } from '@/config/modulesConfig';
 
 const DEFAULT_DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",

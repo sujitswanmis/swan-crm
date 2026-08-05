@@ -31,19 +31,7 @@ import PartyMasterModule from './Party/PartyMasterModule';
 import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
 import LocationManagementModule from './Location/LocationManagementModule';
 
-const MODULES_CONFIG = [
-  { id: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
-  { id: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
-  { id: 'leads', label: 'Lead Data', category: 'Sales', icon: <Users size={20} /> },
-  { id: 'party', label: 'Party Master', category: 'Sales', icon: <Building2 size={20} /> },
-  { id: 'orders', label: 'Order', category: 'Sales', icon: <CheckCircle size={20} /> },
-  { id: 'mrp', label: 'MRP', category: 'Purchase', icon: <Archive size={20} /> },
-  { id: 'mrp_against', label: 'MRP Against', category: 'Purchase', icon: <FileText size={20} /> },
-  { id: 'recruiter', label: 'Recruiter', category: 'Human Resource', icon: <Users size={20} /> },
-  { id: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
-  { id: 'location_master', label: 'Location Master', category: 'Sales', icon: <Globe size={20} /> },
-  { id: 'ai', label: 'New Swan AI', category: 'System', icon: <Bot size={20} /> },
-];
+import { MODULES_CONFIG } from '@/config/modulesConfig';
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
@@ -935,11 +923,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                                 setRecruiterMenuExpanded(!recruiterMenuExpanded);
                               }
                             } else {
-                              handleTabChange(module.id); 
+                              handleTabChange(module.path || module.id); 
                             }
                           }}
                           className="nav-item" 
-                          data-active={activeTab === module.id}
+                          data-active={activeTab === (module.path || module.id)}
                           title={isSidebarCollapsed ? module.label : undefined}
                           style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                         >
