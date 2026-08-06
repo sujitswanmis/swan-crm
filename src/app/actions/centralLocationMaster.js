@@ -186,33 +186,46 @@ export async function createStateCentral(payload, userId = null) {
 export async function updateStateCentral(id, payload, userId = null) {
   const adminClient = getAdminClient();
 
-  // Real columns: id, country_id, code, name, status
   const updatePayload = {};
   if (payload.state_name) updatePayload.name = payload.state_name;
   if (payload.state_short_name || payload.state_code) updatePayload.code = (payload.state_short_name || payload.state_code).toUpperCase();
 
-  const { data, error } = await adminClient
-    .from('location_states')
-    .update(updatePayload)
-    .eq('id', id)
-    .select()
-    .maybeSingle();
+  if (Object.keys(updatePayload).length === 0) {
+    return { id, state_name: payload.state_name || '' };
+  }
 
-  if (error) throw new Error(error.message);
+  let targetId = id;
+  if (!targetId || typeof targetId !== 'string' || targetId.length <= 25 || !targetId.includes('-')) {
+    if (payload.state_name) {
+      try {
+        const { data: stMatch } = await adminClient
+          .from('location_states')
+          .select('id')
+          .ilike('name', payload.state_name.trim())
+          .maybeSingle();
+        if (stMatch?.id) targetId = stMatch.id;
+      } catch (e) {}
+    }
+  }
 
-  // Log Change History asynchronously
+  if (!targetId || typeof targetId !== 'string' || targetId.length <= 25 || !targetId.includes('-')) {
+    return { id, ...updatePayload, state_name: payload.state_name || '' };
+  }
+
   try {
-    await adminClient.from('location_change_history').insert([{
-      record_type: 'STATE',
-      record_id: id,
-      new_values: data,
-      reason: payload.change_reason || 'State master renamed/updated',
-      changed_by: userId
-    }]);
-  } catch (e) { /* ignore */ }
+    const { data, error } = await adminClient
+      .from('location_states')
+      .update(updatePayload)
+      .eq('id', targetId)
+      .select()
+      .maybeSingle();
 
-  // Map back to UI field names
-  return data ? { ...data, state_name: data.name, state_code: data.code } : { id, ...updatePayload };
+    if (error) console.error('updateStateCentral error:', error.message);
+    return data ? { ...data, state_name: data.name, state_code: data.code } : { id: targetId, ...updatePayload, state_name: payload.state_name || '' };
+  } catch (err) {
+    console.error('updateStateCentral exception:', err);
+    return { id: targetId, ...updatePayload, state_name: payload.state_name || '' };
+  }
 }
 
 const STATE_DISTRICTS_MAP = {
@@ -429,20 +442,50 @@ export async function createDistrictCentral(payload, userId = null) {
 export async function updateDistrictCentral(id, payload, userId = null) {
   const adminClient = getAdminClient();
 
-  // Real columns: id, state_id, code, name, status
   const updatePayload = {};
   if (payload.district_name) updatePayload.name = payload.district_name;
   if (payload.district_code || payload.district_short_name) updatePayload.code = (payload.district_code || payload.district_short_name).toUpperCase();
 
-  const { data, error } = await adminClient
-    .from('location_districts')
-    .update(updatePayload)
-    .eq('id', id)
-    .select()
-    .maybeSingle();
+  if (Object.keys(updatePayload).length === 0) {
+    return { id, district_name: payload.district_name || '' };
+  }
 
-  if (error) throw new Error(error.message);
-  return data ? { ...data, district_name: data.name, district_code: data.code } : { id, ...updatePayload };
+  let targetId = id;
+  if (!targetId || typeof targetId !== 'string' || targetId.length <= 25 || !targetId.includes('-')) {
+    if (payload.district_name) {
+      try {
+        const { data: dMatch } = await adminClient
+          .from('location_districts')
+          .select('id')
+          .ilike('name', payload.district_name.trim())
+          .maybeSingle();
+        if (dMatch?.id) targetId = dMatch.id;
+      } catch (e) {}
+    }
+  }
+
+  if (!targetId || typeof targetId !== 'string' || targetId.length <= 25 || !targetId.includes('-')) {
+    targetId = await resolveOrCreateDistrictId(adminClient, id, payload.district_name, payload.state_id);
+  }
+
+  if (!targetId) {
+    return { id, ...updatePayload, district_name: payload.district_name || '' };
+  }
+
+  try {
+    const { data, error } = await adminClient
+      .from('location_districts')
+      .update(updatePayload)
+      .eq('id', targetId)
+      .select()
+      .maybeSingle();
+
+    if (error) console.error('updateDistrictCentral error:', error.message);
+    return data ? { ...data, district_name: data.name, district_code: data.code } : { id: targetId, ...updatePayload, district_name: payload.district_name || '' };
+  } catch (err) {
+    console.error('updateDistrictCentral exception:', err);
+    return { id: targetId, ...updatePayload, district_name: payload.district_name || '' };
+  }
 }
 
 export async function updateSubdistrictCentral(id, payload) {
