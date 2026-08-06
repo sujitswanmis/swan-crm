@@ -164,15 +164,18 @@ export default function LocationManagementModule() {
 
   // District Selected -> Fetch Tehsils, Blocks, Settlements, POs strictly from Database
   const handleDistrictClick = async (dist) => {
-    setSelectedDistrictId(dist.id);
-    setSelectedDistrictObj(dist);
+    const dId = typeof dist === 'object' ? dist.id : dist;
+    const dName = typeof dist === 'object' ? dist.district_name : null;
+
+    setSelectedDistrictId(dId);
+    setSelectedDistrictObj(typeof dist === 'object' ? dist : null);
     setLoading(true);
     try {
       const [subs, blks, setts, pos] = await Promise.all([
-        getSubdistrictsCentral(dist.id),
-        getBlocksCentral(dist.id),
-        getSettlementsCentral(dist.id),
-        getPostOfficesCentral('', dist.id)
+        getSubdistrictsCentral(dId, dName),
+        getBlocksCentral(dId, dName),
+        getSettlementsCentral(dId),
+        getPostOfficesCentral('', dId)
       ]);
       setSubdistrictsList(subs || []);
       setBlocksList(blks || []);

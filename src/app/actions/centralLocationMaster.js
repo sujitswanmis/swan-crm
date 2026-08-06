@@ -577,18 +577,38 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
 }
 
 // 4. SUBDISTRICTS (TEHSILS / MANDALS)
-export async function getSubdistrictsCentral(districtId) {
-  if (!districtId) return [];
+export async function getSubdistrictsCentral(districtId, districtName = null) {
+  if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
-  const { data, error } = await adminClient
-    .from('location_subdistricts')
-    .select('*')
-    .eq('district_id', districtId)
-    .eq('is_active', true)
-    .order('subdistrict_name', { ascending: true });
 
-  if (error) return [];
-  return data || [];
+  let targetDistrictId = districtId;
+
+  // Resolve targetDistrictId if it's not a valid DB UUID
+  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
+    if (districtName) {
+      try {
+        const { data: dMatch } = await adminClient
+          .from('location_districts')
+          .select('id')
+          .ilike('district_name', districtName.trim())
+          .maybeSingle();
+        if (dMatch?.id) targetDistrictId = dMatch.id;
+      } catch (e) {}
+    }
+  }
+
+  if (targetDistrictId && typeof targetDistrictId === 'string' && targetDistrictId.length > 25 && targetDistrictId.includes('-')) {
+    const { data, error } = await adminClient
+      .from('location_subdistricts')
+      .select('*')
+      .eq('district_id', targetDistrictId)
+      .eq('is_active', true)
+      .order('subdistrict_name', { ascending: true });
+
+    if (!error && data) return data;
+  }
+
+  return [];
 }
 
 export async function createSubdistrictCentral(payload, userId = null) {
@@ -683,21 +703,40 @@ export async function createSubdistrictCentral(payload, userId = null) {
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
-export async function getBlocksCentral(districtId) {
-  if (!districtId) return [];
+export async function getBlocksCentral(districtId, districtName = null) {
+  if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
-  try {
-    const { data, error } = await adminClient
-      .from('location_blocks')
-      .select('*')
-      .eq('district_id', districtId)
-      .eq('is_active', true)
-      .order('block_name', { ascending: true });
 
-    if (!error && data) return data;
-  } catch (e) {
-    console.error('getBlocksCentral error:', e);
+  let targetDistrictId = districtId;
+
+  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
+    if (districtName) {
+      try {
+        const { data: dMatch } = await adminClient
+          .from('location_districts')
+          .select('id')
+          .ilike('district_name', districtName.trim())
+          .maybeSingle();
+        if (dMatch?.id) targetDistrictId = dMatch.id;
+      } catch (e) {}
+    }
   }
+
+  if (targetDistrictId && typeof targetDistrictId === 'string' && targetDistrictId.length > 25 && targetDistrictId.includes('-')) {
+    try {
+      const { data, error } = await adminClient
+        .from('location_blocks')
+        .select('*')
+        .eq('district_id', targetDistrictId)
+        .eq('is_active', true)
+        .order('block_name', { ascending: true });
+
+      if (!error && data) return data;
+    } catch (e) {
+      console.error('getBlocksCentral error:', e);
+    }
+  }
+
   return [];
 }
 
