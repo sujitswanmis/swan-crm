@@ -104,20 +104,28 @@ export default function LocationManagementModule() {
         if (selectedDistrictId === editingItem.data.id) {
           setSelectedDistrictObj(prev => prev ? { ...prev, name: editForm.name, district_name: editForm.name, code: editForm.short_name } : null);
         }
-      } else if (editingItem.type === 'SUBDISTRICT') {
+      } else if (editingItem.type === 'SUBDISTRICT' || editingItem.type === 'TEHSIL') {
         await updateSubdistrictCentral(editingItem.data.id, {
           subdistrict_name: editForm.name,
           subdistrict_code: editForm.short_name
         });
-        // Reload from DB
+        // Instant local state update
+        setSubdistrictsList(prev => prev.map(s =>
+          s.id === editingItem.data.id ? { ...s, name: editForm.name, subdistrict_name: editForm.name, code: editForm.short_name, subdistrict_code: editForm.short_name, subdistrict_type: editForm.sub_type || s.subdistrict_type } : s
+        ));
         if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
+        else if (selectedDistrictId) await handleDistrictClick(selectedDistrictId);
       } else if (editingItem.type === 'BLOCK') {
         await updateBlockCentral(editingItem.data.id, {
           block_name: editForm.name,
           block_code: editForm.short_name
         });
-        // Reload from DB
+        // Instant local state update
+        setBlocksList(prev => prev.map(b =>
+          b.id === editingItem.data.id ? { ...b, name: editForm.name, block_name: editForm.name, code: editForm.short_name, block_code: editForm.short_name } : b
+        ));
         if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
+        else if (selectedDistrictId) await handleDistrictClick(selectedDistrictId);
       }
       setEditingItem(null);
     } catch (err) {
