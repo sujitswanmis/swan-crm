@@ -1162,19 +1162,6 @@ export default function LocationManagementModule() {
                 </div>
               )}
 
-              {/* Sub-District Code */}
-              {(editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Sub-District Code</label>
-                  <input
-                    type="text"
-                    value={editForm.lgd_code}
-                    onChange={e => setEditForm({ ...editForm, lgd_code: e.target.value })}
-                    placeholder="e.g. TEH-0012"
-                    style={{ width: '100%', padding: '0.65rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '8px', color: '#0f172a', fontWeight: 600 }}
-                  />
-                </div>
-              )}
 
               {/* Block Code */}
               {editingItem.type === 'BLOCK' && (
