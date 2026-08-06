@@ -165,7 +165,7 @@ export default function LocationManagementModule() {
   // District Selected -> Fetch Tehsils, Blocks, Settlements, POs strictly from Database
   const handleDistrictClick = async (dist) => {
     const dId = typeof dist === 'object' ? dist.id : dist;
-    const dName = typeof dist === 'object' ? dist.district_name : null;
+    const dName = typeof dist === 'object' ? (dist.name || dist.district_name) : null;
 
     setSelectedDistrictId(dId);
     setSelectedDistrictObj(typeof dist === 'object' ? dist : null);
@@ -246,7 +246,7 @@ export default function LocationManagementModule() {
         country_id: '00000000-0000-0000-0000-000000000001',
         state_id: selectedStateId,
         district_id: selectedDistrictId,
-        district_name: selectedDistrictObj?.district_name
+        district_name: selectedDistrictObj?.name || selectedDistrictObj?.district_name
       });
 
       if (res && res.success === false) {
@@ -256,12 +256,8 @@ export default function LocationManagementModule() {
 
       setShowAddSubdistrictModal(false);
       setSubdistrictForm({ subdistrict_name: '', subdistrict_code: '', subdistrict_short_name: '', subdistrict_type: 'TEHSIL' });
-      const newSub = res?.data || res;
-      if (newSub && newSub.id) {
-        setSubdistrictsList(prev => [...prev, newSub].sort((a, b) => a.subdistrict_name.localeCompare(b.subdistrict_name)));
-      } else {
-        if (selectedDistrictObj) handleDistrictClick(selectedDistrictObj);
-      }
+      // Always reload from DB to show latest data
+      if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
     } catch (err) {
       alert('Error creating Tehsil: ' + err.message);
     }
@@ -278,7 +274,7 @@ export default function LocationManagementModule() {
         country_id: '00000000-0000-0000-0000-000000000001',
         state_id: selectedStateId,
         district_id: selectedDistrictId,
-        district_name: selectedDistrictObj?.district_name
+        district_name: selectedDistrictObj?.name || selectedDistrictObj?.district_name
       });
 
       if (res && res.success === false) {
@@ -288,12 +284,8 @@ export default function LocationManagementModule() {
 
       setShowAddBlockModal(false);
       setBlockForm({ block_name: '', block_code: '', block_short_name: '' });
-      const newBlk = res?.data || res;
-      if (newBlk && newBlk.id) {
-        setBlocksList(prev => [...prev, newBlk].sort((a, b) => a.block_name.localeCompare(b.block_name)));
-      } else {
-        if (selectedDistrictObj) handleDistrictClick(selectedDistrictObj);
-      }
+      // Always reload from DB to show latest data
+      if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
     } catch (err) {
       alert('Error creating Block: ' + err.message);
     }
