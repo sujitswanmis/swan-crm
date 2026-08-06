@@ -69,10 +69,24 @@ export default function LocationManagementModule() {
 
   const startEditing = (type, item) => {
     setEditingItem({ type, data: item });
+
+    let lgd = item.lgd_code || item.official_code || item.state_lgd_code || item.district_lgd_code || item.subdistrict_code || item.block_code || '';
+    let short = item.short_name || item.district_code || item.state_code || item.subdistrict_short_name || item.block_short_name || '';
+
+    if (type === 'DISTRICT') {
+      short = item.short_name || item.district_code || '';
+      lgd = item.lgd_code || item.official_code || '';
+      if (!lgd && item.code && item.code.includes('|')) {
+        const parts = item.code.split('|');
+        short = parts[0];
+        lgd = parts[1] || '';
+      }
+    }
+
     setEditForm({
       name: item.name || item.state_name || item.district_name || item.subdistrict_name || item.block_name || '',
-      lgd_code: item.code || item.subdistrict_code || item.official_code || item.state_lgd_code || item.district_lgd_code || item.block_code || '',
-      short_name: item.short_name || item.subdistrict_short_name || item.state_code || item.district_code || item.block_short_name || '',
+      lgd_code: lgd,
+      short_name: short,
       sub_type: item.subdistrict_type || 'TEHSIL',
       reason: ''
     });
@@ -96,13 +110,32 @@ export default function LocationManagementModule() {
         const updated = await updateDistrictCentral(editingItem.data.id, {
           district_name: editForm.name,
           district_code: editForm.short_name,
+          district_lgd_code: editForm.lgd_code,
           change_reason: editForm.reason
         });
         setDistrictsList(prev => prev.map(d =>
-          d.id === editingItem.data.id ? { ...d, name: editForm.name, district_name: editForm.name, code: editForm.short_name, district_code: editForm.short_name } : d
+          d.id === editingItem.data.id ? {
+            ...d,
+            name: editForm.name,
+            district_name: editForm.name,
+            code: editForm.short_name,
+            district_code: editForm.short_name,
+            short_name: editForm.short_name,
+            official_code: editForm.lgd_code,
+            lgd_code: editForm.lgd_code
+          } : d
         ));
         if (selectedDistrictId === editingItem.data.id) {
-          setSelectedDistrictObj(prev => prev ? { ...prev, name: editForm.name, district_name: editForm.name, code: editForm.short_name } : null);
+          setSelectedDistrictObj(prev => prev ? {
+            ...prev,
+            name: editForm.name,
+            district_name: editForm.name,
+            code: editForm.short_name,
+            district_code: editForm.short_name,
+            short_name: editForm.short_name,
+            official_code: editForm.lgd_code,
+            lgd_code: editForm.lgd_code
+          } : null);
         }
       } else if (editingItem.type === 'SUBDISTRICT' || editingItem.type === 'TEHSIL') {
         const codeToSave = editForm.lgd_code || editForm.short_name;
