@@ -18,6 +18,8 @@ import {
   updateStateCentral,
   createDistrictCentral,
   updateDistrictCentral,
+  updateSubdistrictCentral,
+  updateBlockCentral,
   createSubdistrictCentral,
   createBlockCentral,
   getPendingLocationRequests,
@@ -68,9 +70,9 @@ export default function LocationManagementModule() {
   const startEditing = (type, item) => {
     setEditingItem({ type, data: item });
     setEditForm({
-      name: item.state_name || item.district_name || item.subdistrict_name || item.block_name || '',
+      name: item.name || item.state_name || item.district_name || item.subdistrict_name || item.block_name || '',
       lgd_code: item.official_code || item.state_lgd_code || item.district_lgd_code || item.subdistrict_code || item.block_code || '',
-      short_name: item.state_code || item.district_code || item.subdistrict_short_name || item.block_short_name || '',
+      short_name: item.code || item.state_code || item.district_code || item.subdistrict_short_name || item.block_short_name || '',
       sub_type: item.subdistrict_type || 'TEHSIL',
       reason: ''
     });
@@ -81,33 +83,41 @@ export default function LocationManagementModule() {
     if (!editingItem) return;
     try {
       if (editingItem.type === 'STATE') {
-        await updateStateCentral(editingItem.data.id, {
+        const updated = await updateStateCentral(editingItem.data.id, {
           state_name: editForm.name,
           state_short_name: editForm.short_name,
           state_lgd_code: editForm.lgd_code,
           change_reason: editForm.reason
         });
-        // Realtime instant UI update without refresh
-        setStatesList(prev => prev.map(st => (
-          st.id === editingItem.data.id ? { ...st, state_name: editForm.name, state_code: editForm.short_name, official_code: editForm.lgd_code } : st
-        )));
+        setStatesList(prev => prev.map(st =>
+          st.id === editingItem.data.id ? { ...st, name: editForm.name, state_name: editForm.name, code: editForm.short_name, state_code: editForm.short_name } : st
+        ));
       } else if (editingItem.type === 'DISTRICT') {
-        await updateDistrictCentral(editingItem.data.id, {
+        const updated = await updateDistrictCentral(editingItem.data.id, {
           district_name: editForm.name,
           district_code: editForm.short_name,
-          district_lgd_code: editForm.lgd_code,
-          official_code: editForm.lgd_code,
           change_reason: editForm.reason
         });
-
-        // Realtime instant UI update without refresh
-        setDistrictsList(prev => prev.map(d => (
-          d.id === editingItem.data.id ? { ...d, district_name: editForm.name, district_code: editForm.short_name, official_code: editForm.lgd_code } : d
-        )));
-
+        setDistrictsList(prev => prev.map(d =>
+          d.id === editingItem.data.id ? { ...d, name: editForm.name, district_name: editForm.name, code: editForm.short_name, district_code: editForm.short_name } : d
+        ));
         if (selectedDistrictId === editingItem.data.id) {
-          setSelectedDistrictObj(prev => prev ? { ...prev, district_name: editForm.name, district_code: editForm.short_name } : null);
+          setSelectedDistrictObj(prev => prev ? { ...prev, name: editForm.name, district_name: editForm.name, code: editForm.short_name } : null);
         }
+      } else if (editingItem.type === 'SUBDISTRICT') {
+        await updateSubdistrictCentral(editingItem.data.id, {
+          subdistrict_name: editForm.name,
+          subdistrict_code: editForm.short_name
+        });
+        // Reload from DB
+        if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
+      } else if (editingItem.type === 'BLOCK') {
+        await updateBlockCentral(editingItem.data.id, {
+          block_name: editForm.name,
+          block_code: editForm.short_name
+        });
+        // Reload from DB
+        if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
       }
       setEditingItem(null);
     } catch (err) {
@@ -891,7 +901,7 @@ export default function LocationManagementModule() {
                         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>Active</span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <button onClick={() => startEditing('TEHSIL', sub)} style={{ padding: '0.3rem 0.65rem', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
+                        <button onClick={() => startEditing('SUBDISTRICT', sub)} style={{ padding: '0.3rem 0.65rem', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
                           ✏️ Edit
                         </button>
                       </td>

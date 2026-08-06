@@ -185,59 +185,22 @@ export async function createStateCentral(payload, userId = null) {
 
 export async function updateStateCentral(id, payload, userId = null) {
   const adminClient = getAdminClient();
-  const nameNorm = await normalizeLocationText(payload.state_name || '');
 
-  const shortName = payload.state_short_name || payload.state_code;
-  const lgdCode = payload.state_lgd_code || payload.official_code;
+  // Real columns: id, country_id, code, name, status
+  const updatePayload = {};
+  if (payload.state_name) updatePayload.name = payload.state_name;
+  if (payload.state_short_name || payload.state_code) updatePayload.code = (payload.state_short_name || payload.state_code).toUpperCase();
 
-  let data = null;
-  let updateError = null;
+  const { data, error } = await adminClient
+    .from('location_states')
+    .update(updatePayload)
+    .eq('id', id)
+    .select()
+    .maybeSingle();
 
-  // Try update with all fields
-  try {
-    const res = await adminClient
-      .from('location_states')
-      .update({
-        state_name: payload.state_name,
-        state_code: shortName ? shortName.toUpperCase() : undefined,
-        official_code: lgdCode || undefined,
-        name_normalized: nameNorm,
-        updated_at: new Date().toISOString(),
-        updated_by: userId
-      })
-      .eq('id', id)
-      .select()
-      .maybeSingle();
-    data = res.data;
-    updateError = res.error;
-  } catch (err) {
-    updateError = err;
-  }
+  if (error) throw new Error(error.message);
 
-  // Fallback without optional columns
-  if (updateError || !data) {
-    try {
-      const res = await adminClient
-        .from('location_states')
-        .update({
-          state_name: payload.state_name,
-          name_normalized: nameNorm,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .maybeSingle();
-      data = res.data;
-    } catch (err) {
-      console.error('State update fallback error:', err);
-    }
-  }
-
-  if (!data) {
-    data = { id, state_name: payload.state_name, state_code: shortName, official_code: lgdCode, is_active: true };
-  }
-
-  // Log Change History
+  // Log Change History asynchronously
   try {
     await adminClient.from('location_change_history').insert([{
       record_type: 'STATE',
@@ -248,7 +211,8 @@ export async function updateStateCentral(id, payload, userId = null) {
     }]);
   } catch (e) { /* ignore */ }
 
-  return data;
+  // Map back to UI field names
+  return data ? { ...data, state_name: data.name, state_code: data.code } : { id, ...updatePayload };
 }
 
 const STATE_DISTRICTS_MAP = {
@@ -464,34 +428,59 @@ export async function createDistrictCentral(payload, userId = null) {
 
 export async function updateDistrictCentral(id, payload, userId = null) {
   const adminClient = getAdminClient();
-  const nameNorm = await normalizeLocationText(payload.district_name || '');
 
-  let data = null;
-  let error = null;
+  // Real columns: id, state_id, code, name, status
+  const updatePayload = {};
+  if (payload.district_name) updatePayload.name = payload.district_name;
+  if (payload.district_code || payload.district_short_name) updatePayload.code = (payload.district_code || payload.district_short_name).toUpperCase();
 
-  try {
-    const res = await adminClient
-      .from('location_districts')
-      .update({
-        district_name: payload.district_name,
-        district_code: payload.district_code ? payload.district_code.toUpperCase() : undefined,
-        name_normalized: nameNorm,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .maybeSingle();
+  const { data, error } = await adminClient
+    .from('location_districts')
+    .update(updatePayload)
+    .eq('id', id)
+    .select()
+    .maybeSingle();
 
-    data = res.data;
-    error = res.error;
-  } catch (err) {
-    error = err;
-  }
+  if (error) throw new Error(error.message);
+  return data ? { ...data, district_name: data.name, district_code: data.code } : { id, ...updatePayload };
+}
 
-  if (error || !data) {
-    throw new Error(error?.message || 'Failed to update district');
-  }
-  return data;
+export async function updateSubdistrictCentral(id, payload) {
+  const adminClient = getAdminClient();
+
+  // Real columns: id, district_id, code, name, status
+  const updatePayload = {};
+  if (payload.subdistrict_name) updatePayload.name = payload.subdistrict_name;
+  if (payload.subdistrict_code) updatePayload.code = payload.subdistrict_code.toUpperCase();
+
+  const { data, error } = await adminClient
+    .from('location_subdistricts')
+    .update(updatePayload)
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data ? { ...data, subdistrict_name: data.name, subdistrict_code: data.code, subdistrict_type: data.subdistrict_type || 'TEHSIL' } : { id, ...updatePayload };
+}
+
+export async function updateBlockCentral(id, payload) {
+  const adminClient = getAdminClient();
+
+  // Real columns: id, district_id, code, name, status
+  const updatePayload = {};
+  if (payload.block_name) updatePayload.name = payload.block_name;
+  if (payload.block_code) updatePayload.code = payload.block_code.toUpperCase();
+
+  const { data, error } = await adminClient
+    .from('location_blocks')
+    .update(updatePayload)
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data ? { ...data, block_name: data.name, block_code: data.code } : { id, ...updatePayload };
 }
 
 export async function deleteDistrictCentral(id) {
