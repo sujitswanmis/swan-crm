@@ -242,7 +242,8 @@ export default function LocationManagementModule() {
         subdistrict_type: subdistrictForm.subdistrict_type || 'TEHSIL',
         country_id: '00000000-0000-0000-0000-000000000001',
         state_id: selectedStateId,
-        district_id: selectedDistrictId
+        district_id: selectedDistrictId,
+        district_name: selectedDistrictObj?.district_name
       });
       setShowAddSubdistrictModal(false);
       setSubdistrictForm({ subdistrict_name: '', subdistrict_code: '', subdistrict_short_name: '', subdistrict_type: 'TEHSIL' });
@@ -266,7 +267,8 @@ export default function LocationManagementModule() {
         block_short_name: blockForm.block_short_name,
         country_id: '00000000-0000-0000-0000-000000000001',
         state_id: selectedStateId,
-        district_id: selectedDistrictId
+        district_id: selectedDistrictId,
+        district_name: selectedDistrictObj?.district_name
       });
       setShowAddBlockModal(false);
       setBlockForm({ block_name: '', block_code: '', block_short_name: '' });
