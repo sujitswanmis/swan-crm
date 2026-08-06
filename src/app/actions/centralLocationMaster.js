@@ -575,7 +575,7 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
 }
 
 // 4. SUBDISTRICTS (TEHSILS / MANDALS)
-// Real columns: id, district_id, code, name, status
+// Real DB columns: id, district_id, code, name, status
 export async function getSubdistrictsCentral(districtId, districtName = null) {
   if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
@@ -589,7 +589,7 @@ export async function getSubdistrictsCentral(districtId, districtName = null) {
         const { data: dMatch } = await adminClient
           .from('location_districts')
           .select('id')
-          .ilike('district_name', districtName.trim())
+          .ilike('name', districtName.trim())
           .maybeSingle();
         if (dMatch?.id) targetDistrictId = dMatch.id;
       } catch (e) {}
@@ -601,10 +601,17 @@ export async function getSubdistrictsCentral(districtId, districtName = null) {
       .from('location_subdistricts')
       .select('*')
       .eq('district_id', targetDistrictId)
-      .eq('is_active', true)
-      .order('subdistrict_name', { ascending: true });
+      .order('name', { ascending: true });
 
-    if (!error && data) return data;
+    if (!error && data) {
+      // Map DB columns to UI-expected field names
+      return data.map(row => ({
+        ...row,
+        subdistrict_name: row.name || '',
+        subdistrict_code: row.code || '',
+        subdistrict_type: row.subdistrict_type || 'TEHSIL'
+      }));
+    }
   }
 
   return [];
@@ -649,11 +656,16 @@ export async function createSubdistrictCentral(payload, userId = null) {
     .select()
     .single();
 
-  if (!error && data) return { success: true, data };
+  if (!error && data) {
+    // Map DB columns to UI-expected fields
+    const mapped = { ...data, subdistrict_name: data.name || payload.subdistrict_name, subdistrict_code: data.code || subCode, subdistrict_type: 'TEHSIL' };
+    return { success: true, data: mapped };
+  }
   return { success: false, error: error?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
+// Real DB columns: id, district_id, subdistrict_id, code, name, status
 export async function getBlocksCentral(districtId, districtName = null) {
   if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
@@ -666,7 +678,7 @@ export async function getBlocksCentral(districtId, districtName = null) {
         const { data: dMatch } = await adminClient
           .from('location_districts')
           .select('id')
-          .ilike('district_name', districtName.trim())
+          .ilike('name', districtName.trim())
           .maybeSingle();
         if (dMatch?.id) targetDistrictId = dMatch.id;
       } catch (e) {}
@@ -679,10 +691,16 @@ export async function getBlocksCentral(districtId, districtName = null) {
         .from('location_blocks')
         .select('*')
         .eq('district_id', targetDistrictId)
-        .eq('is_active', true)
-        .order('block_name', { ascending: true });
+        .order('name', { ascending: true });
 
-      if (!error && data) return data;
+      if (!error && data) {
+        // Map DB columns to UI-expected field names
+        return data.map(row => ({
+          ...row,
+          block_name: row.name || '',
+          block_code: row.code || ''
+        }));
+      }
     } catch (e) {
       console.error('getBlocksCentral error:', e);
     }
@@ -730,7 +748,11 @@ export async function createBlockCentral(payload, userId = null) {
     .select()
     .single();
 
-  if (!error && data) return { success: true, data };
+  if (!error && data) {
+    // Map DB columns to UI-expected fields
+    const mapped = { ...data, block_name: data.name || payload.block_name, block_code: data.code || blkCode };
+    return { success: true, data: mapped };
+  }
   return { success: false, error: error?.message || 'Database rejected Block save.' };
 }
 
