@@ -71,8 +71,8 @@ export default function LocationManagementModule() {
     setEditingItem({ type, data: item });
     setEditForm({
       name: item.name || item.state_name || item.district_name || item.subdistrict_name || item.block_name || '',
-      lgd_code: item.official_code || item.state_lgd_code || item.district_lgd_code || item.subdistrict_code || item.block_code || '',
-      short_name: item.code || item.state_code || item.district_code || item.subdistrict_short_name || item.block_short_name || '',
+      lgd_code: item.code || item.subdistrict_code || item.official_code || item.state_lgd_code || item.district_lgd_code || item.block_code || '',
+      short_name: item.short_name || item.subdistrict_short_name || item.state_code || item.district_code || item.block_short_name || '',
       sub_type: item.subdistrict_type || 'TEHSIL',
       reason: ''
     });
@@ -105,24 +105,41 @@ export default function LocationManagementModule() {
           setSelectedDistrictObj(prev => prev ? { ...prev, name: editForm.name, district_name: editForm.name, code: editForm.short_name } : null);
         }
       } else if (editingItem.type === 'SUBDISTRICT' || editingItem.type === 'TEHSIL') {
+        const codeToSave = editForm.lgd_code || editForm.short_name;
         await updateSubdistrictCentral(editingItem.data.id, {
           subdistrict_name: editForm.name,
-          subdistrict_code: editForm.short_name
+          subdistrict_code: codeToSave
         });
         // Instant local state update
         setSubdistrictsList(prev => prev.map(s =>
-          s.id === editingItem.data.id ? { ...s, name: editForm.name, subdistrict_name: editForm.name, code: editForm.short_name, subdistrict_code: editForm.short_name, subdistrict_type: editForm.sub_type || s.subdistrict_type } : s
+          s.id === editingItem.data.id ? {
+            ...s,
+            name: editForm.name,
+            subdistrict_name: editForm.name,
+            code: codeToSave,
+            subdistrict_code: codeToSave,
+            subdistrict_short_name: editForm.short_name,
+            subdistrict_type: editForm.sub_type || s.subdistrict_type
+          } : s
         ));
         if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
         else if (selectedDistrictId) await handleDistrictClick(selectedDistrictId);
       } else if (editingItem.type === 'BLOCK') {
+        const codeToSave = editForm.lgd_code || editForm.short_name;
         await updateBlockCentral(editingItem.data.id, {
           block_name: editForm.name,
-          block_code: editForm.short_name
+          block_code: codeToSave
         });
         // Instant local state update
         setBlocksList(prev => prev.map(b =>
-          b.id === editingItem.data.id ? { ...b, name: editForm.name, block_name: editForm.name, code: editForm.short_name, block_code: editForm.short_name } : b
+          b.id === editingItem.data.id ? {
+            ...b,
+            name: editForm.name,
+            block_name: editForm.name,
+            code: codeToSave,
+            block_code: codeToSave,
+            block_short_name: editForm.short_name
+          } : b
         ));
         if (selectedDistrictObj) await handleDistrictClick(selectedDistrictObj);
         else if (selectedDistrictId) await handleDistrictClick(selectedDistrictId);
@@ -1170,6 +1187,20 @@ export default function LocationManagementModule() {
                 </div>
               )}
 
+
+              {/* Sub-District Code */}
+              {(editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Sub-District Code</label>
+                  <input
+                    type="text"
+                    value={editForm.lgd_code}
+                    onChange={e => setEditForm({ ...editForm, lgd_code: e.target.value })}
+                    placeholder="e.g. TEH-0012 or 4845"
+                    style={{ width: '100%', padding: '0.65rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '8px', color: '#0f172a', fontWeight: 600 }}
+                  />
+                </div>
+              )}
 
               {/* Block Code */}
               {editingItem.type === 'BLOCK' && (
