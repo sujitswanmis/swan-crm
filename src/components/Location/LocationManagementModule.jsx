@@ -1142,7 +1142,7 @@ export default function LocationManagementModule() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '480px', color: '#0f172a', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#0f172a' }}>
-              ✏️ Edit / Rename {editingItem.type}
+              ✏️ Edit / Rename {(editingItem.type === 'SUBDISTRICT' || editingItem.type === 'TEHSIL') ? 'Sub-District / Tehsil' : editingItem.type}
             </h3>
             <form onSubmit={handleSaveEdit}>
 
@@ -1163,7 +1163,7 @@ export default function LocationManagementModule() {
               )}
 
               {/* Sub-District Code */}
-              {editingItem.type === 'TEHSIL' && (
+              {(editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') && (
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Sub-District Code</label>
                   <input
@@ -1190,8 +1190,8 @@ export default function LocationManagementModule() {
                 </div>
               )}
 
-              {/* Sub-District Type (only for TEHSIL) */}
-              {editingItem.type === 'TEHSIL' && (
+              {/* Sub-District Type */}
+              {(editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') && (
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Sub-District Type</label>
                   <select
@@ -1212,7 +1212,7 @@ export default function LocationManagementModule() {
               {/* Name */}
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>
-                  {editingItem.type === 'STATE' ? 'State' : editingItem.type === 'DISTRICT' ? 'District' : editingItem.type === 'TEHSIL' ? 'Sub-District' : 'Block'} Name *
+                  {editingItem.type === 'STATE' ? 'State' : editingItem.type === 'DISTRICT' ? 'District' : (editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') ? 'Sub-District' : 'Block'} Name *
                 </label>
                 <input
                   type="text"
@@ -1226,7 +1226,7 @@ export default function LocationManagementModule() {
               {/* Short Name */}
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ fontSize: '0.85rem', color: '#475569', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>
-                  {editingItem.type === 'STATE' ? 'State Short Name' : editingItem.type === 'DISTRICT' ? 'District Short Name / Railway Code' : editingItem.type === 'TEHSIL' ? 'Sub-District Short Name' : 'Block Short Name'}
+                  {editingItem.type === 'STATE' ? 'State Short Name' : editingItem.type === 'DISTRICT' ? 'District Short Name / Railway Code' : (editingItem.type === 'TEHSIL' || editingItem.type === 'SUBDISTRICT') ? 'Sub-District Short Name' : 'Block Short Name'}
                 </label>
                 <input
                   type="text"
