@@ -108,7 +108,8 @@ export default function LocationManagementModule() {
         const codeToSave = editForm.lgd_code || editForm.short_name;
         await updateSubdistrictCentral(editingItem.data.id, {
           subdistrict_name: editForm.name,
-          subdistrict_code: codeToSave
+          subdistrict_code: codeToSave,
+          subdistrict_type: editForm.sub_type
         });
         // Instant local state update
         setSubdistrictsList(prev => prev.map(s =>

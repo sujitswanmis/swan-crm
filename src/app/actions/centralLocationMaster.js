@@ -448,10 +448,32 @@ export async function updateDistrictCentral(id, payload, userId = null) {
 export async function updateSubdistrictCentral(id, payload) {
   const adminClient = getAdminClient();
 
-  // Real columns: id, district_id, code, name, status
   const updatePayload = {};
   if (payload.subdistrict_name) updatePayload.name = payload.subdistrict_name;
-  if (payload.subdistrict_code) updatePayload.code = payload.subdistrict_code.toUpperCase();
+
+  let baseCode = payload.subdistrict_code ? payload.subdistrict_code.toUpperCase() : null;
+  let subType = payload.subdistrict_type ? payload.subdistrict_type.toUpperCase() : null;
+
+  if (baseCode || subType) {
+    let existingBase = '';
+    let existingType = 'TEHSIL';
+    try {
+      const { data: current } = await adminClient.from('location_subdistricts').select('code').eq('id', id).maybeSingle();
+      if (current?.code) {
+        if (current.code.includes('|')) {
+          const parts = current.code.split('|');
+          existingBase = parts[0];
+          existingType = parts[1] || 'TEHSIL';
+        } else {
+          existingBase = current.code;
+        }
+      }
+    } catch (e) {}
+
+    const finalBase = baseCode || existingBase;
+    const finalType = subType || existingType;
+    updatePayload.code = `${finalBase}|${finalType}`;
+  }
 
   const { data, error } = await adminClient
     .from('location_subdistricts')
@@ -461,7 +483,21 @@ export async function updateSubdistrictCentral(id, payload) {
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return data ? { ...data, subdistrict_name: data.name, subdistrict_code: data.code, subdistrict_type: data.subdistrict_type || 'TEHSIL' } : { id, ...updatePayload };
+
+  let mappedCode = data?.code || '';
+  let mappedType = 'TEHSIL';
+  if (mappedCode.includes('|')) {
+    const parts = mappedCode.split('|');
+    mappedCode = parts[0];
+    mappedType = parts[1] || 'TEHSIL';
+  }
+
+  return data ? {
+    ...data,
+    subdistrict_name: data.name,
+    subdistrict_code: mappedCode,
+    subdistrict_type: mappedType
+  } : { id, ...updatePayload };
 }
 
 export async function updateBlockCentral(id, payload) {
@@ -593,13 +629,22 @@ export async function getSubdistrictsCentral(districtId, districtName = null) {
       .order('name', { ascending: true });
 
     if (!error && data) {
-      // Map DB columns to UI-expected field names
-      return data.map(row => ({
-        ...row,
-        subdistrict_name: row.name || '',
-        subdistrict_code: row.code || '',
-        subdistrict_type: row.subdistrict_type || 'TEHSIL'
-      }));
+      // Map DB columns to UI-expected field names with encoded subdistrict_type
+      return data.map(row => {
+        let codeVal = row.code || '';
+        let typeVal = 'TEHSIL';
+        if (codeVal.includes('|')) {
+          const parts = codeVal.split('|');
+          codeVal = parts[0];
+          typeVal = parts[1] || 'TEHSIL';
+        }
+        return {
+          ...row,
+          subdistrict_name: row.name || '',
+          subdistrict_code: codeVal,
+          subdistrict_type: typeVal
+        };
+      });
     }
   }
 
@@ -634,19 +679,22 @@ export async function createSubdistrictCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  // CONFIRMED REAL COLUMNS (locally tested): district_id, code, name
+  const baseCode = payload.subdistrict_code ? payload.subdistrict_code.toUpperCase() : `TEH-${Date.now().toString(36).toUpperCase()}`;
+  const subType = (payload.subdistrict_type || 'TEHSIL').toUpperCase();
+  const dbCode = `${baseCode}|${subType}`;
+
   const { data, error } = await adminClient
     .from('location_subdistricts')
     .insert([{
       district_id: targetDistrictId,
-      code: subCode,
+      code: dbCode,
       name: payload.subdistrict_name
     }])
     .select()
     .single();
 
   if (!error && data) {
-    const mapped = { ...data, subdistrict_name: data.name || payload.subdistrict_name, subdistrict_code: data.code || subCode, subdistrict_type: 'TEHSIL' };
+    const mapped = { ...data, subdistrict_name: data.name || payload.subdistrict_name, subdistrict_code: baseCode, subdistrict_type: subType };
     return { success: true, data: mapped };
   }
 
@@ -659,7 +707,14 @@ export async function createSubdistrictCentral(payload, userId = null) {
       .ilike('name', payload.subdistrict_name)
       .maybeSingle();
     if (existing) {
-      const mapped = { ...existing, subdistrict_name: existing.name, subdistrict_code: existing.code, subdistrict_type: 'TEHSIL' };
+      let codeVal = existing.code || '';
+      let typeVal = subType;
+      if (codeVal.includes('|')) {
+        const parts = codeVal.split('|');
+        codeVal = parts[0];
+        typeVal = parts[1] || subType;
+      }
+      const mapped = { ...existing, subdistrict_name: existing.name, subdistrict_code: codeVal, subdistrict_type: typeVal };
       return { success: true, data: mapped };
     }
   }
