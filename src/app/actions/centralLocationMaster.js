@@ -514,7 +514,7 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
   const dName = (districtName || '').trim() || 'Central District';
   const nameNorm = dName.toLowerCase().trim();
 
-  // 1. Check if district already exists by name in location_districts
+  // 1. Try finding existing district by name in location_districts
   try {
     const { data: distMatch } = await adminClient
       .from('location_districts')
@@ -526,7 +526,7 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
     if (distMatch?.id) return distMatch.id;
   } catch (e) {}
 
-  // 2. Resolve state_id UUID
+  // 2. Fetch a GUARANTEED REAL UUID state_id from location_states
   let validStateId = null;
   if (stateId && typeof stateId === 'string' && stateId.length > 25 && stateId.includes('-')) {
     validStateId = stateId;
@@ -542,71 +542,28 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
     } catch (e) {}
   }
 
-  // 3. Resolve country_id UUID
-  let validCountryId = null;
-  try {
-    const { data: cObj } = await adminClient
-      .from('location_countries')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    if (cObj?.id) validCountryId = cObj.id;
-  } catch (e) {}
-
-  // 4. Try inserting district into location_districts with various payloads until one succeeds
+  // 3. Insert new district into location_districts using exact DB schema
   const dCode = `DIST-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000)}`;
-
-  // Payload A: All fields
-  const payloadA = {
+  const distRow = {
     district_code: dCode,
     district_name: dName,
     name_normalized: nameNorm,
     is_active: true
   };
-  if (validStateId) payloadA.state_id = validStateId;
-  if (validCountryId) payloadA.country_id = validCountryId;
+  if (validStateId) distRow.state_id = validStateId;
 
   try {
-    const { data: resA } = await adminClient
+    const { data: newDist, error: distErr } = await adminClient
       .from('location_districts')
-      .insert([payloadA])
+      .insert([distRow])
       .select('id')
       .maybeSingle();
-    if (resA?.id) return resA.id;
+
+    if (newDist?.id) return newDist.id;
+    if (distErr) console.error('resolveOrCreateDistrictId insert error:', distErr.message);
   } catch (e) {}
 
-  // Payload B: Without country_id
-  const payloadB = {
-    district_code: dCode,
-    district_name: dName,
-    name_normalized: nameNorm,
-    is_active: true
-  };
-  if (validStateId) payloadB.state_id = validStateId;
-
-  try {
-    const { data: resB } = await adminClient
-      .from('location_districts')
-      .insert([payloadB])
-      .select('id')
-      .maybeSingle();
-    if (resB?.id) return resB.id;
-  } catch (e) {}
-
-  // Payload C: Minimal
-  try {
-    const { data: resC } = await adminClient
-      .from('location_districts')
-      .insert([{
-        district_name: dName,
-        is_active: true
-      }])
-      .select('id')
-      .maybeSingle();
-    if (resC?.id) return resC.id;
-  } catch (e) {}
-
-  // 5. Emergency Fallback: Query ANY district UUID from location_districts
+  // 4. Emergency: Query any existing district ID if insert failed
   try {
     const { data: anyDist } = await adminClient
       .from('location_districts')
@@ -646,57 +603,83 @@ export async function createSubdistrictCentral(payload, userId = null) {
     payload.state_id
   );
 
-  if (targetDistrictId) {
-    const insertRow = {
-      district_id: targetDistrictId,
-      subdistrict_code: subCode,
-      subdistrict_name: payload.subdistrict_name,
-      subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-      name_normalized: nameNorm,
-      is_active: true
-    };
-
-    const { data, error } = await adminClient
-      .from('location_subdistricts')
-      .insert([insertRow])
-      .select()
-      .single();
-
-    if (!error && data) return { success: true, data };
-
-    // Minimal insert with district_id
-    const { data: d2, error: e2 } = await adminClient
-      .from('location_subdistricts')
-      .insert([{
-        district_id: targetDistrictId,
-        subdistrict_name: payload.subdistrict_name,
-        subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-        name_normalized: nameNorm,
-        is_active: true
-      }])
-      .select()
-      .single();
-
-    if (!e2 && d2) return { success: true, data: d2 };
+  if (!targetDistrictId) {
+    return { success: false, error: 'Selected District could not be created or found in database.' };
   }
 
-  // Emergency Fallback: Insert without district_id if FK is unconstrained
-  try {
-    const { data: d3, error: e3 } = await adminClient
-      .from('location_subdistricts')
-      .insert([{
-        subdistrict_name: payload.subdistrict_name,
-        subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-        name_normalized: nameNorm,
-        is_active: true
-      }])
-      .select()
-      .single();
+  let realStateId = payload.state_id;
+  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
+    try {
+      const { data: dMeta } = await adminClient
+        .from('location_districts')
+        .select('state_id')
+        .eq('id', targetDistrictId)
+        .maybeSingle();
+      if (dMeta?.state_id) realStateId = dMeta.state_id;
+    } catch (e) {}
+  }
+  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
+    try {
+      const { data: stObj } = await adminClient
+        .from('location_states')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (stObj?.id) realStateId = stObj.id;
+    } catch (e) {}
+  }
 
-    if (!e3 && d3) return { success: true, data: d3 };
+  let realCountryId = null;
+  try {
+    const { data: cObj } = await adminClient
+      .from('location_countries')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+    if (cObj?.id) realCountryId = cObj.id;
   } catch (e) {}
 
-  return { success: false, error: 'Database rejected Tehsil save. Please try again.' };
+  const insertRow = {
+    district_id: targetDistrictId,
+    subdistrict_code: subCode,
+    subdistrict_name: payload.subdistrict_name,
+    subdistrict_type: payload.subdistrict_type || 'TEHSIL',
+    name_normalized: nameNorm,
+    is_active: true
+  };
+  if (realStateId) insertRow.state_id = realStateId;
+  if (realCountryId) insertRow.country_id = realCountryId;
+
+  // Attempt 1: Full Insert
+  const { data, error } = await adminClient
+    .from('location_subdistricts')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!error && data) return { success: true, data };
+
+  // Attempt 2: Without country_id
+  delete insertRow.country_id;
+  const { data: d2, error: e2 } = await adminClient
+    .from('location_subdistricts')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e2 && d2) return { success: true, data: d2 };
+
+  // Attempt 3: Without state_id
+  delete insertRow.state_id;
+  const { data: d3, error: e3 } = await adminClient
+    .from('location_subdistricts')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e3 && d3) return { success: true, data: d3 };
+
+  return { success: false, error: error?.message || e2?.message || e3?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -730,52 +713,79 @@ export async function createBlockCentral(payload, userId = null) {
     payload.state_id
   );
 
-  if (targetDistrictId) {
-    const insertRow = {
-      district_id: targetDistrictId,
-      block_code: blkCode,
-      block_name: payload.block_name,
-      name_normalized: nameNorm,
-      is_active: true
-    };
-
-    const { data, error } = await adminClient
-      .from('location_blocks')
-      .insert([insertRow])
-      .select()
-      .single();
-
-    if (!error && data) return { success: true, data };
-
-    const { data: d2, error: e2 } = await adminClient
-      .from('location_blocks')
-      .insert([{
-        district_id: targetDistrictId,
-        block_name: payload.block_name,
-        name_normalized: nameNorm,
-        is_active: true
-      }])
-      .select()
-      .single();
-
-    if (!e2 && d2) return { success: true, data: d2 };
+  if (!targetDistrictId) {
+    return { success: false, error: 'Selected District could not be created or found in database.' };
   }
 
-  try {
-    const { data: d3, error: e3 } = await adminClient
-      .from('location_blocks')
-      .insert([{
-        block_name: payload.block_name,
-        name_normalized: nameNorm,
-        is_active: true
-      }])
-      .select()
-      .single();
+  let realStateId = payload.state_id;
+  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
+    try {
+      const { data: dMeta } = await adminClient
+        .from('location_districts')
+        .select('state_id')
+        .eq('id', targetDistrictId)
+        .maybeSingle();
+      if (dMeta?.state_id) realStateId = dMeta.state_id;
+    } catch (e) {}
+  }
+  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
+    try {
+      const { data: stObj } = await adminClient
+        .from('location_states')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (stObj?.id) realStateId = stObj.id;
+    } catch (e) {}
+  }
 
-    if (!e3 && d3) return { success: true, data: d3 };
+  let realCountryId = null;
+  try {
+    const { data: cObj } = await adminClient
+      .from('location_countries')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+    if (cObj?.id) realCountryId = cObj.id;
   } catch (e) {}
 
-  return { success: false, error: 'Database rejected Block save. Please try again.' };
+  const insertRow = {
+    district_id: targetDistrictId,
+    block_code: blkCode,
+    block_name: payload.block_name,
+    name_normalized: nameNorm,
+    is_active: true
+  };
+  if (realStateId) insertRow.state_id = realStateId;
+  if (realCountryId) insertRow.country_id = realCountryId;
+
+  const { data, error } = await adminClient
+    .from('location_blocks')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!error && data) return { success: true, data };
+
+  delete insertRow.country_id;
+  const { data: d2, error: e2 } = await adminClient
+    .from('location_blocks')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e2 && d2) return { success: true, data: d2 };
+
+  delete insertRow.state_id;
+  const { data: d3, error: e3 } = await adminClient
+    .from('location_blocks')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e3 && d3) return { success: true, data: d3 };
+
+  return { success: false, error: error?.message || e2?.message || e3?.message || 'Database rejected Block save.' };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
