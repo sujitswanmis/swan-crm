@@ -900,6 +900,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {expandedSections.location && (
               <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--bg-surface)' }}>
                 <LocationPicker
+                  allowLocationRequest={true}
+                  hideHeader={true}
+                  noStyle={true}
                   initialValue={{
                     country_id: formData.country_id,
                     state_id: formData.state_id,

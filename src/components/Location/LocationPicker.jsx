@@ -27,7 +27,9 @@ export default function LocationPicker({
   allowLocationRequest = true,
   disabled = false,
   readOnly = false,
-  validationMode = 'strict'
+  validationMode = 'strict',
+  hideHeader = false,
+  noStyle = false
 }) {
   const [states, setStates] = useState([]);
   const [districts, setDistricts] = useState([]);
@@ -154,21 +156,23 @@ export default function LocationPicker({
   };
 
   return (
-    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <MapPin size={18} className="text-blue-600" /> Cascading Location Picker (Central Master)
-        </h4>
-        {allowLocationRequest && (
-          <button
-            type="button"
-            onClick={() => setShowRequestModal(true)}
-            style={{ fontSize: '0.78rem', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', fontWeight: 700, padding: '0.3rem 0.65rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
-          >
-            <Plus size={12} /> Location Not Found?
-          </button>
-        )}
-      </div>
+    <div style={noStyle ? {} : { background: '#ffffff', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+      {!hideHeader && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <MapPin size={18} className="text-blue-600" /> Cascading Location Picker (Central Master)
+          </h4>
+          {allowLocationRequest && (
+            <button
+              type="button"
+              onClick={() => setShowRequestModal(true)}
+              style={{ fontSize: '0.78rem', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', fontWeight: 700, padding: '0.3rem 0.65rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+            >
+              <Plus size={12} /> Location Not Found?
+            </button>
+          )}
+        </div>
+      )}
 
       {hierarchyMismatch && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '0.6rem 0.8rem', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -177,7 +181,7 @@ export default function LocationPicker({
       )}
 
       {/* Cascading Picker Form */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
         {/* Country */}
         <div>
           <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Country *</label>
