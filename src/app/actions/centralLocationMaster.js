@@ -339,8 +339,11 @@ export async function getDistrictsCentral(stateId, stateName = null) {
       // If we have a valid DB stateId UUID, auto-seed these districts into location_districts
       if (stateId && typeof stateId === 'string' && stateId.length > 25 && stateId.includes('-')) {
         try {
-          const insertRows = listForState.map((dName) => ({
+          const countryId = '00000000-0000-0000-0000-000000000001';
+          const insertRows = listForState.map((dName, idx) => ({
+            country_id: countryId,
             state_id: stateId,
+            district_code: `DIST-${(resolvedStateName || 'ST').slice(0, 3).toUpperCase()}-${idx + 1}`,
             district_name: dName,
             name_normalized: dName.toLowerCase().trim(),
             is_active: true
@@ -356,11 +359,14 @@ export async function getDistrictsCentral(stateId, stateName = null) {
           } else if (seedErr) {
             // Fallback to single inserts if batch insert fails
             const inserted = [];
-            for (const dName of listForState) {
+            for (let idx = 0; idx < listForState.length; idx++) {
+              const dName = listForState[idx];
               const { data: singleDist } = await adminClient
                 .from('location_districts')
                 .insert([{
+                  country_id: countryId,
                   state_id: stateId,
+                  district_code: `DIST-${(resolvedStateName || 'ST').slice(0, 3).toUpperCase()}-${idx + 1}`,
                   district_name: dName,
                   name_normalized: dName.toLowerCase().trim(),
                   is_active: true
@@ -395,11 +401,14 @@ export async function getDistrictsCentral(stateId, stateName = null) {
 export async function createDistrictCentral(payload, userId = null) {
   const adminClient = getAdminClient();
   const nameNorm = await normalizeLocationText(payload.district_name);
+  const code = payload.district_code ? payload.district_code.toUpperCase() : `DIST-${Date.now().toString(36).toUpperCase()}`;
 
   const { data, error } = await adminClient
     .from('location_districts')
     .insert([{
+      country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
       state_id: payload.state_id,
+      district_code: code,
       district_name: payload.district_name,
       official_code: payload.official_code || null,
       name_normalized: nameNorm,
@@ -409,19 +418,7 @@ export async function createDistrictCentral(payload, userId = null) {
     .single();
 
   if (error) {
-    // Fallback minimal insert
-    const { data: minData, error: minErr } = await adminClient
-      .from('location_districts')
-      .insert([{
-        state_id: payload.state_id,
-        district_name: payload.district_name,
-        name_normalized: nameNorm
-      }])
-      .select()
-      .single();
-
-    if (minErr) throw new Error(minErr.message);
-    return minData;
+    throw new Error(error.message);
   }
   return data;
 }
@@ -438,6 +435,7 @@ export async function updateDistrictCentral(id, payload, userId = null) {
       .from('location_districts')
       .update({
         district_name: payload.district_name,
+        district_code: payload.district_code ? payload.district_code.toUpperCase() : undefined,
         name_normalized: nameNorm,
         updated_at: new Date().toISOString()
       })
@@ -486,6 +484,7 @@ export async function getSubdistrictsCentral(districtId) {
 export async function createSubdistrictCentral(payload, userId = null) {
   const adminClient = getAdminClient();
   const nameNorm = await normalizeLocationText(payload.subdistrict_name);
+  const subCode = payload.subdistrict_code ? payload.subdistrict_code.toUpperCase() : `TEH-${Date.now().toString(36).toUpperCase()}`;
 
   let targetDistrictId = payload.district_id;
 
@@ -503,10 +502,12 @@ export async function createSubdistrictCentral(payload, userId = null) {
         if (distMatch?.id) {
           targetDistrictId = distMatch.id;
         } else {
-          const { data: newDist } = await adminClient
+          const { data: newDist, error: distErr } = await adminClient
             .from('location_districts')
             .insert([{
+              country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
               state_id: payload.state_id,
+              district_code: `DIST-${Date.now().toString(36).toUpperCase()}`,
               district_name: payload.district_name,
               name_normalized: payload.district_name.toLowerCase().trim(),
               is_active: true
@@ -514,6 +515,7 @@ export async function createSubdistrictCentral(payload, userId = null) {
             .select()
             .single();
 
+          if (distErr) console.error('Error inserting district for subdistrict:', distErr);
           if (newDist?.id) {
             targetDistrictId = newDist.id;
           }
@@ -524,52 +526,31 @@ export async function createSubdistrictCentral(payload, userId = null) {
     }
   }
 
-  // Insert into location_subdistricts
-  if (targetDistrictId && targetDistrictId.includes('-') && targetDistrictId.length > 25) {
-    try {
-      const { data, error } = await adminClient
-        .from('location_subdistricts')
-        .insert([{
-          district_id: targetDistrictId,
-          subdistrict_name: payload.subdistrict_name,
-          subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-          name_normalized: nameNorm,
-          is_active: true,
-          created_by: userId
-        }])
-        .select()
-        .single();
-
-      if (!error && data) return data;
-      if (error) {
-        // Retry minimal insert without created_by
-        const { data: minData, error: minErr } = await adminClient
-          .from('location_subdistricts')
-          .insert([{
-            district_id: targetDistrictId,
-            subdistrict_name: payload.subdistrict_name,
-            subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-            name_normalized: nameNorm,
-            is_active: true
-          }])
-          .select()
-          .single();
-
-        if (!minErr && minData) return minData;
-        console.error('location_subdistricts min insert error:', minErr);
-      }
-    } catch (err) {
-      console.error('Subdistrict insert exception:', err);
-    }
+  if (!targetDistrictId || !targetDistrictId.includes('-') || targetDistrictId.length <= 25) {
+    throw new Error('Cannot save Tehsil: Selected District is not saved in database yet.');
   }
 
-  return {
-    id: `sub-${Date.now()}`,
-    district_id: targetDistrictId,
-    subdistrict_name: payload.subdistrict_name,
-    subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-    is_active: true
-  };
+  const { data, error } = await adminClient
+    .from('location_subdistricts')
+    .insert([{
+      country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
+      state_id: payload.state_id || '00000000-0000-0000-0000-000000000002',
+      district_id: targetDistrictId,
+      subdistrict_code: subCode,
+      subdistrict_name: payload.subdistrict_name,
+      subdistrict_type: payload.subdistrict_type || 'TEHSIL',
+      name_normalized: nameNorm,
+      is_active: true
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Subdistrict insert error:', error);
+    throw new Error('Database Save Error: ' + error.message);
+  }
+
+  return data;
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -594,6 +575,7 @@ export async function getBlocksCentral(districtId) {
 export async function createBlockCentral(payload, userId = null) {
   const adminClient = getAdminClient();
   const nameNorm = await normalizeLocationText(payload.block_name);
+  const blkCode = payload.block_code ? payload.block_code.toUpperCase() : `BLK-${Date.now().toString(36).toUpperCase()}`;
 
   let targetDistrictId = payload.district_id;
 
@@ -610,10 +592,12 @@ export async function createBlockCentral(payload, userId = null) {
         if (distMatch?.id) {
           targetDistrictId = distMatch.id;
         } else {
-          const { data: newDist } = await adminClient
+          const { data: newDist, error: distErr } = await adminClient
             .from('location_districts')
             .insert([{
+              country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
               state_id: payload.state_id,
+              district_code: `DIST-${Date.now().toString(36).toUpperCase()}`,
               district_name: payload.district_name,
               name_normalized: payload.district_name.toLowerCase().trim(),
               is_active: true
@@ -621,6 +605,7 @@ export async function createBlockCentral(payload, userId = null) {
             .select()
             .single();
 
+          if (distErr) console.error('Error inserting district for block:', distErr);
           if (newDist?.id) {
             targetDistrictId = newDist.id;
           }
@@ -631,47 +616,31 @@ export async function createBlockCentral(payload, userId = null) {
     }
   }
 
-  if (targetDistrictId && targetDistrictId.includes('-') && targetDistrictId.length > 25) {
-    try {
-      const { data, error } = await adminClient
-        .from('location_blocks')
-        .insert([{
-          district_id: targetDistrictId,
-          block_name: payload.block_name,
-          name_normalized: nameNorm,
-          is_active: true,
-          created_by: userId
-        }])
-        .select()
-        .single();
-
-      if (!error && data) return data;
-      if (error) {
-        const { data: minData, error: minErr } = await adminClient
-          .from('location_blocks')
-          .insert([{
-            district_id: targetDistrictId,
-            block_name: payload.block_name,
-            name_normalized: nameNorm,
-            is_active: true
-          }])
-          .select()
-          .single();
-
-        if (!minErr && minData) return minData;
-        console.error('location_blocks min insert error:', minErr);
-      }
-    } catch (err) {
-      console.error('Block insert exception:', err);
-    }
+  if (!targetDistrictId || !targetDistrictId.includes('-') || targetDistrictId.length <= 25) {
+    throw new Error('Cannot save Block: Selected District is not saved in database yet.');
   }
 
-  return {
-    id: `blk-${Date.now()}`,
-    district_id: targetDistrictId,
-    block_name: payload.block_name,
-    is_active: true
-  };
+  const { data, error } = await adminClient
+    .from('location_blocks')
+    .insert([{
+      country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
+      state_id: payload.state_id || '00000000-0000-0000-0000-000000000002',
+      district_id: targetDistrictId,
+      subdistrict_id: payload.subdistrict_id || null,
+      block_code: blkCode,
+      block_name: payload.block_name,
+      name_normalized: nameNorm,
+      is_active: true
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Block insert error:', error);
+    throw new Error('Database Save Error: ' + error.message);
+  }
+
+  return data;
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
