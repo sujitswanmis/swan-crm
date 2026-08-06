@@ -505,6 +505,90 @@ export async function deleteDistrictCentral(id) {
   return true;
 }
 
+async function resolveOrCreateDistrictId(adminClient, districtId, districtName, stateId) {
+  if (districtId && typeof districtId === 'string' && districtId.length > 25 && districtId.includes('-')) {
+    return districtId;
+  }
+
+  let targetStateId = stateId;
+  if (!targetStateId || typeof targetStateId !== 'string' || targetStateId.length <= 25 || !targetStateId.includes('-')) {
+    const { data: stObj } = await adminClient
+      .from('location_states')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+    if (stObj?.id) targetStateId = stObj.id;
+  }
+
+  if (!districtName) return null;
+
+  try {
+    // 1. Try finding district by name
+    let query = adminClient.from('location_districts').select('id').ilike('district_name', districtName.trim());
+    if (targetStateId && targetStateId.includes('-')) {
+      query = query.eq('state_id', targetStateId);
+    }
+    const { data: distMatch } = await query.maybeSingle();
+    if (distMatch?.id) return distMatch.id;
+
+    // 2. Fetch country_id from state or countries table
+    let countryId = null;
+    if (targetStateId && targetStateId.includes('-')) {
+      const { data: stMeta } = await adminClient.from('location_states').select('country_id').eq('id', targetStateId).maybeSingle();
+      if (stMeta?.country_id) countryId = stMeta.country_id;
+    }
+    if (!countryId) {
+      const { data: cObj } = await adminClient.from('location_countries').select('id').limit(1).maybeSingle();
+      if (cObj?.id) countryId = cObj.id;
+    }
+
+    // 3. Insert district into location_districts
+    const distRow = {
+      district_code: `DIST-${Date.now().toString(36).toUpperCase()}`,
+      district_name: districtName.trim(),
+      name_normalized: districtName.toLowerCase().trim(),
+      is_active: true
+    };
+    if (targetStateId && targetStateId.includes('-')) distRow.state_id = targetStateId;
+    if (countryId) distRow.country_id = countryId;
+
+    const { data: newDist } = await adminClient
+      .from('location_districts')
+      .insert([distRow])
+      .select('id')
+      .maybeSingle();
+
+    if (newDist?.id) return newDist.id;
+
+    // Fallback 1: Without country_id
+    delete distRow.country_id;
+    const { data: d2 } = await adminClient
+      .from('location_districts')
+      .insert([distRow])
+      .select('id')
+      .maybeSingle();
+
+    if (d2?.id) return d2.id;
+
+    // Fallback 2: Minimal insert
+    const { data: d3 } = await adminClient
+      .from('location_districts')
+      .insert([{
+        district_name: districtName.trim(),
+        name_normalized: districtName.toLowerCase().trim(),
+        is_active: true
+      }])
+      .select('id')
+      .maybeSingle();
+
+    if (d3?.id) return d3.id;
+  } catch (e) {
+    console.error('resolveOrCreateDistrictId error:', e);
+  }
+
+  return null;
+}
+
 // 4. SUBDISTRICTS (TEHSILS / MANDALS)
 export async function getSubdistrictsCentral(districtId) {
   if (!districtId) return [];
@@ -525,55 +609,30 @@ export async function createSubdistrictCentral(payload, userId = null) {
   const nameNorm = await normalizeLocationText(payload.subdistrict_name);
   const subCode = payload.subdistrict_code ? payload.subdistrict_code.toUpperCase() : `TEH-${Date.now().toString(36).toUpperCase()}`;
 
-  let targetDistrictId = payload.district_id;
-  let targetStateId = payload.state_id;
+  const targetDistrictId = await resolveOrCreateDistrictId(
+    adminClient,
+    payload.district_id,
+    payload.district_name,
+    payload.state_id
+  );
 
-  // Resolve targetStateId if it's not a valid UUID
-  if (!targetStateId || typeof targetStateId !== 'string' || targetStateId.length <= 25 || !targetStateId.includes('-')) {
-    const { data: stObj } = await adminClient
-      .from('location_states')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    if (stObj?.id) targetStateId = stObj.id;
-  }
-
-  // Resolve targetDistrictId if it's not a valid UUID
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
-    if (payload.district_name && targetStateId) {
-      try {
-        const { data: distMatch } = await adminClient
-          .from('location_districts')
-          .select('id')
-          .eq('state_id', targetStateId)
-          .eq('district_name', payload.district_name)
-          .maybeSingle();
-
-        if (distMatch?.id) {
-          targetDistrictId = distMatch.id;
-        } else {
-          const { data: newDist } = await adminClient
-            .from('location_districts')
-            .insert([{
-              state_id: targetStateId,
-              district_code: `DIST-${Date.now().toString(36).toUpperCase()}`,
-              district_name: payload.district_name,
-              name_normalized: payload.district_name.toLowerCase().trim(),
-              is_active: true
-            }])
-            .select()
-            .single();
-
-          if (newDist?.id) targetDistrictId = newDist.id;
-        }
-      } catch (err) {
-        console.error('Subdistrict district-resolution error:', err);
-      }
-    }
-  }
-
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
+  if (!targetDistrictId) {
     return { success: false, error: 'Selected District is not saved in database yet.' };
+  }
+
+  let countryId = null;
+  let stateId = payload.state_id;
+
+  if (targetDistrictId && targetDistrictId.includes('-')) {
+    try {
+      const { data: distMeta } = await adminClient
+        .from('location_districts')
+        .select('state_id, country_id')
+        .eq('id', targetDistrictId)
+        .maybeSingle();
+      if (distMeta?.state_id) stateId = distMeta.state_id;
+      if (distMeta?.country_id) countryId = distMeta.country_id;
+    } catch (e) {}
   }
 
   const insertRow = {
@@ -584,8 +643,11 @@ export async function createSubdistrictCentral(payload, userId = null) {
     name_normalized: nameNorm,
     is_active: true
   };
-  if (targetStateId && typeof targetStateId === 'string' && targetStateId.length > 25 && targetStateId.includes('-')) {
-    insertRow.state_id = targetStateId;
+  if (stateId && typeof stateId === 'string' && stateId.length > 25 && stateId.includes('-')) {
+    insertRow.state_id = stateId;
+  }
+  if (countryId && typeof countryId === 'string' && countryId.length > 25 && countryId.includes('-')) {
+    insertRow.country_id = countryId;
   }
 
   const { data, error } = await adminClient
@@ -596,8 +658,8 @@ export async function createSubdistrictCentral(payload, userId = null) {
 
   if (!error && data) return { success: true, data };
 
-  // Fallback without state_id if foreign key fails
-  delete insertRow.state_id;
+  // Fallback without country_id
+  delete insertRow.country_id;
   const { data: d2, error: e2 } = await adminClient
     .from('location_subdistricts')
     .insert([insertRow])
@@ -606,7 +668,17 @@ export async function createSubdistrictCentral(payload, userId = null) {
 
   if (!e2 && d2) return { success: true, data: d2 };
 
-  return { success: false, error: error?.message || e2?.message };
+  // Fallback without state_id
+  delete insertRow.state_id;
+  const { data: d3, error: e3 } = await adminClient
+    .from('location_subdistricts')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e3 && d3) return { success: true, data: d3 };
+
+  return { success: false, error: error?.message || e2?.message || e3?.message };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -633,53 +705,30 @@ export async function createBlockCentral(payload, userId = null) {
   const nameNorm = await normalizeLocationText(payload.block_name);
   const blkCode = payload.block_code ? payload.block_code.toUpperCase() : `BLK-${Date.now().toString(36).toUpperCase()}`;
 
-  let targetDistrictId = payload.district_id;
-  let targetStateId = payload.state_id;
+  const targetDistrictId = await resolveOrCreateDistrictId(
+    adminClient,
+    payload.district_id,
+    payload.district_name,
+    payload.state_id
+  );
 
-  if (!targetStateId || typeof targetStateId !== 'string' || targetStateId.length <= 25 || !targetStateId.includes('-')) {
-    const { data: stObj } = await adminClient
-      .from('location_states')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    if (stObj?.id) targetStateId = stObj.id;
-  }
-
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
-    if (payload.district_name && targetStateId) {
-      try {
-        const { data: distMatch } = await adminClient
-          .from('location_districts')
-          .select('id')
-          .eq('state_id', targetStateId)
-          .eq('district_name', payload.district_name)
-          .maybeSingle();
-
-        if (distMatch?.id) {
-          targetDistrictId = distMatch.id;
-        } else {
-          const { data: newDist } = await adminClient
-            .from('location_districts')
-            .insert([{
-              state_id: targetStateId,
-              block_code: `DIST-${Date.now().toString(36).toUpperCase()}`,
-              district_name: payload.district_name,
-              name_normalized: payload.district_name.toLowerCase().trim(),
-              is_active: true
-            }])
-            .select()
-            .single();
-
-          if (newDist?.id) targetDistrictId = newDist.id;
-        }
-      } catch (err) {
-        console.error('Block district-resolution error:', err);
-      }
-    }
-  }
-
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
+  if (!targetDistrictId) {
     return { success: false, error: 'Selected District is not saved in database yet.' };
+  }
+
+  let countryId = null;
+  let stateId = payload.state_id;
+
+  if (targetDistrictId && targetDistrictId.includes('-')) {
+    try {
+      const { data: distMeta } = await adminClient
+        .from('location_districts')
+        .select('state_id, country_id')
+        .eq('id', targetDistrictId)
+        .maybeSingle();
+      if (distMeta?.state_id) stateId = distMeta.state_id;
+      if (distMeta?.country_id) countryId = distMeta.country_id;
+    } catch (e) {}
   }
 
   const insertRow = {
@@ -689,8 +738,11 @@ export async function createBlockCentral(payload, userId = null) {
     name_normalized: nameNorm,
     is_active: true
   };
-  if (targetStateId && typeof targetStateId === 'string' && targetStateId.length > 25 && targetStateId.includes('-')) {
-    insertRow.state_id = targetStateId;
+  if (stateId && typeof stateId === 'string' && stateId.length > 25 && stateId.includes('-')) {
+    insertRow.state_id = stateId;
+  }
+  if (countryId && typeof countryId === 'string' && countryId.length > 25 && countryId.includes('-')) {
+    insertRow.country_id = countryId;
   }
 
   const { data, error } = await adminClient
@@ -701,7 +753,7 @@ export async function createBlockCentral(payload, userId = null) {
 
   if (!error && data) return { success: true, data };
 
-  delete insertRow.state_id;
+  delete insertRow.country_id;
   const { data: d2, error: e2 } = await adminClient
     .from('location_blocks')
     .insert([insertRow])
@@ -710,7 +762,16 @@ export async function createBlockCentral(payload, userId = null) {
 
   if (!e2 && d2) return { success: true, data: d2 };
 
-  return { success: false, error: error?.message || e2?.message };
+  delete insertRow.state_id;
+  const { data: d3, error: e3 } = await adminClient
+    .from('location_blocks')
+    .insert([insertRow])
+    .select()
+    .single();
+
+  if (!e3 && d3) return { success: true, data: d3 };
+
+  return { success: false, error: error?.message || e2?.message || e3?.message };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
