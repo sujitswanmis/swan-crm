@@ -632,45 +632,31 @@ export async function createSubdistrictCentral(payload, userId = null) {
     try {
       const { data: dMeta } = await adminClient
         .from('location_districts')
-        .select('state_id')
+        .select('state_id, country_id')
         .eq('id', targetDistrictId)
         .maybeSingle();
       if (dMeta?.state_id) realStateId = dMeta.state_id;
     } catch (e) {}
   }
 
-  const insertRow = {
-    district_id: targetDistrictId,
-    subdistrict_code: subCode,
-    subdistrict_name: payload.subdistrict_name,
-    subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-    name_normalized: nameNorm,
-    is_active: true
-  };
-  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25 && realStateId.includes('-')) {
-    insertRow.state_id = realStateId;
-  }
-
-  // Attempt 1: Full Insert with state_id
+  // Exact schema from location_subdistricts table:
+  // country_id, state_id, district_id, subdistrict_code, subdistrict_name, subdistrict_type, name_normalized, official_code
   const { data, error } = await adminClient
     .from('location_subdistricts')
-    .insert([insertRow])
+    .insert([{
+      state_id: realStateId || null,
+      district_id: targetDistrictId,
+      subdistrict_code: subCode,
+      subdistrict_name: payload.subdistrict_name,
+      subdistrict_type: payload.subdistrict_type || 'TEHSIL',
+      name_normalized: nameNorm
+    }])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
 
-  // Attempt 2: Without state_id
-  delete insertRow.state_id;
-  const { data: d2, error: e2 } = await adminClient
-    .from('location_subdistricts')
-    .insert([insertRow])
-    .select()
-    .single();
-
-  if (!e2 && d2) return { success: true, data: d2 };
-
-  return { success: false, error: error?.message || e2?.message || 'Database rejected Tehsil save.' };
+  return { success: false, error: error?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -739,35 +725,22 @@ export async function createBlockCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  const insertRow = {
-    district_id: targetDistrictId,
-    block_code: blkCode,
-    block_name: payload.block_name,
-    name_normalized: nameNorm,
-    is_active: true
-  };
-  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25 && realStateId.includes('-')) {
-    insertRow.state_id = realStateId;
-  }
-
+  // Use exact columns from location_blocks table
   const { data, error } = await adminClient
     .from('location_blocks')
-    .insert([insertRow])
+    .insert([{
+      state_id: realStateId || null,
+      district_id: targetDistrictId,
+      block_code: blkCode,
+      block_name: payload.block_name,
+      name_normalized: nameNorm
+    }])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
 
-  delete insertRow.state_id;
-  const { data: d2, error: e2 } = await adminClient
-    .from('location_blocks')
-    .insert([insertRow])
-    .select()
-    .single();
-
-  if (!e2 && d2) return { success: true, data: d2 };
-
-  return { success: false, error: error?.message || e2?.message || 'Database rejected Block save.' };
+  return { success: false, error: error?.message || 'Database rejected Block save.' };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
