@@ -6,7 +6,7 @@ import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckC
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
-import LocationPicker from './Location/LocationPicker';
+import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -118,6 +118,21 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   });
   
   const [teamMembers, setTeamMembers] = useState([]);
+  const [statesList, setStatesList] = useState([]);
+  const [districtsList, setDistrictsList] = useState([]);
+  const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
+
+  useEffect(() => {
+    async function loadStates() {
+      try {
+        const res = await getStatesCentral();
+        setStatesList(res || []);
+      } catch (err) {
+        console.error("Failed to load states:", err);
+      }
+    }
+    loadStates();
+  }, []);
 
   useEffect(() => {
     async function loadTeam() {
@@ -226,6 +241,28 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     investment: '',
     buying_timeline: ''
   });
+
+  useEffect(() => {
+    async function loadDistricts() {
+      if (!formData.state_name) {
+        setDistrictsList([]);
+        return;
+      }
+      setIsLoadingDistricts(true);
+      try {
+        const stateObj = statesList.find(s => s.state_name === formData.state_name);
+        const stateId = stateObj ? stateObj.id : null;
+        const res = await getDistrictsCentral(stateId, formData.state_name);
+        setDistrictsList(res || []);
+      } catch (err) {
+        console.error("Failed to load districts:", err);
+        setDistrictsList([]);
+      } finally {
+        setIsLoadingDistricts(false);
+      }
+    }
+    loadDistricts();
+  }, [formData.state_name, statesList]);
 
   useEffect(() => {
     if (isEditMode && initialData) {
@@ -899,8 +936,50 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             </button>
             {expandedSections.location && (
               <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
-                {renderInput('State Name', 'state_name')}
-                {renderInput('District Name', 'district_name')}
+                {/* State Dropdown */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>State Name</label>
+                  <select
+                    value={formData.state_name || ''}
+                    onChange={(e) => {
+                      const newSt = e.target.value;
+                      setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
+                    }}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                  >
+                    <option value="">Select State...</option>
+                    {statesList.map((st) => (
+                      <option key={st.id || st.state_name} value={st.state_name}>
+                        {st.state_name}
+                      </option>
+                    ))}
+                    {formData.state_name && !statesList.some(s => s.state_name === formData.state_name) && (
+                      <option value={formData.state_name}>{formData.state_name}</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* District Dropdown */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>District Name</label>
+                  <select
+                    value={formData.district_name || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, district_name: e.target.value }))}
+                    disabled={!formData.state_name || isLoadingDistricts}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                  >
+                    <option value="">{formData.state_name ? (isLoadingDistricts ? 'Loading Districts...' : 'Select District...') : 'Select State First'}</option>
+                    {districtsList.map((dt) => (
+                      <option key={dt.id || dt.district_name} value={dt.district_name}>
+                        {dt.district_name}
+                      </option>
+                    ))}
+                    {formData.district_name && !districtsList.some(d => d.district_name === formData.district_name) && (
+                      <option value={formData.district_name}>{formData.district_name}</option>
+                    )}
+                  </select>
+                </div>
+
                 {renderInput('PIN Code', 'pin_code')}
                 {renderInput('City Name', 'city_name')}
                 {renderInput('Tehsil Name', 'tehsil_name')}
