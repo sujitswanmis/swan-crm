@@ -657,10 +657,24 @@ export async function createSubdistrictCentral(payload, userId = null) {
     .single();
 
   if (!error && data) {
-    // Map DB columns to UI-expected fields
     const mapped = { ...data, subdistrict_name: data.name || payload.subdistrict_name, subdistrict_code: data.code || subCode, subdistrict_type: 'TEHSIL' };
     return { success: true, data: mapped };
   }
+
+  // If duplicate key — fetch the existing record and return as success
+  if (error?.code === '23505') {
+    const { data: existing } = await adminClient
+      .from('location_subdistricts')
+      .select('*')
+      .eq('district_id', targetDistrictId)
+      .ilike('name', payload.subdistrict_name)
+      .maybeSingle();
+    if (existing) {
+      const mapped = { ...existing, subdistrict_name: existing.name, subdistrict_code: existing.code, subdistrict_type: 'TEHSIL' };
+      return { success: true, data: mapped };
+    }
+  }
+
   return { success: false, error: error?.message || 'Database rejected Tehsil save.' };
 }
 
@@ -749,10 +763,24 @@ export async function createBlockCentral(payload, userId = null) {
     .single();
 
   if (!error && data) {
-    // Map DB columns to UI-expected fields
     const mapped = { ...data, block_name: data.name || payload.block_name, block_code: data.code || blkCode };
     return { success: true, data: mapped };
   }
+
+  // If duplicate key — fetch existing and return as success
+  if (error?.code === '23505') {
+    const { data: existing } = await adminClient
+      .from('location_blocks')
+      .select('*')
+      .eq('district_id', targetDistrictId)
+      .ilike('name', payload.block_name)
+      .maybeSingle();
+    if (existing) {
+      const mapped = { ...existing, block_name: existing.name, block_code: existing.code };
+      return { success: true, data: mapped };
+    }
+  }
+
   return { success: false, error: error?.message || 'Database rejected Block save.' };
 }
 
