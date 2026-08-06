@@ -638,26 +638,6 @@ export async function createSubdistrictCentral(payload, userId = null) {
       if (dMeta?.state_id) realStateId = dMeta.state_id;
     } catch (e) {}
   }
-  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
-    try {
-      const { data: stObj } = await adminClient
-        .from('location_states')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
-      if (stObj?.id) realStateId = stObj.id;
-    } catch (e) {}
-  }
-
-  let realCountryId = null;
-  try {
-    const { data: cObj } = await adminClient
-      .from('location_countries')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    if (cObj?.id) realCountryId = cObj.id;
-  } catch (e) {}
 
   const insertRow = {
     district_id: targetDistrictId,
@@ -667,10 +647,11 @@ export async function createSubdistrictCentral(payload, userId = null) {
     name_normalized: nameNorm,
     is_active: true
   };
-  if (realStateId) insertRow.state_id = realStateId;
-  if (realCountryId) insertRow.country_id = realCountryId;
+  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25 && realStateId.includes('-')) {
+    insertRow.state_id = realStateId;
+  }
 
-  // Attempt 1: Full Insert
+  // Attempt 1: Full Insert with state_id
   const { data, error } = await adminClient
     .from('location_subdistricts')
     .insert([insertRow])
@@ -679,8 +660,8 @@ export async function createSubdistrictCentral(payload, userId = null) {
 
   if (!error && data) return { success: true, data };
 
-  // Attempt 2: Without country_id
-  delete insertRow.country_id;
+  // Attempt 2: Without state_id
+  delete insertRow.state_id;
   const { data: d2, error: e2 } = await adminClient
     .from('location_subdistricts')
     .insert([insertRow])
@@ -689,17 +670,7 @@ export async function createSubdistrictCentral(payload, userId = null) {
 
   if (!e2 && d2) return { success: true, data: d2 };
 
-  // Attempt 3: Without state_id
-  delete insertRow.state_id;
-  const { data: d3, error: e3 } = await adminClient
-    .from('location_subdistricts')
-    .insert([insertRow])
-    .select()
-    .single();
-
-  if (!e3 && d3) return { success: true, data: d3 };
-
-  return { success: false, error: error?.message || e2?.message || e3?.message || 'Database rejected Tehsil save.' };
+  return { success: false, error: error?.message || e2?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -767,26 +738,6 @@ export async function createBlockCentral(payload, userId = null) {
       if (dMeta?.state_id) realStateId = dMeta.state_id;
     } catch (e) {}
   }
-  if (!realStateId || typeof realStateId !== 'string' || realStateId.length <= 25 || !realStateId.includes('-')) {
-    try {
-      const { data: stObj } = await adminClient
-        .from('location_states')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
-      if (stObj?.id) realStateId = stObj.id;
-    } catch (e) {}
-  }
-
-  let realCountryId = null;
-  try {
-    const { data: cObj } = await adminClient
-      .from('location_countries')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    if (cObj?.id) realCountryId = cObj.id;
-  } catch (e) {}
 
   const insertRow = {
     district_id: targetDistrictId,
@@ -795,8 +746,9 @@ export async function createBlockCentral(payload, userId = null) {
     name_normalized: nameNorm,
     is_active: true
   };
-  if (realStateId) insertRow.state_id = realStateId;
-  if (realCountryId) insertRow.country_id = realCountryId;
+  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25 && realStateId.includes('-')) {
+    insertRow.state_id = realStateId;
+  }
 
   const { data, error } = await adminClient
     .from('location_blocks')
@@ -806,7 +758,7 @@ export async function createBlockCentral(payload, userId = null) {
 
   if (!error && data) return { success: true, data };
 
-  delete insertRow.country_id;
+  delete insertRow.state_id;
   const { data: d2, error: e2 } = await adminClient
     .from('location_blocks')
     .insert([insertRow])
@@ -815,16 +767,7 @@ export async function createBlockCentral(payload, userId = null) {
 
   if (!e2 && d2) return { success: true, data: d2 };
 
-  delete insertRow.state_id;
-  const { data: d3, error: e3 } = await adminClient
-    .from('location_blocks')
-    .insert([insertRow])
-    .select()
-    .single();
-
-  if (!e3 && d3) return { success: true, data: d3 };
-
-  return { success: false, error: error?.message || e2?.message || e3?.message || 'Database rejected Block save.' };
+  return { success: false, error: error?.message || e2?.message || 'Database rejected Block save.' };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
