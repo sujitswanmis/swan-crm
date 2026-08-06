@@ -235,7 +235,7 @@ export default function LocationManagementModule() {
     e.preventDefault();
     if (!selectedDistrictId || !selectedStateId) return alert('Please select a District first!');
     try {
-      const newSub = await createSubdistrictCentral({
+      const res = await createSubdistrictCentral({
         subdistrict_name: subdistrictForm.subdistrict_name,
         subdistrict_code: subdistrictForm.subdistrict_code,
         subdistrict_short_name: subdistrictForm.subdistrict_short_name,
@@ -245,9 +245,16 @@ export default function LocationManagementModule() {
         district_id: selectedDistrictId,
         district_name: selectedDistrictObj?.district_name
       });
+
+      if (res && res.success === false) {
+        alert('Error creating Tehsil: ' + (res.error || 'Failed to save to Database.'));
+        return;
+      }
+
       setShowAddSubdistrictModal(false);
       setSubdistrictForm({ subdistrict_name: '', subdistrict_code: '', subdistrict_short_name: '', subdistrict_type: 'TEHSIL' });
-      if (newSub) {
+      const newSub = res?.data || res;
+      if (newSub && newSub.id) {
         setSubdistrictsList(prev => [...prev, newSub].sort((a, b) => a.subdistrict_name.localeCompare(b.subdistrict_name)));
       } else {
         if (selectedDistrictObj) handleDistrictClick(selectedDistrictObj);
@@ -261,7 +268,7 @@ export default function LocationManagementModule() {
     e.preventDefault();
     if (!selectedDistrictId || !selectedStateId) return alert('Please select a District first!');
     try {
-      const newBlk = await createBlockCentral({
+      const res = await createBlockCentral({
         block_name: blockForm.block_name,
         block_code: blockForm.block_code,
         block_short_name: blockForm.block_short_name,
@@ -270,9 +277,16 @@ export default function LocationManagementModule() {
         district_id: selectedDistrictId,
         district_name: selectedDistrictObj?.district_name
       });
+
+      if (res && res.success === false) {
+        alert('Error creating Block: ' + (res.error || 'Failed to save to Database.'));
+        return;
+      }
+
       setShowAddBlockModal(false);
       setBlockForm({ block_name: '', block_code: '', block_short_name: '' });
-      if (newBlk) {
+      const newBlk = res?.data || res;
+      if (newBlk && newBlk.id) {
         setBlocksList(prev => [...prev, newBlk].sort((a, b) => a.block_name.localeCompare(b.block_name)));
       } else {
         if (selectedDistrictObj) handleDistrictClick(selectedDistrictObj);
