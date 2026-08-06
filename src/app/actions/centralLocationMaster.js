@@ -639,24 +639,36 @@ export async function createSubdistrictCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  // Exact schema from location_subdistricts table:
-  // country_id, state_id, district_id, subdistrict_code, subdistrict_name, subdistrict_type, name_normalized, official_code
+  // Use only confirmed columns — avoid schema cache errors
+  const insertData = {
+    district_id: targetDistrictId,
+    subdistrict_code: subCode,
+    subdistrict_name: payload.subdistrict_name,
+    subdistrict_type: payload.subdistrict_type || 'TEHSIL'
+  };
+  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25) {
+    insertData.state_id = realStateId;
+  }
+
   const { data, error } = await adminClient
     .from('location_subdistricts')
-    .insert([{
-      state_id: realStateId || null,
-      district_id: targetDistrictId,
-      subdistrict_code: subCode,
-      subdistrict_name: payload.subdistrict_name,
-      subdistrict_type: payload.subdistrict_type || 'TEHSIL',
-      name_normalized: nameNorm
-    }])
+    .insert([insertData])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
 
-  return { success: false, error: error?.message || 'Database rejected Tehsil save.' };
+  // Retry without state_id in case it's also not present
+  delete insertData.state_id;
+  const { data: d2, error: e2 } = await adminClient
+    .from('location_subdistricts')
+    .insert([insertData])
+    .select()
+    .single();
+
+  if (!e2 && d2) return { success: true, data: d2 };
+
+  return { success: false, error: e2?.message || error?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -725,22 +737,35 @@ export async function createBlockCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  // Use exact columns from location_blocks table
+  // Use only confirmed columns for location_blocks
+  const insertData = {
+    district_id: targetDistrictId,
+    block_code: blkCode,
+    block_name: payload.block_name
+  };
+  if (realStateId && typeof realStateId === 'string' && realStateId.length > 25) {
+    insertData.state_id = realStateId;
+  }
+
   const { data, error } = await adminClient
     .from('location_blocks')
-    .insert([{
-      state_id: realStateId || null,
-      district_id: targetDistrictId,
-      block_code: blkCode,
-      block_name: payload.block_name,
-      name_normalized: nameNorm
-    }])
+    .insert([insertData])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
 
-  return { success: false, error: error?.message || 'Database rejected Block save.' };
+  // Retry without state_id
+  delete insertData.state_id;
+  const { data: d2, error: e2 } = await adminClient
+    .from('location_blocks')
+    .insert([insertData])
+    .select()
+    .single();
+
+  if (!e2 && d2) return { success: true, data: d2 };
+
+  return { success: false, error: e2?.message || error?.message || 'Database rejected Block save.' };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
