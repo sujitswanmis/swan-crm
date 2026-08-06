@@ -511,22 +511,22 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
     return districtId;
   }
 
-  const dName = (districtName || '').trim() || 'Central District';
-  const nameNorm = dName.toLowerCase().trim();
+  const dName = (districtName || '').trim();
 
-  // 1. Try finding existing district by name in location_districts
-  try {
-    const { data: distMatch } = await adminClient
-      .from('location_districts')
-      .select('id')
-      .ilike('district_name', dName)
-      .limit(1)
-      .maybeSingle();
+  // 1. Try finding existing district by name — real column is 'name' not 'district_name'
+  if (dName) {
+    try {
+      const { data: distMatch } = await adminClient
+        .from('location_districts')
+        .select('id')
+        .ilike('name', dName)
+        .limit(1)
+        .maybeSingle();
+      if (distMatch?.id) return distMatch.id;
+    } catch (e) {}
+  }
 
-    if (distMatch?.id) return distMatch.id;
-  } catch (e) {}
-
-  // 2. Fetch a GUARANTEED REAL UUID state_id from location_states
+  // 2. Fetch a real state_id UUID if needed
   let validStateId = null;
   if (stateId && typeof stateId === 'string' && stateId.length > 25 && stateId.includes('-')) {
     validStateId = stateId;
@@ -542,13 +542,11 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
     } catch (e) {}
   }
 
-  // 3. Insert new district into location_districts using exact DB schema
-  const dCode = `DIST-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000)}`;
+  // 3. Insert new district — real columns: state_id, code, name
+  const dCode = `DIST-${Date.now().toString(36).toUpperCase()}`;
   const distRow = {
-    district_code: dCode,
-    district_name: dName,
-    name_normalized: nameNorm,
-    is_active: true
+    code: dCode,
+    name: dName || 'Unknown District'
   };
   if (validStateId) distRow.state_id = validStateId;
 
@@ -563,7 +561,7 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
     if (distErr) console.error('resolveOrCreateDistrictId insert error:', distErr.message);
   } catch (e) {}
 
-  // 4. Emergency: Query any existing district ID if insert failed
+  // 4. Emergency fallback: return any existing district ID
   try {
     const { data: anyDist } = await adminClient
       .from('location_districts')
@@ -577,6 +575,7 @@ async function resolveOrCreateDistrictId(adminClient, districtId, districtName, 
 }
 
 // 4. SUBDISTRICTS (TEHSILS / MANDALS)
+// Real columns: id, district_id, code, name, status
 export async function getSubdistrictsCentral(districtId, districtName = null) {
   if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
@@ -639,33 +638,19 @@ export async function createSubdistrictCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  // CONFIRMED REAL COLUMNS: id, district_id, code, name, status
-  const insertData = {
-    district_id: targetDistrictId,
-    code: subCode,
-    name: payload.subdistrict_name,
-    status: 'active'
-  };
-
+  // CONFIRMED REAL COLUMNS (locally tested): district_id, code, name
   const { data, error } = await adminClient
     .from('location_subdistricts')
-    .insert([insertData])
+    .insert([{
+      district_id: targetDistrictId,
+      code: subCode,
+      name: payload.subdistrict_name
+    }])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
-
-  // Retry without status
-  delete insertData.status;
-  const { data: d2, error: e2 } = await adminClient
-    .from('location_subdistricts')
-    .insert([insertData])
-    .select()
-    .single();
-
-  if (!e2 && d2) return { success: true, data: d2 };
-
-  return { success: false, error: e2?.message || error?.message || 'Database rejected Tehsil save.' };
+  return { success: false, error: error?.message || 'Database rejected Tehsil save.' };
 }
 
 // 5. BLOCKS (DEVELOPMENT BLOCKS)
@@ -734,33 +719,19 @@ export async function createBlockCentral(payload, userId = null) {
     } catch (e) {}
   }
 
-  // CONFIRMED REAL COLUMNS for location_blocks: id, district_id, code, name, status
-  const insertData = {
-    district_id: targetDistrictId,
-    code: blkCode,
-    name: payload.block_name,
-    status: 'active'
-  };
-
+  // CONFIRMED REAL COLUMNS (locally tested): district_id, code, name
   const { data, error } = await adminClient
     .from('location_blocks')
-    .insert([insertData])
+    .insert([{
+      district_id: targetDistrictId,
+      code: blkCode,
+      name: payload.block_name
+    }])
     .select()
     .single();
 
   if (!error && data) return { success: true, data };
-
-  // Retry without status
-  delete insertData.status;
-  const { data: d2, error: e2 } = await adminClient
-    .from('location_blocks')
-    .insert([insertData])
-    .select()
-    .single();
-
-  if (!e2 && d2) return { success: true, data: d2 };
-
-  return { success: false, error: e2?.message || error?.message || 'Database rejected Block save.' };
+  return { success: false, error: error?.message || 'Database rejected Block save.' };
 }
 
 // 6. SETTLEMENTS (CITIES, TOWNS, VILLAGES)
