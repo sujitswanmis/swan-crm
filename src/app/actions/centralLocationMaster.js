@@ -1217,3 +1217,227 @@ export async function processImportStagingRows(batchId, rows = []) {
 
   return { batchId, total: rows.length, valid: validCount, invalid: errorCount };
 }
+
+// 12. BULK EXPORT & IMPORT ENHANCEMENTS
+export async function exportAllLocationsCentral() {
+  const adminClient = getAdminClient();
+
+  const [{ data: states }, { data: districts }, { data: subdistricts }, { data: blocks }] = await Promise.all([
+    adminClient.from('location_states').select('id, code, name').order('name', { ascending: true }),
+    adminClient.from('location_districts').select('id, state_id, code, name').order('name', { ascending: true }),
+    adminClient.from('location_subdistricts').select('id, district_id, code, name').order('name', { ascending: true }),
+    adminClient.from('location_blocks').select('id, district_id, code, name').order('name', { ascending: true })
+  ]);
+
+  const stateMap = new Map();
+  (states || []).forEach(s => {
+    let short = s.code || '';
+    let lgd = '';
+    if (short.includes('|')) {
+      const parts = short.split('|');
+      short = parts[0];
+      lgd = parts[1] || '';
+    }
+    stateMap.set(s.id, { name: s.name, short_code: short, lgd_code: lgd });
+  });
+
+  const distMap = new Map();
+  (districts || []).forEach(d => {
+    let short = d.code || '';
+    let lgd = '';
+    if (short.includes('|')) {
+      const parts = short.split('|');
+      short = parts[0];
+      lgd = parts[1] || '';
+    }
+    distMap.set(d.id, { state_id: d.state_id, name: d.name, short_code: short, lgd_code: lgd });
+  });
+
+  const exportRows = [];
+
+  for (const d of (districts || [])) {
+    const st = stateMap.get(d.state_id) || { name: '', short_code: '', lgd_code: '' };
+    const distMeta = distMap.get(d.id);
+
+    const dSubs = (subdistricts || []).filter(sub => sub.district_id === d.id);
+    const dBlks = (blocks || []).filter(blk => blk.district_id === d.id);
+
+    const maxChildren = Math.max(dSubs.length, dBlks.length, 1);
+
+    for (let i = 0; i < maxChildren; i++) {
+      const sub = dSubs[i];
+      let subCode = sub?.code || '';
+      let subType = 'TEHSIL';
+      if (subCode.includes('|')) {
+        const parts = subCode.split('|');
+        subCode = parts[0];
+        subType = parts[1] || 'TEHSIL';
+      }
+
+      const blk = dBlks[i];
+
+      exportRows.push({
+        'State Name': st.name,
+        'State Code': st.short_code,
+        'State LGD Code': st.lgd_code,
+        'District Name': distMeta.name,
+        'District Short Name': distMeta.short_code,
+        'District LGD Code': distMeta.lgd_code,
+        'Tehsil / Subdistrict Name': sub?.name || '',
+        'Subdistrict Code': subCode,
+        'Subdistrict Type': subType,
+        'Block Name': blk?.name || '',
+        'Block Code': blk?.code || ''
+      });
+    }
+  }
+
+  return exportRows;
+}
+
+export async function importBulkLocationsCentral(rows = []) {
+  if (!rows || rows.length === 0) {
+    return { success: false, error: 'No data rows provided in upload.' };
+  }
+
+  const adminClient = getAdminClient();
+
+  const [{ data: existingStates }, { data: existingDists }] = await Promise.all([
+    adminClient.from('location_states').select('*'),
+    adminClient.from('location_districts').select('*')
+  ]);
+
+  const stateMap = new Map();
+  existingStates?.forEach(s => stateMap.set((s.name || '').toLowerCase().trim(), s));
+
+  const distMap = new Map();
+  existingDists?.forEach(d => distMap.set(`${d.state_id}_${(d.name || '').toLowerCase().trim()}`, d));
+
+  let createdStates = 0;
+  let createdDistricts = 0;
+  let createdSubdistricts = 0;
+  let createdBlocks = 0;
+
+  for (const r of rows) {
+    const rawStName = (r.state_name || r.state || r['State Name'] || r['State'] || '').toString().trim();
+    if (!rawStName) continue;
+
+    const normSt = rawStName.toLowerCase();
+    let stateObj = stateMap.get(normSt);
+
+    if (!stateObj) {
+      const stCode = (r.state_code || r['State Code'] || rawStName.slice(0, 3)).toString().toUpperCase();
+      const stLgd = (r.state_lgd_code || r['State LGD Code'] || '').toString();
+      const finalStCode = stLgd ? `${stCode}|${stLgd}` : stCode;
+
+      const { data: newSt } = await adminClient
+        .from('location_states')
+        .insert([{
+          country_id: '00000000-0000-0000-0000-000000000001',
+          code: finalStCode,
+          name: rawStName,
+          status: 'ACTIVE'
+        }])
+        .select('*')
+        .single();
+
+      if (newSt) {
+        stateObj = newSt;
+        stateMap.set(normSt, newSt);
+        createdStates++;
+      }
+    }
+
+    if (!stateObj) continue;
+
+    const rawDistName = (r.district_name || r.district || r['District Name'] || r['District'] || '').toString().trim();
+    if (!rawDistName) continue;
+
+    const normDist = rawDistName.toLowerCase();
+    const distKey = `${stateObj.id}_${normDist}`;
+    let distObj = distMap.get(distKey);
+
+    if (!distObj) {
+      const dCode = (r.district_code || r.district_short_name || r['District Code'] || r['District Short Name'] || `DIST-${stateObj.name.slice(0, 3).toUpperCase()}`).toString().toUpperCase();
+      const dLgd = (r.district_lgd_code || r.lgd_code || r['District LGD Code'] || '').toString();
+      const finalDCode = dLgd ? `${dCode}|${dLgd}` : dCode;
+
+      const { data: newDist } = await adminClient
+        .from('location_districts')
+        .insert([{
+          state_id: stateObj.id,
+          code: finalDCode,
+          name: rawDistName,
+          status: 'ACTIVE'
+        }])
+        .select('*')
+        .single();
+
+      if (newDist) {
+        distObj = newDist;
+        distMap.set(distKey, newDist);
+        createdDistricts++;
+      }
+    }
+
+    if (!distObj) continue;
+
+    const rawSubName = (r.subdistrict_name || r.tehsil_name || r.tehsil || r['Tehsil Name'] || r['Subdistrict Name'] || '').toString().trim();
+    if (rawSubName) {
+      const subType = (r.subdistrict_type || r.type || r['Subdistrict Type'] || 'TEHSIL').toString().toUpperCase();
+      const subCode = (r.subdistrict_code || r['Subdistrict Code'] || `TEH-${Date.now().toString(36).toUpperCase()}`).toString().toUpperCase();
+
+      const { data: existingSub } = await adminClient
+        .from('location_subdistricts')
+        .select('id')
+        .eq('district_id', distObj.id)
+        .ilike('name', rawSubName)
+        .maybeSingle();
+
+      if (!existingSub) {
+        await adminClient
+          .from('location_subdistricts')
+          .insert([{
+            district_id: distObj.id,
+            code: `${subCode}|${subType}`,
+            name: rawSubName,
+            status: 'ACTIVE'
+          }]);
+        createdSubdistricts++;
+      }
+    }
+
+    const rawBlkName = (r.block_name || r.block || r['Block Name'] || r['Block'] || '').toString().trim();
+    if (rawBlkName) {
+      const blkCode = (r.block_code || r['Block Code'] || `BLK-${Date.now().toString(36).toUpperCase()}`).toString().toUpperCase();
+
+      const { data: existingBlk } = await adminClient
+        .from('location_blocks')
+        .select('id')
+        .eq('district_id', distObj.id)
+        .ilike('name', rawBlkName)
+        .maybeSingle();
+
+      if (!existingBlk) {
+        await adminClient
+          .from('location_blocks')
+          .insert([{
+            district_id: distObj.id,
+            code: blkCode,
+            name: rawBlkName,
+            status: 'ACTIVE'
+          }]);
+        createdBlocks++;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    createdStates,
+    createdDistricts,
+    createdSubdistricts,
+    createdBlocks,
+    totalProcessed: rows.length
+  };
+}

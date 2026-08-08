@@ -5,6 +5,7 @@ import {
   Globe, MapPin, Compass, Layers, ShieldCheck, Plus, RefreshCw, Search,
   CheckCircle2, AlertCircle, FileSpreadsheet, History, Filter, ArrowRight, Eye, Upload, X, Building, Check
 } from 'lucide-react';
+import Papa from 'papaparse';
 import {
   getLocationExplorer,
   getCountriesCentral,
@@ -25,7 +26,9 @@ import {
   getPendingLocationRequests,
   processLocationRequest,
   createImportBatchCentral,
-  processImportStagingRows
+  processImportStagingRows,
+  exportAllLocationsCentral,
+  importBulkLocationsCentral
 } from '@/app/actions/centralLocationMaster';
 import LocationPicker from './LocationPicker';
 
@@ -377,23 +380,111 @@ export default function LocationManagementModule() {
     }
   };
 
-  const handleImportSubmit = async (e) => {
-    e.preventDefault();
-    if (!importFile) return;
+  const handleExportData = async (type = 'csv') => {
     setLoading(true);
     try {
-      const batch = await createImportBatchCentral(importFile.name);
-      const sampleRows = [
-        { country_name_raw: 'India', state_name_raw: 'Punjab', district_name_raw: 'Ludhiana', subdistrict_name_raw: 'Ludhiana East', block_name_raw: 'Central Block' },
-        { country_name_raw: 'India', state_name_raw: 'Haryana', district_name_raw: 'Sirsa', subdistrict_name_raw: 'Dabwali', block_name_raw: 'Odhan' }
-      ];
-      const res = await processImportStagingRows(batch.id, sampleRows);
-      setImportSummary(res);
-      alert('File staged into location_import_staging for validation!');
+      const rows = await exportAllLocationsCentral();
+      if (!rows || rows.length === 0) {
+        alert('No location data available to export.');
+        setLoading(false);
+        return;
+      }
+
+      const csv = Papa.unparse(rows);
+      const mime = type === 'excel' ? 'application/vnd.ms-excel;charset=utf-8;' : 'text/csv;charset=utf-8;';
+      const ext = type === 'excel' ? 'xls' : 'csv';
+
+      const blob = new Blob(['\uFEFF' + csv], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Swan_CRM_Location_Master_${Date.now()}.${ext}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (err) {
-      alert('Import failed: ' + err.message);
+      alert('Export failed: ' + err.message);
     }
     setLoading(false);
+  };
+
+  const handleDownloadTemplate = () => {
+    const sampleRows = [
+      {
+        'State Name': 'Punjab',
+        'State Code': 'PB',
+        'State LGD Code': '3',
+        'District Name': 'Ludhiana',
+        'District Short Name': 'LDH',
+        'District LGD Code': '0301',
+        'Tehsil / Subdistrict Name': 'Ludhiana East',
+        'Subdistrict Type': 'TEHSIL',
+        'Block Name': 'Central Block'
+      },
+      {
+        'State Name': 'Haryana',
+        'State Code': 'HR',
+        'State LGD Code': '6',
+        'District Name': 'Sirsa',
+        'District Short Name': 'SRS',
+        'District LGD Code': '0601',
+        'Tehsil / Subdistrict Name': 'Dabwali',
+        'Subdistrict Type': 'TEHSIL',
+        'Block Name': 'Odhan'
+      }
+    ];
+    const csv = Papa.unparse(sampleRows);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Location_Bulk_Import_Template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportSubmit = async (e) => {
+    e.preventDefault();
+    if (!importFile) return alert('Please select a CSV or Excel file to upload!');
+    setLoading(true);
+
+    Papa.parse(importFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = results.data || [];
+          if (rows.length === 0) {
+            alert('Uploaded file is empty or could not be parsed.');
+            setLoading(false);
+            return;
+          }
+
+          const res = await importBulkLocationsCentral(rows);
+          if (res.success) {
+            setImportSummary(res);
+            alert(`🎉 Bulk Import Completed Successfully!\n\n` +
+              `• Total Processed: ${res.totalProcessed}\n` +
+              `• States Created: ${res.createdStates}\n` +
+              `• Districts Created: ${res.createdDistricts}\n` +
+              `• Tehsils Created: ${res.createdSubdistricts}\n` +
+              `• Blocks Created: ${res.createdBlocks}`
+            );
+            loadInitialData();
+          } else {
+            alert('Import Error: ' + res.error);
+          }
+        } catch (err) {
+          alert('Failed to process bulk upload: ' + err.message);
+        }
+        setLoading(false);
+      },
+      error: (err) => {
+        alert('File parsing error: ' + err.message);
+        setLoading(false);
+      }
+    });
   };
 
   const filteredStates = statesList.filter(s => s.state_name?.toLowerCase().includes(stateSearch.toLowerCase()));
@@ -411,9 +502,20 @@ export default function LocationManagementModule() {
             Manage State, District, Tehsil, Block, City, Village and PIN Code master data from one centralized location source.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button onClick={() => setActiveTab('import')} style={{ padding: '0.55rem 1.1rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#334155', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
-            <Upload size={16} /> Import Location Data
+        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => handleExportData('csv')}
+            title="Export all location data as CSV/Excel"
+            style={{ padding: '0.55rem 1.1rem', background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
+          >
+            <FileSpreadsheet size={16} style={{ color: '#16a34a' }} /> Export Data
+          </button>
+          <button
+            onClick={() => setActiveTab('import')}
+            title="Bulk Upload CSV/Excel locations"
+            style={{ padding: '0.55rem 1.1rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#334155', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
+          >
+            <Upload size={16} style={{ color: '#2563eb' }} /> Upload File
           </button>
           <button onClick={() => setShowAddStateModal(true)} style={{ padding: '0.55rem 1.1rem', background: '#2563eb', border: 'none', color: '#ffffff', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' }}>
             <Plus size={16} /> Add Location
@@ -1096,23 +1198,82 @@ export default function LocationManagementModule() {
         </div>
       )}
 
-      {/* 9. IMPORT WIZARD */}
+      {/* 9. BULK UPLOAD & IMPORT WIZARD */}
       {activeTab === 'import' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem', maxWidth: '650px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: '#0f172a' }}>Location Import Wizard (Staging Isolation)</h3>
-          <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-            Uploaded file records are inserted into <code>location_import_staging</code> first for 7-step validation before master entry.
-          </p>
-          <form onSubmit={handleImportSubmit}>
-            <input type="file" onChange={e => setImportFile(e.target.files[0])} style={{ marginBottom: '1rem', display: 'block', color: '#334155' }} />
-            <button type="submit" style={{ padding: '0.65rem 1.25rem', background: '#10b981', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Upload & Stage Validation
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.75rem', maxWidth: '720px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Upload className="text-blue-600" size={20} /> Bulk Upload Location Data
+              </h3>
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+                Upload CSV or Excel files containing States, Districts, Tehsils, and Blocks to automatically insert/update location master records in bulk.
+              </p>
+            </div>
+            <button
+              onClick={handleDownloadTemplate}
+              style={{ padding: '0.45rem 0.85rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#2563eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
+            >
+              <FileSpreadsheet size={15} /> Download Sample Template
             </button>
+          </div>
+
+          <form onSubmit={handleImportSubmit} style={{ marginTop: '1.25rem' }}>
+            <label style={{ fontSize: '0.88rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.5rem' }}>
+              Select CSV / Excel File (.csv, .xls, .xlsx)
+            </label>
+            <input
+              type="file"
+              accept=".csv, .xls, .xlsx"
+              onChange={e => setImportFile(e.target.files[0])}
+              style={{ width: '100%', padding: '0.65rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '1.25rem', color: '#334155', fontSize: '0.88rem' }}
+            />
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="submit"
+                disabled={loading || !importFile}
+                style={{ padding: '0.65rem 1.5rem', background: loading || !importFile ? '#94a3b8' : '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: loading || !importFile ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem' }}
+              >
+                <Upload size={16} /> {loading ? 'Processing Upload...' : 'Upload & Process Locations'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportData('csv')}
+                style={{ padding: '0.65rem 1.25rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#334155', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem' }}
+              >
+                <FileSpreadsheet size={16} className="text-green-600" /> Export Existing Data
+              </button>
+            </div>
           </form>
+
           {importSummary && (
-            <div style={{ marginTop: '1rem', background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #10b981' }}>
-              <div>Total Staged Rows: {importSummary.total}</div>
-              <div>Valid Rows: {importSummary.valid}</div>
+            <div style={{ marginTop: '1.5rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1.25rem' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#166534', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <CheckCircle2 size={18} /> Bulk Import Result Summary
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat( auto-fit, minmax(120px, 1fr) )', gap: '0.75rem' }}>
+                <div style={{ background: '#ffffff', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>Total Rows</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#166534' }}>{importSummary.totalProcessed || importSummary.total || 0}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>States Created</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#166534' }}>{importSummary.createdStates || 0}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>Districts Created</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#166534' }}>{importSummary.createdDistricts || 0}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>Tehsils Created</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#166534' }}>{importSummary.createdSubdistricts || 0}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>Blocks Created</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#166534' }}>{importSummary.createdBlocks || 0}</div>
+                </div>
+              </div>
             </div>
           )}
         </div>
