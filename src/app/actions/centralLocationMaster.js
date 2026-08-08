@@ -140,7 +140,17 @@ export async function getStatesCentral(countryId = null) {
     });
   } catch (e) {}
 
-  return (data || []).map(s => {
+  const seenNames = new Set();
+  const uniqueStates = [];
+  (data || []).forEach(s => {
+    const norm = (s.name || '').toLowerCase().trim();
+    if (!seenNames.has(norm)) {
+      seenNames.add(norm);
+      uniqueStates.push(s);
+    }
+  });
+
+  return uniqueStates.map(s => {
     let rawCode = s.code || '';
     let shortCode = rawCode;
     let lgdCode = '';
