@@ -860,9 +860,9 @@ export default function LocationManagementModule() {
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>#</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>State Code</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>State Name</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>State Short Name</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>LGD Code</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>State / UT Name</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Short Code (ISO)</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Capital</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Type</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Status</th>
@@ -884,10 +884,10 @@ export default function LocationManagementModule() {
                         {st.state_code || '—'}
                       </span>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569' }}>{st.capital || '—'}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: '#475569', fontWeight: 500 }}>{st.capital || '—'}</td>
                     <td style={{ padding: '0.75rem 1rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '4px', background: st.state_type === 'UNION_TERRITORY' ? '#fef3c7' : '#dcfce7', color: st.state_type === 'UNION_TERRITORY' ? '#b45309' : '#15803d' }}>
-                        {st.state_type || 'STATE'}
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '4px', background: st.state_type === 'UNION_TERRITORY' ? '#fef3c7' : '#dcfce7', color: st.state_type === 'UNION_TERRITORY' ? '#b45309' : '#15803d', border: st.state_type === 'UNION_TERRITORY' ? '1px solid #fde68a' : '1px solid #bbf7d0' }}>
+                        {st.state_type === 'UNION_TERRITORY' ? 'UNION TERRITORY' : 'STATE'}
                       </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>

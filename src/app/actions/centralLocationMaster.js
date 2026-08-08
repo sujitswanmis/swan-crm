@@ -162,14 +162,21 @@ export async function getStatesCentral(countryId = null) {
     }
   });
 
+  const metadataMap = new Map();
+  OFFICIAL_INDIAN_STATES.forEach(meta => {
+    metadataMap.set((meta.name || '').toLowerCase().trim(), meta);
+    metadataMap.set((meta.code || '').toLowerCase().trim(), meta);
+  });
+
   return uniqueStates.map(s => {
+    const meta = metadataMap.get((s.name || '').toLowerCase().trim()) || {};
     let rawCode = s.code || '';
     let shortCode = rawCode;
-    let lgdCode = '';
+    let lgdCode = meta.lgd_code || '';
     if (rawCode.includes('|')) {
       const parts = rawCode.split('|');
       shortCode = parts[0];
-      lgdCode = parts[1] || '';
+      lgdCode = parts[1] || lgdCode;
     }
 
     return {
@@ -179,6 +186,8 @@ export async function getStatesCentral(countryId = null) {
       short_name: shortCode,
       official_code: lgdCode,
       state_lgd_code: lgdCode,
+      capital: meta.capital || s.capital || '—',
+      state_type: meta.type || s.state_type || 'STATE',
       district_count: countMap[s.id] || 0,
       is_active: s.status === 'ACTIVE'
     };
