@@ -121,7 +121,7 @@ export async function getStatesCentral(countryId = null) {
 
   if (!data || data.length === 0) {
     // Only auto-seed if database location_states table is 100% empty
-    const targetCountryId = countryId || '00000000-0000-0000-0000-000000000001';
+    const targetCountryId = countryId || 'd02f4d1e-c675-4b74-8b51-ef09816b1df8';
     const insertRows = OFFICIAL_INDIAN_STATES.map(s => ({
       country_id: targetCountryId,
       code: s.lgd_code ? `${s.code}|${s.lgd_code}` : s.code,
