@@ -955,8 +955,10 @@ export default function LocationManagementModule() {
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>#</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>LGD Code</th>
                     <th style={{ padding: '0.75rem 1rem' }}>District Name</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>District Code</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Short Code</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>State Name</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Status</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Actions</th>
                   </tr>
@@ -965,18 +967,29 @@ export default function LocationManagementModule() {
                   {districtsList.map((d, idx) => (
                     <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '0.75rem 1rem', color: '#94a3b8', fontSize: '0.8rem' }}>{idx + 1}</td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: '#fef9c3', color: '#a16207', border: '1px solid #fde68a' }}>
+                          {d.official_code || d.district_lgd_code || '—'}
+                        </span>
+                      </td>
                       <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#0f172a' }}>{d.district_name}</td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ fontSize: '0.78rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
                           {d.district_code || d.id}
                         </span>
                       </td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#475569', fontWeight: 500 }}>
+                        {d.state_name || statesList.find(s => s.id === selectedStateId)?.state_name || '—'}
+                      </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>Active</span>
                       </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 1rem', display: 'flex', gap: '0.5rem' }}>
                         <button onClick={() => startEditing('DISTRICT', d)} style={{ padding: '0.3rem 0.65rem', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
                           ✏️ Edit
+                        </button>
+                        <button onClick={() => { setActiveTab('explorer'); handleDistrictClick(d); }} style={{ padding: '0.3rem 0.65rem', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
+                          View Tehsils
                         </button>
                       </td>
                     </tr>
