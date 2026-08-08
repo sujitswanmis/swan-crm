@@ -104,14 +104,26 @@ export async function getStatesCentral(countryId = null) {
     .order('name', { ascending: true });
 
   if (countryId) {
-    query = query.eq('country_id', countryId);
+    query = query.or(`country_id.eq.${countryId},country_id.is.null`);
   }
 
   let { data, error } = await query;
 
-  if (error || !data || data.length === 0) {
-    // Auto-seed Official 36 Indian States & UTs into database with real schema: code, name, status
+  if (!data || data.length === 0) {
+    const { data: fallbackAll } = await adminClient
+      .from('location_states')
+      .select('id, country_id, code, name, status')
+      .order('name', { ascending: true });
+    if (fallbackAll && fallbackAll.length > 0) {
+      data = fallbackAll;
+    }
+  }
+
+  if (!data || data.length === 0) {
+    // Only auto-seed if database location_states table is 100% empty
+    const targetCountryId = countryId || '00000000-0000-0000-0000-000000000001';
     const insertRows = OFFICIAL_INDIAN_STATES.map(s => ({
+      country_id: targetCountryId,
       code: s.lgd_code ? `${s.code}|${s.lgd_code}` : s.code,
       name: s.name,
       status: 'ACTIVE'
