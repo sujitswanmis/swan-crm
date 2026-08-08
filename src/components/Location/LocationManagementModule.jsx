@@ -534,7 +534,7 @@ export default function LocationManagementModule() {
                         alignItems: 'center'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                         <span>{st.state_name}</span>
                         {/* State Short Name badge */}
                         {st.state_code && (
@@ -542,10 +542,16 @@ export default function LocationManagementModule() {
                             {st.state_code}
                           </span>
                         )}
-                        {/* State Code badge */}
+                        {/* District Count badge */}
+                        {st.district_count !== undefined && (
+                          <span title="District Count in Database" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                            {st.district_count}
+                          </span>
+                        )}
+                        {/* State LGD Code badge */}
                         {(st.official_code || st.state_lgd_code) && (
-                          <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.3rem', borderRadius: '4px', background: '#fef9c3', color: '#a16207', border: '1px solid #fde68a' }}>
-                            {st.official_code || st.state_lgd_code}
+                          <span title="Government LGD Code" style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.3rem', borderRadius: '4px', background: '#fef9c3', color: '#a16207', border: '1px solid #fde68a' }}>
+                            LGD: {st.official_code || st.state_lgd_code}
                           </span>
                         )}
                         <button

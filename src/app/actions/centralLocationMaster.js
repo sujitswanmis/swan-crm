@@ -100,9 +100,8 @@ export async function getStatesCentral(countryId = null) {
   const adminClient = getAdminClient();
   let query = adminClient
     .from('location_states')
-    .select('*')
-    .eq('is_active', true)
-    .order('state_name', { ascending: true });
+    .select('id, country_id, code, name, status')
+    .order('name', { ascending: true });
 
   if (countryId) {
     query = query.eq('country_id', countryId);
@@ -111,15 +110,11 @@ export async function getStatesCentral(countryId = null) {
   let { data, error } = await query;
 
   if (error || !data || data.length === 0) {
-    // Auto-seed Official 36 Indian States & UTs into database
-    const targetCountryId = countryId || '00000000-0000-0000-0000-000000000001';
+    // Auto-seed Official 36 Indian States & UTs into database with real schema: code, name, status
     const insertRows = OFFICIAL_INDIAN_STATES.map(s => ({
-      country_id: targetCountryId,
-      state_code: s.code,
-      state_name: s.name,
-      state_type: s.type,
-      official_code: s.lgd_code || null,
-      name_normalized: s.name.toLowerCase().trim()
+      code: s.lgd_code ? `${s.code}|${s.lgd_code}` : s.code,
+      name: s.name,
+      status: 'ACTIVE'
     }));
 
     try {
@@ -129,66 +124,96 @@ export async function getStatesCentral(countryId = null) {
         .select('*');
 
       if (seededData && seededData.length > 0) {
-        data = seededData.sort((a, b) => a.state_name.localeCompare(b.state_name));
+        data = seededData.sort((a, b) => a.name.localeCompare(b.name));
       }
     } catch (e) {
       console.error('Seeding fallback error:', e);
     }
-
-    if (!data || data.length === 0) {
-      // Fallback format
-      data = OFFICIAL_INDIAN_STATES.map((s, idx) => ({
-        id: `st-${idx + 1}`,
-        state_name: s.name,
-        state_code: s.code,
-        state_lgd_code: s.lgd_code,
-        state_type: s.type,
-        capital: s.capital,
-        official_code: s.lgd_code,
-        is_active: true
-      }));
-    }
   }
-  return data || [];
+
+  // Batch query district counts per state for fast UI rendering
+  const countMap = {};
+  try {
+    const { data: distRows } = await adminClient.from('location_districts').select('state_id');
+    distRows?.forEach(d => {
+      if (d.state_id) countMap[d.state_id] = (countMap[d.state_id] || 0) + 1;
+    });
+  } catch (e) {}
+
+  return (data || []).map(s => {
+    let rawCode = s.code || '';
+    let shortCode = rawCode;
+    let lgdCode = '';
+    if (rawCode.includes('|')) {
+      const parts = rawCode.split('|');
+      shortCode = parts[0];
+      lgdCode = parts[1] || '';
+    }
+
+    return {
+      ...s,
+      state_name: s.name || '',
+      state_code: shortCode,
+      short_name: shortCode,
+      official_code: lgdCode,
+      state_lgd_code: lgdCode,
+      district_count: countMap[s.id] || 0,
+      is_active: s.status === 'ACTIVE'
+    };
+  });
 }
 
 export async function createStateCentral(payload, userId = null) {
   const adminClient = getAdminClient();
-  const nameNorm = await normalizeLocationText(payload.state_name || '');
+  const shortCode = payload.state_short_name || payload.state_code || (payload.state_name ? payload.state_name.slice(0, 3).toUpperCase() : 'ST');
+  const lgdCode = payload.state_lgd_code || payload.official_code || '';
+  const finalCode = lgdCode ? `${shortCode.toUpperCase()}|${lgdCode}` : shortCode.toUpperCase();
 
-  // Try with lgd_code field first
-  let data = null;
-  let error = null;
-  try {
-    const res = await adminClient
-      .from('location_states')
-      .insert([{
-        country_id: payload.country_id || '00000000-0000-0000-0000-000000000001',
-        state_code: payload.state_short_name ? payload.state_short_name.toUpperCase() : (payload.state_code ? payload.state_code.toUpperCase() : payload.state_name.slice(0, 3).toUpperCase()),
-        state_name: payload.state_name,
-        state_type: payload.state_type || 'STATE',
-        official_code: payload.state_lgd_code || payload.official_code || null,
-        name_normalized: nameNorm,
-        created_by: userId
-      }])
-      .select()
-      .single();
-    data = res.data;
-    error = res.error;
-  } catch (err) {
-    error = err;
-  }
+  const { data, error } = await adminClient
+    .from('location_states')
+    .insert([{
+      code: finalCode,
+      name: payload.state_name,
+      status: 'ACTIVE'
+    }])
+    .select()
+    .single();
 
   if (error) throw new Error(error.message || String(error));
-  return data;
+
+  let short = data.code || '';
+  let lgd = '';
+  if (data.code && data.code.includes('|')) {
+    const parts = data.code.split('|');
+    short = parts[0];
+    lgd = parts[1] || '';
+  }
+
+  return {
+    ...data,
+    state_name: data.name,
+    state_code: short,
+    short_name: short,
+    official_code: lgd,
+    state_lgd_code: lgd,
+    district_count: 0,
+    is_active: data.status === 'ACTIVE'
+  };
 }
 
 export async function updateStateCentral(id, payload, userId = null) {
   const adminClient = getAdminClient();
 
+  const shortCode = payload.state_short_name || payload.state_code || '';
+  const lgdCode = payload.state_lgd_code || payload.official_code || '';
+  let finalCode = undefined;
+  if (shortCode || lgdCode) {
+    finalCode = lgdCode ? `${shortCode.toUpperCase()}|${lgdCode}` : shortCode.toUpperCase();
+  }
+
   const updatePayload = {};
   if (payload.state_name) updatePayload.name = payload.state_name;
-  if (payload.state_short_name || payload.state_code) updatePayload.code = (payload.state_short_name || payload.state_code).toUpperCase();
+  if (finalCode !== undefined) updatePayload.code = finalCode;
 
   if (Object.keys(updatePayload).length === 0) {
     return { id, state_name: payload.state_name || '' };
@@ -221,7 +246,23 @@ export async function updateStateCentral(id, payload, userId = null) {
       .maybeSingle();
 
     if (error) console.error('updateStateCentral error:', error.message);
-    return data ? { ...data, state_name: data.name, state_code: data.code } : { id: targetId, ...updatePayload, state_name: payload.state_name || '' };
+    let short = data?.code || shortCode;
+    let lgd = lgdCode;
+    if (data?.code && data.code.includes('|')) {
+      const parts = data.code.split('|');
+      short = parts[0];
+      lgd = parts[1] || '';
+    }
+
+    return {
+      ...data,
+      state_name: data?.name || payload.state_name || '',
+      state_code: short,
+      short_name: short,
+      official_code: lgd,
+      state_lgd_code: lgd,
+      is_active: true
+    };
   } catch (err) {
     console.error('updateStateCentral exception:', err);
     return { id: targetId, ...updatePayload, state_name: payload.state_name || '' };
@@ -657,27 +698,31 @@ export async function getSubdistrictsCentral(districtId, districtName = null) {
   if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
 
-  let targetDistrictId = districtId;
-
-  // Resolve targetDistrictId if it's not a valid DB UUID
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
-    if (districtName) {
-      try {
-        const { data: dMatch } = await adminClient
-          .from('location_districts')
-          .select('id')
-          .ilike('name', districtName.trim())
-          .maybeSingle();
-        if (dMatch?.id) targetDistrictId = dMatch.id;
-      } catch (e) {}
-    }
+  let targetDistrictIds = [];
+  if (districtId && typeof districtId === 'string' && districtId.length > 25 && districtId.includes('-')) {
+    targetDistrictIds.push(districtId);
   }
 
-  if (targetDistrictId && typeof targetDistrictId === 'string' && targetDistrictId.length > 25 && targetDistrictId.includes('-')) {
+  const dName = districtName || (typeof districtId === 'string' ? districtId : null);
+  if (dName) {
+    try {
+      const { data: dMatches } = await adminClient
+        .from('location_districts')
+        .select('id')
+        .ilike('name', dName.trim());
+      if (dMatches && dMatches.length > 0) {
+        dMatches.forEach(m => {
+          if (!targetDistrictIds.includes(m.id)) targetDistrictIds.push(m.id);
+        });
+      }
+    } catch (e) {}
+  }
+
+  if (targetDistrictIds.length > 0) {
     const { data, error } = await adminClient
       .from('location_subdistricts')
       .select('*')
-      .eq('district_id', targetDistrictId)
+      .in('district_id', targetDistrictIds)
       .order('name', { ascending: true });
 
     if (!error && data) {
@@ -780,27 +825,32 @@ export async function getBlocksCentral(districtId, districtName = null) {
   if (!districtId && !districtName) return [];
   const adminClient = getAdminClient();
 
-  let targetDistrictId = districtId;
-
-  if (!targetDistrictId || typeof targetDistrictId !== 'string' || targetDistrictId.length <= 25 || !targetDistrictId.includes('-')) {
-    if (districtName) {
-      try {
-        const { data: dMatch } = await adminClient
-          .from('location_districts')
-          .select('id')
-          .ilike('name', districtName.trim())
-          .maybeSingle();
-        if (dMatch?.id) targetDistrictId = dMatch.id;
-      } catch (e) {}
-    }
+  let targetDistrictIds = [];
+  if (districtId && typeof districtId === 'string' && districtId.length > 25 && districtId.includes('-')) {
+    targetDistrictIds.push(districtId);
   }
 
-  if (targetDistrictId && typeof targetDistrictId === 'string' && targetDistrictId.length > 25 && targetDistrictId.includes('-')) {
+  const dName = districtName || (typeof districtId === 'string' ? districtId : null);
+  if (dName) {
+    try {
+      const { data: dMatches } = await adminClient
+        .from('location_districts')
+        .select('id')
+        .ilike('name', dName.trim());
+      if (dMatches && dMatches.length > 0) {
+        dMatches.forEach(m => {
+          if (!targetDistrictIds.includes(m.id)) targetDistrictIds.push(m.id);
+        });
+      }
+    } catch (e) {}
+  }
+
+  if (targetDistrictIds.length > 0) {
     try {
       const { data, error } = await adminClient
         .from('location_blocks')
         .select('*')
-        .eq('district_id', targetDistrictId)
+        .in('district_id', targetDistrictIds)
         .order('name', { ascending: true });
 
       if (!error && data) {
@@ -953,23 +1003,44 @@ export async function getLocationExplorer(filters = {}, page = 1, limit = 20) {
     adminClient.from('location_requests').select('*', { count: 'exact', head: true }).eq('request_status', 'PENDING')
   ]);
 
-  // Paginated Explorer Table Query
+  // Paginated Explorer Table Query with real schema columns
   let query = adminClient
     .from('location_districts')
-    .select('id, district_code, district_name, official_code, is_active, updated_at, state:location_states(state_name, country:location_countries(country_name))', { count: 'exact' });
+    .select('id, code, name, status, state_id, state:location_states(name)', { count: 'exact' });
 
   if (filters.state_id) {
     query = query.eq('state_id', filters.state_id);
   }
   if (filters.search) {
     const norm = await normalizeLocationText(filters.search);
-    query = query.ilike('name_normalized', `%${norm}%`);
+    query = query.ilike('name', `%${norm}%`);
   }
 
   const fromIndex = (page - 1) * limit;
   const toIndex = fromIndex + limit - 1;
 
-  const { data, count, error } = await query.range(fromIndex, toIndex).order('district_name', { ascending: true });
+  const { data, count, error } = await query.range(fromIndex, toIndex).order('name', { ascending: true });
+
+  const formattedRows = (data || []).map(d => {
+    let rawCode = d.code || '';
+    let shortCode = rawCode;
+    let lgdCode = '';
+    if (rawCode.includes('|')) {
+      const parts = rawCode.split('|');
+      shortCode = parts[0];
+      lgdCode = parts[1] || '';
+    }
+    return {
+      id: d.id,
+      district_name: d.name,
+      district_code: shortCode,
+      official_code: lgdCode,
+      lgd_code: lgdCode,
+      short_name: shortCode,
+      is_active: d.status === 'ACTIVE',
+      state: d.state ? { state_name: d.state.name } : null
+    };
+  });
 
   return {
     summary: {
@@ -981,7 +1052,7 @@ export async function getLocationExplorer(filters = {}, page = 1, limit = 20) {
       totalPostOffices: totalPostOffices || 0,
       pendingRequests: pendingRequests || 0
     },
-    rows: data || [],
+    rows: formattedRows,
     totalCount: count || 0,
     page,
     limit
