@@ -428,11 +428,39 @@ button:not(.nav-item):not(.mobile-menu-toggle):active {
 .top-header {
   background-color: var(--bg-surface) !important;
   border-bottom: 1px solid var(--border-light) !important;
+  color: var(--text-primary) !important;
 }
 .top-header select {
   background-color: var(--bg-surface) !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border-light) !important;
+}
+
+/* Global Theme Contrast & Readability Rules for Dark/Stylish Themes */
+.theme-dark, .theme-m3-dark, .theme-stylish-1, .theme-stylish-2, .theme-stylish-3, .theme-stylish-4, .theme-premium-1, .theme-premium-3, .theme-premium-4, .theme-aurora, .theme-forest, .theme-carbon, .theme-sunset {
+  color: var(--text-primary);
+}
+
+.theme-dark table, .theme-m3-dark table, .theme-stylish-1 table, .theme-stylish-2 table, .theme-stylish-3 table, .theme-stylish-4 table, .theme-premium-1 table, .theme-premium-3 table, .theme-premium-4 table, .theme-aurora table, .theme-forest table, .theme-carbon table, .theme-sunset table {
+  color: var(--text-primary) !important;
+}
+
+.theme-dark th, .theme-m3-dark th, .theme-stylish-1 th, .theme-stylish-2 th, .theme-stylish-3 th, .theme-stylish-4 th, .theme-premium-1 th, .theme-premium-3 th, .theme-premium-4 th, .theme-aurora th, .theme-forest th, .theme-carbon th, .theme-sunset th {
+  background-color: var(--th-bg) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+
+.theme-dark td, .theme-m3-dark td, .theme-stylish-1 td, .theme-stylish-2 td, .theme-stylish-3 td, .theme-stylish-4 td, .theme-premium-1 td, .theme-premium-3 td, .theme-premium-4 td, .theme-aurora td, .theme-forest td, .theme-carbon td, .theme-sunset td {
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--border-light) !important;
+}
+
+.theme-dark h1, .theme-dark h2, .theme-dark h3, .theme-dark h4, .theme-dark h5, .theme-dark h6,
+.theme-stylish-1 h1, .theme-stylish-1 h2, .theme-stylish-1 h3, .theme-stylish-1 h4, .theme-stylish-1 h5, .theme-stylish-1 h6,
+.theme-carbon h1, .theme-carbon h2, .theme-carbon h3, .theme-carbon h4, .theme-carbon h5, .theme-carbon h6,
+.theme-aurora h1, .theme-aurora h2, .theme-aurora h3, .theme-aurora h4, .theme-aurora h5, .theme-aurora h6 {
+  color: var(--text-primary) !important;
 }
 
 /* Style checkboxes and radio buttons to be more premium */

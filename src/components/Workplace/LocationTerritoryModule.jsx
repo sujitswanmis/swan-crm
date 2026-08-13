@@ -39,10 +39,6 @@ export default function LocationTerritoryModule() {
     district_name: ''
   });
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
   const loadInitialData = async () => {
     setLoading(true);
     try {
@@ -57,6 +53,10 @@ export default function LocationTerritoryModule() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadInitialData();
+  }, []);
 
   const handleStateChange = async (stId) => {
     setSelectedState(stId);

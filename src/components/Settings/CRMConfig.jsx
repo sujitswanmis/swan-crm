@@ -377,7 +377,12 @@ export default function CRMConfig() {
               onChange={(e) => setAssignmentRule(e.target.value)}
               style={{ width: '100%', padding: '0.75rem 1rem', border: '1px solid var(--border-light)', borderRadius: '6px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.95rem' }}
             >
+              <option value="none">None / Unassigned (Keep new leads in open unassigned pool)</option>
               <option value="round_robin">Round Robin (Equal distribution to all active sales team)</option>
+              <option value="equal_distribution">Equal Distribution (Divide batch equally among active agents)</option>
+              <option value="workload_based">Workload Based (Assign to employee with lowest active leads)</option>
+              <option value="territory_based">Territory Based (Auto-route based on State/District/PIN)</option>
+              <option value="designation_based">Designation Based (Route by deal size & employee level)</option>
               <option value="manual">Manual (Admin assigns every new lead)</option>
               <option value="weighted">Weighted (Based on individual target goals)</option>
             </select>

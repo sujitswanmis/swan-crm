@@ -292,6 +292,17 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     loadTeam();
   }, []);
   
+  const prevLeadsSigRef = useRef('');
+  const initialSyncFinishedRef = useRef(false);
+
+  const updateLeadsIfChanged = (newList) => {
+    const sig = (newList || []).map(l => `${l.id}-${l.status}-${l.assigned_to}-${l.follow_up_date || ''}-${l.lead_notes?.length || 0}`).join('|');
+    if (prevLeadsSigRef.current !== sig) {
+      prevLeadsSigRef.current = sig;
+      setLeads(newList);
+    }
+  };
+
   // Client-side fetch of all leads (Progressive Loading with sync tracking)
   useEffect(() => {
     if (!hasLeadsAccess) {
@@ -404,19 +415,17 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           }
           setSyncLoadedCount(loadedLeads.length);
           
-          // Deduplicate and update state dynamically
-          setRawLeads(prev => {
-            const combined = [...prev, ...loadedLeads.map(l => ({ ...l, lead_notes: [] }))];
-            const unique = [];
-            const seen = new Set();
-            for (const lead of combined) {
-              if (!seen.has(lead.id)) {
-                seen.add(lead.id);
-                unique.push(lead);
-              }
+          // Deduplicate and update state cleanly without quadratic array duplication
+          const currentSnapshot = [...loadedLeads];
+          const unique = [];
+          const seen = new Set();
+          for (const lead of currentSnapshot) {
+            if (!seen.has(lead.id)) {
+              seen.add(lead.id);
+              unique.push({ ...lead, lead_notes: [] });
             }
-            return unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          });
+          }
+          setRawLeads(unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
         }
 
         // 3. Fetch notes in background batches of 3
@@ -479,7 +488,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
-        setRawLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new } : item));
+        setRawLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => current.filter(item => item.id !== payload.old.id));
@@ -520,7 +529,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     
     // 2. Admins always see everything (within their chosen company)
     if (userRole === 'admin' || userRole === 'Admin') {
-      setLeads(preFilteredLeads);
+      updateLeadsIfChanged(preFilteredLeads);
       return;
     }
     
@@ -528,7 +537,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     
     // 3. If manager access or viewAll permission, see everything (within their company)
     if (leadsAccess.is_manager || globalRolePermissions?.viewAll) {
-      setLeads(preFilteredLeads);
+      updateLeadsIfChanged(preFilteredLeads);
       return;
     }
     
@@ -555,16 +564,16 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         return assignedSteps.includes(leadStage) && 
                (lead.assigned_to === null || lead.assigned_to === undefined || lead.assigned_to === userId);
       });
-      setLeads(filteredLeads);
+      updateLeadsIfChanged(filteredLeads);
     } else {
       // If view is true but no steps assigned, they see nothing
-      setLeads([]);
+      updateLeadsIfChanged([]);
     }
-  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId]);
+  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, globalRolePermissions]);
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = (updatedFilteredLeads) => {
-    setLeads(updatedFilteredLeads);
+    updateLeadsIfChanged(updatedFilteredLeads);
     setRawLeads(prevRaw => {
       const updatedMap = new Map(updatedFilteredLeads.map(l => [l.id, l]));
       return prevRaw.map(l => {
@@ -738,7 +747,20 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const prevDueCount = useRef(dueFollowUps.length);
 
   useEffect(() => {
-    // If the number of due follow-ups increases, play notification sound
+    // If sync or initial lead loading is active, update baseline ref without playing audio
+    if (isSyncing || loadingLeads) {
+      prevDueCount.current = dueFollowUps.length;
+      return;
+    }
+
+    // First check after sync finishes — establish baseline count without playing sound
+    if (!initialSyncFinishedRef.current) {
+      initialSyncFinishedRef.current = true;
+      prevDueCount.current = dueFollowUps.length;
+      return;
+    }
+
+    // If the number of due follow-ups genuinely increases after sync, play notification sound
     if (dueFollowUps.length > prevDueCount.current) {
       try {
         let playedCustom = false;
@@ -791,7 +813,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       }
     }
     prevDueCount.current = dueFollowUps.length;
-  }, [dueFollowUps.length]);
+  }, [dueFollowUps.length, isSyncing, loadingLeads]);
 
   if (userRole === 'customer') {
     return (

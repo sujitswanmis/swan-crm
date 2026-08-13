@@ -450,8 +450,9 @@ IMPORTANT BEHAVIORAL RULES:
         tool_choice: isCustomer ? undefined : "auto"
       };
 
-      // o-series reasoning models (like o3-mini) do not support standard temperature or max_tokens parameters
-      if (!resolvedModel.startsWith('o1') && !resolvedModel.startsWith('o3')) {
+      // o-series reasoning models (like o1, o3, o4) do not support standard temperature or max_tokens parameters
+      const isReasoning = resolvedModel.startsWith('o1') || resolvedModel.startsWith('o3') || resolvedModel.startsWith('o4') || resolvedModel.includes('thinking');
+      if (!isReasoning) {
         payload.temperature = 0.7;
         payload.max_tokens = 1000;
       } else {

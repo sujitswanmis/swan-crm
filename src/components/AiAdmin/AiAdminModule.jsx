@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 export default function AiAdminModule() {
@@ -10,14 +10,12 @@ export default function AiAdminModule() {
   const [newPremiumLimitValue, setNewPremiumLimitValue] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const AI_MODELS = [
-    "gpt-4o-mini",
-    "gpt-4o",
-    "gpt-4-turbo",
-    "gpt-5.5-instant",
-    "gpt-5.5-thinking",
-    "gpt-5.5-pro"
-  ];
+  // Dynamic AI Models State
+  const [availableModels, setAvailableModels] = useState([]);
+  const [liveSynced, setLiveSynced] = useState(false);
+  const [openDropdownUserId, setOpenDropdownUserId] = useState(null);
+  const [modelSearch, setModelSearch] = useState("");
+  const [customModelInput, setCustomModelInput] = useState("");
 
   // Knowledge Base State
   const [documents, setDocuments] = useState([]);
@@ -25,10 +23,35 @@ export default function AiAdminModule() {
   const [docContent, setDocContent] = useState("");
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
+  const dropdownRef = useRef(null);
+
   useEffect(() => {
     fetchUsers();
     fetchDocuments();
+    fetchModels();
+
+    // Close dropdown on click outside
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpenDropdownUserId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('/api/ai/models');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableModels(data.models || []);
+        setLiveSynced(!!data.liveSynced);
+      }
+    } catch (e) {
+      console.error("Failed to fetch AI models:", e);
+    }
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -140,23 +163,57 @@ export default function AiAdminModule() {
     }
   };
 
+  const handleAddCustomModel = (userId, currentSelected) => {
+    const trimmed = customModelInput.trim();
+    if (!trimmed) return;
+    
+    // Add to availableModels list if not already present
+    if (!availableModels.includes(trimmed)) {
+      setAvailableModels(prev => [trimmed, ...prev]);
+    }
+    
+    // Select this model for the current user
+    const updated = Array.from(new Set([...currentSelected, trimmed]));
+    handleModelChange(userId, updated);
+    setCustomModelInput("");
+  };
+
   if (loading) {
     return <PremiumProgressLoader message="Loading AI Stats" active={loading} />;
   }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1200px' }}>
-      <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-          <Bot size={24} />
+      <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+            <Bot size={24} />
+          </div>
+          <div>
+            <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>AI Admin Dashboard</h2>
+            <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>Monitor and manage AI token usage & model access across your team</p>
+          </div>
         </div>
-        <div>
-          <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>AI Admin Dashboard</h2>
-          <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>Monitor and manage AI token usage across your team</p>
+
+        {/* Live Sync Status Badge */}
+        <div style={{ 
+          display: 'inline-flex', 
+          alignItems: 'center', 
+          gap: '0.5rem', 
+          padding: '0.4rem 0.8rem', 
+          borderRadius: '20px', 
+          background: liveSynced ? '#ecfdf5' : '#fef3c7', 
+          border: `1px solid ${liveSynced ? '#a7f3d0' : '#fde68a'}`,
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          color: liveSynced ? '#047857' : '#b45309'
+        }}>
+          <Sparkles size={14} />
+          {liveSynced ? `Auto-Synced with OpenAI (${availableModels.length} models)` : `Loaded Models (${availableModels.length})`}
         </div>
       </div>
 
-      <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'visible' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
@@ -174,6 +231,13 @@ export default function AiAdminModule() {
               const usagePercent = Math.min(100, Math.round((user.total_tokens / user.token_limit) * 100)) || 0;
               const isDanger = usagePercent >= 90;
               const isWarning = usagePercent >= 75 && usagePercent < 90;
+              const selectedModels = user.ai_models || ['gpt-4o-mini'];
+              const isDropdownOpen = openDropdownUserId === user.id;
+
+              // Filtered models for dropdown search
+              const filteredModels = availableModels.filter(m => 
+                m.toLowerCase().includes(modelSearch.toLowerCase())
+              );
 
               return (
                 <tr key={user.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -187,7 +251,7 @@ export default function AiAdminModule() {
                     </span>
                   </td>
                   <td style={{ padding: '1rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '200px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '180px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                         <span style={{ fontWeight: 600, color: isDanger ? '#ef4444' : 'var(--text-primary)' }}>{user.total_tokens.toLocaleString()}</span>
                         <span style={{ color: 'var(--text-secondary)' }}>{usagePercent}%</span>
@@ -222,42 +286,217 @@ export default function AiAdminModule() {
                       <span style={{ fontWeight: 600, color: '#8b5cf6' }}>{user.premium_limit ? user.premium_limit.toLocaleString() : 'N/A'}</span>
                     )}
                   </td>
-                  <td style={{ padding: '1rem' }}>
-                    <div style={{
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '6px',
-                      background: 'var(--bg-surface)',
-                      maxHeight: '120px',
-                      overflowY: 'auto',
-                      padding: '0.4rem',
-                      minWidth: '180px'
-                    }}>
-                      {AI_MODELS.map(model => {
-                        const isSelected = (user.ai_models || ['gpt-4o-mini']).includes(model);
-                        return (
-                          <label key={model} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.25rem 0.2rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={isSelected}
-                              onChange={(e) => {
-                                const currentModels = user.ai_models || ['gpt-4o-mini'];
-                                let newModels;
-                                if (e.target.checked) {
-                                  newModels = [...currentModels, model];
-                                } else {
-                                  newModels = currentModels.filter(m => m !== model);
-                                }
-                                if (newModels.length === 0) newModels = ['gpt-4o-mini']; // Enforce at least one
-                                handleModelChange(user.id, newModels);
-                              }}
-                              style={{ cursor: 'pointer' }}
-                            />
-                            {model}
-                          </label>
-                        );
-                      })}
+                  
+                  {/* Multi-Select Dropdown Column */}
+                  <td style={{ padding: '1rem', position: 'relative' }}>
+                    <div 
+                      onClick={() => {
+                        setModelSearch("");
+                        setOpenDropdownUserId(isDropdownOpen ? null : user.id);
+                      }}
+                      style={{
+                        padding: '0.45rem 0.75rem',
+                        borderRadius: '8px',
+                        border: isDropdownOpen ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                        background: 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justify: 'space-between',
+                        gap: '0.5rem',
+                        minWidth: '200px',
+                        maxWidth: '240px',
+                        boxShadow: isDropdownOpen ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', overflow: 'hidden', maxHeight: '28px' }}>
+                        {selectedModels.length === 0 && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Models...</span>}
+                        {selectedModels.slice(0, 2).map(m => (
+                          <span key={m} style={{
+                            fontSize: '0.72rem',
+                            background: '#e0e7ff',
+                            color: '#3730a3',
+                            padding: '0.15rem 0.4rem',
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {m}
+                          </span>
+                        ))}
+                        {selectedModels.length > 2 && (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            background: '#f3f4f6',
+                            color: '#4b5563',
+                            padding: '0.15rem 0.4rem',
+                            borderRadius: '4px',
+                            fontWeight: 600
+                          }}>
+                            +{selectedModels.length - 2} more
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown size={16} style={{ color: 'var(--text-secondary)', flexShrink: 0, transform: isDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                     </div>
+
+                    {/* Popover Dropdown Menu */}
+                    {isDropdownOpen && (
+                      <div 
+                        ref={dropdownRef}
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% - 0.5rem)',
+                          left: '1rem',
+                          width: '280px',
+                          background: 'var(--bg-primary, #ffffff)',
+                          border: '1px solid var(--border-light, #e5e7eb)',
+                          borderRadius: '10px',
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                          zIndex: 9999,
+                          padding: '0.75rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.6rem'
+                        }}
+                      >
+                        {/* Search Header */}
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: '#9ca3af' }} />
+                          <input 
+                            type="text" 
+                            placeholder="Search AI models..." 
+                            value={modelSearch} 
+                            onChange={(e) => setModelSearch(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.4rem 0.5rem 0.4rem 2rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-light, #d1d5db)',
+                              fontSize: '0.8rem',
+                              outline: 'none',
+                              background: 'var(--bg-surface, #f9fafb)'
+                            }}
+                          />
+                        </div>
+
+                        {/* Quick Selection Actions */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '0 0.1rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                            {selectedModels.length} of {availableModels.length} selected
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button 
+                              onClick={() => handleModelChange(user.id, [...availableModels])}
+                              style={{ border: 'none', background: 'transparent', color: '#4f46e5', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Select All
+                            </button>
+                            <button 
+                              onClick={() => handleModelChange(user.id, ['gpt-4o-mini'])}
+                              style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Scrollable Model Checkbox List */}
+                        <div style={{
+                          maxHeight: '180px',
+                          overflowY: 'auto',
+                          border: '1px solid var(--border-light, #f3f4f6)',
+                          borderRadius: '6px',
+                          padding: '0.25rem',
+                          background: 'var(--bg-surface, #f9fafb)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.15rem'
+                        }}>
+                          {filteredModels.map(model => {
+                            const checked = selectedModels.includes(model);
+                            return (
+                              <label key={model} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                background: checked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                color: checked ? '#4338ca' : 'var(--text-primary)',
+                                fontWeight: checked ? 600 : 400,
+                                transition: 'background 0.1s'
+                              }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    let newModels;
+                                    if (e.target.checked) {
+                                      newModels = [...selectedModels, model];
+                                    } else {
+                                      newModels = selectedModels.filter(m => m !== model);
+                                    }
+                                    if (newModels.length === 0) newModels = ['gpt-4o-mini'];
+                                    handleModelChange(user.id, newModels);
+                                  }}
+                                  style={{ cursor: 'pointer', accentColor: '#4f46e5' }}
+                                />
+                                {model}
+                              </label>
+                            );
+                          })}
+                          {filteredModels.length === 0 && (
+                            <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                              No matching models found.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Add Custom Model Field */}
+                        <div style={{ display: 'flex', gap: '0.4rem', borderTop: '1px solid var(--border-light, #eee)', paddingTop: '0.5rem' }}>
+                          <input 
+                            type="text" 
+                            placeholder="+ Add model name (e.g. gpt-4.1)"
+                            value={customModelInput}
+                            onChange={(e) => setCustomModelInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddCustomModel(user.id, selectedModels);
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '0.35rem 0.5rem',
+                              borderRadius: '4px',
+                              border: '1px solid var(--border-light, #d1d5db)',
+                              fontSize: '0.75rem',
+                              outline: 'none'
+                            }}
+                          />
+                          <button 
+                            onClick={() => handleAddCustomModel(user.id, selectedModels)}
+                            style={{
+                              background: '#4f46e5',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '0.35rem 0.6rem',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.2rem'
+                            }}
+                          >
+                            <Plus size={12} /> Add
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </td>
+
                   <td style={{ padding: '1rem' }}>
                     {editingLimit === user.id ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -290,7 +529,7 @@ export default function AiAdminModule() {
             })}
             {users.length === 0 && (
               <tr>
-                <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No users found.</td>
+                <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No users found.</td>
               </tr>
             )}
           </tbody>
@@ -300,3 +539,4 @@ export default function AiAdminModule() {
     </div>
   );
 }
+

@@ -157,7 +157,10 @@ export default function UniversalWorkplaceModule() {
 
       setSelectedWfForStages(updatedWf);
       setWorkflows(prev => {
-        const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+        const exists = prev.some(w => String(w.id) === String(updatedWf.id));
+        const next = exists
+          ? prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w)
+          : [updatedWf, ...prev];
         try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
         return next;
       });
@@ -197,7 +200,7 @@ export default function UniversalWorkplaceModule() {
       const updatedWf = { ...selectedWfForStages, stages: updatedStages };
       setSelectedWfForStages(updatedWf);
       setWorkflows(prev => {
-        const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+        const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
         try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
         return next;
       });
@@ -230,7 +233,7 @@ export default function UniversalWorkplaceModule() {
     const updatedWf = { ...selectedWfForStages, stages: updatedStages };
     setSelectedWfForStages(updatedWf);
     setWorkflows(prev => {
-      const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
       try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
       return next;
     });
@@ -257,7 +260,7 @@ export default function UniversalWorkplaceModule() {
     const updatedWf = { ...selectedWfForStages, stages: updatedStages };
     setSelectedWfForStages(updatedWf);
     setWorkflows(prev => {
-      const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
       try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
       return next;
     });
@@ -276,7 +279,7 @@ export default function UniversalWorkplaceModule() {
     const updatedWf = { ...selectedWfForStages, stages: stagesCopy };
     setSelectedWfForStages(updatedWf);
     setWorkflows(prev => {
-      const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
       try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
       return next;
     });
@@ -292,7 +295,7 @@ export default function UniversalWorkplaceModule() {
     const updatedWf = { ...selectedWfForStages, stages: stagesCopy };
     setSelectedWfForStages(updatedWf);
     setWorkflows(prev => {
-      const next = prev.map(w => w.id === updatedWf.id ? updatedWf : w);
+      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
       try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
       return next;
     });

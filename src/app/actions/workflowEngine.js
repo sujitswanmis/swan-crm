@@ -142,7 +142,7 @@ export async function purgeWorkflowDefinition(id) {
 
 export async function addWorkflowStage(versionId, stageData) {
   const newStage = {
-    id: `stg-${Date.now()}`,
+    id: `stg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     workflow_version_id: versionId,
     stage_name: stageData.stage_name || 'New Stage',
     stage_code: stageData.stage_code || `STG-${Date.now().toString(36).toUpperCase()}`,
@@ -162,7 +162,7 @@ export async function addWorkflowStage(versionId, stageData) {
   // Also update in-memory cache for the workflow version
   inMemoryWorkflows = inMemoryWorkflows.map(w => {
     const ver = w.workflow_versions?.[0];
-    if (w.id === versionId || ver?.id === versionId || `ver-${w.id}` === versionId) {
+    if (String(w.id) === String(versionId) || String(ver?.id) === String(versionId) || `ver-${w.id}` === String(versionId)) {
       const existingStages = w.stages || [];
       return { ...w, stages: [...existingStages, newStage] };
     }
@@ -170,24 +170,28 @@ export async function addWorkflowStage(versionId, stageData) {
   });
 
   try {
-    const adminClient = getAdminClient();
-    const { data, error } = await adminClient
-      .from('workflow_stages')
-      .insert([{
-        workflow_version_id: versionId,
-        stage_name: stageData.stage_name,
-        stage_code: stageData.stage_code || `STG-${Date.now().toString(36).toUpperCase()}`,
-        stage_order: stageData.stage_order || 1,
-        execution_type: stageData.execution_type || 'SEQUENTIAL',
-        planned_tat_hours: stageData.planned_tat_hours || 24,
-        approval_required: !!stageData.approval_required,
-        approver_designation_id: stageData.approver_designation_id || null
-      }])
-      .select()
-      .single();
+    const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || ''));
 
-    if (!error && data) {
-      return { ...data, ...newStage };
+    if (isUUID(versionId)) {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('workflow_stages')
+        .insert([{
+          workflow_version_id: versionId,
+          stage_name: stageData.stage_name,
+          stage_code: stageData.stage_code || `STG-${Date.now().toString(36).toUpperCase()}`,
+          stage_order: stageData.stage_order || 1,
+          execution_type: stageData.execution_type || 'SEQUENTIAL',
+          planned_tat_hours: stageData.planned_tat_hours || 24,
+          approval_required: !!stageData.approval_required,
+          approver_designation_id: isUUID(stageData.approver_designation_id) ? stageData.approver_designation_id : null
+        }])
+        .select()
+        .single();
+
+      if (!error && data) {
+        return { ...data, ...newStage };
+      }
     }
   } catch (e) { console.warn('DB Stage insert error, local fallback handled:', e.message); }
 

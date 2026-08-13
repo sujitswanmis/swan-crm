@@ -1,33 +1,26 @@
 import React, { useState, useEffect } from 'react';
 
-export function PremiumProgressLoader({ message, active }) {
-  const [progress, setProgress] = useState(0);
+export function PremiumProgressLoader({ message, active, loadedCount, totalCount, progressPercent }) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     if (active) {
-      setProgress(0);
       setVisible(true);
-      
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 95) return 95;
-          const diff = Math.floor(Math.random() * 12) + 4; // increment by 4 to 16%
-          return Math.min(prev + diff, 95);
-        });
-      }, 70);
-      
-      return () => clearInterval(interval);
     } else {
-      setProgress(100);
       const timeout = setTimeout(() => {
         setVisible(false);
-      }, 250); // fade out duration
+      }, 200);
       return () => clearTimeout(timeout);
     }
   }, [active]);
 
-  if (!visible) return null;
+  if (!visible && !active) return null;
+
+  // Calculate real percentage if available
+  const hasRealCount = typeof loadedCount === 'number' && typeof totalCount === 'number' && totalCount > 0;
+  const computedPercent = hasRealCount
+    ? Math.min(100, Math.round((loadedCount / totalCount) * 100))
+    : (typeof progressPercent === 'number' ? Math.min(100, Math.max(0, progressPercent)) : null);
 
   return (
     <div style={{
@@ -35,35 +28,33 @@ export function PremiumProgressLoader({ message, active }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      height: '400px',
+      padding: '2.5rem 1rem',
       width: '100%',
       color: 'var(--text-primary)',
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-      opacity: progress === 100 ? 0 : 1,
-      transition: 'opacity 0.25s ease-in-out',
       position: 'relative',
       zIndex: 10
     }}>
-      {/* Decorative background glow */}
+      {/* Glow effect */}
       <div style={{
         position: 'absolute',
-        width: '180px',
-        height: '180px',
-        background: 'rgba(59, 130, 246, 0.06)',
-        filter: 'blur(50px)',
+        width: '140px',
+        height: '140px',
+        background: 'rgba(59, 130, 246, 0.08)',
+        filter: 'blur(40px)',
         borderRadius: '50%',
         pointerEvents: 'none'
       }} />
 
       {/* Floating brand icon */}
       <div className="float-icon-loader" style={{
-        fontSize: '2.5rem',
-        marginBottom: '1.2rem'
+        fontSize: '2.2rem',
+        marginBottom: '1rem'
       }}>
         🦢
       </div>
 
-      {/* Message & Percentage */}
+      {/* Message & Real Progress Indicator */}
       <div style={{
         fontSize: '0.95rem',
         fontWeight: 500,
@@ -73,44 +64,69 @@ export function PremiumProgressLoader({ message, active }) {
         alignItems: 'center',
         gap: '0.5rem'
       }}>
-        <span>{message || 'Loading workspace'}</span>
-        <span style={{
-          color: 'var(--accent-color, #2563eb)',
-          fontWeight: 600,
-          fontVariantNumeric: 'tabular-nums'
-        }}>
-          {progress}%
-        </span>
+        <span>{message || 'Loading records'}</span>
+        {hasRealCount ? (
+          <span style={{
+            color: 'var(--accent-color, #2563eb)',
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums'
+          }}>
+            ({loadedCount.toLocaleString()} / {totalCount.toLocaleString()} loaded • {computedPercent}%)
+          </span>
+        ) : computedPercent !== null ? (
+          <span style={{
+            color: 'var(--accent-color, #2563eb)',
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums'
+          }}>
+            {computedPercent}%
+          </span>
+        ) : null}
       </div>
 
       {/* Progress Bar Container */}
       <div style={{
         width: '80%',
-        maxWidth: '280px',
+        maxWidth: '300px',
         height: '5px',
         background: 'var(--border-light, #e2e8f0)',
         borderRadius: '99px',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        position: 'relative'
       }}>
-        {/* Animated Progress Bar */}
-        <div style={{
-          width: `${progress}%`,
-          height: '100%',
-          background: 'linear-gradient(90deg, var(--accent-color, #2563eb) 0%, #60a5fa 100%)',
-          borderRadius: '99px',
-          transition: 'width 0.15s ease-out',
-          boxShadow: '0 0 6px rgba(59, 130, 246, 0.4)'
-        }} />
+        {computedPercent !== null ? (
+          <div style={{
+            width: `${computedPercent}%`,
+            height: '100%',
+            background: 'linear-gradient(90deg, var(--accent-color, #2563eb) 0%, #60a5fa 100%)',
+            borderRadius: '99px',
+            transition: 'width 0.2s ease-out',
+            boxShadow: '0 0 6px rgba(59, 130, 246, 0.4)'
+          }} />
+        ) : (
+          <div className="indeterminate-progress-bar" style={{
+            height: '100%',
+            background: 'linear-gradient(90deg, var(--accent-color, #2563eb) 0%, #60a5fa 100%)',
+            borderRadius: '99px'
+          }} />
+        )}
       </div>
 
-      {/* Pulse & Floating animations */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes floatLoader {
           0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-6px); }
+          50% { transform: translateY(-5px); }
+        }
+        @keyframes indeterminateBar {
+          0% { width: 0%; transform: translateX(-100%); }
+          50% { width: 60%; transform: translateX(50%); }
+          100% { width: 100%; transform: translateX(100%); }
         }
         .float-icon-loader {
           animation: floatLoader 2s ease-in-out infinite;
+        }
+        .indeterminate-progress-bar {
+          animation: indeterminateBar 1.5s infinite linear;
         }
       `}} />
     </div>

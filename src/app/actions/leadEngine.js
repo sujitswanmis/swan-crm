@@ -98,9 +98,12 @@ export async function getLeadsPaginated({ page = 1, pageSize = 100, stageFilter,
 
 export async function executeBulkAssignment({ selectedLeadIds, source, sourceName, targetEmployeeId, targetEmployeeName, assignmentMode = 'REASSIGN_ALL', remarks = '' }) {
   const adminClient = getAdminClient();
-  if (!selectedLeadIds || selectedLeadIds.length === 0 || !targetEmployeeName) {
-    throw new Error('Invalid parameters for bulk assignment');
+  if (!selectedLeadIds || selectedLeadIds.length === 0) {
+    throw new Error('No leads selected for assignment');
   }
+
+  const isNoneMode = assignmentMode === 'NONE' || assignmentMode === 'none' || assignmentMode === 'UNASSIGNED';
+  const newAssignee = isNoneMode ? null : (targetEmployeeName || null);
 
   // 1. Create assignment batch record
   const batchRef = `BATCH-${Date.now().toString(36).toUpperCase()}`;
@@ -112,10 +115,10 @@ export async function executeBulkAssignment({ selectedLeadIds, source, sourceNam
       source_name: sourceName || 'ALL',
       total_selected: selectedLeadIds.length,
       assigned_count: selectedLeadIds.length,
-      target_employee_id: targetEmployeeId || null,
-      target_employee_name: targetEmployeeName,
+      target_employee_id: isNoneMode ? null : (targetEmployeeId || null),
+      target_employee_name: isNoneMode ? 'Unassigned' : (targetEmployeeName || 'Unassigned'),
       assignment_mode: assignmentMode,
-      remarks
+      remarks: remarks || (isNoneMode ? 'Moved to Unassigned Pool' : '')
     }])
     .select()
     .single();
@@ -123,7 +126,7 @@ export async function executeBulkAssignment({ selectedLeadIds, source, sourceNam
   // 2. Perform bulk update on leads table
   const { error: updateErr } = await adminClient
     .from('leads')
-    .update({ assigned_to: targetEmployeeName })
+    .update({ assigned_to: newAssignee })
     .in('id', selectedLeadIds);
 
   if (updateErr) throw new Error(updateErr.message);

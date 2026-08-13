@@ -442,7 +442,12 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       reader.readAsDataURL(file);
     } else {
       reader.onload = (event) => {
-        setAttachments(prev => [...prev, { type: 'document', content: event.target.result, name: file.name }]);
+        let content = event.target.result || '';
+        if (typeof content === 'string') {
+          // Clean unprintable binary null characters for docx/pdf/xlsx text parsing
+          content = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ');
+        }
+        setAttachments(prev => [...prev, { type: 'document', content, name: file.name }]);
       };
       reader.readAsText(file);
     }
@@ -464,7 +469,11 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         reader.readAsDataURL(file);
       } else {
         reader.onload = (event) => {
-          setAttachments(prev => [...prev, { type: 'document', content: event.target.result, name: file.name }]);
+          let content = event.target.result || '';
+          if (typeof content === 'string') {
+            content = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ');
+          }
+          setAttachments(prev => [...prev, { type: 'document', content, name: file.name }]);
         };
         reader.readAsText(file);
       }
@@ -818,7 +827,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               <Settings2 size={12} color="#888" style={{ position: 'absolute', right: '0.75rem', pointerEvents: 'none' }} />
             </div>
 
-            {assignedModels.length > 1 && (
+            {assignedModels.length > 0 && (
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <select 
                   value={selectedAiModel} 
@@ -1040,7 +1049,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               
               {/* Left Tools */}
               <div style={{ display: 'flex', gap: '0.25rem', paddingBottom: '0.25rem', paddingLeft: '0.25rem' }}>
-                <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.txt,.csv,.json" />
+                <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.txt,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" />
                 <button 
                   type="button" onClick={() => fileInputRef.current?.click()}
                   style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}

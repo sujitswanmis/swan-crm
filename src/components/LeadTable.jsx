@@ -734,10 +734,13 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   }, [stageFilter]);
 
   useEffect(() => {
+    const currentSig = getSignature(data);
+    if (currentSig === lastProcessedInitialDataRef.current) return;
+
+    lastProcessedInitialDataRef.current = currentSig;
     if (onLeadsChange) {
       onLeadsChange(data);
     }
-    lastProcessedInitialDataRef.current = getSignature(data);
   }, [data]);
 
   useEffect(() => {
