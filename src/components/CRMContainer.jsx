@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -30,6 +30,7 @@ import UniversalWorkplaceModule from './Workplace/UniversalWorkplaceModule';
 import PartyMasterModule from './Party/PartyMasterModule';
 import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
 import LocationManagementModule from './Location/LocationManagementModule';
+import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 
@@ -1332,6 +1333,20 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                       </div>
                     )}
 
+                    {/* Admin Message Config (SuPuja Creations / Admin System) */}
+                    {(userRole === 'admin' || userRole === 'Admin') && (
+                      <button 
+                        onClick={() => handleTabChange('admin_message_config')}
+                        className="nav-item" 
+                        data-active={activeTab === 'admin_message_config'}
+                        title={isSidebarCollapsed ? "Admin Message Config" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <ShieldCheck size={20} style={{ flexShrink: 0, color: '#4338ca' }} />
+                        <span>Admin Message Config</span>
+                      </button>
+                    )}
+
                     {/* Settings */}
                     {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
                       <button 
@@ -1728,6 +1743,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
               {activeTab === 'rcs_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>RCS Configuration (Coming Soon)</h2><p>API setup and webhook configurations for RCS messaging.</p></div>}
               {activeTab === 'email_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Email Configuration (Coming Soon)</h2><p>SMTP server and API key configuration for email campaigns.</p></div>}
+              {activeTab === 'admin_message_config' && (
+                <ErrorBoundary>
+                  <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole} />
+                </ErrorBoundary>
+              )}
               {activeTab === 'settings' && (
                 <ErrorBoundary>
                   <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />

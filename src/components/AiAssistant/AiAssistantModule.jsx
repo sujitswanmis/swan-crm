@@ -5,12 +5,15 @@ import ReactMarkdown from 'react-markdown';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import remarkGfm from 'remark-gfm';
 
+let globalAiSessionsCache = null;
+let globalAiCurrentSessionId = null;
+
 export default function AiAssistantModule({ userRole, userId, lastScreenCapture }) {
-  // Session State
-  const [sessions, setSessions] = useState([
+  // Session State with instant memory cache
+  const [sessions, setSessions] = useState(() => globalAiSessionsCache || [
     { id: '1', title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am AI Chatbot. How can I assist you with your tasks today?' }] }
   ]);
-  const [currentSessionId, setCurrentSessionId] = useState('1');
+  const [currentSessionId, setCurrentSessionId] = useState(() => globalAiCurrentSessionId || (globalAiSessionsCache?.[0]?.id || '1'));
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -26,7 +29,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-  const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+  const [isHistoryLoaded, setIsHistoryLoaded] = useState(() => Boolean(globalAiSessionsCache));
   const [showTrash, setShowTrash] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
@@ -89,14 +92,19 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       
       if (loadedSessions.length > 0) {
         setSessions(loadedSessions);
+        globalAiSessionsCache = loadedSessions;
         const firstActive = loadedSessions.find(s => !s.isDeleted);
-        setCurrentSessionId(firstActive ? firstActive.id : null);
+        const activeId = firstActive ? firstActive.id : null;
+        setCurrentSessionId(activeId);
+        globalAiCurrentSessionId = activeId;
       } else {
         // Only create a new session if we successfully fetched and there are no sessions
         const newId = Date.now().toString();
         const newSession = { id: newId, title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am New Swan AI. How can I assist you with your tasks today?' }] };
         setSessions([newSession]);
+        globalAiSessionsCache = [newSession];
         setCurrentSessionId(newId);
+        globalAiCurrentSessionId = newId;
       }
 
       if (needsSave && loadedSessions.length > 0) {
@@ -106,7 +114,6 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       setIsHistoryLoaded(true);
     } catch (error) {
       console.error('Error loading history:', error);
-      // DO NOT call createNewSession() here, as it would overwrite the DB with default state if network fails!
       setIsHistoryLoaded(true);
     }
   };
@@ -114,6 +121,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   // Save History to Database
   const saveSessions = async (newSessions) => {
     setSessions(newSessions);
+    globalAiSessionsCache = newSessions;
     try {
       await fetch('/api/ai/history', {
         method: 'POST',

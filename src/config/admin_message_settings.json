@@ -1,0 +1,56 @@
+{
+  "wa_official": {
+    "enabled": true,
+    "provider": "Meta Cloud API (SuPuja Creations)",
+    "api_key": "",
+    "phone_number_id": "",
+    "waba_id": "",
+    "otp_template_name": "supuja_admin_otp_auth",
+    "invite_template_name": "supuja_admin_employee_invite"
+  },
+  "wa_unofficial": {
+    "enabled": false,
+    "server_url": "http://localhost:3001",
+    "instance_id": "supuja_admin_instance_01",
+    "api_token": ""
+  },
+  "sms": {
+    "enabled": true,
+    "provider": "Fast2SMS / DLT Transactional Gateway",
+    "api_key": "",
+    "sender_id": "SUPUJA",
+    "entity_id": "",
+    "otp_dlt_template_id": "",
+    "otp_sms_format": "Your SuPuja Swan CRM verification OTP is {#var#}. Valid for 10 mins. Do not share with anyone."
+  },
+  "rcs": {
+    "enabled": false,
+    "agent_id": "supuja-creations-rcs-bot",
+    "bearer_token": "",
+    "webhook_url": ""
+  },
+  "email": {
+    "enabled": true,
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "secure": false,
+    "username": "sales@supujacreations.com",
+    "password": "cvwv hvca ogth bfxf",
+    "admin_sender_name": "SuPuja Creations",
+    "admin_email": "no-reply@supujacreations.com",
+    "templates": {
+      "password_reset_otp": {
+        "subject": "🔐 [SuPuja Creations] Password Reset OTP: {{otp}}",
+        "body": "Hello {{name}},\n\nYou have requested to reset your password for the Swan CRM Workplace account.\n\nYour 6-Digit Admin Security OTP Code is:\n👉 {{otp}} 👈\n\nThis code is valid for 10 minutes. If you did not request this, please contact your CRM administrator immediately.\n\nRegards,\nSuPuja Creations / CRM Admin Team"
+      },
+      "login_otp": {
+        "subject": "🔑 [SuPuja Creations] Login Verification OTP: {{otp}}",
+        "body": "Hello {{name}},\n\nYour 6-Digit Login Verification Code for Swan CRM is:\n👉 {{otp}} 👈\n\nEnter this code on the login screen to complete your sign in.\n\nRegards,\nSuPuja Creations / Authentication Gateway"
+      },
+      "welcome_employee": {
+        "subject": "👋 Welcome to Swan CRM - Account Created (SuPuja Creations)",
+        "body": "Hello {{name}},\n\nWelcome! Your official Swan CRM workplace account has been registered by the administration.\n\nAccount Details:\n- Employee ID: {{emp_id}}\n- Official Email: {{email}}\n\nPlease click the link below to set your account password and get started:\n{{reset_link}}\n\nRegards,\nSuPuja Creations Administration"
+      }
+    }
+  }
+}

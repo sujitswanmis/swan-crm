@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { sendAdminAccountEmailOtp } from './adminMessageConfig';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -23,7 +24,9 @@ export async function getTeamMembers() {
 
   return (data || []).map(u => ({
     ...u,
-    emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active'
+    emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
+    can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
+    can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
   }));
 }
 
@@ -298,10 +301,26 @@ export async function updateEmpStatus(userId, empStatus) {
 
 export async function updateModuleAccess(userId, accessData) {
   const adminClient = getAdminClient();
-  const { error } = await adminClient
+  
+  const updatePayload = { 
+    module_access: accessData,
+    can_self_reset_password: accessData.can_self_reset_password === true,
+    can_import_export: accessData.can_import_export === true
+  };
+
+  let { error } = await adminClient
     .from('user_roles')
-    .update({ module_access: accessData })
+    .update(updatePayload)
     .eq('user_id', userId);
+
+  if (error) {
+    // Fallback if specific columns don't exist
+    const res = await adminClient
+      .from('user_roles')
+      .update({ module_access: accessData })
+      .eq('user_id', userId);
+    error = res.error;
+  }
 
   if (error) {
     console.error('Error updating module access:', error);
@@ -506,3 +525,196 @@ export async function deleteUserAdmin(userId) {
 
   return { success: true };
 }
+
+// =========================================================================
+// PASSWORD RESET & EMAIL OTP AUTH ACTIONS
+// =========================================================================
+
+// In-memory OTP storage with 10-minute automatic TTL
+const OTP_STORE = global.__SWAN_OTP_CACHE || new Map();
+if (!global.__SWAN_OTP_CACHE) global.__SWAN_OTP_CACHE = OTP_STORE;
+
+export async function toggleSelfPasswordReset(userId, currentStatus) {
+  const adminClient = getAdminClient();
+  const nextStatus = !currentStatus;
+
+  const { error } = await adminClient
+    .from('user_roles')
+    .update({ can_self_reset_password: nextStatus })
+    .eq('user_id', userId);
+
+  if (error) {
+    // Fallback inside module_access
+    const { data: userRole } = await adminClient
+      .from('user_roles')
+      .select('module_access')
+      .eq('user_id', userId)
+      .single();
+
+    const existingAccess = userRole?.module_access || {};
+    const updatedAccess = { ...existingAccess, can_self_reset_password: nextStatus };
+    await adminClient
+      .from('user_roles')
+      .update({ module_access: updatedAccess })
+      .eq('user_id', userId);
+  }
+
+  return { success: true, can_self_reset_password: nextStatus };
+}
+
+export async function requestPasswordResetOtp(email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) return { success: false, error: 'Please provide a valid email address.' };
+
+  const adminClient = getAdminClient();
+
+  // Find user by email
+  const { data: user, error } = await adminClient
+    .from('user_roles')
+    .select('*')
+    .or(`email.ilike.${cleanEmail},emp_official_mail_id.ilike.${cleanEmail}`)
+    .maybeSingle();
+
+  if (error || !user) {
+    return { success: false, error: 'No employee account found with this email address.' };
+  }
+
+  // Check if self-reset is permitted - strictly opt-in (default false)
+  const isAllowed = user.can_self_reset_password === true || user.module_access?.can_self_reset_password === true;
+  const isAdmin = user.role === 'admin' || user.role === 'Admin';
+
+  if (!isAllowed && !isAdmin) {
+    return {
+      success: false,
+      error: 'Self password reset is disabled for your account. Please contact your CRM Administrator.'
+    };
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  OTP_STORE.set(cleanEmail, {
+    otp,
+    userId: user.user_id,
+    expiresAt,
+    attempts: 0
+  });
+
+  // Send email via SuPuja Creations Admin SMTP
+  const sendRes = await sendAdminAccountEmailOtp(
+    cleanEmail,
+    otp,
+    'password_reset_otp',
+    {
+      name: user.emp_name || 'User',
+      email: cleanEmail,
+      company: 'Swan CRM'
+    }
+  );
+
+  if (!sendRes.success) {
+    return { success: false, error: 'Failed to send OTP email: ' + sendRes.error };
+  }
+
+  return { success: true, message: 'A 6-digit security OTP has been sent to your email.' };
+}
+
+export async function verifyPasswordResetOtpAndSetPassword(email, otp, newPassword) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanOtp = (otp || '').trim();
+
+  if (!cleanEmail || !cleanOtp || !newPassword) {
+    return { success: false, error: 'All fields are required.' };
+  }
+
+  if (newPassword.length < 6) {
+    return { success: false, error: 'Password must be at least 6 characters.' };
+  }
+
+  const record = OTP_STORE.get(cleanEmail);
+  if (!record) {
+    return { success: false, error: 'No active OTP request found. Please request a new OTP.' };
+  }
+
+  if (Date.now() > record.expiresAt) {
+    OTP_STORE.delete(cleanEmail);
+    return { success: false, error: 'OTP has expired. Please request a new one.' };
+  }
+
+  if (record.otp !== cleanOtp) {
+    record.attempts = (record.attempts || 0) + 1;
+    if (record.attempts >= 5) {
+      OTP_STORE.delete(cleanEmail);
+      return { success: false, error: 'Too many incorrect attempts. Please request a new OTP.' };
+    }
+    return { success: false, error: 'Invalid verification code. Please check and try again.' };
+  }
+
+  // Update password in Supabase Auth
+  const adminClient = getAdminClient();
+  try {
+    const { error: authError } = await adminClient.auth.admin.updateUserById(
+      record.userId,
+      { password: newPassword }
+    );
+
+    if (authError) {
+      return { success: false, error: 'Error updating password: ' + authError.message };
+    }
+
+    // Clear OTP from store
+    OTP_STORE.delete(cleanEmail);
+
+    return { success: true, message: 'Password updated successfully! You can now sign in.' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function sendAdminPasswordResetLink(userId) {
+  const adminClient = getAdminClient();
+  const { data: user, error } = await adminClient
+    .from('user_roles')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (error || !user) {
+    return { success: false, error: 'User not found.' };
+  }
+
+  const email = user.email || user.emp_official_mail_id;
+  if (!email) {
+    return { success: false, error: 'User does not have an official email address.' };
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+
+  OTP_STORE.set(email.toLowerCase(), {
+    otp,
+    userId: user.user_id,
+    expiresAt,
+    attempts: 0
+  });
+
+  const sendRes = await sendAdminAccountEmailOtp(
+    email,
+    otp,
+    'welcome_employee',
+    {
+      name: user.emp_name || 'Employee',
+      emp_id: user.emp_id || '',
+      email: email,
+      reset_link: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/login?mode=reset&email=${encodeURIComponent(email)}&code=${otp}`
+    }
+  );
+
+  if (!sendRes.success) {
+    return { success: false, error: sendRes.error };
+  }
+
+  return { success: true, message: `Password setup email sent to ${email}!` };
+}
+

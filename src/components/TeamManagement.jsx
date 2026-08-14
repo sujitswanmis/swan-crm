@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash } from '@/app/actions/team';
-import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw } from 'lucide-react';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash, toggleSelfPasswordReset, sendAdminPasswordResetLink } from '@/app/actions/team';
+import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw, Send, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
@@ -169,23 +169,31 @@ export default function TeamManagement() {
   });
   const [movingToTrash, setMovingToTrash] = useState(false);
 
+  const [sendResetEmailModal, setSendResetEmailModal] = useState({
+    show: false,
+    user: null,
+    sending: false,
+    successMsg: null,
+    errorMsg: null
+  });
+
   const handleConfirmMoveToTrash = async () => {
     if (!trashConfirmModal.userId) return;
     setMovingToTrash(true);
     await moveToTrashUser(trashConfirmModal.userId);
     setMovingToTrash(false);
     setTrashConfirmModal({ show: false, userId: null, userName: '' });
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const handleRestoreUser = async (userId) => {
     try {
       setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, emp_status: 'Active' } : u));
       await restoreUserFromTrash(userId, 'Active');
-      fetchUsers();
+      fetchUsers(false);
     } catch (e) {
       alert("Error restoring user: " + e.message);
-      fetchUsers();
+      fetchUsers(false);
     }
   };
 
@@ -196,14 +204,45 @@ export default function TeamManagement() {
     setDeletingUser(false);
     if (result.success) {
       setDeleteModal({ show: false, userId: null, userName: '' });
-      fetchUsers();
+      fetchUsers(false);
     } else {
       alert("Error deleting user: " + result.error);
     }
   };
 
+  const handleToggleSelfReset = async (userId, currentStatus) => {
+    const res = await toggleSelfPasswordReset(userId, currentStatus);
+    if (res.success) {
+      setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_self_reset_password: res.can_self_reset_password } : u));
+    }
+  };
+
+  const handleOpenSendResetModal = (user) => {
+    setSendResetEmailModal({
+      show: true,
+      user,
+      sending: false,
+      successMsg: null,
+      errorMsg: null
+    });
+  };
+
+  const handleConfirmSendResetEmail = async () => {
+    if (!sendResetEmailModal.user) return;
+    setSendResetEmailModal(prev => ({ ...prev, sending: true, errorMsg: null, successMsg: null }));
+    const res = await sendAdminPasswordResetLink(sendResetEmailModal.user.user_id);
+    if (res.success) {
+      setSendResetEmailModal(prev => ({ ...prev, sending: false, successMsg: res.message }));
+      setTimeout(() => {
+        setSendResetEmailModal({ show: false, user: null, sending: false, successMsg: null, errorMsg: null });
+      }, 2000);
+    } else {
+      setSendResetEmailModal(prev => ({ ...prev, sending: false, errorMsg: res.error }));
+    }
+  };
+
   useEffect(() => {
-    fetchUsers();
+    fetchUsers(true);
     fetchDepartments();
   }, []);
 
@@ -224,37 +263,41 @@ export default function TeamManagement() {
     }
   };
 
-  const fetchUsers = async () => {
-    setLoading(true);
+  const fetchUsers = async (showLoader = false) => {
+    if (showLoader) setLoading(true);
     try {
       const data = await getTeamMembers();
       setUsers(data || []);
     } catch (e) {
       console.error(e);
     }
-    setLoading(false);
+    if (showLoader) setLoading(false);
   };
 
   const updateRole = async (userId, newRole) => {
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, role: newRole } : u));
     await updateUserRole(userId, newRole);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const toggleImportExport = async (userId, currentValue) => {
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_import_export: !currentValue } : u));
     await toggleUserPermissions(userId, !currentValue);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const toggleReadAccess = async (userId, currentValue) => {
     const newValue = currentValue === false ? true : false;
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_read: newValue } : u));
     await toggleReadPermissions(userId, newValue);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const toggleWriteAccess = async (userId, currentValue) => {
     const newValue = currentValue === false ? true : false;
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_write: newValue } : u));
     await toggleWritePermissions(userId, newValue);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const toggleApproval = (userId, currentValue, userName) => {
@@ -269,31 +312,36 @@ export default function TeamManagement() {
   const confirmToggleApproval = async () => {
     const { userId, currentValue } = confirmModal;
     setConfirmModal({ show: false, userId: null, currentValue: null, userName: '' });
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, is_approved: !currentValue } : u));
     try {
       await toggleUserApproval(userId, !currentValue);
-      fetchUsers();
+      fetchUsers(false);
     } catch (e) {
       alert("Error toggling approval: " + e.message);
+      fetchUsers(false);
     }
   };
 
   const toggleRead = async (userId, currentValue) => {
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_read: !currentValue } : u));
     await toggleReadPermissions(userId, !currentValue);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const toggleWrite = async (userId, currentValue) => {
+    setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, can_write: !currentValue } : u));
     await toggleWritePermissions(userId, !currentValue);
-    fetchUsers();
+    fetchUsers(false);
   };
 
   const handleEmpStatusChange = async (userId, newStatus) => {
     try {
       setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, emp_status: newStatus } : u));
       await updateEmpStatus(userId, newStatus);
+      fetchUsers(false);
     } catch (e) {
       alert("Error updating Emp Status: " + e.message);
-      fetchUsers();
+      fetchUsers(false);
     }
   };
 
@@ -438,19 +486,26 @@ export default function TeamManagement() {
 
   const handleSaveEdit = async () => {
     setSavingEdit(true);
+    setUsers(prev => prev.map(u => u.user_id === editingUser ? { ...u, ...editForm } : u));
     const result = await updateEmployeeDetailsAdmin(editingUser, editForm);
     setSavingEdit(false);
     if (result.success) {
       setEditingUser(null);
-      fetchUsers();
+      fetchUsers(false);
     } else {
       alert("Error saving details: " + result.error);
+      fetchUsers(false);
     }
   };
 
   const handleAccessClick = (user) => {
     setAccessUser(user.user_id);
-    setAccessForm(user.module_access || {});
+    const existingAccess = user.module_access || {};
+    setAccessForm({
+      ...existingAccess,
+      can_import_export: user.can_import_export === true || existingAccess.can_import_export === true,
+      can_self_reset_password: user.can_self_reset_password === true || existingAccess.can_self_reset_password === true
+    });
     setAccessSearchQuery('');
     setExpandedModules({});
   };
@@ -607,13 +662,21 @@ export default function TeamManagement() {
 
   const handleSaveAccess = async () => {
     setSavingAccess(true);
+    setUsers(prev => prev.map(u => u.user_id === accessUser ? {
+      ...u,
+      module_access: accessForm,
+      can_import_export: accessForm.can_import_export === true,
+      can_self_reset_password: accessForm.can_self_reset_password === true
+    } : u));
+
     const result = await updateModuleAccess(accessUser, accessForm);
     setSavingAccess(false);
     if (result.success) {
       setAccessUser(null);
-      fetchUsers();
+      fetchUsers(false);
     } else {
       alert("Error saving access: " + result.error);
+      fetchUsers(false);
     }
   };
 
@@ -953,7 +1016,7 @@ export default function TeamManagement() {
                 </select>
               </td>
               <td style={{ padding: '1rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   <button 
                     onClick={() => handleAccessClick(user)}
                     disabled={user.role === 'admin' || user.role === 'Admin'}
@@ -962,16 +1025,6 @@ export default function TeamManagement() {
                   >
                     Manage Access
                   </button>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginTop: '0.25rem', color: 'var(--text-primary)' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={user.can_import_export} 
-                      onChange={() => toggleImportExport(user.user_id, user.can_import_export)}
-                      disabled={user.role === 'Admin' || user.role === 'admin'}
-                    />
-                    Import/Export Power
-                  </label>
                 </div>
               </td>
               <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
@@ -1027,6 +1080,15 @@ export default function TeamManagement() {
                         onClick={() => setPasswordUser(user.user_id)}
                       />
                       <HoverIconButton
+                        icon={Send}
+                        label="Send Reset Email"
+                        bg="#e0e7ff"
+                        hoverBg="#c7d2fe"
+                        color="#4338ca"
+                        borderColor="#c7d2fe"
+                        onClick={() => handleOpenSendResetModal(user)}
+                      />
+                      <HoverIconButton
                         icon={Trash2}
                         label="Move to Trash"
                         bg="#fff7ed"
@@ -1044,6 +1106,106 @@ export default function TeamManagement() {
         </tbody>
       </table>
       </div>
+
+      {/* Send Reset Email Centered Modal */}
+      {sendResetEmailModal.show && sendResetEmailModal.user && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem',
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', backgroundColor: '#e0e7ff', color: '#4338ca', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem auto' }}>
+              <Send size={26} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+              Send Password Setup Link
+            </h3>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '1.25rem' }}>
+              Send an official password activation email to <strong>{sendResetEmailModal.user.emp_name || sendResetEmailModal.user.email}</strong>?
+            </p>
+
+            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', textAlign: 'left', fontSize: '0.84rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Recipient:</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{sendResetEmailModal.user.email || sendResetEmailModal.user.emp_official_mail_id}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Sender Gateway:</span>
+                <span style={{ color: '#4338ca', fontWeight: 600 }}>SuPuja Creations Admin Mail</span>
+              </div>
+            </div>
+
+            {sendResetEmailModal.successMsg && (
+              <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Check size={16} />
+                <span>{sendResetEmailModal.successMsg}</span>
+              </div>
+            )}
+
+            {sendResetEmailModal.errorMsg && (
+              <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', border: '1px solid #fecaca' }}>
+                {sendResetEmailModal.errorMsg}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setSendResetEmailModal({ show: false, user: null, sending: false, successMsg: null, errorMsg: null })}
+                disabled={sendResetEmailModal.sending}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSendResetEmail}
+                disabled={sendResetEmailModal.sending}
+                className="btn-primary"
+                style={{
+                  backgroundColor: '#4338ca',
+                  borderColor: '#4338ca',
+                  color: '#fff',
+                  padding: '0.6rem 1.5rem',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontWeight: 600,
+                  cursor: sendResetEmailModal.sending ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {sendResetEmailModal.sending ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
+                {sendResetEmailModal.sending ? 'Sending...' : 'Send Setup Link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal */}
       {confirmModal.show && (
@@ -1583,21 +1745,34 @@ export default function TeamManagement() {
                   <div style={{ padding: '0.6rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                     Additional System Powers
                   </div>
-                  <div style={{ padding: '0.75rem 1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ padding: '0.75rem 1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                     {(() => {
                       const u = users.find(x => x.user_id === accessUser);
                       if (!u) return null;
                       return (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={!!u.can_import_export} 
-                            onChange={() => toggleImportExport(u.user_id, !!u.can_import_export)}
-                            disabled={u.role === 'Admin' || u.role === 'admin'}
-                            style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
-                          />
-                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Import/Export Data Power</span>
-                        </label>
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={accessForm.can_import_export === true} 
+                              onChange={(e) => setAccessForm(prev => ({ ...prev, can_import_export: e.target.checked }))}
+                              disabled={u.role === 'Admin' || u.role === 'admin'}
+                              style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
+                            />
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Import/Export Data Power</span>
+                          </label>
+
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={accessForm.can_self_reset_password === true} 
+                              onChange={(e) => setAccessForm(prev => ({ ...prev, can_self_reset_password: e.target.checked }))}
+                              disabled={u.role === 'Admin' || u.role === 'admin'}
+                              style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
+                            />
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Allow Self Password Reset (via Email OTP)</span>
+                          </label>
+                        </>
                       );
                     })()}
                   </div>

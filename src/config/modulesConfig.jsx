@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart } from 'lucide-react';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -159,6 +159,21 @@ export const MODULES_CONFIG = [
   { id: 'sms_config', path: 'sms_config', label: 'SMS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
   { id: 'rcs_config', path: 'rcs_config', label: 'RCS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
   { id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'System', icon: <MessageCircle size={20} /> },
+  { 
+    id: 'admin_message_config', 
+    path: 'admin_message_config', 
+    label: 'Admin Message Config', 
+    category: 'System', 
+    icon: <ShieldCheck size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'wa_official', label: 'WhatsApp Official' },
+      { id: 'wa_unofficial', label: 'WhatsApp Unofficial' },
+      { id: 'sms', label: 'SMS Configuration' },
+      { id: 'rcs', label: 'RCS Configuration' },
+      { id: 'email', label: 'Email Setup' }
+    ]
+  },
   { 
     id: 'settings', 
     path: 'settings', 
