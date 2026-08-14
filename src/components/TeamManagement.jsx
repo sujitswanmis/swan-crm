@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin } from '@/app/actions/team';
-import { Eye, EyeOff } from 'lucide-react';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus } from '@/app/actions/team';
+import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
@@ -35,13 +35,77 @@ const DESIGNATIONS = [
   'Accountant', 'Finance Manager', 'Other'
 ];
 
+const EMP_STATUS_OPTIONS = ['Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft'];
+
+function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hoverBg, onClick }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '32px',
+          height: '32px',
+          borderRadius: '8px',
+          backgroundColor: hovered ? (hoverBg || bg) : bg,
+          color: color,
+          border: `1px solid ${borderColor}`,
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          boxShadow: hovered ? '0 2px 8px rgba(0, 0, 0, 0.12)' : 'none'
+        }}
+      >
+        <Icon size={16} />
+      </button>
+
+      {hovered && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginBottom: '6px',
+          padding: '0.35rem 0.6rem',
+          backgroundColor: '#0f172a',
+          color: '#ffffff',
+          fontSize: '0.72rem',
+          fontWeight: 600,
+          borderRadius: '6px',
+          whiteSpace: 'nowrap',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 100,
+          pointerEvents: 'none'
+        }}>
+          {label}
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            borderWidth: '4px',
+            borderStyle: 'solid',
+            borderColor: '#0f172a transparent transparent transparent'
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TeamManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
-  const [editForm, setEditForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', company: '', emp_mobile: '' });
+  const [editForm, setEditForm] = useState({ emp_id: '', emp_status: 'Active', emp_name: '', emp_department: '', emp_designation: '', company: '', emp_mobile: '', email: '' });
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Search state
@@ -49,14 +113,21 @@ export default function TeamManagement() {
 
   // Add Account state
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addForm, setAddForm] = useState({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
+  const [addForm, setAddForm] = useState({ emp_id: '', emp_status: 'Active', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
   const [savingAddUser, setSavingAddUser] = useState(false);
   const [showAddUserPassword, setShowAddUserPassword] = useState(false);
+
+  // Import / Export state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   // Access Manage state
   const [accessUser, setAccessUser] = useState(null);
   const [accessForm, setAccessForm] = useState({});
   const [savingAccess, setSavingAccess] = useState(false);
+  const [accessSearchQuery, setAccessSearchQuery] = useState('');
+  const [expandedModules, setExpandedModules] = useState({});
 
   // Password reset state
   const [passwordUser, setPasswordUser] = useState(null);
@@ -166,10 +237,144 @@ export default function TeamManagement() {
     fetchUsers();
   };
 
+  const handleEmpStatusChange = async (userId, newStatus) => {
+    try {
+      setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, emp_status: newStatus } : u));
+      await updateEmpStatus(userId, newStatus);
+    } catch (e) {
+      alert("Error updating Emp Status: " + e.message);
+      fetchUsers();
+    }
+  };
+
+  const getEmpStatusStyle = (status) => {
+    switch (status) {
+      case 'Draft':
+        return { bg: '#fef3c7', color: '#92400e', border: '#fde68a' };
+      case 'InActive':
+        return { bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
+      case 'Hold':
+        return { bg: '#fef9c3', color: '#854d0e', border: '#fef08a' };
+      case 'Resigned':
+        return { bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' };
+      case 'Terminated':
+        return { bg: '#fee2e2', color: '#991b1b', border: '#fecaca' };
+      case 'Active':
+      default:
+        return { bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+    }
+  };
+
+  const handleExportTeamCSV = () => {
+    if (!users || users.length === 0) {
+      alert("No users to export.");
+      return;
+    }
+    const headers = ["Emp ID", "Emp Status", "Name", "Email", "Mobile", "Department", "Designation", "Company", "Approval Status", "Role"];
+    const rows = filteredUsers.map(u => [
+      `"${u.emp_id || ''}"`,
+      `"${u.emp_status || 'Active'}"`,
+      `"${u.emp_name || ''}"`,
+      `"${u.email || ''}"`,
+      `"${u.emp_mobile || ''}"`,
+      `"${u.emp_department || ''}"`,
+      `"${u.emp_designation || ''}"`,
+      `"${u.company || 'All'}"`,
+      `"${u.is_approved ? 'Approved' : 'Pending'}"`,
+      `"${u.role || ''}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Team_Members_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8," + "Emp ID,Emp Status,Name,Email,Password,Department,Designation,Mobile,Company\nEMP101,Active,John Doe,john@example.com,Password@123,Sales,Sales Executive,9876543210,NSMLR";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Team_Import_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleProcessImportCSV = async () => {
+    if (!importFile) {
+      alert("Please select a CSV file to import.");
+      return;
+    }
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+        if (lines.length <= 1) {
+          alert("CSV file is empty or missing data rows.");
+          setImporting(false);
+          return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
+          if (!row || row.length < 4) continue;
+
+          const emp_id = row[0] || `EMP-${Date.now()}`;
+          const emp_status = row[1] || 'Active';
+          const emp_name = row[2] || 'Team Member';
+          const email = row[3];
+          const password = row[4] || 'Swan@12345';
+          const emp_department = row[5] || 'Sales';
+          const emp_designation = row[6] || 'Executive';
+          const emp_mobile = row[7] || '';
+          const company = row[8] || 'NSMLR';
+
+          if (!email) {
+            failCount++;
+            continue;
+          }
+
+          const res = await createAccountAdmin(email, password, {
+            emp_id,
+            emp_name,
+            emp_department,
+            emp_designation,
+            emp_mobile,
+            company,
+            emp_status
+          });
+
+          if (res.success) successCount++;
+          else failCount++;
+        }
+
+        alert(`Import Complete!\n\nSuccessfully Imported: ${successCount}\nFailed/Skipped: ${failCount}`);
+        setShowImportModal(false);
+        setImportFile(null);
+        fetchUsers();
+      } catch (err) {
+        alert("Error reading CSV file: " + err.message);
+      }
+      setImporting(false);
+    };
+    reader.readAsText(importFile);
+  };
+
   const handleEditClick = (user) => {
     setEditingUser(user.user_id);
     setEditForm({
       emp_id: user.emp_id || '',
+      emp_status: user.emp_status || 'Active',
       emp_name: user.emp_name || '',
       emp_department: user.emp_department || '',
       emp_designation: user.emp_designation || '',
@@ -194,25 +399,110 @@ export default function TeamManagement() {
   const handleAccessClick = (user) => {
     setAccessUser(user.user_id);
     setAccessForm(user.module_access || {});
+    setAccessSearchQuery('');
+    setExpandedModules({});
   };
 
-  const handleToggleModuleAccess = (moduleId) => {
+  const getModulePerms = (form, moduleId) => {
+    const m = form[moduleId];
+    if (!m) return { view: false, add: false, edit: false, delete: false };
+    if (m === true) return { view: true, add: true, edit: true, delete: false };
+    if (m.view === false) return { view: false, add: false, edit: false, delete: false };
+
+    return {
+      view: true,
+      add: m.add !== false,
+      edit: m.edit !== false,
+      delete: m.delete === true
+    };
+  };
+
+  const getSubItemPerms = (form, moduleId, subId) => {
+    const parentPerms = getModulePerms(form, moduleId);
+    if (!parentPerms.view) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+    const subItems = form[moduleId]?.sub_items;
+    if (!subItems || !subItems[subId]) {
+      return { ...parentPerms };
+    }
+    const sub = subItems[subId];
+    if (sub.view === false) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+    return {
+      view: true,
+      add: sub.add !== false && parentPerms.add,
+      edit: sub.edit !== false && parentPerms.edit,
+      delete: sub.delete === true
+    };
+  };
+
+  const handleToggleModulePerm = (moduleId, permType) => {
     setAccessForm(prev => {
-      const isCurrentlyViewable = !!prev[moduleId]?.view;
-      if (isCurrentlyViewable) {
-        const newState = { ...prev };
-        delete newState[moduleId];
-        return newState;
+      const current = getModulePerms(prev, moduleId);
+      const newPermVal = !current[permType];
+
+      if (permType === 'view') {
+        if (!newPermVal) {
+          const newState = { ...prev };
+          delete newState[moduleId];
+          return newState;
+        } else {
+          return {
+            ...prev,
+            [moduleId]: {
+              ...(prev[moduleId] || {}),
+              view: true,
+              add: true,
+              edit: true,
+              delete: prev[moduleId]?.delete === true
+            }
+          };
+        }
       } else {
+        const updatedModule = {
+          ...(prev[moduleId] || {}),
+          view: true,
+          [permType]: newPermVal
+        };
         return {
           ...prev,
-          [moduleId]: { 
-            view: true, 
-            is_manager: false, 
-            assigned_steps: [] 
-          }
+          [moduleId]: updatedModule
         };
       }
+    });
+  };
+
+  const handleToggleSubItemPerm = (moduleId, subItemId, permType) => {
+    setAccessForm(prev => {
+      const currentSub = getSubItemPerms(prev, moduleId, subItemId);
+      const newPermVal = !currentSub[permType];
+
+      const moduleData = prev[moduleId] || { view: true, add: true, edit: true, delete: true, sub_items: {} };
+      const currentSubItems = moduleData.sub_items || {};
+
+      let updatedSub = { ...currentSub, [permType]: newPermVal };
+      if (permType === 'view' && !newPermVal) {
+        updatedSub.add = false;
+        updatedSub.edit = false;
+        updatedSub.delete = false;
+      }
+      if (permType !== 'view' && newPermVal) {
+        updatedSub.view = true;
+      }
+
+      return {
+        ...prev,
+        [moduleId]: {
+          ...moduleData,
+          view: true,
+          sub_items: {
+            ...currentSubItems,
+            [subItemId]: updatedSub
+          }
+        }
+      };
     });
   };
 
@@ -226,62 +516,41 @@ export default function TeamManagement() {
     }));
   };
 
-  const handleToggleStep = (moduleId, stepName) => {
+  const handleSelectAllSubItems = (module, permType, value) => {
     setAccessForm(prev => {
-      const currentSteps = prev[moduleId]?.assigned_steps || [];
-      const isAssigned = currentSteps.includes(stepName);
-      
-      const newSteps = isAssigned 
-        ? currentSteps.filter(s => s !== stepName)
-        : [...currentSteps, stepName];
+      const moduleData = prev[module.id] || { view: true, add: true, edit: true, delete: true, sub_items: {} };
+      const newSubItems = { ...(moduleData.sub_items || {}) };
+
+      (module.subItems || []).forEach(sub => {
+        const cur = getSubItemPerms(prev, module.id, sub.id);
+        let updated = { ...cur, [permType]: value };
+        if (permType === 'view' && !value) {
+          updated.add = false;
+          updated.edit = false;
+          updated.delete = false;
+        }
+        if (permType !== 'view' && value) {
+          updated.view = true;
+        }
+        newSubItems[sub.id] = updated;
+      });
 
       return {
         ...prev,
-        [moduleId]: {
-          ...prev[moduleId],
-          assigned_steps: newSteps
+        [module.id]: {
+          ...moduleData,
+          view: value || moduleData.view,
+          sub_items: newSubItems
         }
       };
     });
   };
 
-  const handleToggleRecruiterStep = (type, stageId) => {
-    setAccessForm(prev => {
-      const moduleAccess = prev['recruiter'] || { view: true, is_manager: false, assigned_steps: [], assigned_steps_view: [], assigned_steps_edit: [] };
-      
-      let currentView = [...(moduleAccess.assigned_steps_view || moduleAccess.assigned_steps || [])];
-      let currentEdit = [...(moduleAccess.assigned_steps_edit || moduleAccess.assigned_steps || [])];
-
-      if (type === 'view') {
-        const hasView = currentView.includes(stageId);
-        if (hasView) {
-          currentView = currentView.filter(s => s !== stageId);
-          currentEdit = currentEdit.filter(s => s !== stageId);
-        } else {
-          currentView.push(stageId);
-        }
-      } else if (type === 'edit') {
-        const hasEdit = currentEdit.includes(stageId);
-        if (hasEdit) {
-          currentEdit = currentEdit.filter(s => s !== stageId);
-        } else {
-          currentEdit.push(stageId);
-          if (!currentView.includes(stageId)) {
-            currentView.push(stageId);
-          }
-        }
-      }
-
-      return {
-        ...prev,
-        recruiter: {
-          ...moduleAccess,
-          assigned_steps_view: currentView,
-          assigned_steps_edit: currentEdit,
-          assigned_steps: currentView
-        }
-      };
-    });
+  const toggleExpandModule = (moduleId) => {
+    setExpandedModules(prev => ({
+      ...prev,
+      [moduleId]: !prev[moduleId]
+    }));
   };
 
   const handleSaveAccess = async () => {
@@ -361,6 +630,7 @@ export default function TeamManagement() {
     setSavingAddUser(true);
     const result = await createAccountAdmin(addForm.email, addForm.password, {
       emp_id: addForm.emp_id,
+      emp_status: addForm.emp_status || 'Active',
       emp_name: addForm.emp_name,
       emp_department: addForm.emp_department,
       emp_designation: addForm.emp_designation,
@@ -371,10 +641,40 @@ export default function TeamManagement() {
     setSavingAddUser(false);
     if (result.success) {
       setShowAddUserModal(false);
-      setAddForm({ emp_id: '', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
+      setAddForm({ emp_id: '', emp_status: 'Active', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
       fetchUsers();
     } else {
       alert("Error adding user: " + result.error);
+    }
+  };
+
+  const handleSaveAddUserDraft = async () => {
+    if (!addForm.emp_name && !addForm.email && !addForm.emp_id) {
+      alert("Please enter at least an Emp Name, Email, or Emp ID to save draft.");
+      return;
+    }
+    setSavingAddUser(true);
+    const fallbackId = addForm.emp_id || `DRAFT-${Date.now().toString().slice(-6)}`;
+    const fallbackEmail = addForm.email || `${fallbackId.toLowerCase()}@draft.local`;
+    const fallbackPassword = addForm.password || 'DraftPass@123';
+
+    const result = await createAccountAdmin(fallbackEmail, fallbackPassword, {
+      emp_id: fallbackId,
+      emp_status: 'Draft',
+      emp_name: addForm.emp_name || 'Draft Employee',
+      emp_department: addForm.emp_department || '',
+      emp_designation: addForm.emp_designation || '',
+      emp_mobile: addForm.emp_mobile || '',
+      company: addForm.company || '',
+      emp_official_mail_id: fallbackEmail
+    });
+    setSavingAddUser(false);
+    if (result.success) {
+      setShowAddUserModal(false);
+      setAddForm({ emp_id: '', emp_status: 'Active', emp_name: '', emp_department: '', emp_designation: '', emp_mobile: '', company: '', email: '', password: '' });
+      fetchUsers();
+    } else {
+      alert("Error saving draft: " + result.error);
     }
   };
 
@@ -408,24 +708,43 @@ export default function TeamManagement() {
           onChange={e => setSearchQuery(e.target.value)}
           style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', width: '100%', maxWidth: '350px' }}
         />
-        <button 
-          onClick={() => setShowAddUserModal(true)}
-          className="btn-primary"
-          style={{ padding: '0.6rem 1.5rem', borderRadius: '6px' }}
-        >
-          Add New User
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button 
+            onClick={handleExportTeamCSV}
+            className="btn-action-secondary"
+            style={{ padding: '0.55rem 1rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}
+            title="Export team data to CSV"
+          >
+            <Download size={16} /> Export CSV
+          </button>
+          <button 
+            onClick={() => setShowImportModal(true)}
+            className="btn-action-primary"
+            style={{ padding: '0.55rem 1rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', backgroundColor: '#0284c7', color: '#fff', border: 'none' }}
+            title="Import team members from CSV"
+          >
+            <Upload size={16} /> Import CSV
+          </button>
+          <button 
+            onClick={() => setShowAddUserModal(true)}
+            className="btn-primary"
+            style={{ padding: '0.6rem 1.5rem', borderRadius: '6px' }}
+          >
+            Add New User
+          </button>
+        </div>
       </div>
 
       <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-        <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+        <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
           <tr>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
+            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp Status</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Dept / Desig</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Company</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Status</th>
+            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Approval Status</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Role</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Permissions</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Actions</th>
@@ -435,6 +754,33 @@ export default function TeamManagement() {
           {filteredUsers.map(user => (
             <tr key={user.user_id} style={{ borderBottom: '1px solid var(--border-light)' }}>
               <td style={{ padding: '1rem', fontWeight: 500 }}>{user.emp_id || '-'}</td>
+              <td style={{ padding: '1rem' }}>
+                {(() => {
+                  const s = user.emp_status || 'Active';
+                  const style = getEmpStatusStyle(s);
+                  return (
+                    <select
+                      value={s}
+                      onChange={(e) => handleEmpStatusChange(user.user_id, e.target.value)}
+                      style={{
+                        padding: '0.3rem 0.6rem',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        backgroundColor: style.bg,
+                        color: style.color,
+                        border: `1px solid ${style.border}`,
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    >
+                      {EMP_STATUS_OPTIONS.map(opt => (
+                        <option key={opt} value={opt} style={{ background: '#fff', color: '#000' }}>{opt}</option>
+                      ))}
+                    </select>
+                  );
+                })()}
+              </td>
               <td style={{ padding: '1rem' }}>
                 <div style={{ fontWeight: 600 }}>{user.emp_name || '-'}</div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{user.email}</div>
@@ -503,26 +849,35 @@ export default function TeamManagement() {
                   </label>
                 </div>
               </td>
-              <td style={{ padding: '1rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <button 
+              <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+                  <HoverIconButton
+                    icon={MessageSquare}
+                    label="View Chat"
+                    bg="#dcfce7"
+                    hoverBg="#bbf7d0"
+                    color="#15803d"
+                    borderColor="#bbf7d0"
                     onClick={() => handleViewChatClick(user)}
-                    className="btn-action-success"
-                  >
-                    View Chat
-                  </button>
-                  <button 
+                  />
+                  <HoverIconButton
+                    icon={Pencil}
+                    label="Edit User"
+                    bg="#eff6ff"
+                    hoverBg="#dbeafe"
+                    color="#1d4ed8"
+                    borderColor="#bfdbfe"
                     onClick={() => handleEditClick(user)}
-                    className="btn-action-secondary"
-                  >
-                    Edit User
-                  </button>
-                  <button 
+                  />
+                  <HoverIconButton
+                    icon={Key}
+                    label="Change Password"
+                    bg="#fff1f2"
+                    hoverBg="#fecdd3"
+                    color="#be123c"
+                    borderColor="#fecdd3"
                     onClick={() => setPasswordUser(user.user_id)}
-                    className="btn-action-danger"
-                  >
-                    Change Password
-                  </button>
+                  />
                 </div>
               </td>
             </tr>
@@ -634,6 +989,16 @@ export default function TeamManagement() {
                 />
               </div>
               <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Status</label>
+                <select 
+                  value={addForm.emp_status || 'Active'} 
+                  onChange={e => setAddForm({...addForm, emp_status: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
+                >
+                  {EMP_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+              <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name *</label>
                 <input 
                   type="text" 
@@ -690,8 +1055,9 @@ export default function TeamManagement() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', alignItems: 'center' }}>
               <button 
+                type="button"
                 onClick={() => setShowAddUserModal(false)}
                 className="btn-action-secondary"
                 style={{ padding: '0.5rem 1.25rem' }}
@@ -699,12 +1065,81 @@ export default function TeamManagement() {
                 Cancel
               </button>
               <button 
+                type="button"
+                onClick={handleSaveAddUserDraft}
+                disabled={savingAddUser}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}
+                title="Save partial registration details as Draft"
+              >
+                📝 Save as Draft
+              </button>
+              <button 
+                type="button"
                 onClick={handleSaveAddUser}
                 disabled={savingAddUser || !addForm.email || !addForm.password || !addForm.emp_id || !addForm.emp_name}
                 className="btn-primary"
                 style={{ padding: '0.5rem 1.5rem', borderRadius: '4px' }}
               >
                 {savingAddUser ? 'Creating...' : 'Create Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '480px', borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
+                <Upload size={20} style={{ color: '#0284c7' }} /> Import Team Members from CSV
+              </h3>
+            </div>
+            
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.5' }}>
+              Upload a `.csv` file containing employee details. Download the sample CSV template first to verify column names.
+            </p>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="btn-action-secondary"
+                style={{ width: '100%', padding: '0.66rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', border: '1px dashed var(--border-light)', fontSize: '0.85rem' }}
+              >
+                <FileSpreadsheet size={16} style={{ color: '#0284c7' }} /> Download Sample CSV Template
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Select CSV File *</label>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={e => setImportFile(e.target.files[0])}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => { setShowImportModal(false); setImportFile(null); }}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleProcessImportCSV}
+                disabled={importing || !importFile}
+                className="btn-primary"
+                style={{ padding: '0.5rem 1.5rem', borderRadius: '6px', backgroundColor: '#0284c7', border: 'none', color: '#fff' }}
+              >
+                {importing ? 'Importing...' : 'Import Data'}
               </button>
             </div>
           </div>
@@ -726,6 +1161,16 @@ export default function TeamManagement() {
                   onChange={e => setEditForm({...editForm, emp_id: e.target.value})}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} 
                 />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Status</label>
+                <select 
+                  value={editForm.emp_status || 'Active'} 
+                  onChange={e => setEditForm({...editForm, emp_status: e.target.value})}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
+                >
+                  {EMP_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name</label>
@@ -813,183 +1258,266 @@ export default function TeamManagement() {
 
       {/* Access Modal */}
       {accessUser && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ width: '100%', maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ width: '95%', maxWidth: '880px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0, borderRadius: '14px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
             
             {/* Fixed Header */}
-            <div style={{ padding: '1.5rem 1.5rem 1rem 1.5rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', zIndex: 10 }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', zIndex: 10 }}>
               {(() => {
                 const u = users.find(x => x.user_id === accessUser);
                 return u ? (
-                  <div style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px dashed var(--border-light)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || 'Unknown User'}</h3>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px dashed var(--border-light)' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{u.emp_name || 'Unknown User'}</h3>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email} ({u.emp_department || 'No Dept'} — {u.emp_designation || u.role})</div>
+                    </div>
+                    <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'var(--nav-active-bg)', color: 'var(--accent-color)', fontWeight: 600 }}>
+                      Manage Permissions
+                    </span>
                   </div>
                 ) : null;
               })()}
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Assign Processes</h3>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-                Select which modules this user is allowed to access.
-              </p>
+              
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, position: 'relative', minWidth: '220px' }}>
+                  <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input 
+                    type="text"
+                    value={accessSearchQuery}
+                    onChange={e => setAccessSearchQuery(e.target.value)}
+                    placeholder="Search page, sub-page, sub-menu, or tab..."
+                    style={{ width: '100%', padding: '0.5rem 0.75rem 0.5rem 2.25rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  4-Column Ultra-Granular Permission Control
+                </div>
+              </div>
             </div>
             
             {/* Scrollable Content */}
-            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1, backgroundColor: 'var(--bg-default)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 
                 {/* Global Permissions Section */}
-                <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                    Additional Permissions
+                <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)' }}>
+                  <div style={{ padding: '0.6rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                    Additional System Powers
                   </div>
-                  <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ padding: '0.75rem 1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
                     {(() => {
                       const u = users.find(x => x.user_id === accessUser);
                       if (!u) return null;
                       return (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
                           <input 
                             type="checkbox" 
                             checked={!!u.can_import_export} 
                             onChange={() => toggleImportExport(u.user_id, !!u.can_import_export)}
                             disabled={u.role === 'Admin' || u.role === 'admin'}
-                            style={{ width: '1.1rem', height: '1.1rem' }}
+                            style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
                           />
-                          <span style={{ fontSize: '0.95rem' }}>Import/Export Power</span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Import/Export Data Power</span>
                         </label>
                       );
                     })()}
                   </div>
                 </div>
 
-                {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => (
-                  <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
-                      {category === 'General' ? 'Core Features' : `${category} Department`}
-                    </div>
-                    <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      {MODULES_CONFIG.filter(m => m.category === category).map(module => (
-                        <div key={module.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: accessForm[module.id]?.view ? 'var(--nav-active-bg)' : 'transparent', padding: '0.75rem', borderRadius: '6px', border: '1px solid', borderColor: accessForm[module.id]?.view ? 'var(--border-light)' : 'transparent' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox"
-                              checked={!!accessForm[module.id]?.view}
-                              onChange={() => handleToggleModuleAccess(module.id)}
-                              style={{ width: '1.2rem', height: '1.2rem' }}
-                            />
-                            <span style={{ fontSize: '1rem', fontWeight: accessForm[module.id]?.view ? 600 : 400 }}>{module.label}</span>
-                          </label>
+                {/* Matrix Legend Header */}
+                <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <div style={{ flex: 1 }}>Module / Page / Sub-Page / Tab</div>
+                  <div style={{ width: '55px', textAlign: 'center', color: '#0284c7' }}>VIEW</div>
+                  <div style={{ width: '55px', textAlign: 'center', color: '#16a34a' }}>ADD</div>
+                  <div style={{ width: '70px', textAlign: 'center', color: '#d97706' }}>EDIT/SAVE</div>
+                  <div style={{ width: '55px', textAlign: 'center', color: '#dc2626' }}>DELETE</div>
+                </div>
 
-                          {/* Leads module: stage-wise access */}
-                          {accessForm[module.id]?.view && module.id === 'leads' && (
-                            <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
-                                <input 
-                                  type="checkbox"
-                                  checked={!!accessForm[module.id]?.is_manager}
-                                  onChange={() => handleToggleManagerLevel(module.id)}
-                                />
-                                Manager Access (See All Workflow Steps)
-                              </label>
+                {['General', 'Sales', 'Purchase', 'Human Resource', 'System'].map(category => {
+                  const filteredModules = MODULES_CONFIG.filter(m => {
+                    if (m.category !== category) return false;
+                    if (!accessSearchQuery.trim()) return true;
+                    const q = accessSearchQuery.toLowerCase();
+                    if (m.label.toLowerCase().includes(q)) return true;
+                    if (m.subItems && m.subItems.some(sub => sub.label.toLowerCase().includes(q))) return true;
+                    return false;
+                  });
 
-                              {!accessForm[module.id]?.is_manager && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
-                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Assign specific steps to this user:</div>
-                                  {LEAD_STAGES.map(stage => (
-                                    <label key={stage} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                      <input 
-                                        type="checkbox"
-                                        checked={(accessForm[module.id]?.assigned_steps || []).includes(stage)}
-                                        onChange={() => handleToggleStep(module.id, stage)}
-                                      />
-                                      {stage}
-                                    </label>
-                                  ))}
+                  if (filteredModules.length === 0) return null;
+
+                  return (
+                    <div key={category} style={{ border: '1px solid var(--border-light)', borderRadius: '10px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)' }}>
+                      <div style={{ padding: '0.65rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 700, borderBottom: '1px solid var(--border-light)', fontSize: '0.95rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>{category === 'General' ? 'Core Features & Dashboards' : `${category} Department`}</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>{filteredModules.length} Modules</span>
+                      </div>
+
+                      <div style={{ padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {filteredModules.map(module => {
+                          const mAccess = accessForm[module.id] || {};
+                          const mPerms = getModulePerms(accessForm, module.id);
+                          const canView = mPerms.view;
+                          const canAdd = mPerms.add;
+                          const canEdit = mPerms.edit;
+                          const canDelete = mPerms.delete;
+
+                          const isExpanded = expandedModules[module.id] || (accessSearchQuery.trim().length > 0);
+                          const hasSubItems = module.subItems && module.subItems.length > 0;
+
+                          return (
+                            <div 
+                              key={module.id} 
+                              style={{ 
+                                border: '1px solid var(--border-light)', 
+                                borderRadius: '8px', 
+                                backgroundColor: canView ? 'var(--nav-active-bg)' : 'transparent',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              {/* Parent Module Row */}
+                              <div style={{ display: 'flex', alignItems: 'center', padding: '0.65rem 0.75rem', gap: '0.5rem' }}>
+                                {hasSubItems ? (
+                                  <button
+                                    onClick={() => toggleExpandModule(module.id)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}
+                                    title={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
+                                  >
+                                    {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                  </button>
+                                ) : (
+                                  <div style={{ width: '22px' }} />
+                                )}
+
+                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.95rem', fontWeight: canView ? 600 : 400, color: 'var(--text-primary)' }}>{module.label}</span>
+                                  {hasSubItems && (
+                                    <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '10px', backgroundColor: 'var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                      {module.subItems.length} Tabs/Sub-pages
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Parent 4 Checkboxes */}
+                                <div style={{ width: '55px', textAlign: 'center' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={canView}
+                                    onChange={() => handleToggleModulePerm(module.id, 'view')}
+                                    title="View Access"
+                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#0284c7', cursor: 'pointer' }}
+                                  />
+                                </div>
+                                <div style={{ width: '55px', textAlign: 'center' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={canAdd}
+                                    onChange={() => handleToggleModulePerm(module.id, 'add')}
+                                    title="Add Access"
+                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#16a34a', cursor: 'pointer' }}
+                                  />
+                                </div>
+                                <div style={{ width: '70px', textAlign: 'center' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={canEdit}
+                                    onChange={() => handleToggleModulePerm(module.id, 'edit')}
+                                    title="Edit/Save Access"
+                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#d97706', cursor: 'pointer' }}
+                                  />
+                                </div>
+                                <div style={{ width: '55px', textAlign: 'center' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={canDelete}
+                                    onChange={() => handleToggleModulePerm(module.id, 'delete')}
+                                    title="Delete Access"
+                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#dc2626', cursor: 'pointer' }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Special Override: Leads / Recruiter Manager Access */}
+                              {(module.id === 'leads' || module.id === 'recruiter') && (
+                                <div style={{ padding: '0.4rem 0.75rem 0.6rem 2.25rem', borderTop: '1px dashed var(--border-light)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600, fontSize: '0.82rem' }}>
+                                    <input 
+                                      type="checkbox"
+                                      checked={!!mAccess.is_manager}
+                                      onChange={() => handleToggleManagerLevel(module.id)}
+                                      style={{ accentColor: '#0369a1' }}
+                                    />
+                                    Full Manager / Admin Level Override (Unrestricted access to all workflow stages)
+                                  </label>
                                 </div>
                               )}
-                            </div>
-                          )}
 
-                          {/* Recruiter module: stage-wise access */}
-                          {accessForm[module.id]?.view && module.id === 'recruiter' && (
-                            <div style={{ paddingLeft: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem', borderLeft: '2px solid #e0e7ff', marginLeft: '0.5rem' }}>
-                              <div style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 600, paddingBottom: '0.25rem' }}>🎯 Recruiter Stage Access</div>
-                              
-                              {/* Full Access toggle */}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#0369a1', fontWeight: 600 }}>
-                                <input 
-                                  type="checkbox"
-                                  checked={!!accessForm[module.id]?.is_manager}
-                                  onChange={() => handleToggleManagerLevel(module.id)}
-                                />
-                                Full Access (All Stages — Admin Level)
-                              </label>
+                              {/* Nested Sub-Items Table */}
+                              {hasSubItems && (isExpanded || accessSearchQuery.trim()) && (
+                                <div style={{ borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', padding: '0.5rem 0.75rem 0.75rem 2rem' }}>
+                                  {/* Quick Select Actions */}
+                                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Quick Sub-Tab Toggles:</span>
+                                    <button type="button" onClick={() => handleSelectAllSubItems(module, 'view', true)} style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer' }}>All View ON</button>
+                                    <button type="button" onClick={() => handleSelectAllSubItems(module, 'view', false)} style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#be123c', cursor: 'pointer' }}>All View OFF</button>
+                                    <button type="button" onClick={() => handleSelectAllSubItems(module, 'edit', true)} style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #fef08a', background: '#fefce8', color: '#a16207', cursor: 'pointer' }}>All Edit ON</button>
+                                    <button type="button" onClick={() => handleSelectAllSubItems(module, 'delete', true)} style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer' }}>All Delete ON</button>
+                                  </div>
 
-                              {/* Stage-wise access when not full admin */}
-                              {!accessForm[module.id]?.is_manager && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0' }}>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Allow access to specific stages:</div>
-                                  <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                      <thead>
-                                        <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                                          <th style={{ padding: '0.4rem 0', textAlign: 'left', color: 'var(--text-secondary)' }}>Stage</th>
-                                          <th style={{ padding: '0.4rem', textAlign: 'center', width: '60px', color: 'var(--text-secondary)' }}>View</th>
-                                          <th style={{ padding: '0.4rem', textAlign: 'center', width: '60px', color: 'var(--text-secondary)' }}>Edit</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {[
-                                          { id: 'S00', label: 'S00 — Requirements Received' },
-                                          { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
-                                          { id: 'S02', label: 'S02 — Resume Filtered' },
-                                          { id: 'S03', label: 'S03 — Interview Executed' },
-                                          { id: 'S04', label: 'S04 — Test Results' },
-                                          { id: 'S05', label: 'S05 — ED Approval' },
-                                          { id: 'S06', label: 'S06 — Salary Negotiation' },
-                                          { id: 'S07', label: 'S07 — Shortlisted' },
-                                          { id: 'S08', label: 'S08 — LOI Released' },
-                                          { id: 'S09', label: 'S09 — Joined' },
-                                        ].map(stage => {
-                                          const stepsView = accessForm['recruiter']?.assigned_steps_view || accessForm['recruiter']?.assigned_steps || [];
-                                          const stepsEdit = accessForm['recruiter']?.assigned_steps_edit || accessForm['recruiter']?.assigned_steps || [];
-                                          const isViewChecked = stepsView.includes(stage.id);
-                                          const isEditChecked = stepsEdit.includes(stage.id);
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    {module.subItems.map(sub => {
+                                      const subAccess = getSubItemPerms(accessForm, module.id, sub.id);
 
-                                          return (
-                                            <tr key={stage.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.1s' }}>
-                                              <td style={{ padding: '0.4rem 0', fontWeight: isViewChecked ? 600 : 400 }}>{stage.label}</td>
-                                              <td style={{ padding: '0.4rem', textAlign: 'center' }}>
-                                                <input 
-                                                  type="checkbox"
-                                                  checked={isViewChecked}
-                                                  onChange={() => handleToggleRecruiterStep('view', stage.id)}
-                                                  style={{ accentColor: '#6366f1', cursor: 'pointer' }}
-                                                />
-                                              </td>
-                                              <td style={{ padding: '0.4rem', textAlign: 'center' }}>
-                                                <input 
-                                                  type="checkbox"
-                                                  checked={isEditChecked}
-                                                  onChange={() => handleToggleRecruiterStep('edit', stage.id)}
-                                                  style={{ accentColor: '#6366f1', cursor: 'pointer' }}
-                                                />
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
+                                      return (
+                                        <div key={sub.id} style={{ display: 'flex', alignItems: 'center', padding: '0.35rem 0.5rem', borderRadius: '4px', backgroundColor: subAccess.view ? '#f0f9ff' : 'transparent', borderBottom: '1px solid var(--border-light)' }}>
+                                          <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: subAccess.view ? 600 : 400, color: 'var(--text-primary)' }}>
+                                            ↳ {sub.label}
+                                          </div>
+
+                                          <div style={{ width: '55px', textAlign: 'center' }}>
+                                            <input 
+                                              type="checkbox"
+                                              checked={subAccess.view}
+                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'view')}
+                                              style={{ width: '1rem', height: '1rem', accentColor: '#0284c7', cursor: 'pointer' }}
+                                            />
+                                          </div>
+                                          <div style={{ width: '55px', textAlign: 'center' }}>
+                                            <input 
+                                              type="checkbox"
+                                              checked={subAccess.add}
+                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'add')}
+                                              style={{ width: '1rem', height: '1rem', accentColor: '#16a34a', cursor: 'pointer' }}
+                                            />
+                                          </div>
+                                          <div style={{ width: '70px', textAlign: 'center' }}>
+                                            <input 
+                                              type="checkbox"
+                                              checked={subAccess.edit}
+                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'edit')}
+                                              style={{ width: '1rem', height: '1rem', accentColor: '#d97706', cursor: 'pointer' }}
+                                            />
+                                          </div>
+                                          <div style={{ width: '55px', textAlign: 'center' }}>
+                                            <input 
+                                              type="checkbox"
+                                              checked={subAccess.delete}
+                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'delete')}
+                                              style={{ width: '1rem', height: '1rem', accentColor: '#dc2626', cursor: 'pointer' }}
+                                            />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                      ))}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1006,9 +1534,9 @@ export default function TeamManagement() {
                 onClick={handleSaveAccess}
                 disabled={savingAccess}
                 className="btn-primary"
-                style={{ padding: '0.5rem 1.5rem', borderRadius: '4px' }}
+                style={{ padding: '0.5rem 1.5rem', borderRadius: '6px' }}
               >
-                {savingAccess ? 'Saving...' : 'Save Access'}
+                {savingAccess ? 'Saving Access...' : 'Save Granular Access'}
               </button>
             </div>
           </div>

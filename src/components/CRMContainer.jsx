@@ -1682,12 +1682,12 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
               {activeTab === 'calladmin' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
                 <ErrorBoundary>
-                  <CallAdminModule />
+                  <CallAdminModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
               {activeTab === 'aicallcenter' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
                 <ErrorBoundary>
-                  <AiCallCenterModule />
+                  <AiCallCenterModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
               {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
@@ -1695,34 +1695,34 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   <TeamManagement />
                 </ErrorBoundary>
               )}
-              {activeTab === 'workplace' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+              {activeTab === 'workplace' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view || moduleAccess['team']?.view) && (
                 <ErrorBoundary>
-                  <UniversalWorkplaceModule />
+                  <UniversalWorkplaceModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
-              {activeTab === 'party' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+              {activeTab === 'party' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['party']?.view || moduleAccess['team']?.view) && (
                 <ErrorBoundary>
                   <PartyMasterModule />
                 </ErrorBoundary>
               )}
               {(activeTab === 'location_master' || activeTab === 'location_territory' || activeTab === 'location-master') && (
                 <ErrorBoundary>
-                  <LocationManagementModule />
+                  <LocationManagementModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
-              {activeTab === 'public_users' && (userRole === 'admin' || userRole === 'Admin') && (
+              {activeTab === 'public_users' && (userRole === 'admin' || userRole === 'Admin' || moduleAccess['public_users']?.view) && (
                 <ErrorBoundary>
                   <PublicUserManagement />
                 </ErrorBoundary>
               )}
               {activeTab === 'whatsapp_official' && (
                 <ErrorBoundary>
-                  <WhatsappOfficial />
+                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
               {activeTab === 'whatsapp_unofficial' && (
                 <ErrorBoundary>
-                  <WhatsappUnofficialModule userRole={userRole} userId={userId} />
+                  <WhatsappUnofficialModule userRole={userRole} userId={userId} moduleAccess={moduleAccess} />
                 </ErrorBoundary>
               )}
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
@@ -1730,7 +1730,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {activeTab === 'email_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Email Configuration (Coming Soon)</h2><p>SMTP server and API key configuration for email campaigns.</p></div>}
               {activeTab === 'settings' && (
                 <ErrorBoundary>
-                  <SettingsContainer />
+                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               )}
             </>

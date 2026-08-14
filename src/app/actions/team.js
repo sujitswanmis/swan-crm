@@ -20,7 +20,11 @@ export async function getTeamMembers() {
     console.error('Error fetching team members:', error);
     return [];
   }
-  return data;
+
+  return (data || []).map(u => ({
+    ...u,
+    emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active'
+  }));
 }
 
 export async function getRecruitersList() {
@@ -133,7 +137,8 @@ export async function registerEmployeeDetails(userId, email, details) {
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
       emp_designation: details.emp_designation || (isCustomer ? 'Customer' : undefined),
       emp_mobile: details.emp_mobile,
-      emp_official_mail_id: details.emp_official_mail_id || email
+      emp_official_mail_id: details.emp_official_mail_id || email,
+      emp_status: details.emp_status || 'Active'
     };
 
     if (isCustomer) {
@@ -143,35 +148,57 @@ export async function registerEmployeeDetails(userId, email, details) {
       updatePayload.can_write = false;
     }
 
-    const { error } = await adminClient
+    let { error } = await adminClient
       .from('user_roles')
       .update(updatePayload)
       .eq('user_id', userId);
-      
-    if (error) return { success: false, error: error.message };
+
+    if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+      delete updatePayload.emp_status;
+      const { data: userData } = await adminClient
+        .from('user_roles')
+        .select('module_access')
+        .eq('user_id', userId)
+        .single();
+      updatePayload.module_access = { ...(userData?.module_access || {}), emp_status: details.emp_status || 'Active' };
+      const { error: fallbackErr } = await adminClient
+        .from('user_roles')
+        .update(updatePayload)
+        .eq('user_id', userId);
+      if (fallbackErr) return { success: false, error: fallbackErr.message };
+    } else if (error) {
+      return { success: false, error: error.message };
+    }
   } else {
     // Insert new user
-    const { error } = await adminClient
-      .from('user_roles')
-      .insert({
-        user_id: userId,
-        email: email,
-        role: isCustomer ? 'customer' : 'agent',
-        is_approved: isCustomer ? true : false, // Auto-approve customers
-        emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : ''),
-        emp_name: details.emp_name,
-        emp_department: details.emp_department || (isCustomer ? 'Customer Support' : ''),
-        emp_designation: details.emp_designation || (isCustomer ? 'Customer' : ''),
-        emp_mobile: details.emp_mobile,
-        company: details.company || (isCustomer ? 'Public' : ''),
-        emp_official_mail_id: details.emp_official_mail_id || email,
-        can_read: isCustomer ? false : true,
-        can_write: isCustomer ? false : true,
-        can_import_export: false,
-        module_access: {}
-      });
-      
-    if (error) return { success: false, error: error.message };
+    const insertPayload = {
+      user_id: userId,
+      email: email,
+      role: isCustomer ? 'customer' : 'agent',
+      is_approved: isCustomer ? true : false, // Auto-approve customers
+      emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : ''),
+      emp_name: details.emp_name,
+      emp_department: details.emp_department || (isCustomer ? 'Customer Support' : ''),
+      emp_designation: details.emp_designation || (isCustomer ? 'Customer' : ''),
+      emp_mobile: details.emp_mobile,
+      company: details.company || (isCustomer ? 'Public' : ''),
+      emp_official_mail_id: details.emp_official_mail_id || email,
+      emp_status: details.emp_status || 'Active',
+      can_read: isCustomer ? false : true,
+      can_write: isCustomer ? false : true,
+      can_import_export: false,
+      module_access: {}
+    };
+
+    let { error } = await adminClient.from('user_roles').insert(insertPayload);
+    if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+      delete insertPayload.emp_status;
+      insertPayload.module_access = { emp_status: details.emp_status || 'Active' };
+      const { error: insertErr } = await adminClient.from('user_roles').insert(insertPayload);
+      if (insertErr) return { success: false, error: insertErr.message };
+    } else if (error) {
+      return { success: false, error: error.message };
+    }
   }
   
   return { success: true };
@@ -201,19 +228,70 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     company: details.company,
   };
 
+  if (details.emp_status) {
+    updateData.emp_status = details.emp_status;
+  }
+
   if (details.email) {
     updateData.email = details.email;
     updateData.emp_official_mail_id = details.email;
   }
 
-  const { error } = await adminClient
+  let { error } = await adminClient
     .from('user_roles')
     .update(updateData)
     .eq('user_id', userId);
+
+  if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+    delete updateData.emp_status;
+    const { data: userData } = await adminClient
+      .from('user_roles')
+      .select('module_access')
+      .eq('user_id', userId)
+      .single();
+
+    const currentAccess = userData?.module_access || {};
+    updateData.module_access = { ...currentAccess, emp_status: details.emp_status || 'Active' };
+
+    const { error: fallbackErr } = await adminClient
+      .from('user_roles')
+      .update(updateData)
+      .eq('user_id', userId);
+
+    error = fallbackErr;
+  }
     
   if (error) {
     console.error('Error updating employee details:', error);
     return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+export async function updateEmpStatus(userId, empStatus) {
+  const adminClient = getAdminClient();
+  const { error } = await adminClient
+    .from('user_roles')
+    .update({ emp_status: empStatus })
+    .eq('user_id', userId);
+
+  if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+    const { data: user } = await adminClient
+      .from('user_roles')
+      .select('module_access')
+      .eq('user_id', userId)
+      .single();
+      
+    const currentAccess = user?.module_access || {};
+    const { error: fallbackErr } = await adminClient
+      .from('user_roles')
+      .update({ module_access: { ...currentAccess, emp_status: empStatus } })
+      .eq('user_id', userId);
+
+    if (fallbackErr) throw new Error(fallbackErr.message);
+    return { success: true };
+  } else if (error) {
+    throw new Error(error.message);
   }
   return { success: true };
 }

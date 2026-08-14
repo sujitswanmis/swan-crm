@@ -32,24 +32,36 @@ const SETTINGS_TABS = [
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> }
 ];
 
-export default function SettingsContainer() {
+export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  
+  const visibleTabs = SETTINGS_TABS.filter(tab => {
+    if (isAdmin) return true;
+    const settingsAccess = moduleAccess['settings'];
+    if (!settingsAccess || settingsAccess.view === false) return false;
+    if (settingsAccess.sub_items && settingsAccess.sub_items[tab.id]) {
+      return settingsAccess.sub_items[tab.id].view !== false;
+    }
+    return true;
+  });
+
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('setting');
-      if (param) return param;
+      if (param && visibleTabs.some(t => t.id === param)) return param;
     }
-    return 'business';
+    return visibleTabs[0]?.id || 'business';
   });
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
     const handlePopState = () => {
       const param = new URLSearchParams(window.location.search).get('setting');
-      if (param && param !== activeTab) setActiveTab(param);
+      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab]);
+  }, [activeTab, visibleTabs]);
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
@@ -69,7 +81,7 @@ export default function SettingsContainer() {
         </div>
         
         <div style={{ padding: '0.75rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          {SETTINGS_TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}

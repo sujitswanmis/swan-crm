@@ -29,8 +29,24 @@ const DESIGNATION_LEVELS = [
   { level: 'L10', title: 'Operator / Trainee' }
 ];
 
-export default function UniversalWorkplaceModule() {
-  const [activeSubTab, setActiveSubTab] = useState('employees');
+export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole = '' }) {
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const workplaceAccess = moduleAccess['workplace'];
+
+  const canViewTab = (tabId) => {
+    if (isAdmin) return true;
+    if (!workplaceAccess || workplaceAccess.view === false) return false;
+    if (workplaceAccess.sub_items && workplaceAccess.sub_items[tabId]) {
+      return workplaceAccess.sub_items[tabId].view !== false;
+    }
+    return true;
+  };
+
+  const [activeSubTab, setActiveSubTab] = useState(() => {
+    const tabs = ['employees', 'designations', 'org', 'access', 'location_territory', 'workflow'];
+    const firstAllowed = tabs.find(t => canViewTab(t));
+    return firstAllowed || 'employees';
+  });
   const [loading, setLoading] = useState(false);
 
   // Data states
@@ -709,115 +725,61 @@ export default function UniversalWorkplaceModule() {
       </div>
 
       {/* Sub Navigation Bar */}
-      <div style={{ display: 'flex', gap: '0.75rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setActiveSubTab('employees')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'employees' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <UserCheck size={18} />
-          Employee Master ({employees.length})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('designations')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'designations' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <ShieldCheck size={18} />
-          Designation Master ({designations.length})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('org')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'org' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <Network size={18} />
-          Organization Hierarchy
-        </button>
-        <button
-          onClick={() => setActiveSubTab('access')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'access' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <ShieldCheck size={18} />
-          Access Profiles ({accessProfiles.length})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('location_territory')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'location_territory' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <MapPin size={18} />
-          Location & Territory Master
-        </button>
-        <button
-          onClick={() => setActiveSubTab('workflow')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeSubTab === 'workflow' ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <GitMerge size={18} />
-          Workflow Builder ({workflows.length})
-        </button>
+      <div style={{ display: 'flex', gap: '0.75rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        {canViewTab('employees') && (
+          <button
+            onClick={() => setActiveSubTab('employees')}
+            className={`sub-tab-btn ${activeSubTab === 'employees' ? 'active' : ''}`}
+          >
+            <UserCheck size={18} />
+            Employee Master ({employees.length})
+          </button>
+        )}
+        {canViewTab('designations') && (
+          <button
+            onClick={() => setActiveSubTab('designations')}
+            className={`sub-tab-btn ${activeSubTab === 'designations' ? 'active' : ''}`}
+          >
+            <ShieldCheck size={18} />
+            Designation Master ({designations.length})
+          </button>
+        )}
+        {canViewTab('org') && (
+          <button
+            onClick={() => setActiveSubTab('org')}
+            className={`sub-tab-btn ${activeSubTab === 'org' ? 'active' : ''}`}
+          >
+            <Network size={18} />
+            Organization Hierarchy
+          </button>
+        )}
+        {canViewTab('access') && (
+          <button
+            onClick={() => setActiveSubTab('access')}
+            className={`sub-tab-btn ${activeSubTab === 'access' ? 'active' : ''}`}
+          >
+            <ShieldCheck size={18} />
+            Access Profiles ({accessProfiles.length})
+          </button>
+        )}
+        {canViewTab('location_territory') && (
+          <button
+            onClick={() => setActiveSubTab('location_territory')}
+            className={`sub-tab-btn ${activeSubTab === 'location_territory' ? 'active' : ''}`}
+          >
+            <MapPin size={18} />
+            Location & Territory Master
+          </button>
+        )}
+        {canViewTab('workflow') && (
+          <button
+            onClick={() => setActiveSubTab('workflow')}
+            className={`sub-tab-btn ${activeSubTab === 'workflow' ? 'active' : ''}`}
+          >
+            <GitMerge size={18} />
+            Workflow Builder ({workflows.length})
+          </button>
+        )}
       </div>
 
       {/* SUB-TAB 1: EMPLOYEES */}
@@ -833,10 +795,10 @@ export default function UniversalWorkplaceModule() {
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px' }}>
+          <div style={{ overflowX: 'auto', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
+                <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Emp Code</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Name</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Designation</th>
@@ -850,28 +812,28 @@ export default function UniversalWorkplaceModule() {
               <tbody>
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                    <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       No employee master records found. Click "Add Employee" to create one.
                     </td>
                   </tr>
                 ) : (
                   employees.map((emp) => (
-                    <tr key={emp.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#38bdf8' }}>{emp.emp_code}</td>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{emp.emp_name}</td>
+                    <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)' }}>{emp.emp_code}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{emp.emp_name}</td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                        <span style={{ background: 'var(--nav-active-bg)', color: 'var(--accent-color)', border: '1px solid var(--border-light)', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600 }}>
                           {emp.designation_name || 'Not Set'}
                         </span>
                       </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>{emp.department_name || '-'}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#94a3b8' }}>{emp.reporting_manager_name || emp.reporting_manager?.emp_name || '-'}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>{emp.department_name || '-'}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{emp.reporting_manager_name || emp.reporting_manager?.emp_name || '-'}</td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                        <div>{emp.mobile || '-'}</div>
-                        <div style={{ color: '#64748b' }}>{emp.email || '-'}</div>
+                        <div style={{ color: 'var(--text-primary)' }}>{emp.mobile || '-'}</div>
+                        <div style={{ color: 'var(--text-secondary)' }}>{emp.email || '-'}</div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: emp.emp_status === 'Active' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: emp.emp_status === 'Active' ? '#34d399' : '#f87171' }}>
+                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: emp.emp_status === 'Active' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: emp.emp_status === 'Active' ? '#10b981' : '#ef4444', border: `1px solid ${emp.emp_status === 'Active' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}` }}>
                           {emp.emp_status}
                         </span>
                       </td>
@@ -879,13 +841,13 @@ export default function UniversalWorkplaceModule() {
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button
                             onClick={() => { setTransferEmp(emp); setTransferForm({ new_designation_id: emp.designation_id || '', new_department_id: emp.department_id || '', new_reporting_manager_id: emp.reporting_manager_id || '', change_type: 'Promotion', change_reason: '' }); }}
-                            style={{ padding: '0.35rem 0.6rem', background: 'rgba(99, 102, 241, 0.2)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#a5b4fc', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            className="btn-action-primary"
                           >
                             <ArrowRightLeft size={14} /> Transfer/Promote
                           </button>
                           <button
                             onClick={() => openHistory(emp)}
-                            style={{ padding: '0.35rem 0.6rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            className="btn-action-secondary"
                           >
                             <History size={14} /> Audit Log
                           </button>
@@ -1713,7 +1675,7 @@ export default function UniversalWorkplaceModule() {
             </form>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <button onClick={() => setSelectedWfForStages(null)} style={{ padding: '0.5rem 1.2rem', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>Done / Close</button>
+              <button onClick={() => setSelectedWfForStages(null)} className="btn-action-secondary">Done / Close</button>
             </div>
           </div>
         </div>
@@ -1721,39 +1683,38 @@ export default function UniversalWorkplaceModule() {
 
       {/* MODAL: ADD WORKFLOW */}
       {showAddWorkflowModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '500px' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem' }}>Create New Universal Workflow</h2>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '500px' }}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>Create Enterprise Workflow</h2>
             <form onSubmit={handleCreateWorkflow}>
               <div style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Workflow Name</label>
-                  <input type="text" required value={workflowForm.workflow_name} onChange={e => setWorkflowForm({ ...workflowForm, workflow_name: e.target.value })} placeholder="e.g. Rotavator Production Workflow" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Workflow Name *</label>
+                  <input type="text" required value={workflowForm.workflow_name} onChange={e => setWorkflowForm({ ...workflowForm, workflow_name: e.target.value })} placeholder="e.g. Quality Inspection Process" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Workflow Code (Optional)</label>
-                  <input type="text" value={workflowForm.workflow_code} onChange={e => setWorkflowForm({ ...workflowForm, workflow_code: e.target.value })} placeholder="e.g. WF-PROD-001" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Workflow Code (Prefix)</label>
+                  <input type="text" required value={workflowForm.workflow_code} onChange={e => setWorkflowForm({ ...workflowForm, workflow_code: e.target.value.toUpperCase() })} placeholder="e.g. WF-QUAL" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Category</label>
-                  <select value={workflowForm.category} onChange={e => setWorkflowForm({ ...workflowForm, category: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
-                    <option value="PRODUCTION">PRODUCTION</option>
-                    <option value="PURCHASE">PURCHASE</option>
-                    <option value="SALES">SALES</option>
-                    <option value="QUALITY">QUALITY</option>
-                    <option value="DISPATCH">DISPATCH</option>
-                    <option value="SERVICE">SERVICE / COMPLAINT</option>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Category</label>
+                  <select value={workflowForm.category} onChange={e => setWorkflowForm({ ...workflowForm, category: e.target.value })} style={{ width: '100%' }}>
+                    <option value="PRODUCTION">Production</option>
+                    <option value="QUALITY">Quality & Testing</option>
+                    <option value="PURCHASE">Purchase & Procurement</option>
+                    <option value="LOGISTICS">Logistics & Dispatch</option>
+                    <option value="SALES">Sales & Billing</option>
                     <option value="HR">HR</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Description</label>
-                  <textarea value={workflowForm.description} onChange={e => setWorkflowForm({ ...workflowForm, description: e.target.value })} placeholder="Brief workflow purpose" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', minHeight: '60px' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Description</label>
+                  <textarea value={workflowForm.description} onChange={e => setWorkflowForm({ ...workflowForm, description: e.target.value })} placeholder="Brief workflow purpose" style={{ width: '100%', minHeight: '60px' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" onClick={() => setShowAddWorkflowModal(false)} style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.6rem 1.2rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Publish Workflow (v1.0)</button>
+                <button type="button" onClick={() => setShowAddWorkflowModal(false)} className="btn-action-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Publish Workflow (v1.0)</button>
               </div>
             </form>
           </div>
@@ -1762,52 +1723,52 @@ export default function UniversalWorkplaceModule() {
 
       {/* MODAL: ADD EMPLOYEE */}
       {showAddEmpModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem' }}>Create Employee Master Record</h2>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>Create Employee Master Record</h2>
             <form onSubmit={handleCreateEmployee}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Emp Code</label>
-                  <input type="text" required value={empForm.emp_code} onChange={e => setEmpForm({ ...empForm, emp_code: e.target.value })} placeholder="e.g. EMP-1001" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Emp Code</label>
+                  <input type="text" required value={empForm.emp_code} onChange={e => setEmpForm({ ...empForm, emp_code: e.target.value })} placeholder="e.g. EMP-1001" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Employee Name</label>
-                  <input type="text" required value={empForm.emp_name} onChange={e => setEmpForm({ ...empForm, emp_name: e.target.value })} placeholder="Full Name" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Employee Name</label>
+                  <input type="text" required value={empForm.emp_name} onChange={e => setEmpForm({ ...empForm, emp_name: e.target.value })} placeholder="Full Name" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Email</label>
-                  <input type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} placeholder="email@swanagro.in" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Email</label>
+                  <input type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} placeholder="email@swanagro.in" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Mobile</label>
-                  <input type="text" value={empForm.mobile} onChange={e => setEmpForm({ ...empForm, mobile: e.target.value })} placeholder="10-digit mobile" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }} />
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Mobile</label>
+                  <input type="text" value={empForm.mobile} onChange={e => setEmpForm({ ...empForm, mobile: e.target.value })} placeholder="10-digit mobile" style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Designation</label>
-                  <select value={empForm.designation_id} onChange={e => setEmpForm({ ...empForm, designation_id: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Designation</label>
+                  <select value={empForm.designation_id} onChange={e => setEmpForm({ ...empForm, designation_id: e.target.value })} style={{ width: '100%' }}>
                     <option value="">-- Select Designation --</option>
                     {designations.map(d => <option key={d.id} value={d.id}>{d.designation_name} ({d.designation_level})</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Department</label>
-                  <select value={empForm.department_id} onChange={e => setEmpForm({ ...empForm, department_id: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Department</label>
+                  <select value={empForm.department_id} onChange={e => setEmpForm({ ...empForm, department_id: e.target.value })} style={{ width: '100%' }}>
                     <option value="">-- Select Department --</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Primary Reporting Manager</label>
-                  <select value={empForm.reporting_manager_id} onChange={e => setEmpForm({ ...empForm, reporting_manager_id: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Primary Reporting Manager</label>
+                  <select value={empForm.reporting_manager_id} onChange={e => setEmpForm({ ...empForm, reporting_manager_id: e.target.value })} style={{ width: '100%' }}>
                     <option value="">-- None (Top Level) --</option>
                     {employees.map(m => <option key={m.id} value={m.id}>{m.emp_name} ({m.emp_code} - {m.designation_name})</option>)}
                   </select>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" onClick={() => setShowAddEmpModal(false)} style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.6rem 1.2rem', background: '#10b981', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Create Employee</button>
+                <button type="button" onClick={() => setShowAddEmpModal(false)} className="btn-action-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Create Employee</button>
               </div>
             </form>
           </div>

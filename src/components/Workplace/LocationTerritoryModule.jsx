@@ -138,57 +138,24 @@ export default function LocationTerritoryModule() {
   return (
     <div style={{ padding: '1rem', color: '#f8fafc' }}>
       {/* Sub-tab Switcher */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
         <button
           onClick={() => setSubTab('locations')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: subTab === 'locations' ? '#2563eb' : '#1e293b',
-            color: '#ffffff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem'
-          }}
+          className={`sub-tab-btn ${subTab === 'locations' ? 'active' : ''}`}
         >
           <Globe size={18} /> Universal Location Registration & Master
         </button>
         <button
           onClick={() => setSubTab('territories')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: subTab === 'territories' ? '#2563eb' : '#1e293b',
-            color: '#ffffff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem'
-          }}
+          className={`sub-tab-btn ${subTab === 'territories' ? 'active' : ''}`}
         >
-          <Compass size={18} /> Territory Builder & Assignment
+          <Map size={18} /> Sales Territory Builder
         </button>
         <button
           onClick={() => setSubTab('alias')}
-          style={{
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: subTab === 'alias' ? '#2563eb' : '#1e293b',
-            color: '#ffffff',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem'
-          }}
+          className={`sub-tab-btn ${subTab === 'alias' ? 'active' : ''}`}
         >
-          <MapPin size={18} /> Location Alias Resolver
+          <Compass size={18} /> Smart Location Alias & Fuzzy Resolver
         </button>
       </div>
 
@@ -423,21 +390,21 @@ export default function LocationTerritoryModule() {
 
       {/* MODAL: ADD STATE */}
       {showAddStateModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#ffffff' }}>Register New State / UT</h3>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Register New State / UT</h3>
             <form onSubmit={handleCreateState}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>State / UT Name *</label>
-                <input type="text" required value={stateForm.name} onChange={e => setStateForm({ ...stateForm, name: e.target.value })} placeholder="e.g. Telangana" style={{ width: '100%', padding: '0.65rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>State / UT Name *</label>
+                <input type="text" required value={stateForm.name} onChange={e => setStateForm({ ...stateForm, name: e.target.value })} placeholder="e.g. Telangana" style={{ width: '100%' }} />
               </div>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>State Code (Optional)</label>
-                <input type="text" value={stateForm.code} onChange={e => setStateForm({ ...stateForm, code: e.target.value })} placeholder="e.g. TS" style={{ width: '100%', padding: '0.65rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>State Code (Optional)</label>
+                <input type="text" value={stateForm.code} onChange={e => setStateForm({ ...stateForm, code: e.target.value })} placeholder="e.g. TS" style={{ width: '100%' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
-                <button type="button" onClick={() => setShowAddStateModal(false)} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#38bdf8', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}>Register State</button>
+                <button type="button" onClick={() => setShowAddStateModal(false)} className="btn-action-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Register State</button>
               </div>
             </form>
           </div>
@@ -446,17 +413,17 @@ export default function LocationTerritoryModule() {
 
       {/* MODAL: ADD DISTRICT */}
       {showAddDistrictModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#ffffff' }}>Register New District</h3>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Register New District</h3>
             <form onSubmit={handleCreateDistrict}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>District Name *</label>
-                <input type="text" required value={districtForm.name} onChange={e => setDistrictForm({ ...districtForm, name: e.target.value })} placeholder="e.g. Ludhiana" style={{ width: '100%', padding: '0.65rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>District Name *</label>
+                <input type="text" required value={districtForm.name} onChange={e => setDistrictForm({ ...districtForm, name: e.target.value })} placeholder="e.g. Ludhiana" style={{ width: '100%' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
-                <button type="button" onClick={() => setShowAddDistrictModal(false)} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#34d399', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}>Register District</button>
+                <button type="button" onClick={() => setShowAddDistrictModal(false)} className="btn-action-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Register District</button>
               </div>
             </form>
           </div>
@@ -465,17 +432,17 @@ export default function LocationTerritoryModule() {
 
       {/* MODAL: ADD TEHSIL / SUBDISTRICT */}
       {showAddSubdistrictModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#ffffff' }}>Register Tehsil / Mandal / Taluka</h3>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '420px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Register Tehsil / Mandal / Taluka</h3>
             <form onSubmit={handleCreateSubdistrict}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>Tehsil / Mandal Name *</label>
-                <input type="text" required value={subdistrictForm.name} onChange={e => setSubdistrictForm({ ...subdistrictForm, name: e.target.value })} placeholder="e.g. Khanna Tehsil" style={{ width: '100%', padding: '0.65rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Tehsil / Mandal Name *</label>
+                <input type="text" required value={subdistrictForm.name} onChange={e => setSubdistrictForm({ ...subdistrictForm, name: e.target.value })} placeholder="e.g. Khanna Tehsil" style={{ width: '100%' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
-                <button type="button" onClick={() => setShowAddSubdistrictModal(false)} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#fbbf24', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}>Register Tehsil</button>
+                <button type="button" onClick={() => setShowAddSubdistrictModal(false)} className="btn-action-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Register Tehsil</button>
               </div>
             </form>
           </div>
@@ -484,17 +451,17 @@ export default function LocationTerritoryModule() {
 
       {/* CREATE TERRITORY MODAL */}
       {showAddTerritoryModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '480px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#ffffff' }}>Create Sales Territory</h3>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '480px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Create Sales Territory</h3>
             <form onSubmit={handleCreateTerritory}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>Territory Name *</label>
-                <input type="text" required value={territoryForm.territory_name} onChange={e => setTerritoryForm({ ...territoryForm, territory_name: e.target.value })} placeholder="e.g. Malwa South Territory" style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Territory Name *</label>
+                <input type="text" required value={territoryForm.territory_name} onChange={e => setTerritoryForm({ ...territoryForm, territory_name: e.target.value })} placeholder="e.g. Malwa South Territory" style={{ width: '100%' }} />
               </div>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '0.3rem' }}>Territory Type</label>
-                <select value={territoryForm.territory_type} onChange={e => setTerritoryForm({ ...territoryForm, territory_type: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Territory Type</label>
+                <select value={territoryForm.territory_type} onChange={e => setTerritoryForm({ ...territoryForm, territory_type: e.target.value })} style={{ width: '100%' }}>
                   <option value="ZONE">ZONE</option>
                   <option value="REGION">REGION</option>
                   <option value="TERRITORY">TERRITORY</option>

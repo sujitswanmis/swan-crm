@@ -87,20 +87,20 @@ export default function PartyMasterModule() {
   };
 
   return (
-    <div style={{ padding: '1.5rem', color: '#f8fafc', background: '#090d16', minHeight: '100vh' }}>
+    <div style={{ padding: '1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100vh' }}>
       {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#ffffff' }}>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text-primary)' }}>
             <Building2 className="text-emerald-500" size={28} />
             Enterprise Party Master (Customer / Dealer / Distributor / Vendor)
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: '0.25rem 0 0 0' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.25rem 0 0 0' }}>
             Universal Party Codes (`PTY-xxxxxx`), Multi-Role Directory, Billing/Shipping Locations, Credit Control & Bank Masters
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button onClick={loadParties} style={{ padding: '0.6rem 1.2rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
+          <button onClick={loadParties} className="btn-action-secondary" style={{ padding: '0.6rem 1.2rem', fontWeight: 500 }}>
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh List
           </button>
           <button onClick={() => setShowAddPartyModal(true)} style={{ padding: '0.6rem 1.2rem', background: '#10b981', border: 'none', color: '#ffffff', fontWeight: 600, borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}>
@@ -110,10 +110,10 @@ export default function PartyMasterModule() {
       </div>
 
       {/* Main Party Table */}
-      <div style={{ background: '#0f172a', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
           <thead>
-            <tr style={{ background: '#1e293b', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', color: '#cbd5e1' }}>
+            <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
               <th style={{ padding: '0.85rem 1rem' }}>Party Code</th>
               <th style={{ padding: '0.85rem 1rem' }}>Firm & Legal Name</th>
               <th style={{ padding: '0.85rem 1rem' }}>Category</th>
@@ -127,13 +127,13 @@ export default function PartyMasterModule() {
           <tbody>
             {parties.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan="8" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                   No Party Master records found. Click "+ Onboard New Party" or convert a Stage 07 lead.
                 </td>
               </tr>
             ) : (
               parties.map(p => (
-                <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)', color: '#f8fafc' }}>
+                <tr key={p.id} style={{ borderBottom: '1px solid var(--border-light)', color: 'var(--text-primary)' }}>
                   <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#34d399' }}>{p.party_universal_code}</td>
                   <td style={{ padding: '0.85rem 1rem' }}>
                     <div style={{ fontWeight: 700, color: '#ffffff' }}>{p.firm_name}</div>
