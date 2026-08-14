@@ -548,17 +548,14 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   pointer-events: none;
 }
 
-.sidebar-title {
+.sidebar-brand-text {
   opacity: 1;
   max-width: 180px;
-  white-space: nowrap;
   transition: opacity 0.2s ease, max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  text-overflow: ellipsis;
-  display: inline-block;
 }
 
-.sidebar.collapsed .sidebar-title {
+.sidebar.collapsed .sidebar-brand-text {
   opacity: 0;
   max-width: 0;
   pointer-events: none;

@@ -251,8 +251,10 @@ export default function AdminMessageConfig({ moduleAccess = {}, userRole = '' })
                   />
                   <button
                     type="button"
-                    onClick={() => setShowSmtpPassword(!showSmtpPassword)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowSmtpPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    title={showSmtpPassword ? "Hide password" : "Show password"}
                   >
                     {showSmtpPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>

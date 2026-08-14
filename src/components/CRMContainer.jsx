@@ -921,25 +921,52 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
       {/* Sidebar */}
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', alignItems: 'center', position: 'relative', padding: isSidebarCollapsed ? '1rem 0.5rem' : '0.85rem 1rem' }}>
+          <div 
+            onClick={() => { if (isSidebarCollapsed) setIsSidebarCollapsed(false); }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', minWidth: 0, cursor: isSidebarCollapsed ? 'pointer' : 'default', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', width: isSidebarCollapsed ? '100%' : 'auto' }}
+            title={isSidebarCollapsed ? "Click to expand sidebar" : undefined}
+          >
             <img 
               src="/supuja-logo.png" 
               alt="SuPuja Creations" 
-              style={{ width: '30px', height: '30px', borderRadius: '7px', objectFit: 'contain', background: '#fff', padding: '2px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} 
+              style={{ width: isSidebarCollapsed ? '38px' : '34px', height: isSidebarCollapsed ? '38px' : '34px', borderRadius: '8px', objectFit: 'contain', background: '#fff', padding: '2px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }} 
             />
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>SuPuja Creations</span>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', opacity: 0.7, letterSpacing: '0.03em' }}>v{pkg.version || '1.0.157'}</span>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.15 }}>
+                <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent-color)', letterSpacing: '-0.01em', margin: 0 }}>SuPuja</span>
+                <div className="sidebar-title" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', letterSpacing: '0.01em' }}>Creations</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', opacity: 0.85, fontWeight: 500 }}>v{pkg.version || '1.0.224'}</span>
+                </div>
+              </div>
+            )}
           </div>
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
             className="sidebar-collapse-toggle desktop-only-icon"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '4px' }}
+            style={{
+              background: isSidebarCollapsed ? 'var(--bg-surface)' : 'none',
+              border: isSidebarCollapsed ? '1px solid var(--border-light)' : 'none',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: isSidebarCollapsed ? '0.25rem' : '0.25rem',
+              borderRadius: isSidebarCollapsed ? '50%' : '4px',
+              position: isSidebarCollapsed ? 'absolute' : 'static',
+              right: isSidebarCollapsed ? '-10px' : 'auto',
+              top: isSidebarCollapsed ? '50%' : 'auto',
+              transform: isSidebarCollapsed ? 'translateY(-50%)' : 'none',
+              boxShadow: isSidebarCollapsed ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+              zIndex: 25,
+              width: isSidebarCollapsed ? '22px' : 'auto',
+              height: isSidebarCollapsed ? '22px' : 'auto'
+            }}
             title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           >
-            {isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            {isSidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={18} />}
           </button>
         </div>
         <nav className="nav-list">
@@ -2025,7 +2052,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
               {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
                 <ErrorBoundary>
-                  <TeamManagement />
+                  <TeamManagement initialUsers={teamMembers} />
                 </ErrorBoundary>
               )}
               {activeTab === 'workplace' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view || moduleAccess['team']?.view) && (

@@ -1244,8 +1244,10 @@ export default function PublicChatPage() {
                   />
                   <button 
                     type="button" 
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    title={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>

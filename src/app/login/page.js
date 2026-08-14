@@ -226,7 +226,7 @@ function LoginFormContent() {
                 <div>SuPuja Creations</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
                   <span>Workplace Login</span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.222</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.225</span>
                 </div>
               </>
             )}
@@ -358,8 +358,10 @@ function LoginFormContent() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    title={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -463,8 +465,10 @@ function LoginFormContent() {
                     />
                     <button
                       type="button"
-                      onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
-                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowForgotNewPassword(prev => !prev)}
+                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                      title={showForgotNewPassword ? "Hide password" : "Show password"}
                     >
                       {showForgotNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>

@@ -411,8 +411,10 @@ export default function PublicUserManagement() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowResetPassword(!showResetPassword)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowResetPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    title={showResetPassword ? "Hide password" : "Show password"}
                   >
                     {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>

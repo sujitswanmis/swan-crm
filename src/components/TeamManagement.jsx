@@ -99,9 +99,9 @@ function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hoverBg, o
   );
 }
 
-export default function TeamManagement() {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function TeamManagement({ initialUsers = [] }) {
+  const [users, setUsers] = useState(initialUsers || []);
+  const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
@@ -242,9 +242,19 @@ export default function TeamManagement() {
   };
 
   useEffect(() => {
-    fetchUsers(true);
+    if (initialUsers && initialUsers.length > 0) {
+      setUsers(initialUsers);
+      setLoading(false);
+    }
+    fetchUsers(users.length === 0 && (!initialUsers || initialUsers.length === 0));
     fetchDepartments();
-  }, []);
+
+    // Safety timeout: Never stay stuck in loading state longer than 2.5 seconds
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [initialUsers]);
 
   const fetchDepartments = async () => {
     try {
@@ -264,14 +274,17 @@ export default function TeamManagement() {
   };
 
   const fetchUsers = async (showLoader = false) => {
-    if (showLoader) setLoading(true);
+    if (showLoader && users.length === 0) setLoading(true);
     try {
       const data = await getTeamMembers();
-      setUsers(data || []);
+      if (data && Array.isArray(data)) {
+        setUsers(data);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('fetchUsers error:', e);
+    } finally {
+      setLoading(false);
     }
-    if (showLoader) setLoading(false);
   };
 
   const updateRole = async (userId, newRole) => {
@@ -832,7 +845,7 @@ export default function TeamManagement() {
     return true;
   });
 
-  if (loading) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
+  if (loading && users.length === 0) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
 
   return (
     <div className="card" style={{ padding: '1.5rem' }}>
@@ -1413,8 +1426,10 @@ export default function TeamManagement() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowAddUserPassword(!showAddUserPassword)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowAddUserPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    title={showAddUserPassword ? "Hide password" : "Show password"}
                   >
                     {showAddUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -2024,8 +2039,10 @@ export default function TeamManagement() {
                 />
                 <button
                   type="button"
-                  onClick={() => setShowResetPassword(!showResetPassword)}
-                  style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setShowResetPassword(prev => !prev)}
+                  style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                  title={showResetPassword ? "Hide password" : "Show password"}
                 >
                   {showResetPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
