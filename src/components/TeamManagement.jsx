@@ -394,7 +394,7 @@ export default function TeamManagement() {
   if (loading) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
 
   return (
-    <div className="card" style={{ padding: '1.5rem', overflowX: 'auto' }}>
+    <div className="card" style={{ padding: '1.5rem' }}>
       <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem' }}>Team Roles & Permissions</h2>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
         Manage what your team members can see and do within the CRM. Only Admins can access this panel.
@@ -417,8 +417,9 @@ export default function TeamManagement() {
         </button>
       </div>
 
-      <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-        <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
+      <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+        <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+          <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
           <tr>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
@@ -485,12 +486,13 @@ export default function TeamManagement() {
                   <button 
                     onClick={() => handleAccessClick(user)}
                     disabled={user.role === 'admin' || user.role === 'Admin'}
-                    style={{ padding: '0.4rem 0.8rem', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: (user.role === 'admin' || user.role === 'Admin') ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                    className="btn-action-primary"
+                    style={{ cursor: (user.role === 'admin' || user.role === 'Admin') ? 'not-allowed' : 'pointer' }}
                   >
                     Manage Access
                   </button>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginTop: '0.25rem', color: 'var(--text-primary)' }}>
                     <input 
                       type="checkbox" 
                       checked={user.can_import_export} 
@@ -505,19 +507,19 @@ export default function TeamManagement() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button 
                     onClick={() => handleViewChatClick(user)}
-                    style={{ padding: '0.4rem 0.8rem', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                    className="btn-action-success"
                   >
                     View Chat
                   </button>
                   <button 
                     onClick={() => handleEditClick(user)}
-                    style={{ padding: '0.4rem 0.8rem', backgroundColor: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                    className="btn-action-secondary"
                   >
                     Edit User
                   </button>
                   <button 
                     onClick={() => setPasswordUser(user.user_id)}
-                    style={{ padding: '0.4rem 0.8rem', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                    className="btn-action-danger"
                   >
                     Change Password
                   </button>
@@ -527,6 +529,7 @@ export default function TeamManagement() {
           ))}
         </tbody>
       </table>
+      </div>
 
       {/* Confirmation Modal */}
       {confirmModal.show && (
@@ -690,7 +693,8 @@ export default function TeamManagement() {
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button 
                 onClick={() => setShowAddUserModal(false)}
-                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
               >
                 Cancel
               </button>
@@ -789,7 +793,8 @@ export default function TeamManagement() {
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button 
                 onClick={() => setEditingUser(null)}
-                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
               >
                 Cancel
               </button>
@@ -864,7 +869,7 @@ export default function TeamManagement() {
                     </div>
                     <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       {MODULES_CONFIG.filter(m => m.category === category).map(module => (
-                        <div key={module.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: accessForm[module.id]?.view ? '#f8fafc' : 'transparent', padding: '0.75rem', borderRadius: '6px', border: '1px solid', borderColor: accessForm[module.id]?.view ? '#cbd5e1' : 'transparent' }}>
+                        <div key={module.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: accessForm[module.id]?.view ? 'var(--nav-active-bg)' : 'transparent', padding: '0.75rem', borderRadius: '6px', border: '1px solid', borderColor: accessForm[module.id]?.view ? 'var(--border-light)' : 'transparent' }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
                             <input 
                               type="checkbox"
@@ -992,7 +997,8 @@ export default function TeamManagement() {
             <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', gap: '1rem', justifyContent: 'flex-end', zIndex: 10 }}>
               <button 
                 onClick={() => setAccessUser(null)}
-                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
               >
                 Cancel
               </button>
@@ -1047,7 +1053,8 @@ export default function TeamManagement() {
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button 
                 onClick={() => { setPasswordUser(null); setNewPassword(''); }}
-                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
               >
                 Cancel
               </button>

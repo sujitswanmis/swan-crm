@@ -210,7 +210,8 @@ export default function PublicUserManagement() {
         />
       </div>
 
-      <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+      <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 240px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+        <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
         <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
           <tr>
             <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Customer ID</th>
@@ -260,19 +261,19 @@ export default function PublicUserManagement() {
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button 
                       onClick={() => handleViewChatClick(user)}
-                      style={{ padding: '0.4rem 0.8rem', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                      className="btn-action-success"
                     >
                       View Chat
                     </button>
                     <button 
                       onClick={() => handleEditClick(user)}
-                      style={{ padding: '0.4rem 0.8rem', backgroundColor: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                      className="btn-action-secondary"
                     >
                       Edit User
                     </button>
                     <button 
                       onClick={() => setPasswordUser(user.user_id)}
-                      style={{ padding: '0.4rem 0.8rem', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}
+                      className="btn-action-danger"
                     >
                       Change Password
                     </button>
@@ -283,6 +284,7 @@ export default function PublicUserManagement() {
           )}
         </tbody>
       </table>
+      </div>
 
       {/* Confirmation Modal */}
       {confirmModal.show && (

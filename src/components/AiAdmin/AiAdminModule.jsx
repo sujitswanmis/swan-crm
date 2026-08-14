@@ -15,6 +15,7 @@ export default function AiAdminModule() {
   const [liveSynced, setLiveSynced] = useState(false);
   const [openDropdownUserId, setOpenDropdownUserId] = useState(null);
   const [modelSearch, setModelSearch] = useState("");
+  const [userSearchQuery, setUserSearchQuery] = useState("");
   const [customModelInput, setCustomModelInput] = useState("");
 
   // Knowledge Base State
@@ -178,13 +179,23 @@ export default function AiAdminModule() {
     setCustomModelInput("");
   };
 
+  // Filter users by search query
+  const filteredUsers = users.filter(user => {
+    if (!userSearchQuery.trim()) return true;
+    const q = userSearchQuery.toLowerCase();
+    const name = (user.name || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const role = (user.role || '').toLowerCase();
+    return name.includes(q) || email.includes(q) || role.includes(q);
+  });
+
   if (loading) {
     return <PremiumProgressLoader message="Loading AI Stats" active={loading} />;
   }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1200px' }}>
-      <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
             <Bot size={24} />
@@ -213,8 +224,58 @@ export default function AiAdminModule() {
         </div>
       </div>
 
-      <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'visible' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      {/* User Search Bar Container */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ position: 'relative', flex: '1', maxWidth: '380px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', zIndex: 5, pointerEvents: 'none' }} />
+          <input 
+            type="text" 
+            placeholder="Search by name, email, or role..." 
+            value={userSearchQuery}
+            onChange={(e) => setUserSearchQuery(e.target.value)}
+            className="search-input-field"
+            style={{
+              width: '100%',
+              paddingLeft: '2.85rem',
+              paddingRight: '2.5rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              background: 'var(--bg-surface)',
+              color: 'var(--text-primary)',
+              fontSize: '0.88rem',
+              outline: 'none',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}
+          />
+          {userSearchQuery && (
+            <button 
+              onClick={() => setUserSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: '0.75rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+              title="Clear search"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+          Showing {filteredUsers.length} of {users.length} users
+        </div>
+      </div>
+
+      <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
+        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Employee</th>
@@ -227,7 +288,7 @@ export default function AiAdminModule() {
             </tr>
           </thead>
           <tbody>
-            {users.map(user => {
+            {filteredUsers.map(user => {
               const usagePercent = Math.min(100, Math.round((user.total_tokens / user.token_limit) * 100)) || 0;
               const isDanger = usagePercent >= 90;
               const isWarning = usagePercent >= 75 && usagePercent < 90;
@@ -527,9 +588,11 @@ export default function AiAdminModule() {
                 </tr>
               );
             })}
-            {users.length === 0 && (
+            {filteredUsers.length === 0 && (
               <tr>
-                <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No users found.</td>
+                <td colSpan="7" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  {userSearchQuery ? `No users found matching "${userSearchQuery}"` : "No users found."}
+                </td>
               </tr>
             )}
           </tbody>

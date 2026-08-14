@@ -1355,7 +1355,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       {/* Main Content Area */}
       <main className="main-content">
         {/* Top Header */}
-        <header className="top-header" style={{ position: 'relative' }}>
+        <header className="top-header" style={{ position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
           {isSyncing && (
             <div 
               className="sync-progress-bar" 
