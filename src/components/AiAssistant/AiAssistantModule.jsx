@@ -8,10 +8,24 @@ import remarkGfm from 'remark-gfm';
 export default function AiAssistantModule({ userRole, userId, lastScreenCapture }) {
   // Session State
   const [sessions, setSessions] = useState([
-    { id: '1', title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am New Swan AI. How can I assist you with your tasks today?' }] }
+    { id: '1', title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am AI Chatbot. How can I assist you with your tasks today?' }] }
   ]);
   const [currentSessionId, setCurrentSessionId] = useState('1');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsSidebarOpen(false);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState(null);
@@ -651,16 +665,28 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   };
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%', background: '#ffffff', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100%', width: '100%', background: '#ffffff', overflow: 'hidden', position: 'relative' }}>
       
+      {/* Mobile Sidebar Overlay / Backdrop */}
+      {isMobile && isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 998, backdropFilter: 'blur(2px)' }}
+        />
+      )}
+
       {/* Sidebar - ChatGPT Style */}
       <div style={{ 
         width: isSidebarOpen ? '280px' : '0px', 
         background: '#f9f9f9', 
-        borderRight: '1px solid #e5e5e5', 
+        borderRight: isSidebarOpen && !isMobile ? '1px solid #e5e5e5' : 'none', 
         display: 'flex', 
         flexDirection: 'column',
-        transition: 'width 0.3s ease',
+        position: isMobile ? 'fixed' : 'relative',
+        top: 0, bottom: 0, left: 0,
+        zIndex: isMobile ? 999 : 'auto',
+        boxShadow: isMobile && isSidebarOpen ? '4px 0 20px rgba(0,0,0,0.15)' : 'none',
+        transition: 'all 0.3s ease',
         overflow: 'hidden',
         flexShrink: 0
       }}>
@@ -699,7 +725,12 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               borderRadius: '8px'
             }}>
               <button 
-                onClick={() => !showTrash && setCurrentSessionId(session.id)}
+                onClick={() => {
+                  if (!showTrash) {
+                    setCurrentSessionId(session.id);
+                    if (isMobile) setIsSidebarOpen(false);
+                  }
+                }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
                   flex: 1, background: 'transparent',
@@ -776,7 +807,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', background: isDragging ? '#f0fdf4' : 'transparent', transition: 'background 0.2s' }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', width: '100%', minWidth: 0, background: isDragging ? '#f0fdf4' : 'transparent', transition: 'background 0.2s' }}
       >
         {!isHistoryLoaded ? (
           <PremiumProgressLoader message="Loading Chat History" active={!isHistoryLoaded} />
@@ -792,28 +823,28 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         )}
         
         {/* Header */}
-        <div style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: '0.25rem' }}
             >
               <Menu size={20} />
             </button>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0, color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Bot size={22} color="#8b5cf6" /> New Swan AI
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Bot size={22} color="#8b5cf6" /> AI Chatbot
             </h2>
           </div>
           
           {/* Voice Settings & Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <select 
                 value={selectedVoice} 
                 onChange={(e) => setSelectedVoice(e.target.value)}
                 style={{ 
                   appearance: 'none', background: '#f9f9f9', border: '1px solid #ddd', 
-                  borderRadius: '20px', padding: '0.4rem 2rem 0.4rem 1rem', fontSize: '0.8rem', 
+                  borderRadius: '20px', padding: '0.35rem 1.75rem 0.35rem 0.75rem', fontSize: '0.75rem', 
                   color: '#555', cursor: 'pointer', outline: 'none' 
                 }}
               >
@@ -824,7 +855,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 <option value="fable">Fable (Expressive)</option>
                 <option value="shimmer">Shimmer (Clear Female)</option>
               </select>
-              <Settings2 size={12} color="#888" style={{ position: 'absolute', right: '0.75rem', pointerEvents: 'none' }} />
+              <Settings2 size={12} color="#888" style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none' }} />
             </div>
 
             {assignedModels.length > 0 && (
@@ -834,7 +865,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   onChange={(e) => setSelectedAiModel(e.target.value)}
                   style={{ 
                     appearance: 'none', background: '#eef2ff', border: '1px solid #c7d2fe', 
-                    borderRadius: '20px', padding: '0.4rem 2rem 0.4rem 1rem', fontSize: '0.8rem', 
+                    borderRadius: '20px', padding: '0.35rem 1.75rem 0.35rem 0.75rem', fontSize: '0.75rem', 
                     color: '#4338ca', cursor: 'pointer', outline: 'none', fontWeight: 500
                   }}
                   title="Select AI Model"
@@ -843,7 +874,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                     <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
-                <Bot size={12} color="#4338ca" style={{ position: 'absolute', right: '0.75rem', pointerEvents: 'none' }} />
+                <Bot size={12} color="#4338ca" style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none' }} />
               </div>
             )}
             
@@ -851,20 +882,20 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               onClick={toggleVoiceSession}
               className={isVoiceSession ? "pulse" : ""}
               style={{ 
-                display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderRadius: '20px',
+                display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', borderRadius: '20px',
                 background: isVoiceSession ? '#ef4444' : '#f0f0f0',
-                color: isVoiceSession ? 'white' : '#444', border: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500, transition: 'all 0.2s'
+                color: isVoiceSession ? 'white' : '#444', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.2s'
               }}
             >
-              {isVoiceSession ? <PhoneOff size={16} /> : <PhoneCall size={16} />}
+              {isVoiceSession ? <PhoneOff size={14} /> : <PhoneCall size={14} />}
               {isVoiceSession ? 'Voice Active' : 'Start Voice Mode'}
             </button>
           </div>
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '2rem 1rem', paddingBottom: '140px' }}>
-          <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 0.75rem', paddingBottom: '140px', width: '100%', minWidth: 0 }}>
+          <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', minWidth: 0 }}>
             {messages.length === 1 && messages[0].role === 'ai' && (
                <div style={{ textAlign: 'center', padding: '4rem 0', color: '#888' }}>
                   <Sparkles size={48} style={{ opacity: 0.2, margin: '0 auto 1rem auto' }} />
@@ -873,7 +904,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             )}
             
             {messages.map((msg, index) => (
-              <div key={index} style={{ display: 'flex', gap: '1.5rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+              <div key={index} style={{ display: 'flex', gap: '1rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', width: '100%', minWidth: 0 }}>
                 <div style={{ 
                   width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   background: msg.role === 'user' ? '#e5e5e5' : '#8b5cf6',
@@ -884,11 +915,11 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 </div>
                 
                 <div style={{ 
-                  maxWidth: msg.role === 'ai' ? '100%' : '85%', fontSize: '1rem', lineHeight: '1.6', color: '#333',
+                  maxWidth: msg.role === 'ai' ? '100%' : '85%', minWidth: 0, fontSize: '0.95rem', lineHeight: '1.6', color: '#333',
                   background: msg.role === 'user' ? '#f4f4f4' : 'transparent',
-                  padding: msg.role === 'user' ? '1rem 1.25rem' : '0.25rem 0',
-                  borderRadius: msg.role === 'user' ? '1.5rem' : '0',
-                  borderBottomRightRadius: msg.role === 'user' ? '0.5rem' : '1.5rem',
+                  padding: msg.role === 'user' ? '0.85rem 1.1rem' : '0.25rem 0',
+                  borderRadius: msg.role === 'user' ? '1.25rem' : '0',
+                  borderBottomRightRadius: msg.role === 'user' ? '0.35rem' : '1.25rem',
                   overflowX: 'auto', position: 'relative'
                 }}>
                   {msg.role === 'ai' ? (
@@ -898,9 +929,23 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       displayText = displayText.replace(/<speak>[\s\S]*?<\/speak>/gi, '').trim();
                       
                       return (
-                        <div>
-                          <div className="markdown-body">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <div style={{ width: '100%', minWidth: 0 }}>
+                          <div className="markdown-body" style={{ width: '100%', minWidth: 0, overflowX: 'hidden' }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                table: ({ children }) => (
+                                  <div className="ai-table-scroll">
+                                    <table>{children}</table>
+                                  </div>
+                                ),
+                                pre: ({ children }) => (
+                                  <pre style={{ maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                    {children}
+                                  </pre>
+                                )
+                              }}
+                            >
                               {displayText}
                             </ReactMarkdown>
                           </div>
@@ -922,7 +967,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       );
                     })()
                   ) : editingIndex === index ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: '250px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: '220px' }}>
                       <textarea 
                         value={editPrompt} 
                         onChange={(e) => setEditPrompt(e.target.value)} 
@@ -935,7 +980,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       </div>
                     </div>
                   ) : (
-                    <div style={{ position: 'relative', paddingRight: '20px' }}>
+                    <div style={{ position: 'relative', paddingRight: '20px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                       {msg.content}
                       <button 
                         onClick={() => { setEditingIndex(index); setEditPrompt(msg.content); }}
@@ -958,22 +1003,22 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                     <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {msg.attachmentsData.map((att, i) => (
                          <div key={i} style={{ padding: '0.5rem', background: 'white', border: '1px solid #ddd', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                           {att.type === 'image' ? (
-                             <>
-                               <img 
-                                 src={att.url} 
-                                 alt={att.name} 
-                                 onClick={() => openFullScreen(att.url)}
-                                 style={{ maxWidth: '200px', maxHeight: '200px', objectFit: 'contain', borderRadius: '4px', cursor: 'zoom-in' }} 
-                               />
-                               <span style={{ fontSize: '0.75rem', color: '#666', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
-                             </>
-                           ) : (
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                               <Paperclip size={14} />
-                               <span style={{ fontSize: '0.8rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
-                             </div>
-                           )}
+                            {att.type === 'image' ? (
+                              <>
+                                <img 
+                                  src={att.url} 
+                                  alt={att.name} 
+                                  onClick={() => openFullScreen(att.url)}
+                                  style={{ maxWidth: '200px', maxHeight: '200px', objectFit: 'contain', borderRadius: '4px', cursor: 'zoom-in' }} 
+                                />
+                                <span style={{ fontSize: '0.75rem', color: '#666', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
+                              </>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Paperclip size={14} />
+                                <span style={{ fontSize: '0.8rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
+                              </div>
+                            )}
                          </div>
                       ))}
                     </div>
@@ -1008,10 +1053,11 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         {/* Floating Input Area */}
         <div style={{ 
           position: 'absolute', bottom: 0, left: 0, right: 0, 
-          background: 'linear-gradient(to top, white 80%, rgba(255,255,255,0))', 
-          padding: '2rem 1rem 1.5rem 1rem' 
+          background: 'linear-gradient(to top, white 85%, rgba(255,255,255,0))', 
+          padding: '1.5rem 0.75rem max(1rem, env(safe-area-inset-bottom)) 0.75rem',
+          maxWidth: '100%'
         }}>
-          <div style={{ maxWidth: '800px', margin: '0 auto', position: 'relative' }}>
+          <div style={{ maxWidth: '800px', margin: '0 auto', position: 'relative', width: '100%' }}>
             
             {/* Attachments Preview */}
             {attachments.length > 0 && (
@@ -1039,27 +1085,27 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             <form 
               onSubmit={handleSubmit} 
               style={{ 
-                background: '#f4f4f4', borderRadius: '24px', padding: '0.5rem', 
-                display: 'flex', alignItems: 'flex-end', gap: '0.5rem',
-                border: '1px solid transparent', transition: 'border 0.2s'
+                background: '#f4f4f4', borderRadius: '24px', padding: '0.4rem 0.5rem', 
+                display: 'flex', alignItems: 'flex-end', gap: '0.35rem',
+                border: '1px solid transparent', transition: 'border 0.2s', width: '100%'
               }}
               onFocus={(e) => e.currentTarget.style.borderColor = '#ccc'}
               onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}
             >
               
               {/* Left Tools */}
-              <div style={{ display: 'flex', gap: '0.25rem', paddingBottom: '0.25rem', paddingLeft: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.15rem', paddingBottom: '0.2rem', paddingLeft: '0.15rem' }}>
                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.txt,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" />
                 <button 
                   type="button" onClick={() => fileInputRef.current?.click()}
-                  style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   title="Attach File"
                 >
                   <Paperclip size={18} />
                 </button>
                 <button 
                   type="button" onClick={takeScreenshot}
-                  style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   title="Capture Screen"
                 >
                   <Camera size={18} />
@@ -1070,11 +1116,11 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               <textarea 
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder={isVoiceSession ? "Voice Active... Speak now" : "Message New Swan AI..."}
+                placeholder={isVoiceSession ? "Voice Active... Speak now" : "Message AI Chatbot..."}
                 style={{ 
-                  flex: 1, padding: '0.75rem 0.5rem', background: 'transparent', 
-                  border: 'none', outline: 'none', fontSize: '1rem', color: '#333',
-                  resize: 'none', minHeight: '44px', maxHeight: '150px', fontFamily: 'inherit'
+                  flex: 1, padding: '0.65rem 0.4rem', background: 'transparent', 
+                  border: 'none', outline: 'none', fontSize: '0.95rem', color: '#333',
+                  resize: 'none', minHeight: '40px', maxHeight: '140px', fontFamily: 'inherit'
                 }}
                 rows={1}
                 onKeyDown={(e) => {
@@ -1083,10 +1129,10 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               />
               
               {/* Right Tools */}
-              <div style={{ display: 'flex', gap: '0.25rem', paddingBottom: '0.25rem', paddingRight: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.15rem', paddingBottom: '0.2rem', paddingRight: '0.15rem' }}>
                 <button 
                   type="button" onClick={() => toggleListening(null)}
-                  style={{ width: '36px', height: '36px', borderRadius: '50%', background: isListening ? '#ef4444' : 'transparent', color: isListening ? 'white' : '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: isListening ? '#ef4444' : 'transparent', color: isListening ? 'white' : '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                 >
                   {isListening ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
@@ -1094,7 +1140,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   type="submit" 
                   disabled={(!prompt.trim() && attachments.length === 0) || isTyping}
                   style={{ 
-                    width: '36px', height: '36px', borderRadius: '50%', 
+                    width: '34px', height: '34px', borderRadius: '50%', 
                     background: (!prompt.trim() && attachments.length === 0) || isTyping ? '#e5e5e5' : '#8b5cf6', 
                     color: 'white', border: 'none', cursor: ((!prompt.trim() && attachments.length === 0) || isTyping) ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s'
@@ -1104,7 +1150,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 </button>
               </div>
             </form>
-            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#888', marginTop: '0.5rem' }}>
+            <div style={{ textAlign: 'center', fontSize: '0.72rem', color: '#888', marginTop: '0.35rem' }}>
               AI can make mistakes. Check important info.
             </div>
           </div>

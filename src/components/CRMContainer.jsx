@@ -428,46 +428,33 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           setRawLeads(unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
         }
 
-        // 3. Fetch notes in background batches of 3
-        let loadedNotes = [];
+        // 3. Fetch recent notes in one fast targeted query (top 5,000 recent notes) to populate computed summary fields
         try {
-          const { count: notesCount, error: notesCountError } = await supabase
+          const { data: recentNotes, error: notesError } = await supabase
             .from('lead_notes')
-            .select('*', { count: 'exact', head: true });
+            .select('id, lead_id, created_at, note_text, created_by')
+            .order('created_at', { ascending: false })
+            .limit(5000);
           
-          if (!notesCountError && notesCount) {
-            const notesPageSize = 1000;
-            const numNotesPages = Math.ceil(notesCount / notesPageSize);
-            const notesPages = Array.from({ length: numNotesPages }, (_, i) => i);
-            const notesBatchSize = 3;
-            
-            for (let i = 0; i < notesPages.length; i += notesBatchSize) {
-              const batch = notesPages.slice(i, i + notesBatchSize);
-              const batchResults = await Promise.all(batch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
-              for (const data of batchResults) {
-                loadedNotes = loadedNotes.concat(data);
+          if (!notesError && recentNotes) {
+            const notesMap = {};
+            for (const note of recentNotes) {
+              if (!notesMap[note.lead_id]) {
+                notesMap[note.lead_id] = [];
               }
+              notesMap[note.lead_id].push(note);
             }
+
+            setRawLeads(prev => {
+              return prev.map(lead => ({
+                ...lead,
+                lead_notes: notesMap[lead.id] || lead.lead_notes || []
+              })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            });
           }
         } catch (notesErr) {
           console.error("Failed to fetch lead notes:", notesErr);
         }
-
-        // 4. Merge leads and notes in memory
-        const notesMap = {};
-        for (const note of loadedNotes) {
-          if (!notesMap[note.lead_id]) {
-            notesMap[note.lead_id] = [];
-          }
-          notesMap[note.lead_id].push(note);
-        }
-
-        setRawLeads(prev => {
-          return prev.map(lead => ({
-            ...lead,
-            lead_notes: notesMap[lead.id] || []
-          })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        });
 
       } catch (err) {
         console.error("Lead sync failed:", err);
@@ -745,40 +732,71 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   });
 
   const prevDueCount = useRef(dueFollowUps.length);
+  const notifiedFollowUpKeysRef = useRef(new Set());
+  const notificationAudioRef = useRef(null);
+
+  // Sync browser document title for SuPuja Creations & AI Chatbot
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = activeTab === 'ai' ? 'AI Chatbot | SuPuja Creations' : 'SuPuja Creations';
+    }
+  }, [activeTab]);
 
   useEffect(() => {
-    // If sync or initial lead loading is active, update baseline ref without playing audio
+    const currentDueKeys = dueFollowUps.map(lead => `${lead.id}:${lead.follow_up_date}`);
+
+    // If sync or initial lead loading is active, update baseline keys without playing audio
     if (isSyncing || loadingLeads) {
+      currentDueKeys.forEach(k => notifiedFollowUpKeysRef.current.add(k));
       prevDueCount.current = dueFollowUps.length;
       return;
     }
 
-    // First check after sync finishes — establish baseline count without playing sound
+    // First check after sync finishes — establish baseline count and keys without playing sound
     if (!initialSyncFinishedRef.current) {
       initialSyncFinishedRef.current = true;
+      currentDueKeys.forEach(k => notifiedFollowUpKeysRef.current.add(k));
       prevDueCount.current = dueFollowUps.length;
       return;
     }
 
-    // If the number of due follow-ups genuinely increases after sync, play notification sound
-    if (dueFollowUps.length > prevDueCount.current) {
+    // Check for genuinely NEW due follow-up items after initial load baseline
+    let hasNewNotification = false;
+    for (const key of currentDueKeys) {
+      if (!notifiedFollowUpKeysRef.current.has(key)) {
+        notifiedFollowUpKeysRef.current.add(key);
+        hasNewNotification = true;
+      }
+    }
+
+    if (hasNewNotification) {
       try {
         let playedCustom = false;
         
+        // Stop any currently playing notification audio instance to avoid overlapping sound
+        if (notificationAudioRef.current) {
+          try {
+            notificationAudioRef.current.pause();
+            notificationAudioRef.current.currentTime = 0;
+          } catch (e) {}
+        }
+
         // Try to load custom sound from config
         const savedConfig = localStorage.getItem('crm_config');
         if (savedConfig) {
           const config = JSON.parse(savedConfig);
           if (config.alertSound) {
             const audio = new Audio(config.alertSound);
+            notificationAudioRef.current = audio;
             
-            // Handle custom duration logic if specified
             if (config.alertDuration && !isNaN(config.alertDuration)) {
               const durationMs = parseInt(config.alertDuration) * 1000;
               audio.play().then(() => {
                 setTimeout(() => {
-                  audio.pause();
-                  audio.currentTime = 0;
+                  try {
+                    audio.pause();
+                    audio.currentTime = 0;
+                  } catch (e) {}
                 }, durationMs);
               }).catch(() => { /* Browser blocked auto-play */ });
             } else {
@@ -813,7 +831,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       }
     }
     prevDueCount.current = dueFollowUps.length;
-  }, [dueFollowUps.length, isSyncing, loadingLeads]);
+  }, [dueFollowUps, isSyncing, loadingLeads]);
 
   if (userRole === 'customer') {
     return (
@@ -823,7 +841,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.4rem', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bot size={20} />
             </div>
-            <span style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700 }}>Swan Customer Assistant</span>
+            <span style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700 }}>SuPuja Customer Assistant</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
             <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>Logged in as {userName || 'Customer'}</span>
@@ -853,7 +871,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
             <Database size={24} style={{ flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>CRM Enterprise</span>
+              <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>SuPuja Creations</span>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', opacity: 0.7, letterSpacing: '0.03em' }}>v{pkg.version || '1.0.157'}</span>
             </div>
           </div>
@@ -885,11 +903,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               onClick={() => handleTabChange('ai')}
               className="nav-item"
               data-active={activeTab === 'ai'}
-              title={isSidebarCollapsed ? "New Swan AI" : undefined}
+              title={isSidebarCollapsed ? "AI Chatbot" : undefined}
               style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
             >
               <Bot size={20} style={{ flexShrink: 0 }} />
-              <span>New Swan AI</span>
+              <span>AI Chatbot</span>
             </button>
           )}
 

@@ -1355,4 +1355,27 @@ table th:hover, .table-header-cell:hover {
   border: none;
 }
 
+/* Responsive AI Markdown Tables */
+.ai-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-light, #e2e8f0);
+}
+
+.ai-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.ai-table-scroll th,
+.ai-table-scroll td {
+  white-space: nowrap;
+}
+
 

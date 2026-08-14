@@ -733,88 +733,6 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     }
   }, [stageFilter]);
 
-  useEffect(() => {
-    const currentSig = getSignature(data);
-    if (currentSig === lastProcessedInitialDataRef.current) return;
-
-    lastProcessedInitialDataRef.current = currentSig;
-    if (onLeadsChange) {
-      onLeadsChange(data);
-    }
-  }, [data]);
-
-  useEffect(() => {
-    // Advanced Realtime Subscription — leads table + lead_notes table
-    const channel = supabase
-      .channel('realtime-crm-v2')
-
-      // ── leads INSERT ─────────────────────────────────────────────────────────
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
-        setData((current) => {
-          if (current.some(item => item.id === payload.new.id)) return current;
-          return processLeads([{ ...payload.new, lead_notes: [] }, ...current]);
-        });
-      })
-
-      // ── leads UPDATE ─────────────────────────────────────────────────────────
-      // Preserve lead_notes (they live in a separate table, not in payload.new)
-      // and re-run processLeads so ALL computed columns stay accurate
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
-        setData((current) => current.map(item => {
-          if (item.id !== payload.new.id) return item;
-          const mergedRaw = { ...item, ...payload.new, lead_notes: item.lead_notes || [] };
-          return processLeads([mergedRaw])[0];
-        }));
-      })
-
-      // ── leads DELETE ─────────────────────────────────────────────────────────
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
-        setData((current) => current.filter(item => item.id !== payload.old.id));
-      })
-
-      // ── lead_notes INSERT ────────────────────────────────────────────────────
-      // This is the key fix: whenever ANY note is inserted (status change, manual
-      // remark, follow-up date) — update the matching lead's computed columns:
-      //   last_timestamp, last_status, latest_remark, latest_emp_name,
-      //   completion_count, last_follow_up_duration
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
-        const incoming = payload.new;
-        setData((current) => current.map(item => {
-          if (item.id !== incoming.lead_id) return item;
-
-          const existingNotes = item.lead_notes || [];
-          const incomingTime = new Date(incoming.created_at).getTime();
-
-          // Smart dedup: if there's an optimistic (fake) note with same text
-          // and author created within 30s, replace it with the real DB record
-          const optimisticIdx = existingNotes.findIndex(n =>
-            n.note_text === incoming.note_text &&
-            n.created_by === incoming.created_by &&
-            Math.abs(new Date(n.created_at).getTime() - incomingTime) < 30000
-          );
-
-          let updatedNotes;
-          if (optimisticIdx >= 0) {
-            // Swap optimistic note → real DB note (preserves correct UUID & timestamp)
-            updatedNotes = existingNotes.map((n, i) => i === optimisticIdx ? incoming : n);
-          } else {
-            // Brand-new note (e.g. added from LeadProfilePanel by another user)
-            updatedNotes = [...existingNotes, incoming];
-          }
-
-          const mergedRaw = { ...item, lead_notes: updatedNotes };
-          return processLeads([mergedRaw])[0];
-        }));
-      })
-
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [supabase]);
-
-
   const table = useReactTable({
     data,
     columns: finalColumns,
@@ -852,6 +770,9 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         setData((current) => {
           return current.map(item => item.id === processedLead.id ? { ...item, ...processedLead } : item);
         });
+        if (onLeadsChange) {
+          onLeadsChange(processedLead);
+        }
       }
     }
   });
