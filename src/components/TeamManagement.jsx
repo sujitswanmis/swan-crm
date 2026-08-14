@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus } from '@/app/actions/team';
-import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key } from 'lucide-react';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus, deleteUserAdmin } from '@/app/actions/team';
+import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
@@ -151,6 +151,26 @@ export default function TeamManagement() {
     currentValue: null,
     userName: ''
   });
+
+  const [deleteModal, setDeleteModal] = useState({
+    show: false,
+    userId: null,
+    userName: ''
+  });
+  const [deletingUser, setDeletingUser] = useState(false);
+
+  const handleConfirmDeleteUser = async () => {
+    if (!deleteModal.userId) return;
+    setDeletingUser(true);
+    const result = await deleteUserAdmin(deleteModal.userId);
+    setDeletingUser(false);
+    if (result.success) {
+      setDeleteModal({ show: false, userId: null, userName: '' });
+      fetchUsers();
+    } else {
+      alert("Error deleting user: " + result.error);
+    }
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -878,6 +898,15 @@ export default function TeamManagement() {
                     borderColor="#fecdd3"
                     onClick={() => setPasswordUser(user.user_id)}
                   />
+                  <HoverIconButton
+                    icon={Trash2}
+                    label="Delete User"
+                    bg="#fee2e2"
+                    hoverBg="#fecaca"
+                    color="#991b1b"
+                    borderColor="#fecaca"
+                    onClick={() => setDeleteModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
+                  />
                 </div>
               </td>
             </tr>
@@ -939,6 +968,66 @@ export default function TeamManagement() {
                 }}
               >
                 Yes, {confirmModal.currentValue ? 'Unapprove' : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteModal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '430px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>🗑️</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem', color: '#dc2626' }}>Delete Employee Account</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to delete <strong>{deleteModal.userName}</strong>? This action will permanently remove their access and details.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button 
+                onClick={() => setDeleteModal({ show: false, userId: null, userName: '' })}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmDeleteUser}
+                disabled={deletingUser}
+                style={{ 
+                  padding: '0.6rem 1.5rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: '#dc2626',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: deletingUser ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {deletingUser ? 'Deleting...' : 'Yes, Delete Account'}
               </button>
             </div>
           </div>

@@ -471,3 +471,30 @@ export async function getRecentCalls(agentId) {
     .limit(10);
   return { data: data || [] };
 }
+
+export async function deleteUserAdmin(userId) {
+  const adminClient = getAdminClient();
+
+  // 1. Delete from user_roles
+  const { error: roleError } = await adminClient
+    .from('user_roles')
+    .delete()
+    .eq('user_id', userId);
+
+  if (roleError) {
+    console.error('Error deleting from user_roles:', roleError);
+    return { success: false, error: roleError.message };
+  }
+
+  // 2. Delete from auth.users via admin API
+  try {
+    const { error: authError } = await adminClient.auth.admin.deleteUser(userId);
+    if (authError) {
+      console.warn('Warning: Could not delete from auth.users:', authError.message);
+    }
+  } catch (err) {
+    console.warn('Auth user delete warning:', err);
+  }
+
+  return { success: true };
+}
