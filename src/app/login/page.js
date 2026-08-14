@@ -216,7 +216,7 @@ function LoginFormContent() {
             {mode === 'forgot' ? <KeyRound size={24} /> : <ShieldCheck size={26} />}
           </div>
           <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-            {mode === 'login' && 'Swan CRM Login'}
+            {mode === 'login' && 'SuPuja Creations Workplace Login'}
             {mode === 'register' && 'Create Employee Account'}
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
