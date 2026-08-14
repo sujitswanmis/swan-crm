@@ -46,12 +46,28 @@ export function PremiumProgressLoader({ message, active, loadedCount, totalCount
         pointerEvents: 'none'
       }} />
 
-      {/* Floating brand icon */}
+      {/* Floating brand logo */}
       <div className="float-icon-loader" style={{
-        fontSize: '2.2rem',
-        marginBottom: '1rem'
+        marginBottom: '1.1rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative'
       }}>
-        🦢
+        <img 
+          src="/supuja-logo.png" 
+          alt="SuPuja Creations" 
+          style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '14px',
+            objectFit: 'contain',
+            background: '#ffffff',
+            padding: '3px',
+            boxShadow: '0 10px 25px -5px rgba(67, 56, 202, 0.25), 0 4px 6px -2px rgba(0,0,0,0.05)',
+            border: '1px solid #e2e8f0'
+          }} 
+        />
       </div>
 
       {/* Message & Real Progress Indicator */}

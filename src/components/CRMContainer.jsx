@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -217,11 +217,17 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [currentTheme, setCurrentTheme] = useState('default');
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const themeMenuRef = useRef(null);
+  const notificationMenuRef = useRef(null);
+  const profileMenuRef = useRef(null);
+  const avatarInputRef = useRef(null);
+  const [userAvatar, setUserAvatar] = useState(null);
 
   // Load and apply theme
   useEffect(() => {
     const savedTheme = localStorage.getItem('crm-theme') || 'default';
     setCurrentTheme(savedTheme);
+    const savedAvatar = localStorage.getItem('crm_user_avatar');
+    if (savedAvatar) setUserAvatar(savedAvatar);
   }, []);
 
   useEffect(() => {
@@ -232,18 +238,51 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     localStorage.setItem('crm-theme', currentTheme);
   }, [currentTheme]);
 
-  // Click outside for theme menu
+  // Click outside for all top header dropdowns (desktop + mobile touch)
   useEffect(() => {
     function handleClickOutside(event) {
       if (themeMenuRef.current && !themeMenuRef.current.contains(event.target)) {
         setShowThemeMenu(false);
       }
+      if (notificationMenuRef.current && !notificationMenuRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setShowProfileMenu(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside, { passive: true });
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
     };
   }, []);
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Please select an image smaller than 2MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result;
+      if (base64) {
+        setUserAvatar(base64);
+        localStorage.setItem('crm_user_avatar', base64);
+        try {
+          if (userId) {
+            await supabase.from('user_roles').update({ avatar_url: base64 }).eq('user_id', userId);
+          }
+        } catch (err) {
+          console.warn('Could not sync avatar to DB:', err);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
   
   // Auto-track session for already logged-in users
   useEffect(() => {
@@ -870,7 +909,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
-            <Database size={24} style={{ flexShrink: 0 }} />
+            <img 
+              src="/supuja-logo.png" 
+              alt="SuPuja Creations" 
+              style={{ width: '30px', height: '30px', borderRadius: '7px', objectFit: 'contain', background: '#fff', padding: '2px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} 
+            />
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <span className="sidebar-title" style={{ fontWeight: 700, fontSize: '1.25rem', whiteSpace: 'nowrap' }}>SuPuja Creations</span>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', opacity: 0.7, letterSpacing: '0.03em' }}>v{pkg.version || '1.0.157'}</span>
@@ -1460,15 +1503,15 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
             {/* Admin Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Company:</span>
+              <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.25rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Company:</span>
                 <select 
                   value={adminCompanyFilter} 
                   onChange={(e) => setAdminCompanyFilter(e.target.value)}
-                  style={{ padding: '0.4rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', outline: 'none' }}
+                  style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' }}
                 >
                   <option value="All">All Companies</option>
                   <option value="NSMLR">NSMLR</option>
@@ -1476,50 +1519,88 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 </select>
               </div>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1rem' }}>
-                {userName ? userName.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{userName || 'User'}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{userRole}</span>
-              </div>
-            </div>
-            <div style={{ position: 'relative' }}>
-              <Bell 
-                size={20} 
-                style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} 
+
+            {/* Softphone Launcher Button (Square Button Box) */}
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('toggle-softphone'));
+              }}
+              className="header-icon-btn"
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'var(--bg-surface)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                transition: 'all 0.2s',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              }}
+              title="Toggle CRM Softphone"
+            >
+              <PhoneCall size={18} />
+            </button>
+
+            {/* Notifications Button (Square Button Box) */}
+            <div style={{ position: 'relative' }} ref={notificationMenuRef}>
+              <button
+                type="button"
                 onClick={() => setShowNotifications(!showNotifications)}
-              />
-              {dueFollowUps.length > 0 && (
-                <div style={{ position: 'absolute', top: '-6px', right: '-6px', backgroundColor: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: 'bold', width: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {dueFollowUps.length}
-                </div>
-              )}
+                className="header-icon-btn"
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: showNotifications ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: showNotifications ? 'var(--accent-color)' : 'var(--text-primary)',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  position: 'relative'
+                }}
+                title="Notifications"
+              >
+                <Bell size={18} />
+                {dueFollowUps.length > 0 && (
+                  <div style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: 'bold', width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-surface)' }}>
+                    {dueFollowUps.length}
+                  </div>
+                )}
+              </button>
+
               {showNotifications && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem', width: '320px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 1000, overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '320px', maxWidth: 'calc(100vw - 32px)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', zIndex: 10000, overflow: 'hidden' }}>
+                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                     Follow-up Tasks Due
                   </div>
                   <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                     {dueFollowUps.length === 0 ? (
-                      <div style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem' }}>No pending tasks</div>
+                      <div style={{ padding: '1.5rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem' }}>No pending tasks</div>
                     ) : (
                       dueFollowUps.map(lead => (
                         <div 
                           key={lead.id} 
                           style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           onClick={() => {
                             setActiveSearchQuery(lead.lead_ref_id || lead.name);
                             setActiveTab('leads');
                             setShowNotifications(false);
                           }}
                         >
-                          <div style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{lead.name} {lead.lead_ref_id && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({lead.lead_ref_id})</span>}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{lead.company || lead.phone}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#b45309', marginTop: '0.25rem' }}>
+                          <div style={{ fontWeight: '600', fontSize: '0.88rem', color: 'var(--text-primary)' }}>{lead.name} {lead.lead_ref_id && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({lead.lead_ref_id})</span>}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{lead.company || lead.phone}</div>
+                          <div style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '0.25rem' }}>
                             Due: {new Date(lead.follow_up_date).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
                           </div>
                         </div>
@@ -1530,16 +1611,34 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
             </div>
 
-            {/* Theme Switcher */}
+            {/* Theme Switcher Button (Square Button Box) */}
             <div style={{ position: 'relative' }} ref={themeMenuRef}>
-              <Palette 
-                size={20} 
-                style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} 
+              <button
+                type="button"
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
-              />
+                className="header-icon-btn"
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: showThemeMenu ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: showThemeMenu ? 'var(--accent-color)' : 'var(--text-primary)',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+                title="Change Color Theme"
+              >
+                <Palette size={18} />
+              </button>
+
               {showThemeMenu && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem', width: '200px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 1000, overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '220px', maxWidth: 'calc(100vw - 32px)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', zIndex: 10000, overflow: 'hidden' }}>
+                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                     Select Theme
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1564,11 +1663,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           fontSize: '0.85rem',
                           color: currentTheme === theme.id ? 'var(--accent-color)' : 'var(--text-primary)',
                           fontWeight: currentTheme === theme.id ? '600' : '400',
+                          transition: 'background 0.15s'
                         }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = currentTheme === theme.id ? 'var(--nav-active-bg)' : 'transparent'}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span>{theme.icon}</span>
-                          {theme.name}
+                          <span>{theme.name}</span>
                         </div>
                         {currentTheme === theme.id && <Check size={16} />}
                       </button>
@@ -1578,35 +1680,172 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
             </div>
 
-            <div style={{ position: 'relative' }}>
-              <div 
-                style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
+            {/* Unified User Profile Button with Photo & Dropdown */}
+            <div style={{ position: 'relative' }} ref={profileMenuRef}>
+              <button
+                type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.25rem 0.6rem 0.25rem 0.25rem',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: showProfileMenu ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  minHeight: '38px'
+                }}
+                title="User Profile"
               >
-                {(userRole === 'admin' || userRole === 'Admin') ? 'AD' : 'AG'}
-              </div>
+                {/* Avatar / Photo */}
+                <div style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--accent-color)',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '0.9rem',
+                  overflow: 'hidden',
+                  flexShrink: 0
+                }}>
+                  {userAvatar ? (
+                    <img src={userAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    userName ? userName.charAt(0).toUpperCase() : 'U'
+                  )}
+                </div>
+
+                {/* User Details (Desktop) */}
+                <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', marginRight: '0.25rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1 }}>{userName || 'User'}</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{userRole}</span>
+                </div>
+                <ChevronDown size={14} style={{ color: 'var(--text-secondary)' }} />
+              </button>
               
+              {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem', width: '250px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 1000, overflow: 'hidden' }}>
-                  <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)' }}>
-                    <div style={{ fontWeight: '600', fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>User Profile</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{userEmail || 'Loading email...'}</div>
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '280px',
+                  maxWidth: 'calc(100vw - 32px)',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '14px',
+                  boxShadow: '0 15px 30px -5px rgba(0,0,0,0.2)',
+                  zIndex: 10000,
+                  overflow: 'hidden'
+                }}>
+                  {/* Avatar Upload Card */}
+                  <div style={{ padding: '1.25rem 1rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                    <div style={{ position: 'relative', width: '64px', height: '64px', marginBottom: '0.75rem' }}>
+                      <div style={{
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--accent-color)',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.5rem',
+                        fontWeight: 'bold',
+                        overflow: 'hidden',
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+                        border: '3px solid var(--bg-surface)'
+                      }}>
+                        {userAvatar ? (
+                          <img src={userAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          userName ? userName.charAt(0).toUpperCase() : 'U'
+                        )}
+                      </div>
+
+                      {/* Camera Button */}
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        style={{
+                          position: 'absolute',
+                          bottom: '-2px',
+                          right: '-2px',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: 'var(--accent-color)',
+                          color: '#ffffff',
+                          border: '2px solid var(--bg-surface)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }}
+                        title="Upload Photo"
+                      >
+                        <Camera size={13} />
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={avatarInputRef} 
+                        onChange={handleAvatarUpload} 
+                        accept="image/*" 
+                        style={{ display: 'none' }} 
+                      />
+                    </div>
+
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)', marginBottom: '0.15rem' }}>{userName || 'User Profile'}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{userEmail || 'employee@supujacreations.com'}</div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      style={{
+                        marginTop: '0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        padding: '0.3rem 0.75rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'var(--accent-color)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem'
+                      }}
+                    >
+                      <Upload size={12} /> {userAvatar ? 'Change Photo' : 'Upload Photo'}
+                    </button>
                   </div>
+
+                  {/* Profile Details */}
                   <div style={{ padding: '0.5rem 0' }}>
-                    <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Role</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{userRole}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{userRole}</span>
                     </div>
                     {userCompany && (
-                      <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Company</span>
-                        <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{userCompany}</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{userCompany}</span>
                       </div>
                     )}
-                    <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '0.5rem' }}>
+
+                    <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
                       <button 
                         onClick={handleLogout}
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.85rem', fontWeight: '500', textAlign: 'left' }}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left', transition: 'background 0.15s' }}
                         onMouseOver={e => e.currentTarget.style.backgroundColor = '#fef2f2'}
                         onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
                       >

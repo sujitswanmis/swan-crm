@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2, ShieldAlert, GripHorizontal } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Minimize2, Maximize2, Loader2, ShieldAlert, GripHorizontal, X } from 'lucide-react';
 import Draggable from 'react-draggable';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client';
 
 export default function GlobalSoftphoneWidget({ userId }) {
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
   const supabase = createClient();
   const [plivoClient, setPlivoClient] = useState(null);
   const [connectionState, setConnectionState] = useState('offline'); // offline, connecting, online, error
@@ -56,74 +57,128 @@ export default function GlobalSoftphoneWidget({ userId }) {
     });
   }, [hangupCall]);
 
-  // Load saved position on mount
+  const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
+
+  // Dynamically calculate strict screen boundaries based on current window size and widget dimensions
+  const updateBounds = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const el = nodeRef.current;
+    const width = el?.offsetWidth || (isMinimized ? 280 : 380);
+    const height = el?.offsetHeight || (isMinimized ? 50 : 520);
+    const margin = 8; // Keep at least 8px padding from all viewport edges
+
+    const minX = -(window.innerWidth - width - 20 - margin);
+    const minY = -(window.innerHeight - height - 20 - margin);
+    const maxX = 20 - margin;
+    const maxY = 20 - margin;
+
+    setBounds({ left: minX, top: minY, right: maxX, bottom: maxY });
+  }, [isMinimized]);
+
   useEffect(() => {
-    const saved = localStorage.getItem('softphone_position');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, [updateBounds]);
+
+  // Load saved position, hidden state, and minimized state on mount
+  useEffect(() => {
+    try {
+      const savedPos = localStorage.getItem('softphone_position');
+      if (savedPos) {
+        const parsed = JSON.parse(savedPos);
         if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-          setPosition(parsed);
+          const width = isMinimized ? 280 : 380;
+          const height = isMinimized ? 50 : 520;
+          const margin = 8;
+          const minX = -(window.innerWidth - width - 20 - margin);
+          const minY = -(window.innerHeight - height - 20 - margin);
+          const maxX = 20 - margin;
+          const maxY = 20 - margin;
+          const safeX = Math.max(minX, Math.min(maxX, parsed.x));
+          const safeY = Math.max(minY, Math.min(maxY, parsed.y));
+          setPosition({ x: safeX, y: safeY });
         }
-      } catch (e) {
-        console.error("Error loading softphone position:", e);
       }
+      const savedHidden = localStorage.getItem('softphone_hidden');
+      if (savedHidden !== null) {
+        setIsHidden(savedHidden === 'true');
+      }
+      const savedMinimized = localStorage.getItem('softphone_minimized');
+      if (savedMinimized !== null) {
+        setIsMinimized(savedMinimized === 'true');
+      }
+    } catch (e) {
+      console.error("Error loading softphone preferences:", e);
     }
   }, []);
 
-  // Auto-adjust position when minimized state changes to prevent off-screen overflow
+  // Listen for custom events to toggle or open softphone from anywhere in the app
   useEffect(() => {
-    const height = isMinimized ? 50 : 520;
-    const width = isMinimized ? 280 : 360;
-    
-    const x_min = 40 + width - window.innerWidth;
-    const y_min = 40 + height - window.innerHeight;
-    
-    setPosition(prev => {
-      const clampedX = Math.max(x_min, Math.min(0, prev.x));
-      const clampedY = Math.max(y_min, Math.min(0, prev.y));
-      if (clampedX !== prev.x || clampedY !== prev.y) {
-        const newPos = { x: clampedX, y: clampedY };
-        localStorage.setItem('softphone_position', JSON.stringify(newPos));
-        return newPos;
-      }
-      return prev;
-    });
-  }, [isMinimized]);
-
-  // Keep widget within screen bounds on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      const height = isMinimized ? 50 : 520;
-      const width = isMinimized ? 280 : 360;
-      
-      const x_min = 40 + width - window.innerWidth;
-      const y_min = 40 + height - window.innerHeight;
-      
-      setPosition(prev => {
-        const clampedX = Math.max(x_min, Math.min(0, prev.x));
-        const clampedY = Math.max(y_min, Math.min(0, prev.y));
-        if (clampedX !== prev.x || clampedY !== prev.y) {
-          const newPos = { x: clampedX, y: clampedY };
-          localStorage.setItem('softphone_position', JSON.stringify(newPos));
-          return newPos;
-        }
-        return prev;
+    const handleOpen = () => {
+      setIsHidden(false);
+      localStorage.setItem('softphone_hidden', 'false');
+    };
+    const handleToggle = () => {
+      setIsHidden(prev => {
+        const next = !prev;
+        localStorage.setItem('softphone_hidden', String(next));
+        return next;
       });
     };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isMinimized]);
+    window.addEventListener('open-softphone', handleOpen);
+    window.addEventListener('toggle-softphone', handleToggle);
+    return () => {
+      window.removeEventListener('open-softphone', handleOpen);
+      window.removeEventListener('toggle-softphone', handleToggle);
+    };
+  }, []);
 
   const handleDrag = (e, data) => {
     setPosition({ x: data.x, y: data.y });
   };
 
   const handleDragStop = (e, data) => {
-    const newPos = { x: data.x, y: data.y };
-    setPosition(newPos);
-    localStorage.setItem('softphone_position', JSON.stringify(newPos));
+    const el = nodeRef.current;
+    const width = el?.offsetWidth || (isMinimized ? 280 : 380);
+    const height = el?.offsetHeight || (isMinimized ? 50 : 520);
+    const margin = 8;
+
+    const minX = -(window.innerWidth - width - 20 - margin);
+    const minY = -(window.innerHeight - height - 20 - margin);
+    const maxX = 20 - margin;
+    const maxY = 20 - margin;
+
+    const clampedX = Math.max(minX, Math.min(maxX, data.x));
+    const clampedY = Math.max(minY, Math.min(maxY, data.y));
+
+    const finalPos = { x: clampedX, y: clampedY };
+    setPosition(finalPos);
+    try {
+      localStorage.setItem('softphone_position', JSON.stringify(finalPos));
+    } catch (err) {
+      console.error("Error saving softphone position:", err);
+    }
+  };
+
+  const handleToggleMinimize = (e) => {
+    e?.stopPropagation?.();
+    setIsMinimized(prev => {
+      const next = !prev;
+      localStorage.setItem('softphone_minimized', String(next));
+      return next;
+    });
+  };
+
+  const handleHideWidget = (e) => {
+    e?.stopPropagation?.();
+    setIsHidden(true);
+    localStorage.setItem('softphone_hidden', 'true');
+  };
+
+  const handleUnhideWidget = () => {
+    setIsHidden(false);
+    localStorage.setItem('softphone_hidden', 'false');
   };
 
   // Fetch agent profile
@@ -422,11 +477,46 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const hasActiveInteraction = activeCall || incomingCall || activeSession;
 
+  // If user chose to hide the widget, render a persistent mini launcher pill (unless incoming call arrives)
+  if (isHidden && !incomingCall) {
+    return (
+      <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999 }}>
+        <button
+          type="button"
+          onClick={handleUnhideWidget}
+          style={{
+            background: connectionState === 'online' ? '#10b981' : 'var(--accent-color)',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '24px',
+            padding: '0.5rem 0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.82rem',
+            transition: 'transform 0.15s, box-shadow 0.15s'
+          }}
+          onMouseOver={e => e.currentTarget.style.transform = 'scale(1.04)'}
+          onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+          title="Click to open CRM Softphone"
+        >
+          <PhoneCall size={15} />
+          <span>Softphone</span>
+          <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: connectionState === 'online' ? '#ffffff' : 'rgba(255,255,255,0.7)' }} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <Draggable 
       nodeRef={nodeRef} 
       handle=".drag-handle" 
       position={position}
+      bounds={bounds}
       onDrag={handleDrag}
       onStop={handleDragStop}
     >
@@ -466,8 +556,23 @@ export default function GlobalSoftphoneWidget({ userId }) {
           <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>CRM Softphone</span>
           <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : 'var(--text-secondary)' }} />
         </div>
-        <div style={{ cursor: 'pointer' }} onClick={() => setIsMinimized(!isMinimized)}>
-          {isMinimized ? <Maximize2 size={16} color="var(--text-secondary)" /> : <Minimize2 size={16} color="var(--text-secondary)" />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <button 
+            type="button"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '4px', color: 'var(--text-secondary)' }} 
+            onClick={handleToggleMinimize}
+            title={isMinimized ? "Expand" : "Minimize"}
+          >
+            {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+          </button>
+          <button 
+            type="button"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '4px', color: 'var(--text-secondary)' }} 
+            onClick={handleHideWidget}
+            title="Hide Softphone"
+          >
+            <X size={16} />
+          </button>
         </div>
       </div>
 

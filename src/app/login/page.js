@@ -9,6 +9,7 @@ import {
   verifyPasswordResetOtpAndSetPassword 
 } from '@/app/actions/team';
 import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw } from 'lucide-react';
+import { PremiumProgressLoader } from '@/components/PremiumProgressLoader';
 
 const DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
@@ -212,11 +213,20 @@ function LoginFormContent() {
         
         {/* Logo / Header */}
         <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', borderRadius: '12px', background: '#e0e7ff', color: '#4338ca', marginBottom: '0.75rem' }}>
-            {mode === 'forgot' ? <KeyRound size={24} /> : <ShieldCheck size={26} />}
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.85rem' }}>
+            <img 
+              src="/supuja-logo.png" 
+              alt="SuPuja Creations" 
+              style={{ width: '76px', height: '76px', borderRadius: '16px', objectFit: 'contain', background: '#fff', padding: '4px', boxShadow: '0 10px 20px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', border: '1px solid #e2e8f0' }} 
+            />
           </div>
-          <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-            {mode === 'login' && 'SuPuja Creations Workplace Login'}
+          <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0, color: '#0f172a', lineHeight: 1.25 }}>
+            {mode === 'login' && (
+              <>
+                <div>SuPuja Creations</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem' }}>Workplace Login</div>
+              </>
+            )}
             {mode === 'register' && 'Create Employee Account'}
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
@@ -518,7 +528,11 @@ function LoginFormContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>}>
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
+        <PremiumProgressLoader message="Loading SuPuja Creations Workplace..." active={true} />
+      </div>
+    }>
       <LoginFormContent />
     </Suspense>
   );

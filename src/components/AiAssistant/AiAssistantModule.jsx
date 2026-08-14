@@ -673,7 +673,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   };
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%', background: '#ffffff', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', height: '100%', width: '100%', background: 'var(--bg-surface)', color: 'var(--text-primary)', overflow: 'hidden', position: 'relative' }}>
       
       {/* Mobile Sidebar Overlay / Backdrop */}
       {isMobile && isSidebarOpen && (
@@ -686,8 +686,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       {/* Sidebar - ChatGPT Style */}
       <div style={{ 
         width: isSidebarOpen ? '280px' : '0px', 
-        background: '#f9f9f9', 
-        borderRight: isSidebarOpen && !isMobile ? '1px solid #e5e5e5' : 'none', 
+        background: 'var(--bg-primary)', 
+        borderRight: isSidebarOpen && !isMobile ? '1px solid var(--border-light)' : 'none', 
         display: 'flex', 
         flexDirection: 'column',
         position: isMobile ? 'fixed' : 'relative',
@@ -703,9 +703,9 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             onClick={createNewSession}
             style={{ 
               width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', 
-              padding: '0.75rem 1rem', background: 'white', border: '1px solid #e5e5e5', 
-              borderRadius: '8px', cursor: 'pointer', fontWeight: 500, color: '#333',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+              padding: '0.75rem 1rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', 
+              borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
             }}
           >
             <Plus size={18} /> New Chat
@@ -714,12 +714,12 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#888' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {showTrash ? 'Recycle Bin' : 'Recent History'}
             </div>
             <button 
               onClick={() => setShowTrash(!showTrash)} 
-              style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center' }} 
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }} 
               title={showTrash ? "Back to Chats" : "Recycle Bin"}
             >
               {showTrash ? <MessageCircle size={14} /> : <Trash2 size={14} />}
@@ -729,7 +729,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
           {sessions.filter(s => showTrash ? s.isDeleted : !s.isDeleted).map(session => (
             <div key={session.id} style={{ 
               position: 'relative', display: 'flex', alignItems: 'center', width: '100%', gap: '0.25rem',
-              background: (!showTrash && currentSessionId === session.id) ? '#ececec' : 'transparent',
+              background: (!showTrash && currentSessionId === session.id) ? 'var(--nav-active-bg)' : 'transparent',
               borderRadius: '8px'
             }}>
               <button 
@@ -743,7 +743,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
                   flex: 1, background: 'transparent',
                   border: 'none', borderRadius: '8px', cursor: showTrash ? 'default' : 'pointer', textAlign: 'left',
-                  color: (!showTrash && currentSessionId === session.id) ? '#000' : '#444'
+                  color: (!showTrash && currentSessionId === session.id) ? 'var(--accent-color)' : 'var(--text-primary)',
+                  fontWeight: (!showTrash && currentSessionId === session.id) ? '600' : 'normal'
                 }}
               >
                 <MessageCircle size={16} style={{ flexShrink: 0 }} />
@@ -759,7 +760,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       if (e.key === 'Enter') saveTitle(session.id);
                       if (e.key === 'Escape') setRenamingSessionId(null);
                     }}
-                    style={{ flex: 1, border: '1px solid #8b5cf6', borderRadius: '4px', padding: '0.1rem 0.25rem', fontSize: '0.9rem', outline: 'none', background: 'white' }}
+                    style={{ flex: 1, border: '1px solid var(--accent-color)', borderRadius: '4px', padding: '0.1rem 0.25rem', fontSize: '0.9rem', outline: 'none', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                   />
                 ) : (
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem' }}>
@@ -831,16 +832,16 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         )}
         
         {/* Header */}
-        <div style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: '0.25rem' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.25rem' }}
             >
               <Menu size={20} />
             </button>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Bot size={22} color="#8b5cf6" /> AI Chatbot
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Bot size={22} color="var(--accent-color)" /> AI Chatbot
             </h2>
           </div>
           
@@ -851,9 +852,9 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 value={selectedVoice} 
                 onChange={(e) => setSelectedVoice(e.target.value)}
                 style={{ 
-                  appearance: 'none', background: '#f9f9f9', border: '1px solid #ddd', 
+                  appearance: 'none', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', 
                   borderRadius: '20px', padding: '0.35rem 1.75rem 0.35rem 0.75rem', fontSize: '0.75rem', 
-                  color: '#555', cursor: 'pointer', outline: 'none' 
+                  color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' 
                 }}
               >
                 <option value="alloy">Alloy (Neutral)</option>
@@ -863,7 +864,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 <option value="fable">Fable (Expressive)</option>
                 <option value="shimmer">Shimmer (Clear Female)</option>
               </select>
-              <Settings2 size={12} color="#888" style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none' }} />
+              <Settings2 size={12} style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none', color: 'var(--text-secondary)' }} />
             </div>
 
             {assignedModels.length > 0 && (
@@ -872,9 +873,9 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   value={selectedAiModel} 
                   onChange={(e) => setSelectedAiModel(e.target.value)}
                   style={{ 
-                    appearance: 'none', background: '#eef2ff', border: '1px solid #c7d2fe', 
+                    appearance: 'none', background: 'var(--nav-active-bg)', border: '1px solid var(--border-light)', 
                     borderRadius: '20px', padding: '0.35rem 1.75rem 0.35rem 0.75rem', fontSize: '0.75rem', 
-                    color: '#4338ca', cursor: 'pointer', outline: 'none', fontWeight: 500
+                    color: 'var(--accent-color)', cursor: 'pointer', outline: 'none', fontWeight: 600
                   }}
                   title="Select AI Model"
                 >
@@ -882,7 +883,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                     <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
-                <Bot size={12} color="#4338ca" style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none' }} />
+                <Bot size={12} style={{ position: 'absolute', right: '0.6rem', pointerEvents: 'none', color: 'var(--accent-color)' }} />
               </div>
             )}
             
@@ -891,8 +892,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               className={isVoiceSession ? "pulse" : ""}
               style={{ 
                 display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', borderRadius: '20px',
-                background: isVoiceSession ? '#ef4444' : '#f0f0f0',
-                color: isVoiceSession ? 'white' : '#444', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.2s'
+                background: isVoiceSession ? '#ef4444' : 'var(--bg-primary)',
+                color: isVoiceSession ? 'white' : 'var(--text-primary)', border: '1px solid var(--border-light)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.2s'
               }}
             >
               {isVoiceSession ? <PhoneOff size={14} /> : <PhoneCall size={14} />}
@@ -905,9 +906,9 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 0.75rem', paddingBottom: '140px', width: '100%', minWidth: 0 }}>
           <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', minWidth: 0 }}>
             {messages.length === 1 && messages[0].role === 'ai' && (
-               <div style={{ textAlign: 'center', padding: '4rem 0', color: '#888' }}>
+               <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-secondary)' }}>
                   <Sparkles size={48} style={{ opacity: 0.2, margin: '0 auto 1rem auto' }} />
-                  <h3 style={{ fontSize: '1.5rem', fontWeight: 500, color: '#444' }}>How can I help you today?</h3>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>How can I help you today?</h3>
                </div>
             )}
             
@@ -915,16 +916,17 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               <div key={index} style={{ display: 'flex', gap: '1rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', width: '100%', minWidth: 0 }}>
                 <div style={{ 
                   width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  background: msg.role === 'user' ? '#e5e5e5' : '#8b5cf6',
-                  color: msg.role === 'user' ? '#666' : 'white',
+                  background: msg.role === 'user' ? 'var(--accent-color)' : '#8b5cf6',
+                  color: 'white',
                   marginTop: '0.25rem'
                 }}>
                   {msg.role === 'user' ? <MessageSquare size={16} /> : <Bot size={18} />}
                 </div>
                 
                 <div style={{ 
-                  maxWidth: msg.role === 'ai' ? '100%' : '85%', minWidth: 0, fontSize: '0.95rem', lineHeight: '1.6', color: '#333',
-                  background: msg.role === 'user' ? '#f4f4f4' : 'transparent',
+                  maxWidth: msg.role === 'ai' ? '100%' : '85%', minWidth: 0, fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-primary)',
+                  background: msg.role === 'user' ? 'var(--bg-primary)' : 'transparent',
+                  border: msg.role === 'user' ? '1px solid var(--border-light)' : 'none',
                   padding: msg.role === 'user' ? '0.85rem 1.1rem' : '0.25rem 0',
                   borderRadius: msg.role === 'user' ? '1.25rem' : '0',
                   borderBottomRightRadius: msg.role === 'user' ? '0.35rem' : '1.25rem',
@@ -979,11 +981,11 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       <textarea 
                         value={editPrompt} 
                         onChange={(e) => setEditPrompt(e.target.value)} 
-                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #ccc', outline: 'none', resize: 'none', fontFamily: 'inherit' }} 
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', outline: 'none', resize: 'none', fontFamily: 'inherit', background: 'var(--bg-surface)', color: 'var(--text-primary)' }} 
                         rows={3} 
                       />
                       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                        <button onClick={() => setEditingIndex(null)} style={{ background: '#e5e5e5', color: '#333', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
+                        <button onClick={() => setEditingIndex(null)} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
                         <button onClick={() => saveEdit(index)} style={{ background: '#8b5cf6', color: 'white', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Save & Resend</button>
                       </div>
                     </div>
@@ -992,7 +994,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       {msg.content}
                       <button 
                         onClick={() => { setEditingIndex(index); setEditPrompt(msg.content); }}
-                        style={{ position: 'absolute', right: '-5px', top: '-5px', background: 'white', border: '1px solid #ddd', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666', opacity: 0.7 }}
+                        style={{ position: 'absolute', right: '-5px', top: '-5px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)', opacity: 0.8 }}
                         title="Edit Message"
                       >
                         <Pencil size={12} />
@@ -1001,7 +1003,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   )}
                   
                   {msg.timestamp && (
-                    <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.5rem', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.5rem', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   )}
@@ -1010,7 +1012,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   {msg.hasAttachments && msg.attachmentsData && (
                     <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {msg.attachmentsData.map((att, i) => (
-                         <div key={i} style={{ padding: '0.5rem', background: 'white', border: '1px solid #ddd', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                         <div key={i} style={{ padding: '0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                             {att.type === 'image' ? (
                               <>
                                 <img 
@@ -1019,10 +1021,10 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                                   onClick={() => openFullScreen(att.url)}
                                   style={{ maxWidth: '200px', maxHeight: '200px', objectFit: 'contain', borderRadius: '4px', cursor: 'zoom-in' }} 
                                 />
-                                <span style={{ fontSize: '0.75rem', color: '#666', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
                               </>
                             ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
                                 <Paperclip size={14} />
                                 <span style={{ fontSize: '0.8rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.name}>{att.name}</span>
                               </div>
@@ -1035,7 +1037,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   {msg.role === 'ai' && (
                     <button 
                       onClick={() => speak(msg.content)}
-                      style={{ marginTop: '0.5rem', background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', padding: '0' }}
+                      style={{ marginTop: '0.5rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', padding: '0' }}
                     >
                       <Volume2 size={14} /> Listen
                     </button>
@@ -1049,7 +1051,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#8b5cf6', color: 'white' }}>
                   <Bot size={18} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
                   <Loader2 size={16} className="spin" /> Thinking...
                 </div>
               </div>
@@ -1061,7 +1063,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         {/* Floating Input Area */}
         <div style={{ 
           position: 'absolute', bottom: 0, left: 0, right: 0, 
-          background: 'linear-gradient(to top, white 85%, rgba(255,255,255,0))', 
+          background: 'linear-gradient(to top, var(--bg-surface) 85%, transparent)', 
           padding: '1.5rem 0.75rem max(1rem, env(safe-area-inset-bottom)) 0.75rem',
           maxWidth: '100%'
         }}>
@@ -1071,7 +1073,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             {attachments.length > 0 && (
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap', paddingLeft: '1rem' }}>
                 {attachments.map((att, i) => (
-                  <div key={i} style={{ position: 'relative', border: '1px solid #e5e5e5', borderRadius: '8px', padding: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'white' }}>
+                  <div key={i} style={{ position: 'relative', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface)' }}>
                     {att.type === 'image' ? (
                       <img 
                         src={att.url} 
@@ -1079,8 +1081,8 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                         onClick={() => openFullScreen(att.url)}
                         style={{ width: '24px', height: '24px', objectFit: 'cover', borderRadius: '4px', cursor: 'zoom-in' }} 
                       />
-                    ) : ( <Paperclip size={16} color="#666" /> )}
-                    <span style={{ fontSize: '0.8rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                    ) : ( <Paperclip size={16} color="var(--text-secondary)" /> )}
+                    <span style={{ fontSize: '0.8rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>{att.name}</span>
                     <button onClick={() => removeAttachment(i)} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <X size={10} />
                     </button>
@@ -1093,12 +1095,12 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             <form 
               onSubmit={handleSubmit} 
               style={{ 
-                background: '#f4f4f4', borderRadius: '24px', padding: '0.4rem 0.5rem', 
+                background: 'var(--bg-primary)', borderRadius: '24px', padding: '0.4rem 0.5rem', 
                 display: 'flex', alignItems: 'flex-end', gap: '0.35rem',
-                border: '1px solid transparent', transition: 'border 0.2s', width: '100%'
+                border: '1px solid var(--border-light)', transition: 'border 0.2s', width: '100%'
               }}
-              onFocus={(e) => e.currentTarget.style.borderColor = '#ccc'}
-              onBlur={(e) => e.currentTarget.style.borderColor = 'transparent'}
+              onFocus={(e) => e.currentTarget.style.borderColor = 'var(--accent-color)'}
+              onBlur={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
             >
               
               {/* Left Tools */}
@@ -1106,14 +1108,14 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.txt,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" />
                 <button 
                   type="button" onClick={() => fileInputRef.current?.click()}
-                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   title="Attach File"
                 >
                   <Paperclip size={18} />
                 </button>
                 <button 
                   type="button" onClick={takeScreenshot}
-                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   title="Capture Screen"
                 >
                   <Camera size={18} />
@@ -1127,7 +1129,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 placeholder={isVoiceSession ? "Voice Active... Speak now" : "Message AI Chatbot..."}
                 style={{ 
                   flex: 1, padding: '0.65rem 0.4rem', background: 'transparent', 
-                  border: 'none', outline: 'none', fontSize: '0.95rem', color: '#333',
+                  border: 'none', outline: 'none', fontSize: '0.95rem', color: 'var(--text-primary)',
                   resize: 'none', minHeight: '40px', maxHeight: '140px', fontFamily: 'inherit'
                 }}
                 rows={1}
@@ -1140,7 +1142,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
               <div style={{ display: 'flex', gap: '0.15rem', paddingBottom: '0.2rem', paddingRight: '0.15rem' }}>
                 <button 
                   type="button" onClick={() => toggleListening(null)}
-                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: isListening ? '#ef4444' : 'transparent', color: isListening ? 'white' : '#666', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', background: isListening ? '#ef4444' : 'transparent', color: isListening ? 'white' : 'var(--text-secondary)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                 >
                   {isListening ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
@@ -1149,7 +1151,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   disabled={(!prompt.trim() && attachments.length === 0) || isTyping}
                   style={{ 
                     width: '34px', height: '34px', borderRadius: '50%', 
-                    background: (!prompt.trim() && attachments.length === 0) || isTyping ? '#e5e5e5' : '#8b5cf6', 
+                    background: (!prompt.trim() && attachments.length === 0) || isTyping ? 'var(--border-light)' : '#8b5cf6', 
                     color: 'white', border: 'none', cursor: ((!prompt.trim() && attachments.length === 0) || isTyping) ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s'
                   }}
@@ -1158,7 +1160,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 </button>
               </div>
             </form>
-            <div style={{ textAlign: 'center', fontSize: '0.72rem', color: '#888', marginTop: '0.35rem' }}>
+            <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
               AI can make mistakes. Check important info.
             </div>
           </div>
