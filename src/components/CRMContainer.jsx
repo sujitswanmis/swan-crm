@@ -1574,14 +1574,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   <div style={{
                     position: 'absolute',
                     top: '-6px',
-                    right: '-6px',
+                    right: '-8px',
                     backgroundColor: '#ef4444',
                     color: '#ffffff',
                     fontSize: '0.62rem',
                     fontWeight: 700,
                     minWidth: '18px',
                     height: '18px',
-                    padding: '0 4px',
+                    padding: '0 5px',
                     borderRadius: '10px',
                     display: 'flex',
                     alignItems: 'center',
@@ -1592,7 +1592,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     lineHeight: 1,
                     whiteSpace: 'nowrap'
                   }}>
-                    {dueFollowUps.length > 99 ? '99+' : dueFollowUps.length}
+                    {dueFollowUps.length}
                   </div>
                 )}
               </button>
