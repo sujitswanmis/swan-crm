@@ -1432,11 +1432,15 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}>
                 <h1 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0 }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
-                  {activeTab === 'leads' && 'Leads Database'}
+                  {activeTab === 'leads' && (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads')}
                   {activeTab === 'orders' && 'Order Management'}
                   {activeTab === 'mrp' && 'MRP System'}
                   {activeTab === 'mrp_against' && 'MRP Against'}
-                  {activeTab === 'recruiter' && 'Recruiter'}
+                  {activeTab === 'recruiter' && (
+                    recruiterFilterStage === 'dashboard' ? 'Recruiter Dashboard' :
+                    recruiterFilterStage === 'all_stages' ? 'Recruiter - All Stages' :
+                    recruiterFilterStage ? `Recruiter - ${recruiterFilterStage}` : 'Recruiter'
+                  )}
                   {activeTab === 'joining' && 'Joining Process'}
                   {activeTab === 'registration' && 'Client Registration'}
                   {activeTab === 'report' && 'Client Registered Report'}
@@ -1447,6 +1451,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   {activeTab === 'aicallcenter' && 'AI Call Center'}
                   {activeTab === 'team' && 'Team Management'}
                   {activeTab === 'workplace' && 'Universal Workplace (WMS)'}
+                  {activeTab === 'public_users' && 'Public Applicants'}
                   {activeTab === 'party' && 'Fully Managed Party Master'}
                   {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
                   {activeTab === 'location_master' && 'Central Location Master'}
@@ -1455,6 +1460,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   {activeTab === 'sms_config' && 'SMS Config'}
                   {activeTab === 'rcs_config' && 'RCS Config'}
                   {activeTab === 'email_config' && 'Email Config'}
+                  {activeTab === 'admin_message_config' && 'Admin Messaging Config'}
                   {activeTab === 'settings' && 'Enterprise Settings'}
                 </h1>
                 
