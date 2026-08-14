@@ -31,6 +31,7 @@ import PartyMasterModule from './Party/PartyMasterModule';
 import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
 import LocationManagementModule from './Location/LocationManagementModule';
 import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
+import EmailConfigModule from './EmailConfig/EmailConfigModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
@@ -2087,7 +2088,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
               {activeTab === 'rcs_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>RCS Configuration (Coming Soon)</h2><p>API setup and webhook configurations for RCS messaging.</p></div>}
-              {activeTab === 'email_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Email Configuration (Coming Soon)</h2><p>SMTP server and API key configuration for email campaigns.</p></div>}
+              {activeTab === 'email_config' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                <ErrorBoundary>
+                  <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} />
+                </ErrorBoundary>
+              )}
               {activeTab === 'admin_message_config' && (
                 <ErrorBoundary>
                   <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole} />

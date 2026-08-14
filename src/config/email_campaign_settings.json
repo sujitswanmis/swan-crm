@@ -1,0 +1,72 @@
+{
+  "smtp": {
+    "enabled": true,
+    "provider": "Custom SMTP",
+    "host": "",
+    "port": 587,
+    "secure": false,
+    "username": "",
+    "password": "",
+    "from_name": "SuPuja Creations Team",
+    "from_email": "",
+    "reply_to": "",
+    "signature": "Best regards,\nSuPuja Creations Team\nhttps://swanagro.in"
+  },
+  "templates": [
+    {
+      "id": "tpl_lead_welcome",
+      "category": "Sales Pipeline",
+      "template_name": "Lead Welcome & Introduction",
+      "subject": "Welcome to SuPuja Creations, {{name}}!",
+      "message_body": "Dear {{name}},\n\nThank you for reaching out to SuPuja Creations. We have received your inquiry for {{company}}.\n\nOur team is reviewing your requirements and your dedicated account representative {{rep_name}} will be in touch shortly.\n\nYour Reference ID: {{lead_ref_id}}\n\nWarm regards,\nSuPuja Creations Team",
+      "target_pipeline": "sales",
+      "target_stage": "01 - New Stage",
+      "created_at": "2026-08-14T23:32:28.216Z"
+    },
+    {
+      "id": "tpl_recruiter_interview",
+      "category": "HR & Recruitment",
+      "template_name": "Candidate Interview Invitation",
+      "subject": "Interview Invitation with SuPuja Creations - {{job_title}}",
+      "message_body": "Dear {{candidate_name}},\n\nWe are pleased to invite you for an interview round for the position of {{job_title}} at SuPuja Creations.\n\nInterview Details:\n- Role: {{job_title}}\n- Candidate Ref: {{candidate_id}}\n- Recruiter: {{recruiter_name}}\n\nPlease reply to this email to confirm your availability.\n\nBest regards,\nHR Department\nSuPuja Creations",
+      "target_pipeline": "recruiter",
+      "target_stage": "S03",
+      "created_at": "2026-08-14T23:32:28.216Z"
+    },
+    {
+      "id": "tpl_recruiter_loi",
+      "category": "HR & Recruitment",
+      "template_name": "Letter of Intent (LOI) Release",
+      "subject": "Letter of Intent (LOI) - SuPuja Creations",
+      "message_body": "Dear {{candidate_name}},\n\nCongratulations! We are delighted to extend our Letter of Intent (LOI) for the position of {{job_title}} with SuPuja Creations.\n\nWe look forward to having you onboard.\n\nSincerely,\nHR & Talent Acquisition Team\nSuPuja Creations",
+      "target_pipeline": "recruiter",
+      "target_stage": "S08",
+      "created_at": "2026-08-14T23:32:28.216Z"
+    }
+  ],
+  "automations": [
+    {
+      "id": "auto_welcome_01",
+      "name": "Auto-Welcome on Lead Creation",
+      "pipeline": "sales",
+      "stage_id": "01 - New Stage",
+      "stage_label": "01 - New Stage",
+      "template_id": "tpl_lead_welcome",
+      "is_active": true,
+      "delay_minutes": 0,
+      "created_at": "2026-08-14T23:32:28.216Z"
+    },
+    {
+      "id": "auto_recruiter_interview",
+      "name": "Auto Interview Invite on S03",
+      "pipeline": "recruiter",
+      "stage_id": "S03",
+      "stage_label": "S03 - Interview Executed",
+      "template_id": "tpl_recruiter_interview",
+      "is_active": true,
+      "delay_minutes": 0,
+      "created_at": "2026-08-14T23:32:28.216Z"
+    }
+  ],
+  "logs": []
+}
