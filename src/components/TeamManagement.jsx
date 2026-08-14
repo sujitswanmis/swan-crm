@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus, deleteUserAdmin } from '@/app/actions/team';
-import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2 } from 'lucide-react';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash } from '@/app/actions/team';
+import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
@@ -35,7 +35,7 @@ const DESIGNATIONS = [
   'Accountant', 'Finance Manager', 'Other'
 ];
 
-const EMP_STATUS_OPTIONS = ['Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft'];
+const EMP_STATUS_OPTIONS = ['Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'];
 
 function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hoverBg, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -145,6 +145,9 @@ export default function TeamManagement() {
   const supabase = React.useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState([]);
 
+  // Status Tabs State
+  const [selectedTab, setSelectedTab] = useState('All');
+
   const [confirmModal, setConfirmModal] = useState({
     show: false,
     userId: null,
@@ -158,6 +161,33 @@ export default function TeamManagement() {
     userName: ''
   });
   const [deletingUser, setDeletingUser] = useState(false);
+
+  const [trashConfirmModal, setTrashConfirmModal] = useState({
+    show: false,
+    userId: null,
+    userName: ''
+  });
+  const [movingToTrash, setMovingToTrash] = useState(false);
+
+  const handleConfirmMoveToTrash = async () => {
+    if (!trashConfirmModal.userId) return;
+    setMovingToTrash(true);
+    await moveToTrashUser(trashConfirmModal.userId);
+    setMovingToTrash(false);
+    setTrashConfirmModal({ show: false, userId: null, userName: '' });
+    fetchUsers();
+  };
+
+  const handleRestoreUser = async (userId) => {
+    try {
+      setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, emp_status: 'Active' } : u));
+      await restoreUserFromTrash(userId, 'Active');
+      fetchUsers();
+    } catch (e) {
+      alert("Error restoring user: " + e.message);
+      fetchUsers();
+    }
+  };
 
   const handleConfirmDeleteUser = async () => {
     if (!deleteModal.userId) return;
@@ -269,6 +299,8 @@ export default function TeamManagement() {
 
   const getEmpStatusStyle = (status) => {
     switch (status) {
+      case 'Trash':
+        return { bg: '#ffe4e6', color: '#be123c', border: '#fecdd3' };
       case 'Draft':
         return { bg: '#fef3c7', color: '#92400e', border: '#fde68a' };
       case 'InActive':
@@ -698,27 +730,100 @@ export default function TeamManagement() {
     }
   };
 
+  const counts = React.useMemo(() => {
+    const nonCust = users.filter(u => u.role !== 'customer');
+    return {
+      all: nonCust.filter(u => u.emp_status !== 'Trash').length,
+      active: nonCust.filter(u => (u.emp_status || 'Active') === 'Active').length,
+      inActive: nonCust.filter(u => u.emp_status === 'InActive').length,
+      hold: nonCust.filter(u => u.emp_status === 'Hold').length,
+      resigned: nonCust.filter(u => u.emp_status === 'Resigned').length,
+      terminated: nonCust.filter(u => u.emp_status === 'Terminated').length,
+      draft: nonCust.filter(u => u.emp_status === 'Draft').length,
+      trash: nonCust.filter(u => u.emp_status === 'Trash').length,
+    };
+  }, [users]);
+
   const filteredUsers = users.filter(u => {
-    // Filter out public customers from Team Management list
     if (u.role === 'customer') return false;
 
-    const q = searchQuery.toLowerCase();
-    return (
-      (u.emp_name || '').toLowerCase().includes(q) ||
-      (u.email || '').toLowerCase().includes(q) ||
-      (u.emp_id || '').toLowerCase().includes(q) ||
-      (u.emp_mobile || '').toLowerCase().includes(q)
-    );
+    // Tab filter
+    if (selectedTab === 'All') {
+      if (u.emp_status === 'Trash') return false;
+    } else if (selectedTab === 'Trash') {
+      if (u.emp_status !== 'Trash') return false;
+    } else {
+      const status = u.emp_status || 'Active';
+      if (status !== selectedTab) return false;
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return (
+        (u.emp_name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.emp_id || '').toLowerCase().includes(q) ||
+        (u.emp_mobile || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
   });
 
   if (loading) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
 
   return (
     <div className="card" style={{ padding: '1.5rem' }}>
-      <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem' }}>Team Roles & Permissions</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+      <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Team Roles & Permissions</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
         Manage what your team members can see and do within the CRM. Only Admins can access this panel.
       </p>
+
+      {/* Emp Status Filter Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+        {[
+          { id: 'All', label: 'All Employees', count: counts.all, color: '#2563eb' },
+          { id: 'Active', label: 'Active', count: counts.active, color: '#16a34a' },
+          { id: 'InActive', label: 'InActive', count: counts.inActive, color: '#4b5563' },
+          { id: 'Hold', label: 'Hold', count: counts.hold, color: '#ca8a04' },
+          { id: 'Resigned', label: 'Resigned', count: counts.resigned, color: '#ea580c' },
+          { id: 'Terminated', label: 'Terminated', count: counts.terminated, color: '#dc2626' },
+          { id: 'Draft', label: 'Draft', count: counts.draft, color: '#d97706' },
+          { id: 'Trash', label: 'Trash 🗑️', count: counts.trash, color: '#be123c' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setSelectedTab(tab.id)}
+            style={{
+              padding: '0.45rem 0.9rem',
+              borderRadius: '20px',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              border: selectedTab === tab.id ? `2px solid ${tab.color}` : '1px solid var(--border-light)',
+              backgroundColor: selectedTab === tab.id ? `${tab.color}15` : 'var(--bg-surface)',
+              color: selectedTab === tab.id ? tab.color : 'var(--text-secondary)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            {tab.label}
+            <span style={{
+              padding: '0.1rem 0.45rem',
+              borderRadius: '99px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              backgroundColor: selectedTab === tab.id ? tab.color : 'var(--th-hover-bg)',
+              color: selectedTab === tab.id ? '#ffffff' : 'var(--text-secondary)'
+            }}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <input 
@@ -871,42 +976,67 @@ export default function TeamManagement() {
               </td>
               <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
-                  <HoverIconButton
-                    icon={MessageSquare}
-                    label="View Chat"
-                    bg="#dcfce7"
-                    hoverBg="#bbf7d0"
-                    color="#15803d"
-                    borderColor="#bbf7d0"
-                    onClick={() => handleViewChatClick(user)}
-                  />
-                  <HoverIconButton
-                    icon={Pencil}
-                    label="Edit User"
-                    bg="#eff6ff"
-                    hoverBg="#dbeafe"
-                    color="#1d4ed8"
-                    borderColor="#bfdbfe"
-                    onClick={() => handleEditClick(user)}
-                  />
-                  <HoverIconButton
-                    icon={Key}
-                    label="Change Password"
-                    bg="#fff1f2"
-                    hoverBg="#fecdd3"
-                    color="#be123c"
-                    borderColor="#fecdd3"
-                    onClick={() => setPasswordUser(user.user_id)}
-                  />
-                  <HoverIconButton
-                    icon={Trash2}
-                    label="Delete User"
-                    bg="#fee2e2"
-                    hoverBg="#fecaca"
-                    color="#991b1b"
-                    borderColor="#fecaca"
-                    onClick={() => setDeleteModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
-                  />
+                  {user.emp_status === 'Trash' ? (
+                    <>
+                      <HoverIconButton
+                        icon={RotateCcw}
+                        label="Restore Employee"
+                        bg="#dcfce7"
+                        hoverBg="#bbf7d0"
+                        color="#15803d"
+                        borderColor="#bbf7d0"
+                        onClick={() => handleRestoreUser(user.user_id)}
+                      />
+                      <HoverIconButton
+                        icon={Trash2}
+                        label="Delete Permanently"
+                        bg="#fee2e2"
+                        hoverBg="#fecaca"
+                        color="#991b1b"
+                        borderColor="#fecaca"
+                        onClick={() => setDeleteModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <HoverIconButton
+                        icon={MessageSquare}
+                        label="View Chat"
+                        bg="#dcfce7"
+                        hoverBg="#bbf7d0"
+                        color="#15803d"
+                        borderColor="#bbf7d0"
+                        onClick={() => handleViewChatClick(user)}
+                      />
+                      <HoverIconButton
+                        icon={Pencil}
+                        label="Edit User"
+                        bg="#eff6ff"
+                        hoverBg="#dbeafe"
+                        color="#1d4ed8"
+                        borderColor="#bfdbfe"
+                        onClick={() => handleEditClick(user)}
+                      />
+                      <HoverIconButton
+                        icon={Key}
+                        label="Change Password"
+                        bg="#fff1f2"
+                        hoverBg="#fecdd3"
+                        color="#be123c"
+                        borderColor="#fecdd3"
+                        onClick={() => setPasswordUser(user.user_id)}
+                      />
+                      <HoverIconButton
+                        icon={Trash2}
+                        label="Move to Trash"
+                        bg="#fff7ed"
+                        hoverBg="#ffedd5"
+                        color="#c2410c"
+                        borderColor="#fed7aa"
+                        onClick={() => setTrashConfirmModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
+                      />
+                    </>
+                  )}
                 </div>
               </td>
             </tr>
@@ -1001,10 +1131,10 @@ export default function TeamManagement() {
             textAlign: 'center',
             color: 'var(--text-primary)'
           }}>
-            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>🗑️</div>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem', color: '#dc2626' }}>Delete Employee Account</h3>
+            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>⚠️</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem', color: '#dc2626' }}>Permanently Delete User</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '2rem' }}>
-              Are you sure you want to delete <strong>{deleteModal.userName}</strong>? This action will permanently remove their access and details.
+              Are you sure you want to permanently delete <strong>{deleteModal.userName}</strong>? This action CANNOT be undone.
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
               <button 
@@ -1027,7 +1157,67 @@ export default function TeamManagement() {
                   cursor: deletingUser ? 'not-allowed' : 'pointer'
                 }}
               >
-                {deletingUser ? 'Deleting...' : 'Yes, Delete Account'}
+                {deletingUser ? 'Deleting...' : 'Yes, Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move to Trash Confirmation Modal */}
+      {trashConfirmModal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '430px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{ fontSize: '2.8rem', marginBottom: '1rem' }}>🗑️</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.75rem', color: '#c2410c' }}>Move Employee to Trash</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to move <strong>{trashConfirmModal.userName}</strong> to Trash? You can restore them anytime from the Trash tab.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button 
+                onClick={() => setTrashConfirmModal({ show: false, userId: null, userName: '' })}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmMoveToTrash}
+                disabled={movingToTrash}
+                style={{ 
+                  padding: '0.6rem 1.5rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: '#ea580c',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: movingToTrash ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {movingToTrash ? 'Moving...' : 'Yes, Move to Trash'}
               </button>
             </div>
           </div>

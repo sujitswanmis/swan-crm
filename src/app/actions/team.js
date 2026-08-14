@@ -472,6 +472,14 @@ export async function getRecentCalls(agentId) {
   return { data: data || [] };
 }
 
+export async function moveToTrashUser(userId) {
+  return await updateEmpStatus(userId, 'Trash');
+}
+
+export async function restoreUserFromTrash(userId, targetStatus = 'Active') {
+  return await updateEmpStatus(userId, targetStatus);
+}
+
 export async function deleteUserAdmin(userId) {
   const adminClient = getAdminClient();
 
