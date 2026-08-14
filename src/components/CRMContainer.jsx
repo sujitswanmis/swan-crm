@@ -1571,8 +1571,28 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               >
                 <Bell size={18} />
                 {dueFollowUps.length > 0 && (
-                  <div style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: 'bold', width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-surface)' }}>
-                    {dueFollowUps.length}
+                  <div style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    right: '-6px',
+                    backgroundColor: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    minWidth: '18px',
+                    height: '18px',
+                    padding: '0 4px',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid var(--bg-surface)',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                    pointerEvents: 'none',
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {dueFollowUps.length > 99 ? '99+' : dueFollowUps.length}
                   </div>
                 )}
               </button>
