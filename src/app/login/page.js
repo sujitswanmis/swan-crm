@@ -226,7 +226,7 @@ function LoginFormContent() {
                 <div>SuPuja Creations</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
                   <span>Workplace Login</span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.221</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.222</span>
                 </div>
               </>
             )}

@@ -31,6 +31,7 @@ import PartyMasterModule from './Party/PartyMasterModule';
 import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
 import LocationManagementModule from './Location/LocationManagementModule';
 import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
+import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 
@@ -619,6 +620,19 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
   const [leadsFilterStage, setLeadsFilterStage] = useState(null);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+
+  // Global Keyboard shortcut for Intelligent Spotlight Search (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsGlobalSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Sync stage with localStorage when it changes (initial load covered by state initializer)
   useEffect(() => {
@@ -1483,12 +1497,51 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               <div style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
             )}
 
-            {hasLeadsAccess && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
-                <Search size={18} />
-                <span style={{ fontSize: '0.85rem' }} className="desktop-only-text">Search leads (Cmd+K)</span>
-              </div>
-            )}
+            {/* Intelligent Global Spotlight Search Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              className="global-search-trigger-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '8px',
+                padding: '0.35rem 0.75rem',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                transition: 'all 0.15s',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.borderColor = 'var(--accent-color)';
+                e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-light)';
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+              }}
+              title="Quick Spotlight Search (Ctrl + K)"
+            >
+              <Search size={15} style={{ color: 'var(--accent-color)' }} />
+              <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                Search CRM...
+              </span>
+              <kbd style={{
+                fontSize: '0.68rem',
+                padding: '0.1rem 0.35rem',
+                borderRadius: '4px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                color: 'var(--text-secondary)',
+                fontWeight: 600,
+                lineHeight: 1
+              }}>
+                Ctrl+K
+              </kbd>
+            </button>
             {isSyncing && (
               <span style={{ 
                 fontSize: '0.75rem', 
@@ -2024,6 +2077,36 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         </div>
       </main>
       <GlobalSoftphoneWidget userId={userId} />
+
+      {/* Intelligent Global Spotlight Command Palette */}
+      <GlobalSpotlightModal
+        isOpen={isGlobalSearchOpen}
+        onClose={() => setIsGlobalSearchOpen(false)}
+        leads={leads}
+        teamMembers={teamMembers}
+        userRole={userRole}
+        moduleAccess={moduleAccess}
+        onNavigate={(tab, stage, searchQuery) => {
+          handleTabChange(tab);
+          if (tab === 'leads') {
+            handleStageChange(stage);
+            if (searchQuery) {
+              setActiveSearchQuery(searchQuery);
+            }
+          } else if (tab === 'recruiter' && stage) {
+            setRecruiterFilterStage(stage);
+          }
+        }}
+        onAction={(actionType) => {
+          if (actionType === 'theme') {
+            setShowThemeMenu(true);
+          } else if (actionType === 'profile') {
+            setShowProfileMenu(true);
+          } else if (actionType === 'logout') {
+            handleLogout();
+          }
+        }}
+      />
     </div>
   );
 }
