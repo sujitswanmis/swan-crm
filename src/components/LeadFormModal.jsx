@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 
 export default function LeadFormModal({ isOpen, onClose }) {
   const supabase = useMemo(() => createClient(), []);
@@ -50,9 +51,18 @@ export default function LeadFormModal({ isOpen, onClose }) {
     name: '',
     phone: '',
     email: '',
+    state_name: '',
+    district_name: '',
+    city_name: '',
+    pin_code: '',
     status: '1;01>New Stage>New Lead'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const districtsList = useMemo(() => {
+    if (!formData.state_name) return [];
+    return getDistrictsForState(formData.state_name) || [];
+  }, [formData.state_name]);
 
   if (!isOpen) return null;
 
@@ -85,7 +95,9 @@ export default function LeadFormModal({ isOpen, onClose }) {
       }
       setFormData({
         source: '', source_name: '', priority: '', business_type: '', company: '', 
-        business_contact_1: '', business_email_1: '', name: '', phone: '', email: '', status: '1;01>New Stage>New Lead'
+        business_contact_1: '', business_email_1: '', name: '', phone: '', email: '',
+        state_name: '', district_name: '', city_name: '', pin_code: '',
+        status: '1;01>New Stage>New Lead'
       });
       onClose();
     }
@@ -166,6 +178,46 @@ export default function LeadFormModal({ isOpen, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Contact Person ID (Email)</label>
             <input type="email" name="email" value={formData.email} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
+          </div>
+
+          {/* Location Details: State & District */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>State Name</label>
+              <select 
+                name="state_name" 
+                value={formData.state_name || ''} 
+                onChange={(e) => {
+                  const newSt = e.target.value;
+                  setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
+                }}
+                style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+              >
+                <option value="">Select State / UT ({INDIAN_STATES.length})</option>
+                {INDIAN_STATES.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>District Name</label>
+              <select 
+                name="district_name" 
+                value={formData.district_name || ''} 
+                onChange={handleChange} 
+                disabled={!formData.state_name}
+                style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-surface)' }}
+              >
+                <option value="">
+                  {formData.state_name 
+                    ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
+                    : 'Select State First'}
+                </option>
+                {districtsList.map(dt => (
+                  <option key={dt} value={dt}>{dt}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Status & Priority */}

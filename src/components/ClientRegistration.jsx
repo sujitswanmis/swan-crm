@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X } from 'lucide-react';
 import Papa from 'papaparse';
@@ -119,9 +119,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   });
   
   const [teamMembers, setTeamMembers] = useState([]);
-  const [statesList, setStatesList] = useState(INDIAN_STATES.map(name => ({ state_name: name })));
-  const [districtsList, setDistrictsList] = useState([]);
-  const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
+  const [dbExtraStates, setDbExtraStates] = useState([]);
 
   useEffect(() => {
     async function loadStates() {
@@ -130,11 +128,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         if (res && Array.isArray(res) && res.length > 0) {
           const existing = new Set(INDIAN_STATES.map(s => s.toLowerCase()));
           const extra = res.filter(s => s.state_name && !existing.has(s.state_name.toLowerCase()));
-          const combined = [
-            ...INDIAN_STATES.map(name => ({ state_name: name })),
-            ...extra
-          ].sort((a, b) => a.state_name.localeCompare(b.state_name));
-          setStatesList(combined);
+          setDbExtraStates(extra);
         }
       } catch (err) {
         console.error("Failed to load states from DB:", err);
@@ -251,39 +245,21 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     buying_timeline: ''
   });
 
-  useEffect(() => {
-    if (!formData.state_name) {
-      setDistrictsList([]);
-      return;
-    }
-    // 1. Immediately set districts from local master for instant UI response (0ms)
-    const staticDists = getDistrictsForState(formData.state_name) || [];
-    setDistrictsList(staticDists.map(name => ({ district_name: name })));
+  // 100% synchronous, instant, infallible state list (never empty, never cleared)
+  const statesList = useMemo(() => {
+    return [
+      ...INDIAN_STATES.map(name => ({ state_name: name })),
+      ...dbExtraStates
+    ].sort((a, b) => a.state_name.localeCompare(b.state_name));
+  }, [dbExtraStates]);
 
-    // 2. Fetch any custom districts added to Central Location Master
-    async function loadDistricts() {
-      setIsLoadingDistricts(true);
-      try {
-        const stateObj = statesList.find(s => s.state_name?.toLowerCase() === formData.state_name?.toLowerCase());
-        const stateId = stateObj ? stateObj.id : null;
-        const res = await getDistrictsCentral(stateId, formData.state_name);
-        if (res && Array.isArray(res) && res.length > 0) {
-          const staticSet = new Set(staticDists.map(d => d.toLowerCase()));
-          const extraDists = res.filter(d => d.district_name && !staticSet.has(d.district_name.toLowerCase()));
-          const combined = [
-            ...staticDists.map(name => ({ district_name: name })),
-            ...extraDists
-          ].sort((a, b) => a.district_name.localeCompare(b.district_name));
-          setDistrictsList(combined);
-        }
-      } catch (err) {
-        console.error("Failed to load districts from DB:", err);
-      } finally {
-        setIsLoadingDistricts(false);
-      }
-    }
-    loadDistricts();
-  }, [formData.state_name, statesList]);
+  // 100% synchronous, instant district list matching selected state
+  const districtsList = useMemo(() => {
+    if (!formData.state_name) return [];
+    const dists = getDistrictsForState(formData.state_name) || [];
+    return dists.map(name => ({ district_name: name }));
+  }, [formData.state_name]);
+
 
   useEffect(() => {
     if (isEditMode && initialData) {

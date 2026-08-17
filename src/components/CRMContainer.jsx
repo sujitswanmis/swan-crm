@@ -1027,7 +1027,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent-color)', letterSpacing: '-0.01em', margin: 0 }}>SuPuja</span>
                 <div className="sidebar-title" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', letterSpacing: '0.01em' }}>Creations</span>
-                  <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', opacity: 0.85, fontWeight: 500 }}>v{pkg.version || '1.0.227'}</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', opacity: 0.85, fontWeight: 500 }}>v{pkg.version || '1.0.228'}</span>
                 </div>
               </div>
             )}
