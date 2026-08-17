@@ -290,6 +290,8 @@ export default async function Home({ params }) {
   // 3. Leads are now fetched on the client side for instant page load
   let allLeads = [];
 
+  const userAvatar = user?.user_metadata?.avatar_url || null;
+
   return (
     <main>
       <CRMContainer 
@@ -302,6 +304,7 @@ export default async function Home({ params }) {
         userId={user.id}
         userCompany={userCompany}
         userName={userName}
+        initialAvatar={userAvatar}
       />
     </main>
   );

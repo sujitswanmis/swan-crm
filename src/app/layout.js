@@ -2,13 +2,22 @@ import './globals.css';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search } from 'lucide-react';
 
 export const metadata = {
-  title: 'Enterprise CRM',
-  description: 'High-performance CRM for handling millions of records.',
+  title: 'SuPuja Creations CRM',
+  description: 'Enterprise CRM & Business Operations - SuPuja Creations',
+  icons: {
+    icon: [
+      { url: '/supuja-logo.png', sizes: 'any', type: 'image/png' },
+      { url: '/icon.png', sizes: 'any', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    shortcut: '/supuja-logo.png',
+    apple: '/apple-icon.png',
+  },
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Swan CRM',
+    title: 'SuPuja Creations',
   },
 };
 

@@ -718,3 +718,119 @@ export async function sendAdminPasswordResetLink(userId) {
   return { success: true, message: `Password setup email sent to ${email}!` };
 }
 
+/**
+ * Request OTP for passwordless email login
+ */
+export async function requestLoginOtp(email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { success: false, error: 'Please provide a valid official email address.' };
+  }
+
+  const adminClient = getAdminClient();
+
+  // Find user by email in user_roles
+  const { data: user, error } = await adminClient
+    .from('user_roles')
+    .select('*')
+    .or(`email.ilike.${cleanEmail},emp_official_mail_id.ilike.${cleanEmail}`)
+    .maybeSingle();
+
+  if (error || !user) {
+    return { success: false, error: 'No workplace account found with this email. Please register or contact administrator.' };
+  }
+
+  // Check approval
+  if (user.is_approved === false && user.role !== 'admin' && user.role !== 'Admin') {
+    return { success: false, error: 'Your account is pending administrator approval before you can sign in.' };
+  }
+
+  // Generate Supabase Auth magiclink token_hash
+  const targetEmail = user.email || user.emp_official_mail_id || cleanEmail;
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: 'magiclink',
+    email: targetEmail
+  });
+
+  if (linkError || !linkData?.properties?.hashed_token) {
+    console.error('Failed to generate auth token link:', linkError);
+    return { success: false, error: 'Authentication service temporarily unavailable. Please sign in with password.' };
+  }
+
+  // Generate 6-digit user-facing OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  OTP_STORE.set(`login_${cleanEmail}`, {
+    otp,
+    userId: user.user_id,
+    tokenHash: linkData.properties.hashed_token,
+    expiresAt,
+    attempts: 0
+  });
+
+  // Send email via SuPuja Creations Admin SMTP
+  const sendRes = await sendAdminAccountEmailOtp(
+    cleanEmail,
+    otp,
+    'login_otp',
+    {
+      name: user.emp_name || 'User',
+      email: cleanEmail,
+      company: 'Swan CRM'
+    }
+  );
+
+  if (!sendRes.success) {
+    return { success: false, error: 'Failed to send OTP email: ' + sendRes.error };
+  }
+
+  return { 
+    success: true, 
+    message: `A 6-digit login code has been sent to ${cleanEmail}.` 
+  };
+}
+
+/**
+ * Verify OTP for passwordless email login
+ */
+export async function verifyLoginOtp(email, otp) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanOtp = (otp || '').trim();
+
+  if (!cleanEmail || !cleanOtp) {
+    return { success: false, error: 'Email and 6-digit OTP are required.' };
+  }
+
+  const key = `login_${cleanEmail}`;
+  const record = OTP_STORE.get(key);
+
+  if (!record) {
+    return { success: false, error: 'No active login OTP found. Please request a new code.' };
+  }
+
+  if (Date.now() > record.expiresAt) {
+    OTP_STORE.delete(key);
+    return { success: false, error: 'Login OTP has expired. Please request a new code.' };
+  }
+
+  if (record.otp !== cleanOtp) {
+    record.attempts = (record.attempts || 0) + 1;
+    if (record.attempts >= 5) {
+      OTP_STORE.delete(key);
+      return { success: false, error: 'Too many incorrect attempts. Please request a new OTP.' };
+    }
+    return { success: false, error: 'Invalid verification code. Please check and re-enter.' };
+  }
+
+  const tokenHash = record.tokenHash;
+  OTP_STORE.delete(key);
+
+  return {
+    success: true,
+    tokenHash,
+    message: 'OTP verified successfully!'
+  };
+}
+
+

@@ -17,10 +17,11 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
+import { uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
 import html2canvas from 'html2canvas';
 import SettingsContainer from './Settings/SettingsContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -60,7 +61,7 @@ const THEMES = [
   { id: 'theme-neumorphism', name: 'Neumorphic Soft', icon: '🎨' },
 ];
 
-export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName }) {
+export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -222,15 +223,26 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const notificationMenuRef = useRef(null);
   const profileMenuRef = useRef(null);
   const avatarInputRef = useRef(null);
-  const [userAvatar, setUserAvatar] = useState(null);
+  const [userAvatar, setUserAvatar] = useState(initialAvatar || null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Load and apply theme
+  // Load and apply theme & avatar
   useEffect(() => {
     const savedTheme = localStorage.getItem('crm-theme') || 'default';
     setCurrentTheme(savedTheme);
-    const savedAvatar = localStorage.getItem('crm_user_avatar');
-    if (savedAvatar) setUserAvatar(savedAvatar);
-  }, []);
+    
+    if (initialAvatar) {
+      setUserAvatar(initialAvatar);
+      if (userId) {
+        localStorage.setItem(`crm_user_avatar_${userId}`, initialAvatar);
+      }
+      localStorage.setItem('crm_user_avatar', initialAvatar);
+    } else {
+      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
+      const savedAvatar = localStorage.getItem(userKey) || localStorage.getItem('crm_user_avatar');
+      if (savedAvatar) setUserAvatar(savedAvatar);
+    }
+  }, [initialAvatar, userId]);
 
   useEffect(() => {
     document.documentElement.className = '';
@@ -261,31 +273,100 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     };
   }, []);
 
-  const handleAvatarUpload = (e) => {
+  const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Please select an image smaller than 2MB.");
+    
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Please select an image smaller than 10MB.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result;
-      if (base64) {
-        setUserAvatar(base64);
-        localStorage.setItem('crm_user_avatar', base64);
-        try {
-          if (userId) {
-            await supabase.from('user_roles').update({ avatar_url: base64 }).eq('user_id', userId);
-          }
-        } catch (err) {
-          console.warn('Could not sync avatar to DB:', err);
-        }
+
+    const isImage = file.type?.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|jfif|heic|svg)$/i.test(file.name);
+    if (!isImage) {
+      alert("Please select a valid image file (JPG, PNG, WEBP, GIF, etc.).");
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    const prevAvatar = userAvatar;
+    
+    // Convert to base64 & create fast preview
+    let base64Data = '';
+    try {
+      const reader = new FileReader();
+      const readerPromise = new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve('');
+      });
+      reader.readAsDataURL(file);
+      base64Data = await readerPromise;
+    } catch (e) {
+      console.warn('Preview reader warning:', e);
+    }
+
+    if (base64Data) {
+      setUserAvatar(base64Data);
+    }
+
+    try {
+      let targetUserId = userId;
+      if (!targetUserId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUserId = user?.id;
       }
-    };
-    reader.readAsDataURL(file);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      if (base64Data) formData.append('base64', base64Data);
+      if (targetUserId) formData.append('userId', targetUserId);
+
+      const res = await uploadUserAvatar(formData);
+      if (res.success && res.avatarUrl) {
+        setUserAvatar(res.avatarUrl);
+        if (targetUserId) {
+          localStorage.setItem(`crm_user_avatar_${targetUserId}`, res.avatarUrl);
+        }
+        localStorage.setItem('crm_user_avatar', res.avatarUrl);
+      } else {
+        setUserAvatar(prevAvatar);
+        alert(`Photo upload failed: ${res.error || 'Server error'}`);
+      }
+    } catch (err) {
+      console.error('Photo upload exception:', err);
+      setUserAvatar(prevAvatar);
+      alert('Photo upload failed. Please try again.');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
   };
-  
+
+  const handleRemoveAvatar = async () => {
+    if (!confirm("Are you sure you want to remove your profile photo?")) return;
+    setIsUploadingAvatar(true);
+    try {
+      let targetUserId = userId;
+      if (!targetUserId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUserId = user?.id;
+      }
+      if (targetUserId) {
+        await removeUserAvatar(targetUserId);
+        localStorage.removeItem(`crm_user_avatar_${targetUserId}`);
+      }
+      localStorage.removeItem('crm_user_avatar');
+      setUserAvatar(null);
+    } catch (err) {
+      console.error('Remove avatar error:', err);
+      alert('Failed to remove photo.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   // Auto-track session for already logged-in users
   useEffect(() => {
     async function trackSession() {
@@ -304,14 +385,22 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       sessionStorage.setItem('session_tracked', 'true');
     }
   }, []);
-  
-  // Fetch user email
+
+  // Fetch user email & metadata avatar
   useEffect(() => {
     async function fetchUser() {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email) {
-        setUserEmail(user.email);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          setUserEmail(user.email);
+        }
+        if (user?.user_metadata?.avatar_url) {
+          setUserAvatar(user.user_metadata.avatar_url);
+          localStorage.setItem(`crm_user_avatar_${user.id}`, user.user_metadata.avatar_url);
+          localStorage.setItem('crm_user_avatar', user.user_metadata.avatar_url);
+        }
+      } catch (err) {
+        console.warn('Error fetching auth user in CRMContainer:', err);
       }
     }
     fetchUser();
@@ -1869,18 +1958,32 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                         fontWeight: 'bold',
                         overflow: 'hidden',
                         boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
-                        border: '3px solid var(--bg-surface)'
+                        border: '3px solid var(--bg-surface)',
+                        position: 'relative'
                       }}>
                         {userAvatar ? (
                           <img src={userAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           userName ? userName.charAt(0).toUpperCase() : 'U'
                         )}
+                        {isUploadingAvatar && (
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundColor: 'rgba(0,0,0,0.55)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <Loader2 size={24} className="animate-spin" style={{ color: '#ffffff' }} />
+                          </div>
+                        )}
                       </div>
 
                       {/* Camera Button */}
                       <button
                         type="button"
+                        disabled={isUploadingAvatar}
                         onClick={() => avatarInputRef.current?.click()}
                         style={{
                           position: 'absolute',
@@ -1895,12 +1998,13 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                          cursor: isUploadingAvatar ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                          opacity: isUploadingAvatar ? 0.7 : 1
                         }}
                         title="Upload Photo"
                       >
-                        <Camera size={13} />
+                        {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Camera size={13} />}
                       </button>
                       <input 
                         type="file" 
@@ -1914,26 +2018,53 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)', marginBottom: '0.15rem' }}>{userName || 'User Profile'}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{userEmail || 'employee@supujacreations.com'}</div>
                     
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      style={{
-                        marginTop: '0.6rem',
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--border-light)',
-                        borderRadius: '6px',
-                        padding: '0.3rem 0.75rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: 'var(--accent-color)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.35rem'
-                      }}
-                    >
-                      <Upload size={12} /> {userAvatar ? 'Change Photo' : 'Upload Photo'}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.6rem' }}>
+                      <button
+                        type="button"
+                        disabled={isUploadingAvatar}
+                        onClick={() => avatarInputRef.current?.click()}
+                        style={{
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-light)',
+                          borderRadius: '6px',
+                          padding: '0.35rem 0.75rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: 'var(--accent-color)',
+                          cursor: isUploadingAvatar ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          opacity: isUploadingAvatar ? 0.7 : 1
+                        }}
+                      >
+                        {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} 
+                        {isUploadingAvatar ? 'Uploading...' : (userAvatar ? 'Change Photo' : 'Upload Photo')}
+                      </button>
+                      {userAvatar && (
+                        <button
+                          type="button"
+                          disabled={isUploadingAvatar}
+                          onClick={handleRemoveAvatar}
+                          style={{
+                            background: 'var(--bg-surface)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            borderRadius: '6px',
+                            padding: '0.35rem 0.6rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: '#ef4444',
+                            cursor: isUploadingAvatar ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem'
+                          }}
+                          title="Remove Photo"
+                        >
+                          <Trash2 size={12} /> Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Profile Details */}

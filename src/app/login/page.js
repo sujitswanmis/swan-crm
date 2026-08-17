@@ -6,9 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   registerEmployeeDetails, 
   requestPasswordResetOtp, 
-  verifyPasswordResetOtpAndSetPassword 
+  verifyPasswordResetOtpAndSetPassword,
+  requestLoginOtp,
+  verifyLoginOtp
 } from '@/app/actions/team';
-import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw, Lock, Sparkles, UserCheck } from 'lucide-react';
 import { PremiumProgressLoader } from '@/components/PremiumProgressLoader';
 
 const DEPARTMENTS = [
@@ -24,6 +26,7 @@ const DEPARTMENTS = [
 function LoginFormContent() {
   const searchParams = useSearchParams();
   const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot'
+  const [loginMethod, setLoginMethod] = useState('password'); // 'password' | 'otp'
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,6 +39,12 @@ function LoginFormContent() {
   const [empMobile, setEmpMobile] = useState('');
 
   const [showPassword, setShowPassword] = useState(false);
+
+  // Email OTP Login state
+  const [loginOtpStep, setLoginOtpStep] = useState(1); // 1: enter email, 2: enter otp
+  const [loginOtp, setLoginOtp] = useState('');
+  const [loginOtpLoading, setLoginOtpLoading] = useState(false);
+  const [loginOtpSuccessMsg, setLoginOtpSuccessMsg] = useState(null);
 
   // Forgot Password state
   const [forgotStep, setForgotStep] = useState(1); // 1: enter email, 2: enter otp & new password
@@ -67,9 +76,14 @@ function LoginFormContent() {
         setForgotStep(2);
         setForgotSuccessMsg('Account activation verified! Please create your new account password below.');
       }
+    } else if (urlMode === 'otp' && urlEmail) {
+      setMode('login');
+      setLoginMethod('otp');
+      setEmail(urlEmail);
     }
   }, [searchParams]);
 
+  // Handle Password Login & Registration
   const handleAuth = async () => {
     setLoading(true);
     setError(null);
@@ -124,39 +138,103 @@ function LoginFormContent() {
         setError('Signup successful! Please check your email inbox to verify your account before logging in.');
         setLoading(false);
       } else {
-        // Log Session
-        try {
-          const { logUserSession } = await import('@/app/actions/audit');
-          const device = navigator.userAgent;
-          await logUserSession(device);
-        } catch (e) { console.error('Failed to log session', e); }
-        
-        let targetPath = '/dashboard';
-        try {
-          const userId = result.data?.user?.id;
-          if (userId) {
-            const { data: roleData } = await supabase
-              .from('user_roles')
-              .select('role')
-              .eq('user_id', userId)
-              .single();
-            if (roleData?.role === 'customer') {
-              targetPath = '/chat';
-            }
-          }
-        } catch (err) {
-          console.error("Failed to check user role:", err);
-        }
-
-        const currentSearchParams = new URLSearchParams(window.location.search);
-        const nextPath = currentSearchParams.get('next') || targetPath;
-        window.location.href = nextPath;
+        await completeLoginFlow(result.data?.user?.id);
       }
     }
   };
 
-  // Forgot Password: Step 1 Send OTP
-  const handleRequestOtp = async () => {
+  // Complete redirect & session tracking after successful authentication
+  const completeLoginFlow = async (userId) => {
+    try {
+      const { logUserSession } = await import('@/app/actions/audit');
+      const device = navigator.userAgent;
+      await logUserSession(device);
+    } catch (e) { 
+      console.error('Failed to log session', e); 
+    }
+    
+    let targetPath = '/dashboard';
+    try {
+      if (userId) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId)
+          .single();
+        if (roleData?.role === 'customer') {
+          targetPath = '/chat';
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check user role:", err);
+    }
+
+    const currentSearchParams = new URLSearchParams(window.location.search);
+    const nextPath = currentSearchParams.get('next') || targetPath;
+    window.location.href = nextPath;
+  };
+
+  // ==========================================
+  // EMAIL OTP LOGIN FLOW
+  // ==========================================
+  const handleRequestLoginOtp = async () => {
+    if (!email || !email.includes('@')) {
+      setError("Please enter your registered official email address.");
+      return;
+    }
+    setLoginOtpLoading(true);
+    setError(null);
+    const res = await requestLoginOtp(email);
+    setLoginOtpLoading(false);
+    if (res.success) {
+      setLoginOtpStep(2);
+      setLoginOtpSuccessMsg(res.message);
+    } else {
+      setError(res.error);
+    }
+  };
+
+  const handleVerifyLoginOtp = async () => {
+    if (!loginOtp || loginOtp.length < 4) {
+      setError("Please enter the 6-digit login verification code sent to your email.");
+      return;
+    }
+
+    setLoginOtpLoading(true);
+    setError(null);
+    const res = await verifyLoginOtp(email, loginOtp);
+    
+    if (!res.success) {
+      setLoginOtpLoading(false);
+      setError(res.error);
+      return;
+    }
+
+    // Use magiclink token_hash to establish active client session
+    try {
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: res.tokenHash,
+        type: 'magiclink'
+      });
+
+      if (verifyError || !data?.user) {
+        setLoginOtpLoading(false);
+        setError(verifyError?.message || 'Authentication failed. Please try again.');
+        return;
+      }
+
+      // Success! Proceed to redirect
+      await completeLoginFlow(data.user.id);
+    } catch (authErr) {
+      setLoginOtpLoading(false);
+      setError(authErr.message || 'Login failed. Please try again.');
+    }
+  };
+
+  // ==========================================
+  // FORGOT PASSWORD FLOW
+  // ==========================================
+  const handleRequestForgotOtp = async () => {
     if (!forgotEmail || !forgotEmail.includes('@')) {
       setError("Please enter your registered official email address.");
       return;
@@ -173,7 +251,6 @@ function LoginFormContent() {
     }
   };
 
-  // Forgot Password: Step 2 Verify OTP & Set Password
   const handleResetPassword = async () => {
     if (!forgotOtp || forgotOtp.length < 4) {
       setError("Please enter the 6-digit verification code sent to your email.");
@@ -197,6 +274,7 @@ function LoginFormContent() {
       setEmail(forgotEmail);
       setPassword('');
       setMode('login');
+      setLoginMethod('password');
       setForgotStep(1);
       setForgotOtp('');
       setForgotNewPassword('');
@@ -209,22 +287,22 @@ function LoginFormContent() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '2rem' }}>
-      <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '450px', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+      <div className="card" style={{ padding: '2.25rem 2rem', width: '100%', maxWidth: '460px', borderRadius: '18px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid var(--border-light)' }}>
         
         {/* Logo / Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.85rem' }}>
             <img 
               src="/supuja-logo.png" 
               alt="SuPuja Creations" 
-              style={{ width: '76px', height: '76px', borderRadius: '16px', objectFit: 'contain', background: '#fff', padding: '4px', boxShadow: '0 10px 20px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', border: '1px solid #e2e8f0' }} 
+              style={{ width: '140px', height: 'auto', maxHeight: '76px', objectFit: 'contain' }} 
             />
           </div>
           <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0, color: '#0f172a', lineHeight: 1.25 }}>
             {mode === 'login' && (
               <>
                 <div>SuPuja Creations</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
+                <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
                   <span>Workplace Login</span>
                   <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.226</span>
                 </div>
@@ -234,18 +312,90 @@ function LoginFormContent() {
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', marginBottom: 0, fontSize: '0.88rem' }}>
-            {mode === 'login' && 'Secure access to your sales & workplace pipeline'}
+            {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using 6-Digit Email OTP')}
             {mode === 'register' && 'Enter your official details to register'}
-            {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure OTP' : 'Enter OTP and create your new password')}
+            {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure reset code' : 'Enter OTP and create your new password')}
           </p>
         </div>
 
+        {/* ========================================================================= */}
+        {/* LOGIN METHOD SELECTOR TABS (Password vs Email OTP) */}
+        {/* ========================================================================= */}
+        {mode === 'login' && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '0.35rem',
+            background: '#f1f5f9',
+            padding: '0.3rem',
+            borderRadius: '10px',
+            marginBottom: '1.5rem',
+            border: '1px solid #e2e8f0'
+          }}>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('password');
+                setError(null);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+                backgroundColor: loginMethod === 'password' ? '#ffffff' : 'transparent',
+                color: loginMethod === 'password' ? '#4338ca' : '#64748b',
+                boxShadow: loginMethod === 'password' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <Lock size={15} /> Password
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('otp');
+                setError(null);
+                setLoginOtpStep(1);
+                setLoginOtpSuccessMsg(null);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+                backgroundColor: loginMethod === 'otp' ? '#ffffff' : 'transparent',
+                color: loginMethod === 'otp' ? '#4338ca' : '#64748b',
+                boxShadow: loginMethod === 'otp' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <Mail size={15} /> Email OTP
+            </button>
+          </div>
+        )}
+
+        {/* Error Notification */}
         {error && (
           <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #fecaca' }}>
             {error}
           </div>
         )}
 
+        {/* Forgot Success Message */}
         {forgotSuccessMsg && mode === 'forgot' && (
           <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <CheckCircle2 size={16} />
@@ -253,100 +403,51 @@ function LoginFormContent() {
           </div>
         )}
 
+        {/* Login OTP Success Message */}
+        {loginOtpSuccessMsg && mode === 'login' && loginMethod === 'otp' && (
+          <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CheckCircle2 size={16} />
+            <span>{loginOtpSuccessMsg}</span>
+          </div>
+        )}
+
         {/* ========================================================================= */}
-        {/* LOGIN & REGISTRATION FORMS */}
+        {/* OPTION 1: PASSWORD LOGIN / REGISTER */}
         {/* ========================================================================= */}
-        {mode !== 'forgot' && (
+        {mode === 'login' && loginMethod === 'password' && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-              {mode === 'register' && (
-                <>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp ID *</label>
-                    <input
-                      type="text"
-                      value={empId}
-                      onChange={(e) => setEmpId(e.target.value)}
-                      placeholder="E.g. EMP001"
-                      style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name *</label>
-                    <input
-                      type="text"
-                      value={empName}
-                      onChange={(e) => setEmpName(e.target.value)}
-                      placeholder="Full Name"
-                      style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number *</label>
-                    <input
-                      type="tel"
-                      value={empMobile}
-                      onChange={(e) => setEmpMobile(e.target.value)}
-                      placeholder="10-digit mobile number"
-                      style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Department *</label>
-                    <select
-                      value={empDepartment}
-                      onChange={(e) => setEmpDepartment(e.target.value)}
-                      style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                    >
-                      <option value="">Select Department...</option>
-                      {DEPARTMENTS.map(dept => (
-                        <option key={dept} value={dept}>{dept}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Designation *</label>
-                    <input
-                      type="text"
-                      value={empDesignation}
-                      onChange={(e) => setEmpDesignation(e.target.value)}
-                      placeholder="E.g. Sales Executive"
-                      style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                    />
-                  </div>
-                </>
-              )}
-
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-                  {mode === 'login' ? 'Email Address' : 'Emp Official Mail ID *'}
+                  Official Email Address
                 </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.4rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                  />
+                  <Mail size={16} style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                </div>
               </div>
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Password *</label>
-                  {mode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('forgot');
-                        setForgotEmail(email);
-                        setError(null);
-                        setForgotStep(1);
-                      }}
-                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                    >
-                      Forgot password?
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setForgotEmail(email);
+                      setError(null);
+                      setForgotStep(1);
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                  >
+                    Forgot password?
+                  </button>
                 </div>
                 <div style={{ position: 'relative' }}>
                   <input
@@ -354,7 +455,7 @@ function LoginFormContent() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    style={{ width: '100%', padding: '0.6rem 2.5rem 0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                    style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                   />
                   <button
                     type="button"
@@ -371,21 +472,252 @@ function LoginFormContent() {
 
             <button
               onClick={handleAuth}
-              disabled={loading || !email || !password || (mode === 'register' && (!empId || !empName || !empDepartment || !empDesignation || !empMobile))}
+              disabled={loading || !email || !password}
+              className="btn-primary"
+              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', backgroundColor: '#4338ca' }}
+            >
+              {loading ? 'Signing in...' : 'Sign In with Password'}
+            </button>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginMethod('otp');
+                  setError(null);
+                  setLoginOtpStep(1);
+                }}
+                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+              >
+                <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register');
+                  setError(null);
+                }}
+                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 500, color: 'var(--text-secondary)' }}
+              >
+                Don't have an account? <span style={{ color: '#4338ca', fontWeight: 600 }}>Register</span>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* OPTION 2: EMAIL OTP LOGIN */}
+        {/* ========================================================================= */}
+        {mode === 'login' && loginMethod === 'otp' && (
+          <div>
+            {loginOtpStep === 1 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                    Registered Official Email Address *
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. employee@company.com"
+                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.4rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    />
+                    <Mail size={16} style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
+                    We'll send a 6-digit login verification code directly to this official mailbox.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRequestLoginOtp}
+                  disabled={loginOtpLoading || !email}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
+                >
+                  {loginOtpLoading ? <RefreshCw size={16} className="animate-spin" /> : <Mail size={16} />}
+                  {loginOtpLoading ? 'Sending Login Code...' : 'Send 6-Digit Login OTP'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter 6-Digit Login OTP *</label>
+                    <button
+                      type="button"
+                      onClick={handleRequestLoginOtp}
+                      disabled={loginOtpLoading}
+                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Resend Code
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={loginOtp}
+                    onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    autoFocus
+                    style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', border: '2px solid #4338ca', fontSize: '1.3rem', textAlign: 'center', letterSpacing: '8px', fontWeight: 800 }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem' }}>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Sent to: <b>{email}</b></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginOtpStep(1);
+                        setLoginOtp('');
+                        setError(null);
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.76rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                    >
+                      Change Email
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleVerifyLoginOtp}
+                  disabled={loginOtpLoading || loginOtp.length < 4}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#16a34a' }}
+                >
+                  {loginOtpLoading ? <RefreshCw size={16} className="animate-spin" /> : <UserCheck size={16} />}
+                  {loginOtpLoading ? 'Verifying Code...' : 'Verify & Sign In'}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginMethod('password');
+                  setError(null);
+                }}
+                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+              >
+                <Lock size={14} color="#4338ca" /> Sign in with Password instead
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* REGISTRATION FORM */}
+        {/* ========================================================================= */}
+        {mode === 'register' && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp ID *</label>
+                <input
+                  type="text"
+                  value={empId}
+                  onChange={(e) => setEmpId(e.target.value)}
+                  placeholder="E.g. EMP001"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name *</label>
+                <input
+                  type="text"
+                  value={empName}
+                  onChange={(e) => setEmpName(e.target.value)}
+                  placeholder="Full Name"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number *</label>
+                <input
+                  type="tel"
+                  value={empMobile}
+                  onChange={(e) => setEmpMobile(e.target.value)}
+                  placeholder="10-digit mobile number"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Department *</label>
+                <select
+                  value={empDepartment}
+                  onChange={(e) => setEmpDepartment(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                >
+                  <option value="">Select Department...</option>
+                  {DEPARTMENTS.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Designation *</label>
+                <input
+                  type="text"
+                  value={empDesignation}
+                  onChange={(e) => setEmpDesignation(e.target.value)}
+                  placeholder="E.g. Sales Executive"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Official Mail ID *</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Password *</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    style={{ width: '100%', padding: '0.6rem 2.5rem 0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  />
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword(prev => !prev)}
+                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleAuth}
+              disabled={loading || !empId || !empName || !empDepartment || !empDesignation || !empMobile || !email || !password}
               className="btn-primary"
               style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px' }}
             >
-              {loading ? 'Processing...' : (mode === 'login' ? 'Sign In' : 'Register Account')}
+              {loading ? 'Processing...' : 'Register Account'}
             </button>
             
             <button
               onClick={() => {
-                setMode(mode === 'login' ? 'register' : 'login');
+                setMode('login');
                 setError(null);
               }}
               style={{ width: '100%', padding: '0.7rem', fontSize: '0.88rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '8px', cursor: 'pointer', fontWeight: 500 }}
             >
-              {mode === 'login' ? 'Create New Account' : 'Back to Login'}
+              Back to Login
             </button>
           </>
         )}
@@ -418,7 +750,7 @@ function LoginFormContent() {
 
                 <button
                   type="button"
-                  onClick={handleRequestOtp}
+                  onClick={handleRequestForgotOtp}
                   disabled={forgotLoading || !forgotEmail}
                   className="btn-primary"
                   style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
@@ -434,7 +766,7 @@ function LoginFormContent() {
                     <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter 6-Digit OTP *</label>
                     <button
                       type="button"
-                      onClick={handleRequestOtp}
+                      onClick={handleRequestForgotOtp}
                       disabled={forgotLoading}
                       style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
                     >
@@ -445,7 +777,7 @@ function LoginFormContent() {
                     type="text"
                     maxLength={6}
                     value={forgotOtp}
-                    onChange={(e) => setForgotOtp(e.target.value)}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
                     placeholder="Enter 6-digit OTP"
                     style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '2px solid #4338ca', fontSize: '1.2rem', textAlign: 'center', letterSpacing: '6px', fontWeight: 800 }}
                   />
