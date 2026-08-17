@@ -7,6 +7,7 @@ import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
+import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -109,16 +110,16 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [filteredImportData, setFilteredImportData] = useState([]);
   const [expandedSections, setExpandedSections] = useState({
     leadInfo: true,
-    businessInfo: false,
-    cp1: false,
+    businessInfo: true,
+    cp1: true,
     cp2: false,
     cp3: false,
-    location: false,
-    requirements: false
+    location: true,
+    requirements: true
   });
   
   const [teamMembers, setTeamMembers] = useState([]);
-  const [statesList, setStatesList] = useState([]);
+  const [statesList, setStatesList] = useState(INDIAN_STATES.map(name => ({ state_name: name })));
   const [districtsList, setDistrictsList] = useState([]);
   const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
 
@@ -126,9 +127,17 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     async function loadStates() {
       try {
         const res = await getStatesCentral();
-        setStatesList(res || []);
+        if (res && Array.isArray(res) && res.length > 0) {
+          const existing = new Set(INDIAN_STATES.map(s => s.toLowerCase()));
+          const extra = res.filter(s => s.state_name && !existing.has(s.state_name.toLowerCase()));
+          const combined = [
+            ...INDIAN_STATES.map(name => ({ state_name: name })),
+            ...extra
+          ].sort((a, b) => a.state_name.localeCompare(b.state_name));
+          setStatesList(combined);
+        }
       } catch (err) {
-        console.error("Failed to load states:", err);
+        console.error("Failed to load states from DB:", err);
       }
     }
     loadStates();
@@ -243,20 +252,32 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   });
 
   useEffect(() => {
+    if (!formData.state_name) {
+      setDistrictsList([]);
+      return;
+    }
+    // 1. Immediately set districts from local master for instant UI response (0ms)
+    const staticDists = getDistrictsForState(formData.state_name) || [];
+    setDistrictsList(staticDists.map(name => ({ district_name: name })));
+
+    // 2. Fetch any custom districts added to Central Location Master
     async function loadDistricts() {
-      if (!formData.state_name) {
-        setDistrictsList([]);
-        return;
-      }
       setIsLoadingDistricts(true);
       try {
-        const stateObj = statesList.find(s => s.state_name === formData.state_name);
+        const stateObj = statesList.find(s => s.state_name?.toLowerCase() === formData.state_name?.toLowerCase());
         const stateId = stateObj ? stateObj.id : null;
         const res = await getDistrictsCentral(stateId, formData.state_name);
-        setDistrictsList(res || []);
+        if (res && Array.isArray(res) && res.length > 0) {
+          const staticSet = new Set(staticDists.map(d => d.toLowerCase()));
+          const extraDists = res.filter(d => d.district_name && !staticSet.has(d.district_name.toLowerCase()));
+          const combined = [
+            ...staticDists.map(name => ({ district_name: name })),
+            ...extraDists
+          ].sort((a, b) => a.district_name.localeCompare(b.district_name));
+          setDistrictsList(combined);
+        }
       } catch (err) {
-        console.error("Failed to load districts:", err);
-        setDistrictsList([]);
+        console.error("Failed to load districts from DB:", err);
       } finally {
         setIsLoadingDistricts(false);
       }
@@ -937,44 +958,50 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {expandedSections.location && (
               <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
                 {/* State Dropdown */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>State Name</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>State Name</label>
                   <select
+                    name="state_name"
                     value={formData.state_name || ''}
                     onChange={(e) => {
                       const newSt = e.target.value;
                       setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
                     }}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                    style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
                   >
-                    <option value="">Select State...</option>
+                    <option value="">Select State / UT ({statesList.length})</option>
                     {statesList.map((st) => (
                       <option key={st.id || st.state_name} value={st.state_name}>
                         {st.state_name}
                       </option>
                     ))}
-                    {formData.state_name && !statesList.some(s => s.state_name === formData.state_name) && (
+                    {formData.state_name && !statesList.some(s => s.state_name?.toLowerCase() === formData.state_name?.toLowerCase()) && (
                       <option value={formData.state_name}>{formData.state_name}</option>
                     )}
                   </select>
                 </div>
 
                 {/* District Dropdown */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>District Name</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>District Name</label>
                   <select
+                    name="district_name"
                     value={formData.district_name || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, district_name: e.target.value }))}
-                    disabled={!formData.state_name || isLoadingDistricts}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                    onChange={handleChange}
+                    disabled={!formData.state_name}
+                    style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
                   >
-                    <option value="">{formData.state_name ? (isLoadingDistricts ? 'Loading Districts...' : 'Select District...') : 'Select State First'}</option>
+                    <option value="">
+                      {formData.state_name 
+                        ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
+                        : 'Select State First'}
+                    </option>
                     {districtsList.map((dt) => (
                       <option key={dt.id || dt.district_name} value={dt.district_name}>
                         {dt.district_name}
                       </option>
                     ))}
-                    {formData.district_name && !districtsList.some(d => d.district_name === formData.district_name) && (
+                    {formData.district_name && !districtsList.some(d => d.district_name?.toLowerCase() === formData.district_name?.toLowerCase()) && (
                       <option value={formData.district_name}>{formData.district_name}</option>
                     )}
                   </select>
