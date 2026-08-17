@@ -12,6 +12,7 @@ import {
 } from '@/app/actions/team';
 import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw, Lock, Sparkles, UserCheck } from 'lucide-react';
 import { PremiumProgressLoader } from '@/components/PremiumProgressLoader';
+import pkg from '../../../package.json';
 
 const DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
@@ -304,7 +305,7 @@ function LoginFormContent() {
                 <div>SuPuja Creations</div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
                   <span>Workplace Login</span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v1.0.226</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v{pkg.version || '1.0.227'}</span>
                 </div>
               </>
             )}
