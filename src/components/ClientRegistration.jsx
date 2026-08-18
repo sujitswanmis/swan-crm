@@ -801,7 +801,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                       style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     >
                       <option value="">Open Lead (Unassigned)</option>
-                      {teamMembers.filter(m => m.emp_name).map(member => (
+                      {teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer'))).map(member => (
                         <option key={member.user_id} value={member.user_id}>
                           {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
                         </option>

@@ -25,6 +25,13 @@ export async function getTeamMembers() {
   return (data || []).map(u => ({
     ...u,
     emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
+    emp_sub_department: u.emp_sub_department || (u.module_access && u.module_access.emp_sub_department) || '',
+    emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
+    work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
+    work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
+    primary_reporting_person: u.primary_reporting_person || (u.module_access && u.module_access.primary_reporting_person) || '',
+    secondary_reporting_person: u.secondary_reporting_person || (u.module_access && u.module_access.secondary_reporting_person) || '',
+    hod_person: u.hod_person || (u.module_access && u.module_access.hod_person) || '',
     can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
     can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
   }));
@@ -34,7 +41,7 @@ export async function getRecruitersList() {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
-    .select('emp_name, emp_designation, user_id, emp_id')
+    .select('emp_name, emp_designation, user_id, emp_id, emp_status, module_access')
     .ilike('emp_designation', '%recruiter%')
     .order('emp_name', { ascending: true });
 
@@ -42,7 +49,7 @@ export async function getRecruitersList() {
     console.error('Error fetching recruiters list:', error);
     return [];
   }
-  return (data || []).filter(u => u.emp_name);
+  return (data || []).filter(u => u.emp_name && (u.emp_status === 'Active' || (!u.emp_status && u.module_access?.emp_status !== 'InActive' && u.module_access?.emp_status !== 'Trash' && u.module_access?.emp_status !== 'Terminated')));
 }
 
 export async function updateUserRole(userId, newRole) {
@@ -138,10 +145,18 @@ export async function registerEmployeeDetails(userId, email, details) {
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
       emp_name: details.emp_name,
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
+      emp_sub_department: details.emp_sub_department || '',
       emp_designation: details.emp_designation || (isCustomer ? 'Customer' : undefined),
       emp_mobile: details.emp_mobile,
+      emp_alt_mobile: details.emp_alt_mobile || '',
+      company: details.company || (isCustomer ? 'Public' : undefined),
+      work_location_type: details.work_location_type || '',
+      work_location_name: details.work_location_name || '',
       emp_official_mail_id: details.emp_official_mail_id || email,
-      emp_status: details.emp_status || 'Active'
+      emp_status: details.emp_status || 'Active',
+      primary_reporting_person: details.primary_reporting_person || '',
+      secondary_reporting_person: details.secondary_reporting_person || '',
+      hod_person: details.hod_person || ''
     };
 
     if (isCustomer) {
@@ -156,21 +171,38 @@ export async function registerEmployeeDetails(userId, email, details) {
       .update(updatePayload)
       .eq('user_id', userId);
 
-    if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+    if (error) {
+      // Fallback: save extra fields inside module_access JSON if columns are not present
       delete updatePayload.emp_status;
+      delete updatePayload.emp_sub_department;
+      delete updatePayload.emp_alt_mobile;
+      delete updatePayload.work_location_type;
+      delete updatePayload.work_location_name;
+      delete updatePayload.primary_reporting_person;
+      delete updatePayload.secondary_reporting_person;
+      delete updatePayload.hod_person;
+
       const { data: userData } = await adminClient
         .from('user_roles')
         .select('module_access')
         .eq('user_id', userId)
         .single();
-      updatePayload.module_access = { ...(userData?.module_access || {}), emp_status: details.emp_status || 'Active' };
+      updatePayload.module_access = { 
+        ...(userData?.module_access || {}), 
+        emp_status: details.emp_status || 'Active',
+        emp_sub_department: details.emp_sub_department || '',
+        emp_alt_mobile: details.emp_alt_mobile || '',
+        work_location_type: details.work_location_type || '',
+        work_location_name: details.work_location_name || '',
+        primary_reporting_person: details.primary_reporting_person || '',
+        secondary_reporting_person: details.secondary_reporting_person || '',
+        hod_person: details.hod_person || ''
+      };
       const { error: fallbackErr } = await adminClient
         .from('user_roles')
         .update(updatePayload)
         .eq('user_id', userId);
       if (fallbackErr) return { success: false, error: fallbackErr.message };
-    } else if (error) {
-      return { success: false, error: error.message };
     }
   } else {
     // Insert new user
@@ -182,25 +214,45 @@ export async function registerEmployeeDetails(userId, email, details) {
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : ''),
       emp_name: details.emp_name,
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : ''),
+      emp_sub_department: details.emp_sub_department || '',
       emp_designation: details.emp_designation || (isCustomer ? 'Customer' : ''),
       emp_mobile: details.emp_mobile,
+      emp_alt_mobile: details.emp_alt_mobile || '',
       company: details.company || (isCustomer ? 'Public' : ''),
+      work_location_type: details.work_location_type || '',
+      work_location_name: details.work_location_name || '',
       emp_official_mail_id: details.emp_official_mail_id || email,
       emp_status: details.emp_status || 'Active',
+      primary_reporting_person: details.primary_reporting_person || '',
+      secondary_reporting_person: details.secondary_reporting_person || '',
+      hod_person: details.hod_person || '',
       can_read: isCustomer ? false : true,
       can_write: isCustomer ? false : true,
       can_import_export: false,
-      module_access: {}
+      module_access: {
+        emp_status: details.emp_status || 'Active',
+        emp_sub_department: details.emp_sub_department || '',
+        emp_alt_mobile: details.emp_alt_mobile || '',
+        work_location_type: details.work_location_type || '',
+        work_location_name: details.work_location_name || '',
+        primary_reporting_person: details.primary_reporting_person || '',
+        secondary_reporting_person: details.secondary_reporting_person || '',
+        hod_person: details.hod_person || ''
+      }
     };
 
     let { error } = await adminClient.from('user_roles').insert(insertPayload);
-    if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+    if (error) {
       delete insertPayload.emp_status;
-      insertPayload.module_access = { emp_status: details.emp_status || 'Active' };
+      delete insertPayload.emp_sub_department;
+      delete insertPayload.emp_alt_mobile;
+      delete insertPayload.work_location_type;
+      delete insertPayload.work_location_name;
+      delete insertPayload.primary_reporting_person;
+      delete insertPayload.secondary_reporting_person;
+      delete insertPayload.hod_person;
       const { error: insertErr } = await adminClient.from('user_roles').insert(insertPayload);
       if (insertErr) return { success: false, error: insertErr.message };
-    } else if (error) {
-      return { success: false, error: error.message };
     }
   }
   
@@ -226,9 +278,16 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     emp_id: details.emp_id,
     emp_name: details.emp_name,
     emp_department: details.emp_department,
+    emp_sub_department: details.emp_sub_department || '',
     emp_designation: details.emp_designation,
     emp_mobile: details.emp_mobile,
+    emp_alt_mobile: details.emp_alt_mobile || '',
     company: details.company,
+    work_location_type: details.work_location_type || '',
+    work_location_name: details.work_location_name || '',
+    primary_reporting_person: details.primary_reporting_person || '',
+    secondary_reporting_person: details.secondary_reporting_person || '',
+    hod_person: details.hod_person || ''
   };
 
   if (details.emp_status) {
@@ -245,8 +304,16 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     .update(updateData)
     .eq('user_id', userId);
 
-  if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
+  if (error) {
     delete updateData.emp_status;
+    delete updateData.emp_sub_department;
+    delete updateData.emp_alt_mobile;
+    delete updateData.work_location_type;
+    delete updateData.work_location_name;
+    delete updateData.primary_reporting_person;
+    delete updateData.secondary_reporting_person;
+    delete updateData.hod_person;
+
     const { data: userData } = await adminClient
       .from('user_roles')
       .select('module_access')
@@ -254,7 +321,17 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
       .single();
 
     const currentAccess = userData?.module_access || {};
-    updateData.module_access = { ...currentAccess, emp_status: details.emp_status || 'Active' };
+    updateData.module_access = { 
+      ...currentAccess, 
+      emp_status: details.emp_status || 'Active',
+      emp_sub_department: details.emp_sub_department || '',
+      emp_alt_mobile: details.emp_alt_mobile || '',
+      work_location_type: details.work_location_type || '',
+      work_location_name: details.work_location_name || '',
+      primary_reporting_person: details.primary_reporting_person || '',
+      secondary_reporting_person: details.secondary_reporting_person || '',
+      hod_person: details.hod_person || ''
+    };
 
     const { error: fallbackErr } = await adminClient
       .from('user_roles')
@@ -344,7 +421,7 @@ export async function createAccountAdmin(email, password, details) {
       authError.message.includes('already exists');
 
     if (isAlreadyRegistered) {
-      // Search for the existing customer in user_roles
+      // Search for existing user in user_roles
       const { data: existingUser, error: findError } = await adminClient
         .from('user_roles')
         .select('*')
@@ -352,36 +429,42 @@ export async function createAccountAdmin(email, password, details) {
         .maybeSingle();
 
       if (!findError && existingUser) {
-        // If the user currently has the customer role, promote them to agent
+        // Smart Upsert: Update existing employee details
+        const updateRes = await updateEmployeeDetailsAdmin(existingUser.user_id, {
+          ...details,
+          email
+        });
+
+        if (!updateRes.success) {
+          return { success: false, error: updateRes.error };
+        }
+
+        // If user was a customer, promote them to agent
         if (existingUser.role === 'customer') {
-          const { error: updateError } = await adminClient
-            .from('user_roles')
-            .update({
-              role: 'agent',
-              emp_id: details.emp_id,
-              emp_name: details.emp_name,
-              emp_department: details.emp_department || 'Sales',
-              emp_designation: details.emp_designation || 'Agent',
-              emp_mobile: details.emp_mobile,
-              company: details.company,
-              is_approved: true,
-              can_read: true,
-              can_write: true
-            })
-            .eq('user_id', existingUser.user_id);
+          await adminClient.from('user_roles').update({
+            role: 'agent',
+            is_approved: true,
+            can_read: true,
+            can_write: true
+          }).eq('user_id', existingUser.user_id);
+        }
 
-          if (updateError) {
-            return { success: false, error: 'Failed to update existing user role: ' + updateError.message };
+        // Note: Existing user's password is preserved 100% untouched and safe so they never get locked out
+        return { success: true, isNew: false, updated: true, userId: existingUser.user_id };
+      } else {
+        // User exists in auth.users but not yet in user_roles
+        try {
+          const { data: listData } = await adminClient.auth.admin.listUsers();
+          const targetAuthUser = (listData?.users || []).find(u => u.email?.toLowerCase() === email?.toLowerCase());
+          if (targetAuthUser) {
+            const regResult = await registerEmployeeDetails(targetAuthUser.id, email, details);
+            if (regResult.success) {
+              await toggleUserApproval(targetAuthUser.id, true);
+              return { success: true, isNew: false, updated: true, userId: targetAuthUser.id };
+            }
           }
-
-          // Update password if a new one is provided
-          if (password) {
-            await adminClient.auth.admin.updateUserById(existingUser.user_id, { password });
-          }
-
-          return { success: true };
-        } else {
-          return { success: false, error: 'A staff member with this email is already registered.' };
+        } catch (lookupErr) {
+          console.error('Auth lookup error:', lookupErr);
         }
       }
     }
@@ -395,7 +478,181 @@ export async function createAccountAdmin(email, password, details) {
   // Approve them automatically since admin created it
   await toggleUserApproval(authData.user.id, true);
 
-  return { success: true };
+  return { success: true, isNew: true, created: true, userId: authData.user.id };
+}
+
+export async function bulkImportEmployeesFast(records = []) {
+  if (!records || records.length === 0) {
+    return { success: true, createdCount: 0, updatedCount: 0, failCount: 0, results: [] };
+  }
+
+  const adminClient = getAdminClient();
+
+  // 1. Fetch all existing users from user_roles once in 1 lightning fast query
+  const { data: existingRoles } = await adminClient
+    .from('user_roles')
+    .select('user_id, email, emp_id, role, is_approved, module_access');
+
+  const byEmail = new Map();
+  const byEmpId = new Map();
+
+  (existingRoles || []).forEach(r => {
+    if (r.email) byEmail.set(r.email.trim().toLowerCase(), r);
+    if (r.emp_id) byEmpId.set(r.emp_id.trim().toLowerCase(), r);
+  });
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  let failCount = 0;
+  const results = [];
+
+  const processOne = async (record) => {
+    const {
+      rowIndex = '',
+      emp_id = '',
+      emp_name = 'Team Member',
+      emp_department = 'Sales',
+      emp_sub_department = '',
+      emp_designation = 'Executive',
+      emp_mobile = '',
+      emp_alt_mobile = '',
+      company = 'NSMLR',
+      work_location_type = '',
+      work_location_name = '',
+      emp_status = 'Active',
+      primary_reporting_person = '',
+      secondary_reporting_person = '',
+      hod_person = '',
+      password = 'Swan@12345'
+    } = record;
+
+    let email = (record.email || '').trim();
+    if (!email || !email.includes('@')) {
+      return {
+        success: false,
+        error: 'Missing/Invalid email in CSV',
+        skippedNoEmail: true,
+        emp_id,
+        emp_name,
+        email: '',
+        rowIndex
+      };
+    }
+
+    const emailKey = email.toLowerCase();
+    const empIdKey = emp_id.trim().toLowerCase();
+
+    // Check if user already exists
+    const existing = byEmail.get(emailKey) || (empIdKey ? byEmpId.get(empIdKey) : null);
+
+    if (existing) {
+      // Existing User -> Directly update user_roles (1 fast DB update)
+      const updateData = {
+        emp_id: emp_id || existing.emp_id,
+        emp_name,
+        emp_department,
+        emp_sub_department,
+        emp_designation,
+        emp_mobile,
+        emp_alt_mobile,
+        company,
+        work_location_type,
+        work_location_name,
+        emp_status: emp_status || 'Active',
+        primary_reporting_person,
+        secondary_reporting_person,
+        hod_person,
+        emp_official_mail_id: email
+      };
+
+      if (existing.role === 'customer') {
+        updateData.role = 'agent';
+        updateData.is_approved = true;
+        updateData.can_read = true;
+        updateData.can_write = true;
+      }
+
+      const { error: updErr } = await adminClient
+        .from('user_roles')
+        .update(updateData)
+        .eq('user_id', existing.user_id);
+
+      if (updErr) {
+        // fallback to module_access JSON
+        delete updateData.emp_status;
+        delete updateData.emp_sub_department;
+        delete updateData.emp_alt_mobile;
+        delete updateData.work_location_type;
+        delete updateData.work_location_name;
+        delete updateData.primary_reporting_person;
+        delete updateData.secondary_reporting_person;
+        delete updateData.hod_person;
+        updateData.module_access = {
+          ...(existing.module_access || {}),
+          emp_status: emp_status || 'Active',
+          emp_sub_department,
+          emp_alt_mobile,
+          work_location_type,
+          work_location_name,
+          primary_reporting_person,
+          secondary_reporting_person,
+          hod_person
+        };
+        await adminClient.from('user_roles').update(updateData).eq('user_id', existing.user_id);
+      }
+
+      return { success: true, updated: true, emp_id, emp_name, email, rowIndex };
+    }
+
+    // New User -> Create auth user + insert user_roles
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+
+    if (authError) {
+      if (authError.message.includes('already been registered') || authError.status === 422) {
+        const { data: userRole } = await adminClient.from('user_roles').select('*').eq('email', email).maybeSingle();
+        if (userRole) {
+          await adminClient.from('user_roles').update({
+            emp_id, emp_name, emp_department, emp_sub_department, emp_designation,
+            emp_mobile, emp_alt_mobile, company, work_location_type, work_location_name,
+            emp_status: emp_status || 'Active', primary_reporting_person, secondary_reporting_person, hod_person
+          }).eq('user_id', userRole.user_id);
+          return { success: true, updated: true, emp_id, emp_name, email, rowIndex };
+        }
+      }
+      return { success: false, error: authError.message, emp_id, emp_name, email, rowIndex };
+    }
+
+    const regRes = await registerEmployeeDetails(authData.user.id, email, {
+      emp_id, emp_name, emp_department, emp_sub_department, emp_designation,
+      emp_mobile, emp_alt_mobile, company, work_location_type, work_location_name,
+      emp_status: emp_status || 'Active', primary_reporting_person, secondary_reporting_person, hod_person
+    });
+
+    if (!regRes.success) {
+      return { success: false, error: regRes.error, emp_id, emp_name, email, rowIndex };
+    }
+
+    await toggleUserApproval(authData.user.id, true);
+    return { success: true, created: true, emp_id, emp_name, email, rowIndex };
+  };
+
+  const outcomes = await Promise.all(records.map(r => processOne(r)));
+
+  outcomes.forEach(o => {
+    if (o.success) {
+      if (o.updated) updatedCount++;
+      else createdCount++;
+    } else {
+      failCount++;
+    }
+    results.push(o);
+  });
+
+  return { success: true, createdCount, updatedCount, failCount, results };
 }
 
 // CALL CENTER ADMIN ACTIONS
@@ -524,6 +781,34 @@ export async function deleteUserAdmin(userId) {
   }
 
   return { success: true };
+}
+
+export async function cleanupDummyImportAccounts() {
+  const adminClient = getAdminClient();
+  const { data: allUsers, error } = await adminClient
+    .from('user_roles')
+    .select('user_id, email, emp_id, emp_name, role');
+
+  if (error || !allUsers) return { success: false, error: error?.message || 'Failed to fetch users' };
+
+  // Find auto-generated dummy accounts (matching {digits}@swanagro.in or emp_{digits}@swanagro.in)
+  const dummyAccounts = allUsers.filter(u => {
+    if (u.role === 'admin' || u.role === 'Admin') return false;
+    const email = (u.email || '').trim().toLowerCase();
+    return /^[0-9]+@swanagro\.in$/.test(email) || /^emp_?[0-9]+@swanagro\.in$/.test(email);
+  });
+
+  if (dummyAccounts.length === 0) {
+    return { success: true, count: 0, message: 'No dummy accounts found.' };
+  }
+
+  let deletedCount = 0;
+  for (const account of dummyAccounts) {
+    await deleteUserAdmin(account.user_id);
+    deletedCount++;
+  }
+
+  return { success: true, count: deletedCount, message: `Successfully deleted ${deletedCount} dummy test accounts.` };
 }
 
 // =========================================================================

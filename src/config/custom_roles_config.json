@@ -1,0 +1,288 @@
+[
+  {
+    "id": "super_admin",
+    "name": "Super Admin",
+    "description": "Full unrestricted access to all modules, team management, and system settings.",
+    "is_system": true,
+    "badge_color": "#4338ca",
+    "permissions": {
+      "leads_crm": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "delete": true
+      },
+      "recruiter_ats": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "delete": true
+      },
+      "voice_calling": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "dial": true
+      },
+      "ai_call_center": {
+        "read": true,
+        "write": true,
+        "execute": true
+      },
+      "whatsapp_chat": {
+        "read": true,
+        "write": true,
+        "templates": true
+      },
+      "email_messaging": {
+        "read": true,
+        "write": true,
+        "templates": true,
+        "smtp": true
+      },
+      "user_management": {
+        "read": true,
+        "write": true,
+        "roles": true,
+        "reset_password": true
+      },
+      "reports_analytics": {
+        "read": true,
+        "export": true
+      },
+      "system_settings": {
+        "read": true,
+        "write": true
+      }
+    }
+  },
+  {
+    "id": "sales_manager",
+    "name": "Sales Manager",
+    "description": "Manages sales pipelines, leads assignment, export, voice dialer, and sales analytics.",
+    "is_system": true,
+    "badge_color": "#059669",
+    "permissions": {
+      "leads_crm": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "delete": false
+      },
+      "recruiter_ats": {
+        "read": false,
+        "write": false,
+        "export": false,
+        "delete": false
+      },
+      "voice_calling": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "dial": true
+      },
+      "ai_call_center": {
+        "read": true,
+        "write": true,
+        "execute": true
+      },
+      "whatsapp_chat": {
+        "read": true,
+        "write": true,
+        "templates": true
+      },
+      "email_messaging": {
+        "read": true,
+        "write": true,
+        "templates": true,
+        "smtp": false
+      },
+      "user_management": {
+        "read": true,
+        "write": false,
+        "roles": false,
+        "reset_password": false
+      },
+      "reports_analytics": {
+        "read": true,
+        "export": true
+      },
+      "system_settings": {
+        "read": false,
+        "write": false
+      }
+    }
+  },
+  {
+    "id": "sales_executive",
+    "name": "Sales Executive",
+    "description": "Standard CRM agent for handling and updating assigned leads and making calls.",
+    "is_system": true,
+    "badge_color": "#0284c7",
+    "permissions": {
+      "leads_crm": {
+        "read": true,
+        "write": true,
+        "export": false,
+        "delete": false
+      },
+      "recruiter_ats": {
+        "read": false,
+        "write": false,
+        "export": false,
+        "delete": false
+      },
+      "voice_calling": {
+        "read": true,
+        "write": true,
+        "export": false,
+        "dial": true
+      },
+      "ai_call_center": {
+        "read": false,
+        "write": false,
+        "execute": false
+      },
+      "whatsapp_chat": {
+        "read": true,
+        "write": true,
+        "templates": false
+      },
+      "email_messaging": {
+        "read": true,
+        "write": true,
+        "templates": false,
+        "smtp": false
+      },
+      "user_management": {
+        "read": false,
+        "write": false,
+        "roles": false,
+        "reset_password": false
+      },
+      "reports_analytics": {
+        "read": false,
+        "export": false
+      },
+      "system_settings": {
+        "read": false,
+        "write": false
+      }
+    }
+  },
+  {
+    "id": "hr_manager",
+    "name": "HR & Recruiter Manager",
+    "description": "Oversees job postings, applicant tracking, interview stages, and recruiter performance.",
+    "is_system": true,
+    "badge_color": "#7c3aed",
+    "permissions": {
+      "leads_crm": {
+        "read": false,
+        "write": false,
+        "export": false,
+        "delete": false
+      },
+      "recruiter_ats": {
+        "read": true,
+        "write": true,
+        "export": true,
+        "delete": true
+      },
+      "voice_calling": {
+        "read": true,
+        "write": true,
+        "export": false,
+        "dial": true
+      },
+      "ai_call_center": {
+        "read": false,
+        "write": false,
+        "execute": false
+      },
+      "whatsapp_chat": {
+        "read": false,
+        "write": false,
+        "templates": false
+      },
+      "email_messaging": {
+        "read": false,
+        "write": false,
+        "templates": false,
+        "smtp": false
+      },
+      "user_management": {
+        "read": false,
+        "write": false,
+        "roles": false,
+        "reset_password": false
+      },
+      "reports_analytics": {
+        "read": true,
+        "export": true
+      },
+      "system_settings": {
+        "read": false,
+        "write": false
+      }
+    },
+    "updated_at": "2026-08-17T20:34:21.249Z"
+  },
+  {
+    "id": "telecaller",
+    "name": "Telecaller / Call Center Agent",
+    "description": "Specialized role for high-volume inbound/outbound voice dialing and WebRTC phone.",
+    "is_system": true,
+    "badge_color": "#d97706",
+    "permissions": {
+      "leads_crm": {
+        "read": true,
+        "write": true,
+        "export": false,
+        "delete": false
+      },
+      "recruiter_ats": {
+        "read": false,
+        "write": false,
+        "export": false,
+        "delete": false
+      },
+      "voice_calling": {
+        "read": true,
+        "write": true,
+        "export": false,
+        "dial": true
+      },
+      "ai_call_center": {
+        "read": false,
+        "write": false,
+        "execute": false
+      },
+      "whatsapp_chat": {
+        "read": false,
+        "write": false,
+        "templates": false
+      },
+      "email_messaging": {
+        "read": false,
+        "write": false,
+        "templates": false,
+        "smtp": false
+      },
+      "user_management": {
+        "read": false,
+        "write": false,
+        "roles": false,
+        "reset_password": false
+      },
+      "reports_analytics": {
+        "read": false,
+        "export": false
+      },
+      "system_settings": {
+        "read": false,
+        "write": false
+      }
+    }
+  }
+]

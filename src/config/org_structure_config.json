@@ -1,0 +1,78 @@
+{
+  "departments": [
+    {
+      "name": "Sales",
+      "sub_departments": [
+        "Inbound Sales",
+        "Outbound Telesales",
+        "Corporate Accounts",
+        "Government Tenders"
+      ]
+    },
+    {
+      "name": "Recruitment & HR",
+      "sub_departments": [
+        "Talent Acquisition",
+        "HR Operations",
+        "Employee Relations",
+        "Payroll"
+      ]
+    },
+    {
+      "name": "Operations & Logistics",
+      "sub_departments": [
+        "Warehouse",
+        "Supply Chain",
+        "Fleet Management",
+        "Dispatch"
+      ]
+    },
+    {
+      "name": "Marketing & Branding",
+      "sub_departments": [
+        "Digital Marketing",
+        "Content & Creative",
+        "Field Events",
+        "Lead Gen"
+      ]
+    },
+    {
+      "name": "Customer Support",
+      "sub_departments": [
+        "Technical Helpdesk",
+        "Billing Support",
+        "Grievance Redressal"
+      ]
+    },
+    {
+      "name": "Accounts & Finance",
+      "sub_departments": [
+        "Billing & Invoicing",
+        "Taxation & GST",
+        "Internal Audit"
+      ]
+    },
+    {
+      "name": "Engineering & IT",
+      "sub_departments": [
+        "Software Development",
+        "Infrastructure & Cloud",
+        "IT Support"
+      ]
+    }
+  ],
+  "designations": [
+    "Director",
+    "Head of Department (HOD)",
+    "General Manager",
+    "Senior Manager",
+    "Manager",
+    "Assistant Manager",
+    "Team Lead",
+    "Senior Executive",
+    "Executive",
+    "Associate",
+    "Intern",
+    "Consultant"
+  ]
+}
