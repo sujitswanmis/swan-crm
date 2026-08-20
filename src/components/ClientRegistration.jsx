@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X } from 'lucide-react';
 import Papa from 'papaparse';
@@ -90,9 +90,316 @@ const SAMPLE_DATA = [
     '', '', '', '', '', '', '',
     '', '', '', '', '', '', '',
     'Haryana', 'Gurugram', '122018', 'Gurugram', 'Gurgaon', 'Gurugram', 'Sohna Road, Gurugram, HR',
-    'Software licensing consulting', 'Below 1 Lakh', 'Within 30 Days'
   ]
 ];
+
+// Searchable Dropdown for Lead Entry By (Allows Top Manual Entry + Filtered Selection)
+function SearchableEntryByDropdown({ value, onChange, teamMembers }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(value || '');
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    setSearch(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredMembers = useMemo(() => {
+    if (!search.trim()) return teamMembers;
+    const term = search.toLowerCase();
+    return teamMembers.filter(m => 
+      (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
+      (m.email && m.email.toLowerCase().includes(term)) ||
+      (m.emp_department && m.emp_department.toLowerCase().includes(term))
+    );
+  }, [search, teamMembers]);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          type="text"
+          autoComplete="off"
+          value={search}
+          onFocus={() => setIsOpen(true)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            onChange(e.target.value);
+            setIsOpen(true);
+          }}
+          placeholder="Search or type entry by name..."
+          style={{
+            width: '100%',
+            padding: '0.6rem 2.2rem 0.6rem 0.8rem',
+            borderRadius: '6px',
+            border: '1px solid var(--border-light)',
+            fontSize: '0.9rem',
+            outline: 'none',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)'
+          }}
+        />
+        <ChevronDown 
+          size={16} 
+          onClick={() => setIsOpen(!isOpen)}
+          style={{ 
+            position: 'absolute', 
+            right: '0.75rem', 
+            color: 'var(--text-secondary)', 
+            pointerEvents: 'auto',
+            cursor: 'pointer' 
+          }} 
+        />
+      </div>
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '105%',
+          left: 0,
+          minWidth: 'max(100%, 280px)',
+          maxWidth: '360px',
+          maxHeight: '230px',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          background: 'var(--bg-surface, #ffffff)',
+          border: '1px solid var(--border-light, #e2e8f0)',
+          borderRadius: '8px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+          zIndex: 9999
+        }}>
+          {search.trim() && (
+            <div
+              onClick={() => {
+                onChange(search.trim());
+                setIsOpen(false);
+              }}
+              style={{
+                padding: '0.65rem 0.8rem',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#2563eb',
+                borderBottom: '1px solid var(--border-light, #e2e8f0)',
+                background: '#eff6ff',
+                fontSize: '0.88rem',
+                wordBreak: 'break-word'
+              }}
+            >
+              ➕ Manual Entry: "{search.trim()}"
+            </div>
+          )}
+
+          {filteredMembers.length > 0 ? (
+            filteredMembers.map((m) => (
+              <div
+                key={m.user_id || m.id || m.email}
+                onClick={() => {
+                  const val = m.emp_name || m.email;
+                  setSearch(val);
+                  onChange(val);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '0.6rem 0.88rem',
+                  cursor: 'pointer',
+                  fontSize: '0.88rem',
+                  borderBottom: '1px solid rgba(0,0,0,0.04)',
+                  color: 'var(--text-primary)',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'normal'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-primary, #f8fafc)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{m.emp_name || m.email}</div>
+                {m.emp_department && (
+                  <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{m.emp_department}</div>
+                )}
+              </div>
+            ))
+          ) : (
+            !search.trim() && (
+              <div style={{ padding: '0.65rem 0.8rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                No team members found
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Searchable Dropdown for Assign To (Strict Registered Active Team Selection ONLY)
+function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const activeMembers = useMemo(() => {
+    return teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')));
+  }, [teamMembers]);
+
+  const selectedMemberName = useMemo(() => {
+    if (!value) return '';
+    const found = activeMembers.find(m => (m.user_id === value || m.id === value));
+    return found ? (found.emp_name + (found.emp_department ? ` (${found.emp_department})` : '')) : value;
+  }, [value, activeMembers]);
+
+  const [search, setSearch] = useState(selectedMemberName);
+
+  useEffect(() => {
+    setSearch(selectedMemberName);
+  }, [selectedMemberName]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+        setSearch(selectedMemberName);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectedMemberName]);
+
+  const filteredMembers = useMemo(() => {
+    if (!search || search === selectedMemberName) return activeMembers;
+    const term = search.toLowerCase();
+    return activeMembers.filter(m =>
+      (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
+      (m.email && m.email.toLowerCase().includes(term)) ||
+      (m.emp_department && m.emp_department.toLowerCase().includes(term))
+    );
+  }, [search, selectedMemberName, activeMembers]);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          type="text"
+          autoComplete="off"
+          value={search}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearch('');
+          }}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+          }}
+          placeholder="Search agent to assign..."
+          style={{
+            width: '100%',
+            padding: '0.6rem 2.2rem 0.6rem 0.8rem',
+            borderRadius: '6px',
+            border: '1px solid var(--border-light)',
+            fontSize: '0.9rem',
+            outline: 'none',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)'
+          }}
+        />
+        <ChevronDown 
+          size={16} 
+          onClick={() => setIsOpen(!isOpen)}
+          style={{ 
+            position: 'absolute', 
+            right: '0.75rem', 
+            color: 'var(--text-secondary)', 
+            pointerEvents: 'auto',
+            cursor: 'pointer' 
+          }} 
+        />
+      </div>
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '105%',
+          left: 0,
+          minWidth: 'max(100%, 280px)',
+          maxWidth: '360px',
+          maxHeight: '230px',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          background: 'var(--bg-surface, #ffffff)',
+          border: '1px solid var(--border-light, #e2e8f0)',
+          borderRadius: '8px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+          zIndex: 9999
+        }}>
+          {/* Unassigned Option */}
+          <div
+            onClick={() => {
+              onChange('');
+              setSearch('');
+              setIsOpen(false);
+            }}
+            style={{
+              padding: '0.65rem 0.8rem',
+              cursor: 'pointer',
+              fontWeight: 500,
+              color: '#64748b',
+              borderBottom: '1px solid var(--border-light, #e2e8f0)',
+              background: !value ? '#f1f5f9' : 'transparent',
+              fontSize: '0.88rem'
+            }}
+          >
+            ⚪ Open Lead (Unassigned)
+          </div>
+
+          {filteredMembers.length > 0 ? (
+            filteredMembers.map((m) => {
+              const memberId = m.user_id || m.id;
+              const isSelected = value === memberId;
+              return (
+                <div
+                  key={memberId}
+                  onClick={() => {
+                    onChange(memberId);
+                    setIsOpen(false);
+                  }}
+                  style={{
+                    padding: '0.6rem 0.88rem',
+                    cursor: 'pointer',
+                    fontSize: '0.88rem',
+                    background: isSelected ? '#eef2ff' : 'transparent',
+                    color: isSelected ? '#4338ca' : 'var(--text-primary)',
+                    borderBottom: '1px solid rgba(0,0,0,0.04)',
+                    wordBreak: 'break-word',
+                    whiteSpace: 'normal'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-primary, #f8fafc)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: isSelected ? '#4338ca' : 'var(--text-primary)' }}>
+                    {m.emp_name} {m.emp_department ? `(${m.emp_department})` : ''}
+                  </div>
+                  {m.email && <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{m.email}</div>}
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ padding: '0.65rem 0.8rem', fontSize: '0.85rem', color: '#ef4444' }}>
+              No registered active team member found
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null }) {
   const supabase = createClient();
@@ -763,7 +1070,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           
           {/* GROUP 1: Lead Info */}
-          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'visible', position: 'relative', zIndex: 10 }}>
             <button type="button" onClick={() => toggleSection('leadInfo')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={18} /> 01 - Lead Information</div>
               {expandedSections.leadInfo ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -788,26 +1095,24 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                     ))}
                   </select>
                 </div>
-                {renderInput('Source Name', 'source_name')}
-                {renderInput('Lead Entry By', 'entry_by')}
-                {/* Assigned To Row */}
-                <div className="form-group">
+                {/* Lead Entry By - Custom Search & Dropdown (Top Manual Entry Allowed) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Entry By</label>
+                  <SearchableEntryByDropdown
+                    value={formData.entry_by || ''}
+                    onChange={(val) => setFormData(prev => ({ ...prev, entry_by: val }))}
+                    teamMembers={teamMembers}
+                  />
+                </div>
+
+                {/* Assigned To Row - Strict Custom Search & Dropdown ONLY (No Manual Option) */}
+                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Assign To (Agent)</label>
-                  <div style={{ position: 'relative' }}>
-                    <select 
-                      name="assigned_to"
-                      value={formData.assigned_to}
-                      onChange={handleChange}
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                    >
-                      <option value="">Open Lead (Unassigned)</option>
-                      {teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer'))).map(member => (
-                        <option key={member.user_id} value={member.user_id}>
-                          {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <SearchableAssignToDropdown
+                    value={formData.assigned_to || ''}
+                    onChange={(val) => setFormData(prev => ({ ...prev, assigned_to: val }))}
+                    teamMembers={teamMembers}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
