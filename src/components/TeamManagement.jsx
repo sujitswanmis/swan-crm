@@ -21,7 +21,7 @@ const DEFAULT_DEPARTMENTS = [
 ];
 
 const LEAD_STAGES = [
-  '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
+  'lead_dashboard', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
   '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'
 ];
 
@@ -2763,31 +2763,43 @@ export default function TeamManagement({ initialUsers = [] }) {
                                   />
                                 </div>
                                 <div style={{ width: '55px', textAlign: 'center' }}>
-                                  <input 
-                                    type="checkbox"
-                                    checked={canAdd}
-                                    onChange={() => handleToggleModulePerm(module.id, 'add')}
-                                    title="Add Access"
-                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#16a34a', cursor: 'pointer' }}
-                                  />
+                                  {module.viewOnly ? (
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                  ) : (
+                                    <input 
+                                      type="checkbox"
+                                      checked={canAdd}
+                                      onChange={() => handleToggleModulePerm(module.id, 'add')}
+                                      title="Add Access"
+                                      style={{ width: '1.1rem', height: '1.1rem', accentColor: '#16a34a', cursor: 'pointer' }}
+                                    />
+                                  )}
                                 </div>
                                 <div style={{ width: '70px', textAlign: 'center' }}>
-                                  <input 
-                                    type="checkbox"
-                                    checked={canEdit}
-                                    onChange={() => handleToggleModulePerm(module.id, 'edit')}
-                                    title="Edit/Save Access"
-                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#d97706', cursor: 'pointer' }}
-                                  />
+                                  {module.viewOnly ? (
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                  ) : (
+                                    <input 
+                                      type="checkbox"
+                                      checked={canEdit}
+                                      onChange={() => handleToggleModulePerm(module.id, 'edit')}
+                                      title="Edit/Save Access"
+                                      style={{ width: '1.1rem', height: '1.1rem', accentColor: '#d97706', cursor: 'pointer' }}
+                                    />
+                                  )}
                                 </div>
                                 <div style={{ width: '55px', textAlign: 'center' }}>
-                                  <input 
-                                    type="checkbox"
-                                    checked={canDelete}
-                                    onChange={() => handleToggleModulePerm(module.id, 'delete')}
-                                    title="Delete Access"
-                                    style={{ width: '1.1rem', height: '1.1rem', accentColor: '#dc2626', cursor: 'pointer' }}
-                                  />
+                                  {module.viewOnly ? (
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                  ) : (
+                                    <input 
+                                      type="checkbox"
+                                      checked={canDelete}
+                                      onChange={() => handleToggleModulePerm(module.id, 'delete')}
+                                      title="Delete Access"
+                                      style={{ width: '1.1rem', height: '1.1rem', accentColor: '#dc2626', cursor: 'pointer' }}
+                                    />
+                                  )}
                                 </div>
                               </div>
 
@@ -2821,6 +2833,7 @@ export default function TeamManagement({ initialUsers = [] }) {
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                     {module.subItems.map(sub => {
                                       const subAccess = getSubItemPerms(accessForm, module.id, sub.id);
+                                      const isSubViewOnly = sub.id === 'lead_dashboard' || module.viewOnly;
 
                                       return (
                                         <div key={sub.id} style={{ display: 'flex', alignItems: 'center', padding: '0.35rem 0.5rem', borderRadius: '4px', backgroundColor: subAccess.view ? '#f0f9ff' : 'transparent', borderBottom: '1px solid var(--border-light)' }}>
@@ -2837,28 +2850,40 @@ export default function TeamManagement({ initialUsers = [] }) {
                                             />
                                           </div>
                                           <div style={{ width: '55px', textAlign: 'center' }}>
-                                            <input 
-                                              type="checkbox"
-                                              checked={subAccess.add}
-                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'add')}
-                                              style={{ width: '1rem', height: '1rem', accentColor: '#16a34a', cursor: 'pointer' }}
-                                            />
+                                            {isSubViewOnly ? (
+                                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                            ) : (
+                                              <input 
+                                                type="checkbox"
+                                                checked={subAccess.add}
+                                                onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'add')}
+                                                style={{ width: '1rem', height: '1rem', accentColor: '#16a34a', cursor: 'pointer' }}
+                                              />
+                                            )}
                                           </div>
                                           <div style={{ width: '70px', textAlign: 'center' }}>
-                                            <input 
-                                              type="checkbox"
-                                              checked={subAccess.edit}
-                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'edit')}
-                                              style={{ width: '1rem', height: '1rem', accentColor: '#d97706', cursor: 'pointer' }}
-                                            />
+                                            {isSubViewOnly ? (
+                                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                            ) : (
+                                              <input 
+                                                type="checkbox"
+                                                checked={subAccess.edit}
+                                                onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'edit')}
+                                                style={{ width: '1rem', height: '1rem', accentColor: '#d97706', cursor: 'pointer' }}
+                                              />
+                                            )}
                                           </div>
                                           <div style={{ width: '55px', textAlign: 'center' }}>
-                                            <input 
-                                              type="checkbox"
-                                              checked={subAccess.delete}
-                                              onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'delete')}
-                                              style={{ width: '1rem', height: '1rem', accentColor: '#dc2626', cursor: 'pointer' }}
-                                            />
+                                            {isSubViewOnly ? (
+                                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', opacity: 0.5 }}>—</span>
+                                            ) : (
+                                              <input 
+                                                type="checkbox"
+                                                checked={subAccess.delete}
+                                                onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'delete')}
+                                                style={{ width: '1rem', height: '1rem', accentColor: '#dc2626', cursor: 'pointer' }}
+                                              />
+                                            )}
                                           </div>
                                         </div>
                                       );

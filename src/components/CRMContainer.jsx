@@ -1247,6 +1247,24 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                         {module.id === 'leads' && (
                           <div className={`submenu-list ${leadDataExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
+                              {(() => {
+                                const leadsAccess = moduleAccess?.leads || {};
+                                const dashboardAccess = moduleAccess?.lead_dashboard || {};
+                                const isAdmin = userRole === 'admin' || userRole === 'Admin';
+                                const canSeeDashboard = isAdmin || leadsAccess.view !== false || dashboardAccess.view || leadsAccess.is_manager || (leadsAccess.assigned_steps || []).includes('lead_dashboard');
+                                if (!canSeeDashboard) return null;
+
+                                return (
+                                  <button
+                                    onClick={() => { handleTabChange('leads'); handleStageChange('lead_dashboard'); }}
+                                    className="submenu-item"
+                                    data-active={activeTab === 'leads' && (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard')}
+                                  >
+                                    📊 Lead Dashboard
+                                  </button>
+                                );
+                              })()}
+
                               <button
                                 onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
                                 className="submenu-item"
@@ -1563,7 +1581,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}>
                 <h1 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0 }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
-                  {activeTab === 'leads' && (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads')}
+                  {activeTab === 'leads' && (
+                    leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard' 
+                      ? 'Lead Dashboard' 
+                      : (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads')
+                  )}
                   {activeTab === 'orders' && 'Order Management'}
                   {activeTab === 'mrp' && 'MRP System'}
                   {activeTab === 'mrp_against' && 'MRP Against'}
@@ -2123,7 +2145,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                   {loadingLeads ? (
                     <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
                   ) : (
-                    <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
+                    <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} onStageChange={handleStageChange} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
                   )}
                 </ErrorBoundary>
               )}

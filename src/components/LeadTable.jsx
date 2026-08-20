@@ -13,6 +13,7 @@ import LeadFormModal from './LeadFormModal';
 import LeadProfilePanel from './LeadProfilePanel';
 import ClientRegistration from './ClientRegistration';
 import WhatsappSendModal from './WhatsappSendModal';
+import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import Papa from 'papaparse';
@@ -459,7 +460,7 @@ const columns = [
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
 ];
 
-export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
+export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, onStageChange, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
 
@@ -904,6 +905,44 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       }
     });
   };
+
+  if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard') {
+    return (
+      <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+        <LeadDashboard
+          leads={initialData}
+          teamMembers={teamMembers}
+          userRole={userRole}
+          userId={userId}
+          userName={userName}
+          moduleAccess={moduleAccess}
+          onNavigateStage={(stg) => {
+            if (onStageChange) onStageChange(stg);
+          }}
+          onOpenProfile={(lead, mode) => {
+            setProfileMode(mode);
+            setSelectedLead(lead);
+          }}
+        />
+
+        {selectedLead && (
+          <LeadProfilePanel
+            lead={selectedLead}
+            mode={profileMode}
+            onClose={() => setSelectedLead(null)}
+            teamMembers={teamMembers}
+            userRole={userRole}
+            userId={userId}
+            userName={userName}
+            onUpdateLead={(updatedLead) => {
+              setData(curr => curr.map(item => item.id === updatedLead.id ? { ...item, ...updatedLead } : item));
+              if (onLeadsChange) onLeadsChange(updatedLead);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>

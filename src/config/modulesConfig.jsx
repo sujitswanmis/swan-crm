@@ -3,11 +3,12 @@ import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot,
 
 export const MODULES_CONFIG = [
   // General / Dashboards
-  { id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General', icon: <PieChart size={20} /> },
+  { id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General', icon: <PieChart size={20} />, viewOnly: true },
   { id: 'new_swan_ai', path: 'ai', label: 'New Swan AI', category: 'General', icon: <Bot size={20} /> },
   { id: 'callcenter', path: 'callcenter', label: 'Call Center', category: 'General', icon: <PhoneCall size={20} /> },
 
   // Sales
+  { id: 'lead_dashboard', path: 'leads', label: 'Lead Dashboard', category: 'Sales', icon: <PieChart size={20} />, viewOnly: true },
   { id: 'registration', path: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
   { id: 'report', path: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
   { 
@@ -18,6 +19,7 @@ export const MODULES_CONFIG = [
     icon: <Users size={20} />,
     subItemsType: 'leads_stages',
     subItems: [
+      { id: 'lead_dashboard', label: '📊 Lead Dashboard' },
       { id: '01 - New Stage', label: '01 - New Stage' },
       { id: '02 - Contact Stage', label: '02 - Contact Stage' },
       { id: '03 - Qualification Stage', label: '03 - Qualification Stage' },
