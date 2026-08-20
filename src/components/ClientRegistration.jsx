@@ -114,13 +114,20 @@ function SearchableEntryByDropdown({ value, onChange, teamMembers }) {
   }, []);
 
   const filteredMembers = useMemo(() => {
-    if (!search.trim()) return teamMembers;
-    const term = search.toLowerCase();
-    return teamMembers.filter(m => 
-      (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
-      (m.email && m.email.toLowerCase().includes(term)) ||
-      (m.emp_department && m.emp_department.toLowerCase().includes(term))
-    );
+    let list = teamMembers;
+    if (search.trim()) {
+      const term = search.toLowerCase();
+      list = teamMembers.filter(m => 
+        (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
+        (m.email && m.email.toLowerCase().includes(term)) ||
+        (m.emp_department && m.emp_department.toLowerCase().includes(term))
+      );
+    }
+    return [...list].sort((a, b) => {
+      const nameA = (a.emp_name || a.email || '').toLowerCase();
+      const nameB = (b.emp_name || b.email || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }, [search, teamMembers]);
 
   return (
@@ -244,7 +251,12 @@ function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
   const dropdownRef = useRef(null);
 
   const activeMembers = useMemo(() => {
-    return teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')));
+    const list = teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')));
+    return [...list].sort((a, b) => {
+      const nameA = (a.emp_name || a.email || '').toLowerCase();
+      const nameB = (b.emp_name || b.email || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }, [teamMembers]);
 
   const selectedMemberName = useMemo(() => {
@@ -448,17 +460,35 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     async function loadTeam() {
       try {
         const response = await getTeamMembers();
-        if (response && Array.isArray(response)) {
+        if (response && Array.isArray(response) && response.length > 0) {
           setTeamMembers(response);
-        } else if (response?.data) {
+          return;
+        } else if (response?.data && Array.isArray(response.data) && response.data.length > 0) {
           setTeamMembers(response.data);
+          return;
         }
       } catch (error) {
-        console.error("Failed to load team members:", error);
+        console.warn("Server action getTeamMembers failed, using Supabase client fallback:", error);
+      }
+
+      // Fallback query directly via Supabase client to prevent page crash on Server Action desync
+      try {
+        const { data: dbMembers } = await supabase
+          .from('user_roles')
+          .select('*')
+          .order('created_at', { ascending: true });
+        if (dbMembers && Array.isArray(dbMembers)) {
+          setTeamMembers(dbMembers.map(u => ({
+            ...u,
+            emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active'
+          })));
+        }
+      } catch (fallbackErr) {
+        console.error("Direct fallback load team failed:", fallbackErr);
       }
     }
     loadTeam();
-  }, []);
+  }, [supabase]);
 
   const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
   const [clientStatuses, setClientStatuses] = useState(['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress']);
