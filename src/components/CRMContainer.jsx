@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2 } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -58,8 +58,43 @@ const THEMES = [
   { id: 'theme-carbon', name: 'Carbon Gold', icon: '🖤' },
   { id: 'theme-sunset', name: 'Sunset Crimson', icon: '🌅' },
   { id: 'theme-platina', name: 'Platina Clean', icon: '🥈' },
-  { id: 'theme-neumorphism', name: 'Neumorphic Soft', icon: '🎨' },
 ];
+
+// Helper to map DB status to Team Management Stage format
+export const getStageFromStatus = (status) => {
+  if (!status) return '01 - New Stage';
+  if (status.startsWith('1;')) return '01 - New Stage';
+  if (status.startsWith('2;')) return '02 - Contact Stage';
+  if (status.startsWith('3;')) return '03 - Qualification Stage';
+  if (status.startsWith('4;')) return '04 - Follow Up Stage';
+  if (status.startsWith('5;')) return '05 - Sales Process Stage';
+  if (status.startsWith('6;')) return '06 - Conversion Stage';
+  if (status.startsWith('7;')) return '07 - Final Stage';
+  if (['New', 'Pending'].includes(status)) return '01 - New Stage';
+  if (['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => (status || '').toLowerCase().includes(k.toLowerCase()))) return '07 - Final Stage';
+  return '01 - New Stage';
+};
+
+// Formats follow-up date with exact 4-digit year DD/MM/YYYY and hh:mm am/pm
+export const formatFollowUpDateTime = (dateVal) => {
+  if (!dateVal) return { dateStr: '', timeStr: '', fullStr: '' };
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return { dateStr: '', timeStr: '', fullStr: '' };
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const strHours = String(hours).padStart(2, '0');
+  return {
+    dateStr: `${day}/${month}/${year}`,
+    timeStr: `${strHours}:${minutes} ${ampm}`,
+    fullStr: `${day}/${month}/${year}, ${strHours}:${minutes} ${ampm}`
+  };
+};
 
 export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
   const router = useRouter();
@@ -574,17 +609,33 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           setRawLeads(unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
         }
 
-        // 3. Fetch recent notes in one fast targeted query (top 5,000 recent notes) to populate computed summary fields
+        // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
         try {
-          const { data: recentNotes, error: notesError } = await supabase
+          const { count: totalNotesCount } = await supabase
             .from('lead_notes')
-            .select('id, lead_id, created_at, note_text, created_by')
-            .order('created_at', { ascending: false })
-            .limit(5000);
+            .select('*', { count: 'exact', head: true });
+
+          const notesPageSize = 1000;
+          const totalNotes = totalNotesCount || 0;
+          const notesNumPages = totalNotes > 0 ? Math.ceil(totalNotes / notesPageSize) : 1;
           
-          if (!notesError && recentNotes) {
+          let allNotes = [];
+          const notesBatches = Array.from({ length: notesNumPages }, (_, i) => i);
+          const notesBatchSize = 4; // Fetch 4 pages (4,000 notes) in parallel batches
+          
+          for (let i = 0; i < notesBatches.length; i += notesBatchSize) {
+            const currentBatch = notesBatches.slice(i, i + notesBatchSize);
+            const results = await Promise.all(currentBatch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
+            for (const data of results) {
+              if (Array.isArray(data)) {
+                allNotes = allNotes.concat(data);
+              }
+            }
+          }
+
+          if (allNotes.length > 0) {
             const notesMap = {};
-            for (const note of recentNotes) {
+            for (const note of allNotes) {
               if (!notesMap[note.lead_id]) {
                 notesMap[note.lead_id] = [];
               }
@@ -599,7 +650,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             });
           }
         } catch (notesErr) {
-          console.error("Failed to fetch lead notes:", notesErr);
+          console.error("Failed to fetch all lead notes:", notesErr);
         }
 
       } catch (err) {
@@ -674,21 +725,6 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       return;
     }
     
-    // Helper to map DB status to Team Management Stage format
-    const getStageFromStatus = (status) => {
-      if (!status) return '01 - New Stage';
-      if (status.startsWith('1;')) return '01 - New Stage';
-      if (status.startsWith('2;')) return '02 - Contact Stage';
-      if (status.startsWith('3;')) return '03 - Qualification Stage';
-      if (status.startsWith('4;')) return '04 - Follow Up Stage';
-      if (status.startsWith('5;')) return '05 - Sales Process Stage';
-      if (status.startsWith('6;')) return '06 - Conversion Stage';
-      if (status.startsWith('7;')) return '07 - Final Stage';
-      if (['New', 'Pending'].includes(status)) return '01 - New Stage';
-      if (['Converted', 'Order Received', 'Closed'].includes(status)) return '07 - Final Stage';
-      return '01 - New Stage';
-    };
-
     // 4. If agent access, only see leads in assigned steps AND that are either open (null) or assigned to them
     const assignedSteps = leadsAccess.assigned_steps || [];
     if (assignedSteps.length > 0) {
@@ -732,6 +768,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   const [currentTime, setCurrentTime] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'yesterday' | 'today' | 'tomorrow' | 'overdue' | 'upcoming'
+  const [notifSearch, setNotifSearch] = useState('');
+  const [collapsedDates, setCollapsedDates] = useState(new Set());
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
@@ -879,27 +918,191 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     window.location.href = '/login';
   };
 
-  // Calculate upcoming or overdue follow-ups
-  const dueFollowUps = leads.filter(lead => {
-    if (!lead.follow_up_date) return false;
-
-    // Filter out finished leads
-    const statusLower = (lead.status || '').toLowerCase();
-    if (['converted', 'closed', 'order received', 'won', 'lost'].some(keyword => statusLower.includes(keyword))) {
-      return false;
+  // Comprehensive Follow-up categorization: All, Yesterday, Today, Tomorrow, Overdue, Upcoming
+  const categorizedFollowUps = React.useMemo(() => {
+    if (!leads || leads.length === 0) {
+      return { all: [], yesterday: [], today: [], tomorrow: [], overdue: [], upcoming: [] };
     }
     
-    // Compare exact timestamps to trigger exactly on time
-    if (!currentTime) return false;
-    const followUpTime = new Date(lead.follow_up_date).getTime();
-    if (followUpTime > currentTime) return false;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+    const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
+    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+    const yesterdayEnd = todayStart - 1;
+    const tomorrowStart = todayEnd + 1;
+    const tomorrowEnd = tomorrowStart + 24 * 60 * 60 * 1000 - 1;
 
-    // Filter out if there is a note/interaction created on or after the follow-up date
-    const notes = lead.lead_notes || [];
-    const hasBeenWorkedOn = notes.some(note => new Date(note.created_at).getTime() >= followUpTime);
+    const all = [];
+    const yesterday = [];
+    const today = [];
+    const tomorrow = [];
+    const overdue = [];
+    const upcoming = [];
+
+    leads.forEach(lead => {
+      if (!lead.follow_up_date) return;
+
+      const statusLower = (lead.status || '').toLowerCase();
+      if (['converted', 'closed', 'order received', 'won', 'lost'].some(keyword => statusLower.includes(keyword))) {
+        return;
+      }
+
+      const fTime = new Date(lead.follow_up_date).getTime();
+      if (isNaN(fTime)) return;
+
+      let category = 'upcoming';
+      if (fTime >= yesterdayStart && fTime <= yesterdayEnd) {
+        category = 'yesterday';
+        yesterday.push(lead);
+        overdue.push(lead);
+      } else if (fTime < yesterdayStart) {
+        category = 'overdue';
+        overdue.push(lead);
+      } else if (fTime >= todayStart && fTime <= todayEnd) {
+        category = 'today';
+        today.push(lead);
+      } else if (fTime >= tomorrowStart && fTime <= tomorrowEnd) {
+        category = 'tomorrow';
+        tomorrow.push(lead);
+      } else {
+        category = 'upcoming';
+        upcoming.push(lead);
+      }
+
+      all.push({ ...lead, followUpTimestamp: fTime, followUpCategory: category });
+    });
+
+    // Sort descending (latest / newest follow-up dates first)
+    all.sort((a, b) => b.followUpTimestamp - a.followUpTimestamp);
+    yesterday.sort((a, b) => new Date(b.follow_up_date).getTime() - new Date(a.follow_up_date).getTime());
+    today.sort((a, b) => new Date(b.follow_up_date).getTime() - new Date(a.follow_up_date).getTime());
+    tomorrow.sort((a, b) => new Date(b.follow_up_date).getTime() - new Date(a.follow_up_date).getTime());
+    overdue.sort((a, b) => new Date(b.follow_up_date).getTime() - new Date(a.follow_up_date).getTime());
+    upcoming.sort((a, b) => new Date(b.follow_up_date).getTime() - new Date(a.follow_up_date).getTime());
+
+    return { all, yesterday, today, tomorrow, overdue, upcoming };
+  }, [leads]);
+
+  // Filtered follow-ups based on selected tab and search query
+  const filteredNotificationList = React.useMemo(() => {
+    let list = [];
+    if (notifFilter === 'today') list = categorizedFollowUps.today;
+    else if (notifFilter === 'yesterday') list = categorizedFollowUps.yesterday;
+    else if (notifFilter === 'tomorrow') list = categorizedFollowUps.tomorrow;
+    else if (notifFilter === 'overdue') list = categorizedFollowUps.overdue;
+    else if (notifFilter === 'upcoming') list = categorizedFollowUps.upcoming;
+    else list = categorizedFollowUps.all;
+
+    if (!notifSearch.trim()) return list;
+
+    const q = notifSearch.toLowerCase().trim();
+    return list.filter(lead => {
+      const name = (lead.name || '').toLowerCase();
+      const company = (lead.company || '').toLowerCase();
+      const phone = (lead.phone || lead.business_contact_1 || lead.business_contact_2 || '').toLowerCase();
+      const refId = (lead.lead_ref_id || '').toLowerCase();
+      const status = (lead.status || '').toLowerCase();
+      const city = (lead.district_name || lead.city_name || lead.state_name || '').toLowerCase();
+      return name.includes(q) || company.includes(q) || phone.includes(q) || refId.includes(q) || status.includes(q) || city.includes(q);
+    });
+  }, [categorizedFollowUps, notifFilter, notifSearch]);
+
+  // Group filtered notifications by Date with Expand / Collapse
+  const groupedFollowUpsByDate = React.useMemo(() => {
+    const groups = new Map();
     
-    return !hasBeenWorkedOn;
-  });
+    filteredNotificationList.forEach(lead => {
+      const d = new Date(lead.follow_up_date);
+      if (isNaN(d.getTime())) return;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const dateKey = `${year}-${month}-${day}`;
+      const displayDate = `${day}/${month}/${year}`;
+
+      if (!groups.has(dateKey)) {
+        let label = displayDate;
+        let color = 'var(--text-primary)';
+        let bg = 'var(--th-bg)';
+        let badgeBg = 'rgba(59, 130, 246, 0.15)';
+        let badgeColor = '#3b82f6';
+
+        if (lead.followUpCategory === 'today') {
+          label = `🟡 Today (${displayDate})`;
+          color = '#d97706';
+          bg = 'rgba(234, 179, 8, 0.12)';
+          badgeBg = 'rgba(234, 179, 8, 0.2)';
+          badgeColor = '#d97706';
+        } else if (lead.followUpCategory === 'yesterday') {
+          label = `🔴 Yesterday (${displayDate})`;
+          color = '#ef4444';
+          bg = 'rgba(239, 68, 68, 0.12)';
+          badgeBg = 'rgba(239, 68, 68, 0.2)';
+          badgeColor = '#ef4444';
+        } else if (lead.followUpCategory === 'tomorrow') {
+          label = `🟢 Tomorrow (${displayDate})`;
+          color = '#059669';
+          bg = 'rgba(16, 185, 129, 0.12)';
+          badgeBg = 'rgba(16, 185, 129, 0.2)';
+          badgeColor = '#059669';
+        } else if (lead.followUpCategory === 'overdue') {
+          label = `🔴 Overdue (${displayDate})`;
+          color = '#ef4444';
+          bg = 'rgba(239, 68, 68, 0.08)';
+          badgeBg = 'rgba(239, 68, 68, 0.15)';
+          badgeColor = '#ef4444';
+        } else {
+          label = `🔵 Upcoming (${displayDate})`;
+          color = '#3b82f6';
+          bg = 'rgba(59, 130, 246, 0.08)';
+          badgeBg = 'rgba(59, 130, 246, 0.15)';
+          badgeColor = '#3b82f6';
+        }
+
+        groups.set(dateKey, {
+          dateKey,
+          displayDate,
+          label,
+          color,
+          bg,
+          badgeBg,
+          badgeColor,
+          leads: []
+        });
+      }
+      groups.get(dateKey).leads.push(lead);
+    });
+
+    return Array.from(groups.values());
+  }, [filteredNotificationList]);
+
+  const toggleDateGroup = (dateKey) => {
+    setCollapsedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(dateKey)) {
+        next.delete(dateKey);
+      } else {
+        next.add(dateKey);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllDateGroups = () => {
+    const allKeys = groupedFollowUpsByDate.map(g => g.dateKey);
+    setCollapsedDates(prev => {
+      if (prev.size >= allKeys.length) {
+        return new Set(); // Expand all
+      } else {
+        return new Set(allKeys); // Collapse all
+      }
+    });
+  };
+
+  // Calculate due follow-ups (overdue + today) for alerts & notifications
+  const dueFollowUps = React.useMemo(() => {
+    return categorizedFollowUps.all;
+  }, [categorizedFollowUps]);
 
   const prevDueCount = useRef(dueFollowUps.length);
   const notifiedFollowUpKeysRef = useRef(new Set());
@@ -1822,34 +2025,348 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               </button>
 
               {showNotifications && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '320px', maxWidth: 'calc(100vw - 32px)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', zIndex: 10000, overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                    Follow-up Tasks Due
+                <div style={{
+                  position: 'fixed',
+                  top: '60px',
+                  bottom: '10px',
+                  right: '12px',
+                  width: '460px',
+                  maxWidth: 'calc(100vw - 24px)',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '16px',
+                  boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.08)',
+                  zIndex: 10000,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  animation: 'fadeIn 0.15s ease-out'
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    padding: '0.9rem 1.1rem',
+                    borderBottom: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
+                        Follow-up Tasks Due
+                      </span>
+                      <span style={{
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        backgroundColor: 'var(--accent-color)',
+                        color: '#fff',
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '9999px'
+                      }}>
+                        {categorizedFollowUps.all.length} Total
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowNotifications(false)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
+                      title="Close"
+                    >
+                      <X size={20} />
+                    </button>
                   </div>
-                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                    {dueFollowUps.length === 0 ? (
-                      <div style={{ padding: '1.5rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem' }}>No pending tasks</div>
-                    ) : (
-                      dueFollowUps.map(lead => (
-                        <div 
-                          key={lead.id} 
-                          style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
-                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          onClick={() => {
-                            setActiveSearchQuery(lead.lead_ref_id || lead.name);
-                            setActiveTab('leads');
-                            setShowNotifications(false);
+
+                  {/* Search input */}
+                  <div style={{ padding: '0.65rem 0.9rem 0.45rem 0.9rem', backgroundColor: 'var(--bg-surface)' }}>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+                      <input
+                        type="text"
+                        value={notifSearch}
+                        onChange={(e) => setNotifSearch(e.target.value)}
+                        placeholder="Search name, phone, company, ID..."
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem 2rem 0.5rem 2.1rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-primary)',
+                          fontSize: '0.82rem',
+                          color: 'var(--text-primary)',
+                          outline: 'none'
+                        }}
+                      />
+                      {notifSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setNotifSearch('')}
+                          style={{ position: 'absolute', right: '8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '0.2rem' }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Filter Tabs Grid (Spacious 3x2 Layout with Yesterday) */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.9rem 0.65rem 0.9rem',
+                    borderBottom: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)'
+                  }}>
+                    {[
+                      { id: 'all', label: 'All Tasks', count: categorizedFollowUps.all.length },
+                      { id: 'yesterday', label: '🔴 Yesterday', count: categorizedFollowUps.yesterday.length },
+                      { id: 'today', label: '🟡 Today', count: categorizedFollowUps.today.length },
+                      { id: 'tomorrow', label: '🟢 Tomorrow', count: categorizedFollowUps.tomorrow.length },
+                      { id: 'overdue', label: '🔴 Overdue', count: categorizedFollowUps.overdue.length },
+                      { id: 'upcoming', label: '🔵 Upcoming', count: categorizedFollowUps.upcoming.length }
+                    ].map(tab => {
+                      const isActive = notifFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setNotifFilter(tab.id)}
+                          style={{
+                            padding: '0.4rem 0.5rem',
+                            borderRadius: '8px',
+                            border: isActive ? '1.5px solid var(--accent-color)' : '1px solid var(--border-light)',
+                            backgroundColor: isActive ? 'var(--accent-color)' : 'var(--bg-primary)',
+                            color: isActive ? '#ffffff' : 'var(--text-primary)',
+                            fontSize: '0.73rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.15s',
+                            boxShadow: isActive ? '0 2px 5px rgba(0,0,0,0.12)' : 'none'
                           }}
                         >
-                          <div style={{ fontWeight: '600', fontSize: '0.88rem', color: 'var(--text-primary)' }}>{lead.name} {lead.lead_ref_id && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({lead.lead_ref_id})</span>}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{lead.company || lead.phone}</div>
-                          <div style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '0.25rem' }}>
-                            Due: {new Date(lead.follow_up_date).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                          <span style={{ whiteSpace: 'nowrap' }}>{tab.label}</span>
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.08rem 0.35rem',
+                            borderRadius: '6px',
+                            backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--bg-surface)',
+                            color: isActive ? '#ffffff' : 'var(--text-secondary)'
+                          }}>
+                            {tab.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* List of Notification Items (Direct Rich Cards) */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                    {filteredNotificationList.length === 0 ? (
+                      <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <Clock size={28} style={{ opacity: 0.4 }} />
+                        <span>No follow-up tasks found for this filter</span>
+                      </div>
+                    ) : (
+                      filteredNotificationList.map(lead => {
+                        const formatted = formatFollowUpDateTime(lead.follow_up_date);
+                        
+                        let badgeBg = 'rgba(59, 130, 246, 0.12)';
+                        let badgeColor = '#3b82f6';
+                        let badgeBorder = 'rgba(59, 130, 246, 0.25)';
+                        let badgeText = formatted.fullStr;
+
+                        if (lead.followUpCategory === 'yesterday') {
+                          badgeBg = 'rgba(239, 68, 68, 0.12)';
+                          badgeColor = '#ef4444';
+                          badgeBorder = 'rgba(239, 68, 68, 0.25)';
+                          badgeText = `Yesterday: ${formatted.fullStr}`;
+                        } else if (lead.followUpCategory === 'overdue') {
+                          badgeBg = 'rgba(239, 68, 68, 0.12)';
+                          badgeColor = '#ef4444';
+                          badgeBorder = 'rgba(239, 68, 68, 0.25)';
+                          badgeText = `Overdue: ${formatted.fullStr}`;
+                        } else if (lead.followUpCategory === 'today') {
+                          badgeBg = 'rgba(234, 179, 8, 0.15)';
+                          badgeColor = '#d97706';
+                          badgeBorder = 'rgba(234, 179, 8, 0.3)';
+                          badgeText = `Today: ${formatted.fullStr}`;
+                        } else if (lead.followUpCategory === 'tomorrow') {
+                          badgeBg = 'rgba(16, 185, 129, 0.12)';
+                          badgeColor = '#059669';
+                          badgeBorder = 'rgba(16, 185, 129, 0.25)';
+                          badgeText = `Tomorrow: ${formatted.fullStr}`;
+                        }
+
+                        const phone = lead.phone || lead.business_contact_1 || lead.business_contact_2;
+                        const cleanStatus = (lead.status || '').includes('>') ? lead.status.split('>').pop() : (lead.status || 'New');
+
+                        return (
+                          <div
+                            key={lead.id}
+                            style={{
+                              padding: '0.65rem 0.8rem',
+                              borderRadius: '10px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                              e.currentTarget.style.borderColor = 'var(--accent-color)';
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
+                              e.currentTarget.style.borderColor = 'var(--border-light)';
+                            }}
+                            onClick={() => {
+                              const targetStage = getStageFromStatus(lead.status);
+                              setActiveTab('leads');
+                              handleStageChange(targetStage);
+                              setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
+                              setShowNotifications(false);
+                            }}
+                          >
+                            {/* Card Top: ID, Status & Date Badge */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                {lead.lead_ref_id && (
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
+                                    #{lead.lead_ref_id}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                  {cleanStatus}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                padding: '0.15rem 0.5rem',
+                                borderRadius: '6px',
+                                backgroundColor: badgeBg,
+                                color: badgeColor,
+                                border: `1px solid ${badgeBorder}`,
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {badgeText}
+                              </span>
+                            </div>
+
+                            {/* Card Middle: Company / Client Name */}
+                            <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {lead.company || lead.name || 'Unnamed Client'}
+                              {lead.company && lead.name && lead.company !== lead.name && (
+                                <span style={{ fontWeight: 400, fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>
+                                  ({lead.name})
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Card Bottom: Phone, District & Call/WA Buttons */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                {phone ? (
+                                  <span>📞 {phone}</span>
+                                ) : (
+                                  <span style={{ fontStyle: 'italic', opacity: 0.7 }}>No phone</span>
+                                )}
+                                {lead.district_name && <span>• {lead.district_name}</span>}
+                              </div>
+
+                              {phone && (
+                                <div style={{ display: 'flex', gap: '0.35rem' }} onClick={e => e.stopPropagation()}>
+                                  <a
+                                    href={`tel:${phone}`}
+                                    title="Call"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '24px',
+                                      height: '24px',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                      color: '#3b82f6',
+                                      textDecoration: 'none',
+                                      fontSize: '11px',
+                                      fontWeight: 'bold'
+                                    }}
+                                  >
+                                    📞
+                                  </a>
+                                  <a
+                                    href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="WhatsApp"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '24px',
+                                      height: '24px',
+                                      borderRadius: '4px',
+                                      backgroundColor: '#25D366',
+                                      color: '#ffffff',
+                                      textDecoration: 'none',
+                                      fontSize: '10px',
+                                      fontWeight: 'bold'
+                                    }}
+                                  >
+                                    WA
+                                  </a>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{
+                    padding: '0.65rem 1rem',
+                    borderTop: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-primary)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '0.78rem'
+                  }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      Showing {filteredNotificationList.length} of {categorizedFollowUps[notifFilter]?.length || categorizedFollowUps.all.length} tasks
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('leads');
+                        setShowNotifications(false);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-color)',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        fontSize: '0.78rem'
+                      }}
+                    >
+                      <span>Open Leads Table</span>
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
                 </div>
               )}

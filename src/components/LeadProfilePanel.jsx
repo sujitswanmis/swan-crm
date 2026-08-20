@@ -15,6 +15,11 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
   useEffect(() => {
     if (!lead || !isOpen) return;
 
+    // Immediately seed with existing notes
+    if (Array.isArray(lead.lead_notes)) {
+      setNotes([...lead.lead_notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+    }
+
     // Set initial mode
     setIsEditing(mode === 'edit');
     
@@ -39,7 +44,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       source: lead.source || 'Website'
     });
 
-    // Fetch ALL existing notes (paginated to bypass Supabase 1000-row default limit)
+    // Fetch ALL existing notes fresh from database
     const fetchNotes = async () => {
       let allNotes = [];
       let from = 0;
@@ -59,7 +64,9 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
         from += pageSize;
       }
       
-      if (allNotes.length > 0) setNotes(allNotes);
+      if (allNotes.length > 0) {
+        setNotes(allNotes);
+      }
     };
     fetchNotes();
 
@@ -86,13 +93,31 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     const { data: { user } } = await supabase.auth.getUser();
     const actor = userName || user?.email?.split('@')[0] || 'Agent';
 
-    const { error } = await supabase
+    const { data: inserted, error } = await supabase
       .from('lead_notes')
-      .insert([{ lead_id: lead.id, note_text: newNote, created_by: actor }]);
+      .insert([{ lead_id: lead.id, note_text: newNote, created_by: actor }])
+      .select()
+      .single();
 
     if (error) {
       alert("Error adding note: " + error.message);
       return;
+    }
+
+    const createdNote = inserted || {
+      id: Date.now(),
+      lead_id: lead.id,
+      note_text: newNote,
+      created_by: actor,
+      created_at: new Date().toISOString()
+    };
+
+    setNotes(prev => [createdNote, ...prev.filter(n => n.id !== createdNote.id)]);
+    if (onLeadUpdate) {
+      onLeadUpdate({
+        ...lead,
+        lead_notes: [createdNote, ...(lead.lead_notes || [])]
+      });
     }
     setNewNote('');
   };

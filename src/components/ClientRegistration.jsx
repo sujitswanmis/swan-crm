@@ -668,9 +668,14 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         const { error } = await supabase.from('leads').update(payload).eq('id', initialData.id);
         if (error) throw error;
 
+        const statusChanged = payload.status && payload.status !== initialData.status;
+        const noteText = statusChanged 
+          ? `Status changed from ${initialData.status || 'New'} to ${payload.status}`
+          : 'Client Profile was updated.';
+
         await supabase.from('lead_notes').insert([{
           lead_id: initialData.id,
-          note_text: 'Client Profile was updated.',
+          note_text: noteText,
           created_by: actor
         }]);
         
