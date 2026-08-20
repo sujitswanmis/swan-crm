@@ -8,7 +8,6 @@ export const MODULES_CONFIG = [
   { id: 'callcenter', path: 'callcenter', label: 'Call Center', category: 'General', icon: <PhoneCall size={20} /> },
 
   // Sales
-  { id: 'lead_dashboard', path: 'leads', label: 'Lead Dashboard', category: 'Sales', icon: <PieChart size={20} />, viewOnly: true },
   { id: 'registration', path: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
   { id: 'report', path: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
   { 
