@@ -155,6 +155,17 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       localStorage.setItem('crm_config', JSON.stringify(config));
       window.dispatchEvent(new Event('crm_config_updated'));
     }
+
+    // Sync Page Navigation Settings from Database
+    fetch('/api/settings/page-navigation')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.settings) {
+          localStorage.setItem('crmPageNavSettings', JSON.stringify(data.settings));
+          window.dispatchEvent(new Event('crm_page_nav_updated'));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const [userEmail, setUserEmail] = useState('');

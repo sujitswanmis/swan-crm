@@ -797,6 +797,41 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     }
     return sizes;
   });
+
+  useEffect(() => {
+    const applyNavSettings = (settings) => {
+      if (!settings) return;
+      if (settings.defaultPageSize !== undefined) {
+        let size = 15;
+        if (settings.defaultPageSize === 'All') size = 100000;
+        else size = parseInt(settings.defaultPageSize, 10) || 15;
+        setPagination(prev => ({ ...prev, pageSize: size }));
+      }
+      if (settings.pageNumberingJump) {
+        setPageJump(settings.pageNumberingJump);
+      }
+      if (settings.availablePageSizes) {
+        const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+        if (sizes.length > 0) setAvailablePageSizes(sizes);
+      }
+    };
+
+    const handleNavUpdate = () => {
+      try {
+        const cached = localStorage.getItem('crmPageNavSettings');
+        if (cached) {
+          applyNavSettings(JSON.parse(cached));
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('crm_page_nav_updated', handleNavUpdate);
+    window.addEventListener('crm_config_updated', handleNavUpdate);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', handleNavUpdate);
+      window.removeEventListener('crm_config_updated', handleNavUpdate);
+    };
+  }, []);
   
   // Phase 3: Column Filter UI State
   const [activeFilterColumn, setActiveFilterColumn] = useState(null);
@@ -1621,7 +1656,36 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                     </span>
                     <select
                       value={lead.status || 'New'}
-                      onChange={(e) => handleDirectStatusChange(lead, e.target.value)}
+                      onChange={(e) => {
+                        const newStatus = e.target.value;
+                        const savedConfig = localStorage.getItem('crm_config');
+                        let confirmChange = true;
+                        if (savedConfig) {
+                          try {
+                            const parsed = JSON.parse(savedConfig);
+                            if (parsed.confirmStageChange !== undefined) {
+                              confirmChange = parsed.confirmStageChange;
+                            }
+                          } catch (err) {}
+                        }
+                        if (confirmChange) {
+                          const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
+                          setPendingStatusChange({
+                            leadName: lead.company || lead.name || 'this lead',
+                            shortName,
+                            commit: () => {
+                              handleDirectStatusChange(lead, newStatus);
+                              setPendingStatusChange(null);
+                            },
+                            cancel: () => {
+                              e.target.value = lead.status || 'New';
+                              setPendingStatusChange(null);
+                            }
+                          });
+                          return;
+                        }
+                        handleDirectStatusChange(lead, newStatus);
+                      }}
                       style={{
                         width: '100%',
                         padding: '0.4rem 0.6rem',
@@ -1636,24 +1700,33 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                       }}
                       title="Change Lead Status"
                     >
-                      {stages.map((stageObj, i) => {
-                        const stageNum = i + 1;
-                        const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                        return (
-                          <optgroup key={`tile-stage-${i}`} label={stageObj.name}>
-                            {stageObj.substages.map((sub, j) => {
-                              const subNum = String(j + 1).padStart(2, '0');
-                              const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                              const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                              return (
-                                <option key={val} value={val} style={{ backgroundColor: '#ffffff', color: '#0f172a' }}>
-                                  {val}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        );
-                      })}
+                      {(() => {
+                        const leadStagePrefix = (lead.status && lead.status.includes(';')) ? lead.status.split(';')[0] + ';' : '1;';
+                        const activeFilters = table.getColumn('status')?.getFilterValue();
+                        const isAllLeads = (!activeFilters || activeFilters.length === 0) && (!stageFilter || stageFilter === 'all' || stageFilter === 'lead_dashboard');
+
+                        return stages.map((stageObj, i) => {
+                          const stageNum = i + 1;
+                          const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                          const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
+                          if (!isVisible) return null;
+
+                          return (
+                            <optgroup key={`tile-stage-${i}`} label={stageObj.name}>
+                              {stageObj.substages.map((sub, j) => {
+                                const subNum = String(j + 1).padStart(2, '0');
+                                const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                                const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                                return (
+                                  <option key={val} value={val} style={{ backgroundColor: '#ffffff', color: '#0f172a' }}>
+                                    {val}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          );
+                        });
+                      })()}
                     </select>
                   </div>
 

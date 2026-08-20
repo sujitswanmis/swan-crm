@@ -132,6 +132,38 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
     return sizes;
   });
 
+  useEffect(() => {
+    const applyNavSettings = (settings) => {
+      if (!settings) return;
+      if (settings.defaultPageSize !== undefined) {
+        setItemsPerPage(String(settings.defaultPageSize));
+      }
+      if (settings.pageNumberingJump) {
+        setPageJump(settings.pageNumberingJump);
+      }
+      if (settings.availablePageSizes) {
+        const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+        if (sizes.length > 0) setAvailablePageSizes(sizes);
+      }
+    };
+
+    const handleNavUpdate = () => {
+      try {
+        const cached = localStorage.getItem('crmPageNavSettings');
+        if (cached) {
+          applyNavSettings(JSON.parse(cached));
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('crm_page_nav_updated', handleNavUpdate);
+    window.addEventListener('crm_config_updated', handleNavUpdate);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', handleNavUpdate);
+      window.removeEventListener('crm_config_updated', handleNavUpdate);
+    };
+  }, []);
+
   const getUniqueValues = (key) => {
     const vals = leads.map(l => {
       let v = l[key];
