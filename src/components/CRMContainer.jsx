@@ -427,10 +427,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const initialSyncFinishedRef = useRef(false);
 
   const updateLeadsIfChanged = (newList) => {
-    const sig = (newList || []).map(l => `${l.id}-${l.status}-${l.assigned_to}-${l.follow_up_date || ''}-${l.lead_notes?.length || 0}`).join('|');
+    const listToProcess = Array.isArray(newList) ? newList : (newList ? [newList] : []);
+    const sig = listToProcess.map(l => `${l.id}-${l.status}-${l.assigned_to}-${l.follow_up_date || ''}-${l.lead_notes?.length || 0}`).join('|');
     if (prevLeadsSigRef.current !== sig) {
       prevLeadsSigRef.current = sig;
-      setLeads(newList);
+      setLeads(Array.isArray(newList) ? newList : (prev => {
+        if (!newList) return prev;
+        return prev.map(l => l.id === newList.id ? { ...l, ...newList } : l);
+      }));
     }
   };
 
@@ -617,7 +621,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
           if (item.id !== incoming.lead_id) return item;
           const existingNotes = item.lead_notes || [];
           if (existingNotes.some(n => n.id === incoming.id)) return item;
-          return { ...item, lead_notes: [...existingNotes, incoming] };
+          return { ...item, lead_notes: [incoming, ...existingNotes] };
         }));
       })
       .subscribe();
@@ -691,12 +695,23 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = (updatedFilteredLeads) => {
-    updateLeadsIfChanged(updatedFilteredLeads);
+    const leadsArray = Array.isArray(updatedFilteredLeads) ? updatedFilteredLeads : (updatedFilteredLeads ? [updatedFilteredLeads] : []);
+    if (leadsArray.length === 0) return;
+
     setRawLeads(prevRaw => {
-      const updatedMap = new Map(updatedFilteredLeads.map(l => [l.id, l]));
+      const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
       return prevRaw.map(l => {
         if (updatedMap.has(l.id)) {
-          // Merge the updated fields back into the raw lead
+          return { ...l, ...updatedMap.get(l.id) };
+        }
+        return l;
+      });
+    });
+
+    setLeads(prevLeads => {
+      const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
+      return prevLeads.map(l => {
+        if (updatedMap.has(l.id)) {
           return { ...l, ...updatedMap.get(l.id) };
         }
         return l;

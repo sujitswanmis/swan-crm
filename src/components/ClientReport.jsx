@@ -552,7 +552,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                 Actions
               </th>
               {reportColumns.filter(c => visibleColumns.includes(c.key)).map(col => (
-                <th key={col.key} className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                <th key={col.key} className={`table-header-cell ${activeFilterColumn === col.key ? 'active-dropdown' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === col.key ? 99999 : 10, textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                     <span>{col.label}</span>
                     <button 
@@ -567,7 +567,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                   </div>
 
                   {activeFilterColumn === col.key && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal' }}>
+                    <div className="column-filter-popup" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '6px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.22)', zIndex: 99999, minWidth: '320px', maxWidth: '480px', width: 'max-content', padding: '0.65rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
                       <input 
                         type="text"
                         placeholder="Search..."
@@ -575,15 +575,16 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                         onChange={e => setFilterSearchText(e.target.value)}
                         style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
                       />
-                      <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                         {getUniqueValues(col.key).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => (
-                          <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
+                          <label key={val} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer', padding: '0.25rem 0.35rem', borderRadius: '4px', lineHeight: '1.35' }}>
                             <input 
                               type="checkbox"
                               checked={(columnFilters[col.key] || []).includes(val)}
+                              style={{ marginTop: '0.15rem', flexShrink: 0 }}
                               onChange={() => handleToggleColumnFilter(col.key, val)}
                             />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
+                            <span title={val} style={{ wordBreak: 'break-word', whiteSpace: 'normal', flex: 1 }}>{val || '(Blank)'}</span>
                           </label>
                         ))}
                       </div>

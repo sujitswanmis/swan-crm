@@ -1078,8 +1078,28 @@ table th:hover, .table-header-cell:hover {
   background-color: var(--th-hover-bg);
 }
 
-.table-header-cell.active-dropdown {
-  background-color: var(--th-active-bg);
+.table-header-cell.active-dropdown,
+th.active-dropdown {
+  background-color: var(--th-active-bg) !important;
+  color: var(--text-primary) !important;
+  z-index: 99999 !important;
+}
+
+.column-filter-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  z-index: 99999 !important;
+  min-width: 300px;
+  max-width: 480px;
+  width: max-content;
+  padding: 0.65rem;
+  font-weight: normal;
   color: var(--text-primary);
 }
 
@@ -1090,6 +1110,12 @@ table th:hover, .table-header-cell:hover {
 
 .table-header-cell.is-filtered:hover {
   background-color: var(--th-filtered-hover-bg);
+}
+
+/* High-Performance Table Row Virtualization & Rendering */
+.table-responsive-wrapper table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 50px;
 }
 
 /* ----------------------------------

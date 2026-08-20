@@ -1125,6 +1125,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                     ))}
                   </select>
                 </div>
+                {renderInput('Source Name', 'source_name', 'text')}
                 {/* Lead Entry By - Custom Search & Dropdown (Top Manual Entry Allowed) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Entry By</label>

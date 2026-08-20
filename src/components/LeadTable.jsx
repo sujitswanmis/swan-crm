@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MoreVertical, Trash2, Edit2, ChevronDown, Filter } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -18,24 +18,100 @@ import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import Papa from 'papaparse';
 
+const extractStatusFromNoteText = (noteText) => {
+  if (!noteText || typeof noteText !== 'string') return null;
+  
+  // Pattern 1: "Status changed from [OLD] to [NEW]"
+  const fromToMatch = noteText.match(/(?:status|stage)\s+changed\s+from\s+["']?([^"']+)["']?\s+to\s+["']?([^"'\n()]+)/i);
+  if (fromToMatch) {
+    return { oldStatus: fromToMatch[1].trim(), newStatus: fromToMatch[2].trim() };
+  }
+
+  // Pattern 2: "Status changed to: [NEW]" or "Status updated to: [NEW]" or "Stage changed to: [NEW]"
+  const prefixes = [
+    'status changed to:',
+    'status updated to:',
+    'stage changed to:',
+    'stage updated to:',
+    'status changed to',
+    'status:'
+  ];
+
+  const lower = noteText.toLowerCase();
+  for (const prefix of prefixes) {
+    const idx = lower.indexOf(prefix);
+    if (idx !== -1) {
+      let rawVal = noteText.substring(idx + prefix.length).trim();
+      rawVal = rawVal.replace(/\s*\([^)]*\).*/, '').trim();
+      if (rawVal) {
+        return { newStatus: rawVal };
+      }
+    }
+  }
+
+  return null;
+};
+
+const getLeadPhoneNumbers = (lead) => {
+  if (!lead) return [];
+  const nums = [
+    lead.phone,
+    lead.business_contact_1,
+    lead.business_contact_2,
+    lead.business_alt_1,
+    lead.business_alt_2,
+    lead.mobile,
+    lead.contact_no_2
+  ];
+  const unique = [];
+  const seen = new Set();
+  for (const n of nums) {
+    if (n && typeof n === 'string' && n.trim()) {
+      const clean = n.trim();
+      if (!seen.has(clean)) {
+        seen.add(clean);
+        unique.push(clean);
+      }
+    }
+  }
+  return unique;
+};
+
 const processLeads = (rawLeads) => {
   return rawLeads.map((lead, i) => {
     const notes = Array.isArray(lead.lead_notes) ? [...lead.lead_notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) : [];
     
-    let lastStatus = 'Pending';
-    const statusNotes = notes.filter(n => n.note_text.startsWith('Status changed to: '));
-    if (statusNotes.length > 0) {
-      const diff = statusNotes.find(n => n.note_text.replace('Status changed to: ', '').trim() !== lead.status);
-      if (diff) {
-        lastStatus = diff.note_text.replace('Status changed to: ', '').trim();
-      } else if (statusNotes.length > 1) {
-        lastStatus = statusNotes[1].note_text.replace('Status changed to: ', '').trim();
-      } else {
-        lastStatus = 'Pending';
+    // Collect all status change entries from notes (newest first)
+    const statusEntries = [];
+    notes.forEach(n => {
+      const parsed = extractStatusFromNoteText(n.note_text);
+      if (parsed) {
+        statusEntries.push(parsed);
       }
+    });
+
+    let lastStatus = 'Pending New';
+
+    if (statusEntries.length > 0) {
+      if (statusEntries[0].oldStatus && statusEntries[0].oldStatus !== lead.status) {
+        lastStatus = statusEntries[0].oldStatus;
+      } else {
+        const diffEntry = statusEntries.find(e => (e.oldStatus && e.oldStatus !== lead.status) || (e.newStatus && e.newStatus !== lead.status && !lead.status.startsWith(e.newStatus)));
+        if (diffEntry) {
+          lastStatus = diffEntry.oldStatus || diffEntry.newStatus;
+        } else if (statusEntries.length >= 2) {
+          lastStatus = statusEntries[1].newStatus || statusEntries[1].oldStatus || '01 - New Stage';
+        } else if (statusEntries[0].oldStatus) {
+          lastStatus = statusEntries[0].oldStatus;
+        } else {
+          lastStatus = '01 - New Stage';
+        }
+      }
+    } else {
+      lastStatus = 'Pending New';
     }
 
-    const manualNotes = notes.filter(n => !n.note_text.startsWith('Status changed to: '));
+    const manualNotes = notes.filter(n => !n.note_text || (!n.note_text.includes('Status changed to:') && !n.note_text.includes('Status updated to:')));
     let latestRemark = '';
     let latestEmpName = '';
     
@@ -72,6 +148,263 @@ const processLeads = (rawLeads) => {
     };
   });
 };
+
+const LeadAssigneeCell = React.memo(({ info }) => {
+  const assignedToId = info.getValue();
+  const lead = info.row.original;
+  const teamMembers = info.table.options.meta?.teamMembers || [];
+  const userRole = info.table.options.meta?.userRole;
+  const [isInteracting, setIsInteracting] = useState(false);
+  
+  const assignedMember = teamMembers.find(m => m.user_id === assignedToId);
+  const isManager = userRole === 'admin' || userRole === 'Admin';
+  
+  const updateAssignee = async (newAssignee) => {
+    const supabase = createClient();
+    const valToSet = newAssignee === '' ? null : newAssignee;
+    const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
+    if (updateError) {
+      alert("Error updating assignee: " + updateError.message);
+      return;
+    }
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
+    
+    const newAssigneeName = newAssignee === '' ? 'Open Lead (Unassigned)' : teamMembers.find(m => m.user_id === newAssignee)?.emp_name || 'Unknown';
+    const noteText = `Lead assigned to: ${newAssigneeName}`;
+    const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
+    if (noteError) {
+      console.error("Error creating assignee note:", noteError.message);
+    }
+
+    const newNote = {
+      id: Date.now(),
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: actor,
+      created_at: new Date().toISOString()
+    };
+    const updatedRawLead = {
+      ...lead,
+      assigned_to: valToSet,
+      lead_notes: [...(lead.lead_notes || []), newNote]
+    };
+    const processed = processLeads([updatedRawLead])[0];
+    if (info.table.options.meta?.updateLeadInState) {
+      info.table.options.meta.updateLeadInState(processed);
+    }
+  };
+
+  if (!isManager) {
+    if (!assignedToId) {
+      return (
+        <button 
+          onClick={() => updateAssignee(info.table.options.meta?.userId)}
+          style={{ padding: '0.25rem 0.5rem', background: '#3b82f6', color: 'white', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+        >
+          Claim Lead
+        </button>
+      );
+    }
+    return <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : 'Open Lead'}</span>;
+  }
+
+  return (
+    <select 
+      value={assignedToId || ''} 
+      onFocus={() => setIsInteracting(true)}
+      onMouseEnter={() => setIsInteracting(true)}
+      onChange={(e) => updateAssignee(e.target.value)}
+      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid var(--border-light)', outline: 'none', cursor: 'pointer', maxWidth: '150px' }}
+    >
+      {!isInteracting ? (
+        <option value={assignedToId || ''}>
+          {assignedMember ? `${assignedMember.emp_name} ${assignedMember.emp_department ? `(${assignedMember.emp_department})` : ''}` : 'Open Lead (Unassigned)'}
+        </option>
+      ) : (
+        <>
+          <option value="">Open Lead (Unassigned)</option>
+          {teamMembers.filter(m => m.emp_name).map(member => (
+            <option key={member.user_id} value={member.user_id}>
+              {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
+            </option>
+          ))}
+        </>
+      )}
+    </select>
+  );
+});
+
+const LeadStatusCell = React.memo(({ info }) => {
+  const status = info.getValue() || 'New';
+  const lead = info.row.original;
+  const [isInteracting, setIsInteracting] = useState(false);
+  
+  const updateStatus = async (newStatus) => {
+    const supabase = createClient();
+    const userRole = info.table.options.meta?.userRole;
+    const moduleAccess = info.table.options.meta?.moduleAccess || {};
+    const leadsAccess = moduleAccess?.leads || {};
+    const assignedSteps = leadsAccess.assigned_steps || [];
+    
+    const getStageFromStatus = (st) => {
+      if (!st) return '01 - New Stage';
+      if (st.startsWith('1;')) return '01 - New Stage';
+      if (st.startsWith('2;')) return '02 - Contact Stage';
+      if (st.startsWith('3;')) return '03 - Qualification Stage';
+      if (st.startsWith('4;')) return '04 - Follow Up Stage';
+      if (st.startsWith('5;')) return '05 - Sales Process Stage';
+      if (st.startsWith('6;')) return '06 - Conversion Stage';
+      if (st.startsWith('7;')) return '07 - Final Stage';
+      if (['New', 'Pending'].includes(st)) return '01 - New Stage';
+      if (['Converted', 'Order Received', 'Closed'].includes(st)) return '07 - Final Stage';
+      return '01 - New Stage';
+    };
+
+    const oldStatus = status;
+    let updates = { status: newStatus };
+    let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
+
+    // Auto-Handoff: If agent changes to a stage they don't own, unassign the lead
+    if (userRole !== 'admin' && userRole !== 'Admin' && !leadsAccess.is_manager) {
+      const newStage = getStageFromStatus(newStatus);
+      if (!assignedSteps.includes(newStage)) {
+        updates.assigned_to = null;
+        noteText += ` (Auto-released to Pool)`;
+      }
+    }
+
+    const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
+    if (updateError) {
+      alert("Error updating status: " + updateError.message);
+      return;
+    }
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
+    const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
+    if (noteError) {
+      console.error("Error creating status note:", noteError.message);
+    }
+    
+    const newNote = insertedNote || {
+      id: Date.now(),
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: actor,
+      created_at: new Date().toISOString()
+    };
+    const updatedRawLead = {
+      ...lead,
+      ...updates,
+      lead_notes: [newNote, ...(lead.lead_notes || [])]
+    };
+    const processed = processLeads([updatedRawLead])[0];
+    if (info.table.options.meta?.updateLeadInState) {
+      info.table.options.meta.updateLeadInState(processed);
+    }
+    
+    // Trigger WhatsApp automation (non-blocking)
+    triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
+      if (!res.success) {
+        console.error("WhatsApp Automation Error:", res.error);
+        alert("WhatsApp Auto-Send Failed: " + res.error);
+      } else if (res.message && res.message.includes('Successfully sent')) {
+        alert("✅ " + res.message);
+      }
+    }).catch(err => console.error("WhatsApp Automation Error:", err));
+  };
+
+  const cleanClass = status.toLowerCase().replace(/\s+/g, '');
+  const leadStagePrefix = status.includes(';') ? status.split(';')[0] + ';' : '1;';
+  const activeFilters = info.table.getColumn('status')?.getFilterValue();
+  const isAllLeads = !activeFilters || activeFilters.length === 0;
+  const stages = info.table.options.meta?.stages || [];
+
+  return (
+    <select 
+      value={status} 
+      onFocus={() => setIsInteracting(true)}
+      onMouseEnter={() => setIsInteracting(true)}
+      onChange={(e) => {
+        const newStatus = e.target.value;
+        const savedConfig = localStorage.getItem('crm_config');
+        let confirmChange = true;
+        if (savedConfig) {
+          try {
+            const parsed = JSON.parse(savedConfig);
+            if (parsed.confirmStageChange !== undefined) {
+              confirmChange = parsed.confirmStageChange;
+            }
+          } catch (err) {}
+        }
+        if (confirmChange) {
+          const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
+          
+          if (info.table.options.meta?.setPendingStatusChange) {
+            info.table.options.meta.setPendingStatusChange({
+              leadName: lead.business_name || lead.name || 'this lead',
+              shortName,
+              commit: () => {
+                updateStatus(newStatus);
+                info.table.options.meta.setPendingStatusChange(null);
+              },
+              cancel: () => {
+                e.target.value = status; // Revert visually
+                info.table.options.meta.setPendingStatusChange(null);
+              }
+            });
+            return;
+          }
+        }
+        updateStatus(newStatus);
+      }}
+      style={{ 
+        padding: '0.25rem 1.5rem 0.25rem 0.5rem', 
+        borderRadius: '9999px', 
+        fontSize: '0.8rem', 
+        fontWeight: 600, 
+        backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`, 
+        color: `var(--status-${cleanClass}-text, #334155)`, 
+        border: '1px solid rgba(0,0,0,0.1)', 
+        outline: 'none', 
+        cursor: 'pointer', 
+        textAlign: 'left',
+        appearance: 'auto',
+        width: '100%',
+        minWidth: '220px'
+      }}
+    >
+      {!isInteracting ? (
+        <option value={status}>{status.includes('>') ? status.split('>').pop() : status}</option>
+      ) : (
+        stages.length > 0 ? (
+          stages.map((stageObj, i) => {
+            const stageNum = i + 1;
+            const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+            const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
+            if (!isVisible) return null;
+
+            return (
+              <React.Fragment key={`stage-${i}`}>
+                <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
+                {stageObj.substages.map((sub, j) => {
+                  const subNum = String(j + 1).padStart(2, '0');
+                  const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                  const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                  return <option key={val} value={val}>{val}</option>;
+                })}
+              </React.Fragment>
+            );
+          })
+        ) : (
+          <option value={status}>{status.includes('>') ? status.split('>').pop() : status}</option>
+        )
+      )}
+    </select>
+  );
+});
 
 const columns = [
   {
@@ -110,81 +443,7 @@ const columns = [
   {
     accessorKey: 'assigned_to',
     header: 'Assigned To',
-    cell: info => {
-      const assignedToId = info.getValue();
-      const lead = info.row.original;
-      const teamMembers = info.table.options.meta?.teamMembers || [];
-      const userRole = info.table.options.meta?.userRole;
-      
-      const assignedMember = teamMembers.find(m => m.user_id === assignedToId);
-      const isManager = userRole === 'admin' || userRole === 'Admin';
-      
-      const updateAssignee = async (newAssignee) => {
-        const supabase = createClient();
-        const valToSet = newAssignee === '' ? null : newAssignee;
-        const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
-        if (updateError) {
-          alert("Error updating assignee: " + updateError.message);
-          return;
-        }
-        
-        const { data: { user } } = await supabase.auth.getUser();
-        const actor = userName || user?.email?.split('@')[0] || 'System';
-        
-        const newAssigneeName = newAssignee === '' ? 'Open Lead (Unassigned)' : teamMembers.find(m => m.user_id === newAssignee)?.emp_name || 'Unknown';
-        const noteText = `Lead assigned to: ${newAssigneeName}`;
-        const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
-        if (noteError) {
-          console.error("Error creating assignee note:", noteError.message);
-        }
-
-        const newNote = {
-          id: Date.now(),
-          lead_id: lead.id,
-          note_text: noteText,
-          created_by: actor,
-          created_at: new Date().toISOString()
-        };
-        const updatedRawLead = {
-          ...lead,
-          assigned_to: valToSet,
-          lead_notes: [...(lead.lead_notes || []), newNote]
-        };
-        const processed = processLeads([updatedRawLead])[0];
-        if (info.table.options.meta?.updateLeadInState) {
-          info.table.options.meta.updateLeadInState(processed);
-        }
-      };
-
-      if (!isManager) {
-        if (!assignedToId) {
-          return (
-            <button 
-              onClick={() => updateAssignee(info.table.options.meta?.userId)}
-              style={{ padding: '0.25rem 0.5rem', background: '#3b82f6', color: 'white', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-            >
-              Claim Lead
-            </button>
-          );
-        }
-        return <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : 'Open Lead'}</span>;
-      }
-
-      return (
-        <select 
-          value={assignedToId || ''} 
-          onChange={(e) => updateAssignee(e.target.value)}
-          style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid var(--border-light)', outline: 'none', cursor: 'pointer', maxWidth: '150px' }}
-        >
-          <option value="">Open Lead (Unassigned)</option>
-          {teamMembers.filter(m => m.emp_name).map(member => (
-            <option key={member.user_id} value={member.user_id}>
-              {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
-            </option>
-          ))}
-        </select>
-      );
-    }
+    cell: info => <LeadAssigneeCell info={info} />
   },
   { accessorKey: 'business_type', header: 'Business Type' },
   { accessorKey: 'company', header: 'Business Name' },
@@ -228,170 +487,7 @@ const columns = [
   {
     accessorKey: 'status',
     header: 'Lead Status',
-    cell: info => {
-      const status = info.getValue() || 'New';
-      const lead = info.row.original;
-      
-      const updateStatus = async (newStatus) => {
-        const supabase = createClient();
-        const userRole = info.table.options.meta?.userRole;
-        const moduleAccess = info.table.options.meta?.moduleAccess || {};
-        const leadsAccess = moduleAccess?.leads || {};
-        const assignedSteps = leadsAccess.assigned_steps || [];
-        
-        const getStageFromStatus = (st) => {
-          if (!st) return '01 - New Stage';
-          if (st.startsWith('1;')) return '01 - New Stage';
-          if (st.startsWith('2;')) return '02 - Contact Stage';
-          if (st.startsWith('3;')) return '03 - Qualification Stage';
-          if (st.startsWith('4;')) return '04 - Follow Up Stage';
-          if (st.startsWith('5;')) return '05 - Sales Process Stage';
-          if (st.startsWith('6;')) return '06 - Conversion Stage';
-          if (st.startsWith('7;')) return '07 - Final Stage';
-          if (['New', 'Pending'].includes(st)) return '01 - New Stage';
-          if (['Converted', 'Order Received', 'Closed'].includes(st)) return '07 - Final Stage';
-          return '01 - New Stage';
-        };
-
-        let updates = { status: newStatus };
-        let noteText = `Status changed to: ${newStatus}`;
-
-        // Auto-Handoff: If agent changes to a stage they don't own, unassign the lead
-        if (userRole !== 'admin' && userRole !== 'Admin' && !leadsAccess.is_manager) {
-          const newStage = getStageFromStatus(newStatus);
-          if (!assignedSteps.includes(newStage)) {
-            updates.assigned_to = null;
-            noteText += ` (Auto-released to Pool)`;
-          }
-        }
-
-        const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
-        if (updateError) {
-          alert("Error updating status: " + updateError.message);
-          return;
-        }
-        
-        const { data: { user } } = await supabase.auth.getUser();
-        const actor = userName || user?.email?.split('@')[0] || 'System';
-        const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
-        if (noteError) {
-          console.error("Error creating status note:", noteError.message);
-        }
-        
-        const newNote = {
-          id: Date.now(),
-          lead_id: lead.id,
-          note_text: noteText,
-          created_by: actor,
-          created_at: new Date().toISOString()
-        };
-        const updatedRawLead = {
-          ...lead,
-          ...updates,
-          lead_notes: [...(lead.lead_notes || []), newNote]
-        };
-        const processed = processLeads([updatedRawLead])[0];
-        if (info.table.options.meta?.updateLeadInState) {
-          info.table.options.meta.updateLeadInState(processed);
-        }
-        
-        // Trigger WhatsApp automation (non-blocking)
-        triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
-          if (!res.success) {
-            console.error("WhatsApp Automation Error:", res.error);
-            alert("WhatsApp Auto-Send Failed: " + res.error);
-          } else if (res.message && res.message.includes('Successfully sent')) {
-            alert("✅ " + res.message);
-          }
-        }).catch(err => console.error("WhatsApp Automation Error:", err));
-      };
-
-      const cleanClass = status.toLowerCase().replace(/\s+/g, '');
-      const leadStagePrefix = status.includes(';') ? status.split(';')[0] + ';' : '1;';
-      const activeFilters = info.table.getColumn('status')?.getFilterValue();
-      const isAllLeads = !activeFilters || activeFilters.length === 0;
-      const stages = info.table.options.meta?.stages || [];
-
-      return (
-        <select 
-          value={status} 
-          onChange={(e) => {
-            const newStatus = e.target.value;
-            const savedConfig = localStorage.getItem('crm_config');
-            let confirmChange = true;
-            if (savedConfig) {
-              try {
-                const parsed = JSON.parse(savedConfig);
-                if (parsed.confirmStageChange !== undefined) {
-                  confirmChange = parsed.confirmStageChange;
-                }
-              } catch (err) {}
-            }
-            if (confirmChange) {
-              const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
-              
-              if (info.table.options.meta?.setPendingStatusChange) {
-                info.table.options.meta.setPendingStatusChange({
-                  leadName: lead.business_name || lead.name || 'this lead',
-                  shortName,
-                  commit: () => {
-                    updateStatus(newStatus);
-                    info.table.options.meta.setPendingStatusChange(null);
-                  },
-                  cancel: () => {
-                    e.target.value = status; // Revert visually
-                    info.table.options.meta.setPendingStatusChange(null);
-                  }
-                });
-                return;
-              }
-            }
-            updateStatus(newStatus);
-          }}
-          style={{ 
-            padding: '0.25rem 1.5rem 0.25rem 0.5rem', 
-            borderRadius: '9999px', 
-            fontSize: '0.8rem', 
-            fontWeight: 600, 
-            backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`, 
-            color: `var(--status-${cleanClass}-text, #334155)`, 
-            border: '1px solid rgba(0,0,0,0.1)', 
-            outline: 'none', 
-            cursor: 'pointer', 
-            textAlign: 'left',
-            appearance: 'auto',
-            width: '100%',
-            minWidth: '220px'
-          }}
-        >
-          {stages.length > 0 ? (
-            stages.map((stageObj, i) => {
-              const stageNum = i + 1;
-              const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-              
-              // Only show if it's the current stage, the next stage, or isAllLeads is true
-              const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
-              
-              if (!isVisible) return null;
-
-              return (
-                <React.Fragment key={`stage-${i}`}>
-                  <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
-                  {stageObj.substages.map((sub, j) => {
-                    const subNum = String(j + 1).padStart(2, '0');
-                    const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                    const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                    return <option key={val} value={val}>{val}</option>;
-                  })}
-                </React.Fragment>
-              );
-            })
-          ) : (
-            <option value={status}>{status.includes('>') ? status.split('>').pop() : status}</option>
-          )}
-        </select>
-      );
-    }
+    cell: info => <LeadStatusCell info={info} />
   },
   {
     id: 'whatsapp',
@@ -433,7 +529,53 @@ const columns = [
       );
     }
   },
-  { accessorKey: 'last_status', header: 'Last Status' },
+  { 
+    accessorKey: 'last_status', 
+    header: 'Last Status',
+    cell: info => {
+      const val = info.getValue();
+      if (!val || val === 'Pending New') {
+        return (
+          <span 
+            style={{ 
+              fontSize: '0.78rem', 
+              fontWeight: 600, 
+              padding: '0.2rem 0.6rem', 
+              borderRadius: '9999px', 
+              backgroundColor: '#fef3c7', 
+              color: '#b45309', 
+              border: '1px solid #fde68a', 
+              display: 'inline-block',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Pending New
+          </span>
+        );
+      }
+      
+      const cleanClass = val.toLowerCase().replace(/\s+/g, '');
+
+      return (
+        <span 
+          style={{ 
+            fontSize: '0.8rem', 
+            fontWeight: 600, 
+            padding: '0.25rem 0.65rem', 
+            borderRadius: '9999px', 
+            backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`, 
+            color: `var(--status-${cleanClass}-text, #334155)`, 
+            border: '1px solid rgba(0,0,0,0.1)', 
+            display: 'inline-block',
+            whiteSpace: 'nowrap'
+          }}
+          title={val}
+        >
+          {val}
+        </span>
+      );
+    }
+  },
   { accessorKey: 'last_timestamp', header: 'Last Timestamp', cell: info => {
       const val = info.getValue();
       if (!val) return '';
@@ -460,6 +602,26 @@ const columns = [
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
 ];
 
+const LeadTableRow = React.memo(({ row, activeRowId, idx, onRowClick }) => {
+  return (
+    <tr 
+      onClick={() => onRowClick(row.id)}
+      style={{ 
+        borderBottom: '1px solid var(--border-light)', 
+        backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'),
+        cursor: 'pointer',
+        transition: 'background-color 0.15s ease'
+      }}
+    >
+      {row.getVisibleCells().map(cell => (
+        <td key={cell.id} style={{ padding: '0.85rem 1.25rem', fontSize: '0.88rem' }}>
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
 export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, onStageChange, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
@@ -467,7 +629,12 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [data, setData] = useState(() => processLeads(initialData || []));
 
   const getSignature = (leadsList) => {
-    return (leadsList || []).map(d => `${d.id}-${d.status}-${d.assigned_to}-${d.follow_up_date || ''}-${d.our_company || ''}-${d.lead_notes?.length || 0}`).sort().join(',');
+    if (!Array.isArray(leadsList) || leadsList.length === 0) return 'empty';
+    const len = leadsList.length;
+    const first = leadsList[0];
+    const mid = leadsList[Math.floor(len / 2)];
+    const last = leadsList[len - 1];
+    return `${len}-${first?.id}-${first?.status}-${first?.lead_notes?.length || 0}-${mid?.id}-${mid?.status}-${last?.id}-${last?.status}`;
   };
 
   const lastProcessedInitialDataRef = useRef(getSignature(initialData));
@@ -515,6 +682,12 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [whatsappModalLead, setWhatsappModalLead] = useState(null);
   const [activeRowId, setActiveRowId] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_lead_view_mode') || 'table';
+    }
+    return 'table';
+  });
   const fileInputRef = React.useRef(null);
   
   const [columnFilters, setColumnFilters] = useState([]);
@@ -757,6 +930,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       teamMembers,
       stages,
       userRole,
+      userName,
       moduleAccess,
       userId,
       setPendingStatusChange,
@@ -906,6 +1080,80 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     });
   };
 
+  const handleDirectStatusChange = async (lead, newStatus) => {
+    const supabase = createClient();
+    const leadsAccess = moduleAccess?.leads || {};
+    const assignedSteps = leadsAccess.assigned_steps || [];
+    
+    const getStageFromStatus = (st) => {
+      if (!st) return '01 - New Stage';
+      if (st.startsWith('1;')) return '01 - New Stage';
+      if (st.startsWith('2;')) return '02 - Contact Stage';
+      if (st.startsWith('3;')) return '03 - Qualification Stage';
+      if (st.startsWith('4;')) return '04 - Follow Up Stage';
+      if (st.startsWith('5;')) return '05 - Sales Process Stage';
+      if (st.startsWith('6;')) return '06 - Conversion Stage';
+      if (st.startsWith('7;')) return '07 - Final Stage';
+      if (['New', 'Pending'].includes(st)) return '01 - New Stage';
+      if (['Converted', 'Order Received', 'Closed'].includes(st)) return '07 - Final Stage';
+      return '01 - New Stage';
+    };
+
+    const oldStatus = lead.status || 'New';
+    let updates = { status: newStatus };
+    let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
+
+    // Auto-Handoff: If agent changes to a stage they don't own, unassign the lead
+    if (userRole !== 'admin' && userRole !== 'Admin' && !leadsAccess.is_manager) {
+      const newStage = getStageFromStatus(newStatus);
+      if (!assignedSteps.includes(newStage)) {
+        updates.assigned_to = null;
+        noteText += ` (Auto-released to Pool)`;
+      }
+    }
+
+    const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
+    if (updateError) {
+      alert("Error updating status: " + updateError.message);
+      return;
+    }
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    const actor = userName || user?.email?.split('@')[0] || 'System';
+    const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
+    if (noteError) {
+      console.error("Error creating status note:", noteError.message);
+    }
+    
+    const newNote = insertedNote || {
+      id: Date.now(),
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: actor,
+      created_at: new Date().toISOString()
+    };
+    const updatedRawLead = {
+      ...lead,
+      ...updates,
+      lead_notes: [newNote, ...(lead.lead_notes || [])]
+    };
+    const processed = processLeads([updatedRawLead])[0];
+    setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
+    if (onLeadsChange) {
+      onLeadsChange(processed);
+    }
+    
+    // Trigger WhatsApp automation (non-blocking)
+    triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
+      if (!res.success) {
+        console.error("WhatsApp Automation Error:", res.error);
+        alert("WhatsApp Auto-Send Failed: " + res.error);
+      } else if (res.message && res.message.includes('Successfully sent')) {
+        alert("✅ " + res.message);
+      }
+    }).catch(err => console.error("WhatsApp Automation Error:", err));
+  };
+
   if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard') {
     return (
       <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
@@ -958,30 +1206,42 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             onChange={e => setGlobalFilter(e.target.value)}
             style={{ flex: 1, padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '200px' }}
           />
-                <select 
-            value={table.getColumn('status')?.getFilterValue() ?? ''}
-            onChange={e => table.getColumn('status')?.setFilterValue(e.target.value)}
-            style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '150px' }}
-          >
-            <option value="">All Statuses</option>
-            {stages.map((stageObj, i) => {
-              const stageNum = i + 1;
-              if (!showStage(`${stageNum};`)) return null;
+          {(() => {
+            const rawStatusFilter = table.getColumn('status')?.getFilterValue();
+            const scalarStatusFilter = Array.isArray(rawStatusFilter)
+              ? (rawStatusFilter.length === 1 ? rawStatusFilter[0] : (rawStatusFilter.length > 1 ? '__multiple__' : ''))
+              : (rawStatusFilter ?? '');
+            
+            return (
+              <select 
+                value={scalarStatusFilter}
+                onChange={e => table.getColumn('status')?.setFilterValue(e.target.value || undefined)}
+                style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '150px' }}
+              >
+                {scalarStatusFilter === '__multiple__' && (
+                  <option value="__multiple__" disabled>{`${rawStatusFilter.length} Statuses Selected`}</option>
+                )}
+                <option value="">All Statuses</option>
+                {stages.map((stageObj, i) => {
+                  const stageNum = i + 1;
+                  if (!showStage(`${stageNum};`)) return null;
 
-              const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-              return (
-                <React.Fragment key={`filter-stage-${i}`}>
-                  <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
-                  {stageObj.substages.map((sub, j) => {
-                    const subNum = String(j + 1).padStart(2, '0');
-                    const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                    const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                    return <option key={val} value={val}>{val}</option>;
-                  })}
-                </React.Fragment>
-              );
-            })}
-          </select>
+                  const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                  return (
+                    <React.Fragment key={`filter-stage-${i}`}>
+                      <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
+                      {stageObj.substages.map((sub, j) => {
+                        const subNum = String(j + 1).padStart(2, '0');
+                        const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                        const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                        return <option key={val} value={val}>{val}</option>;
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </select>
+            );
+          })()}
 
 
         </div>
@@ -993,63 +1253,79 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               onClick={() => setShowColumnMenu(!showColumnMenu)} 
               style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}
             >
-              👁️ Columns <ChevronDown size={16} />
+              👁️ Columns ▾
             </button>
             
             {showColumnMenu && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', zIndex: 50, width: '300px', maxHeight: '400px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
-                  <button onClick={() => table.toggleAllColumnsVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>All</button>
-                  <button onClick={() => table.toggleAllColumnsVisible(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>None</button>
-                  <button onClick={() => {
-                    table.toggleAllColumnsVisible(true);
-                    const defaultOrder = columns.map(c => c.accessorKey || c.id);
-                    setColumnOrder(defaultOrder);
-                    setColumnVisibility({});
-                    localStorage.removeItem('leadTableColumnOrder');
-                    localStorage.removeItem('leadTableColumnVisibility');
-                  }} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>Reset</button>
+              <div 
+                style={{ 
+                  position: 'absolute', 
+                  top: '100%', 
+                  right: 0, 
+                  marginTop: '0.5rem', 
+                  background: 'var(--bg-surface)', 
+                  border: '1px solid var(--border-light)', 
+                  borderRadius: '8px', 
+                  padding: '1rem', 
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', 
+                  zIndex: 50, 
+                  minWidth: '220px',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Toggle Columns</span>
+                  <button 
+                    onClick={() => {
+                      const allVisible = {};
+                      table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
+                      setColumnVisibility(allVisible);
+                    }}
+                    style={{ fontSize: '0.7rem', color: 'var(--accent-color)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    Show All
+                  </button>
                 </div>
-                <div style={{ overflowY: 'auto', padding: '0.5rem' }}>
-                  {table.getAllLeafColumns().map((column, idx, arr) => {
-                    const headerText = typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id;
-                    const isSystemColumn = column.id === 'edit';
-                    
-                    return (
-                      <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderRadius: '4px', transition: 'background 0.2s', fontSize: '0.85rem' }} onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', flex: 1 }}>
-                          <input
-                            type="checkbox"
-                            checked={column.getIsVisible()}
-                            onChange={column.getToggleVisibilityHandler()}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {headerText}
-                        </label>
-                        {!isSystemColumn && (
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button 
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveColumn(column.id, 'up'); }}
-                              disabled={idx <= 1}
-                              style={{ background: 'none', border: 'none', cursor: idx <= 1 ? 'not-allowed' : 'pointer', opacity: idx <= 1 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
-                              title="Move Up"
-                            >
-                              ▲
-                            </button>
-                            <button 
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveColumn(column.id, 'down'); }}
-                              disabled={idx === arr.length - 1}
-                              style={{ background: 'none', border: 'none', cursor: idx === arr.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === arr.length - 1 ? 0.3 : 1, fontSize: '0.75rem', color: 'var(--text-secondary)' }}
-                              title="Move Down"
-                            >
-                              ▼
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                {table.getAllLeafColumns().map((column, index) => {
+                  if (column.id === 'actions' || column.id === 'select') return null;
+                  return (
+                    <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)', flex: 1 }}>
+                        <input
+                          type="checkbox"
+                          checked={column.getIsVisible()}
+                          onChange={column.getToggleVisibilityHandler()}
+                        />
+                        {column.columnDef.header && typeof column.columnDef.header === 'string' 
+                          ? column.columnDef.header 
+                          : column.id}
+                      </label>
+                      
+                      {/* Reorder Arrows */}
+                      {columnOrder.length > 0 && (
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button 
+                            disabled={index === 0} 
+                            onClick={() => moveColumn(column.id, -1)}
+                            style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.3 : 1, fontSize: '0.75rem', padding: '0 2px' }}
+                            title="Move Left"
+                          >
+                            ▲
+                          </button>
+                          <button 
+                            disabled={index === table.getAllLeafColumns().length - 1} 
+                            onClick={() => moveColumn(column.id, 1)}
+                            style={{ border: 'none', background: 'transparent', cursor: index === table.getAllLeafColumns().length - 1 ? 'default' : 'pointer', opacity: index === table.getAllLeafColumns().length - 1 ? 0.3 : 1, fontSize: '0.75rem', padding: '0 2px' }}
+                            title="Move Right"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1071,53 +1347,96 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               </button>
             </>
           )}
+
+          {/* View Mode Toggle: Table vs Tiles */}
+          <div 
+            style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              background: 'var(--bg-surface)', 
+              border: '1px solid var(--border-light)', 
+              borderRadius: '8px', 
+              padding: '3px',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
+              userSelect: 'none'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { setViewMode('table'); localStorage.setItem('crm_lead_view_mode', 'table'); }}
+              style={{
+                padding: '0.45rem 0.85rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s ease',
+                background: viewMode === 'table' ? 'var(--accent-color, #3b82f6)' : 'transparent',
+                color: viewMode === 'table' ? '#ffffff' : 'var(--text-secondary)'
+              }}
+              title="Table View"
+            >
+              <Table size={15} />
+              <span>Table</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setViewMode('tiles'); localStorage.setItem('crm_lead_view_mode', 'tiles'); }}
+              style={{
+                padding: '0.45rem 0.85rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s ease',
+                background: viewMode === 'tiles' ? 'var(--accent-color, #3b82f6)' : 'transparent',
+                color: viewMode === 'tiles' ? '#ffffff' : 'var(--text-secondary)'
+              }}
+              title="Tiles View"
+            >
+              <LayoutGrid size={15} />
+              <span>Tiles</span>
+            </button>
+          </div>
+
           <button onClick={() => setIsModalOpen(true)} className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>
             + Add Lead
           </button>
         </div>
       </div>
 
-      {isMobile ? (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: 'var(--bg-primary)' }}>
+      {viewMode === 'tiles' || isMobile ? (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem', alignContent: 'start', backgroundColor: 'var(--bg-primary)' }}>
           {table.getRowModel().rows.length === 0 ? (
-            <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <div className="card" style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
               No leads found.
             </div>
           ) : (
             table.getRowModel().rows.map((row, idx) => {
               const lead = row.original;
-              
-              const getCleanStatus = (status) => {
-                if (!status) return 'New';
-                if (status.includes('>')) return status.split('>').pop();
-                return status;
-              };
-
-              const getStatusColors = (status) => {
-                if (!status) return { bg: 'var(--status-new-bg)', text: 'var(--status-new-text)' };
-                if (status.startsWith('7;') || status.includes('Conversion') || status.includes('Converted') || status.includes('Won')) {
-                  return { bg: 'var(--status-converted-bg)', text: 'var(--status-converted-text)' };
-                }
-                if (status.startsWith('2;') || status.startsWith('3;') || status.startsWith('4;') || status.includes('Contact') || status.includes('Follow')) {
-                  return { bg: 'var(--status-contacted-bg)', text: 'var(--status-contacted-text)' };
-                }
-                return { bg: 'var(--status-new-bg)', text: 'var(--status-new-text)' };
-              };
-
-              const statusColors = getStatusColors(lead.status);
+              const cleanClass = (lead.status || '').toLowerCase().replace(/\s+/g, '');
+              const cleanLastClass = (lead.last_status || '').toLowerCase().replace(/\s+/g, '');
+              const phoneNumbers = getLeadPhoneNumbers(lead);
 
               return (
                 <div 
                   key={row.id} 
-                  onClick={() => {
-                    setActiveRowId(row.id);
-                  }}
+                  onClick={() => setActiveRowId(row.id)}
                   style={{
                     backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : 'var(--bg-surface)',
                     border: `1px solid ${activeRowId === row.id ? 'var(--accent-color)' : 'var(--border-light)'}`,
                     borderRadius: '10px',
-                    padding: '1.25rem',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                    padding: '1.15rem',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '0.75rem',
@@ -1127,120 +1446,250 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                   }}
                   className="card-hover-lift"
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {lead.name}
+                  {/* Top Header: Business Name & Client Edit Button */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'nowrap' }}>
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setProfileMode('edit');
+                          setSelectedLead(lead);
+                        }}
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '5px',
+                          backgroundColor: 'var(--bg-primary)',
+                          color: 'var(--accent-color, #2563eb)',
+                          border: '1px solid var(--border-light)',
+                          cursor: 'pointer',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          flexShrink: 0
+                        }}
+                        title="Edit Client Registration"
+                      >
+                        ✏️ Edit
+                      </button>
+                      <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={lead.company || lead.name}>
+                        {lead.company || lead.name || 'Unnamed Business'}
                       </h4>
+                    </div>
+
+                    {/* CP Name underneath Business Name (if available) */}
+                    {lead.name && (
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem', paddingLeft: '0.1rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.78rem' }}>👤 CP Name:</span>
+                        <span>{lead.name}</span>
+                      </div>
+                    )}
+
+                    {/* Meta Row: ID -> Date -> Business Type -> Priority */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem' }}>
                       {lead.lead_ref_id && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
                           ID: {lead.lead_ref_id}
                         </span>
                       )}
+                      {lead.lead_date && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                          📅 {lead.lead_date}
+                        </span>
+                      )}
+                      {lead.business_type && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
+                          🏷️ {lead.business_type}
+                        </span>
+                      )}
+                      {lead.priority && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: (String(lead.priority).toLowerCase().includes('high')) ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-primary)', color: (String(lead.priority).toLowerCase().includes('high')) ? '#dc2626' : 'var(--text-secondary)', border: `1px solid ${(String(lead.priority).toLowerCase().includes('high')) ? '#fca5a5' : 'var(--border-light)'}` }}>
+                          ⚡ Priority: {lead.priority}
+                        </span>
+                      )}
                     </div>
-                    <span style={{
-                      padding: '0.3rem 0.6rem',
-                      borderRadius: '6px',
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      backgroundColor: statusColors.bg,
-                      color: statusColors.text,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.03em',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {getCleanStatus(lead.status)}
-                    </span>
                   </div>
 
+                  {/* Multiple Phone Numbers / Contacts Section */}
+                  {phoneNumbers.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }} onClick={e => e.stopPropagation()}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>
+                        📱 Mobile / Contacts ({phoneNumbers.length})
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {phoneNumbers.map((num, nIdx) => (
+                          <div 
+                            key={num + nIdx} 
+                            style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '0.35rem', 
+                              backgroundColor: 'var(--bg-primary)', 
+                              padding: '0.25rem 0.5rem', 
+                              borderRadius: '6px', 
+                              border: '1px solid var(--border-light)',
+                              fontSize: '0.78rem'
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{num}</span>
+                            <a 
+                              href={`tel:${num}`} 
+                              style={{ color: 'var(--accent-color)', textDecoration: 'none', padding: '0 0.15rem', display: 'flex', alignItems: 'center' }} 
+                              title={`Call ${num}`}
+                            >
+                              📞
+                            </a>
+                            <button 
+                              type="button"
+                              onClick={() => setWhatsappModalLead({ ...lead, phone: num })} 
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.15rem', display: 'flex', alignItems: 'center' }} 
+                              title={`WhatsApp ${num}`}
+                            >
+                              💬
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Grid details: Assigned To / Last Status, Lead Source / Source Name, Investment Size / Buying Timeline */}
                   <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: '1fr 1fr', 
-                    gap: '0.6rem 1rem', 
+                    gap: '0.55rem 0.75rem', 
                     fontSize: '0.8rem', 
                     color: 'var(--text-secondary)',
                     borderTop: '1px solid var(--border-light)',
                     borderBottom: '1px solid var(--border-light)',
-                    padding: '0.75rem 0',
-                    margin: '0.25rem 0'
+                    padding: '0.65rem 0',
+                    margin: '0.15rem 0'
                   }}>
                     <div>
-                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Company:</span>
-                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>{lead.company || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Value:</span>
-                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                        {lead.deal_value ? `₹${Number(lead.deal_value).toLocaleString('en-IN')}` : 'N/A'}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Assigned To:</span>
-                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Assigned To</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                         {(() => {
-                          if (!lead.assigned_to) return 'Unassigned';
+                          if (!lead.assigned_to) return <span style={{ color: '#94a3b8' }}>Unassigned</span>;
                           const member = (teamMembers || []).find(t => t.user_id === lead.assigned_to);
                           return member ? member.emp_name : lead.assigned_to.substring(0, 8);
                         })()}
                       </span>
                     </div>
+
                     <div>
-                      <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Source:</span>
-                      <span style={{ marginLeft: '0.25rem', color: 'var(--text-primary)', fontWeight: 500 }}>{lead.source || 'N/A'}</span>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Last Status</span>
+                      {lead.last_status === 'Pending New' ? (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '9999px', backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-block' }}>
+                          Pending New
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '9999px', backgroundColor: `var(--status-${cleanLastClass}-bg, #e2e8f0)`, color: `var(--status-${cleanLastClass}-text, #334155)`, border: '1px solid rgba(0,0,0,0.1)', display: 'inline-block', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lead.last_status}>
+                          {lead.last_status?.includes('>') ? lead.last_status.split('>').pop() : (lead.last_status || '—')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Lead Source & Source Name */}
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Lead Source</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{lead.source || '—'}</span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Source Name</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{lead.source_name || '—'}</span>
+                    </div>
+
+                    {/* Investment Size & Buying Timeline */}
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Investment Size</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{lead.investment || '—'}</span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Buying Timeline</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{lead.buying_timeline || '—'}</span>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.5rem', width: '100%', marginTop: '0.25rem' }}>
-                    {lead.phone && (
-                      <a 
-                        href={`tel:${lead.phone}`}
-                        style={{
-                          flex: 1,
-                          padding: '0.5rem',
-                          borderRadius: '6px',
-                          backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                          color: 'var(--accent-color)',
-                          textDecoration: 'none',
-                          textAlign: 'center',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.25rem',
-                          border: '1px solid transparent'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        📞 Call
-                      </a>
-                    )}
-                    {lead.phone && (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setWhatsappModalLead(lead);
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '0.5rem',
-                          borderRadius: '6px',
-                          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                          color: '#10b981',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.25rem'
-                        }}
-                      >
-                        💬 WhatsApp
-                      </button>
-                    )}
+                  {/* Lead Status Dropdown (Positioned directly above Notes / Remark) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }} onClick={e => e.stopPropagation()}>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>
+                      Lead Status
+                    </span>
+                    <select
+                      value={lead.status || 'New'}
+                      onChange={(e) => handleDirectStatusChange(lead, e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.4rem 0.6rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`,
+                        color: `var(--status-${cleanClass}-text, #334155)`,
+                        border: '1px solid rgba(0,0,0,0.15)',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                      title="Change Lead Status"
+                    >
+                      {stages.map((stageObj, i) => {
+                        const stageNum = i + 1;
+                        const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                        return (
+                          <optgroup key={`tile-stage-${i}`} label={stageObj.name}>
+                            {stageObj.substages.map((sub, j) => {
+                              const subNum = String(j + 1).padStart(2, '0');
+                              const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                              const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                              return (
+                                <option key={val} value={val} style={{ backgroundColor: '#ffffff', color: '#0f172a' }}>
+                                  {val}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Latest Remark / Note */}
+                  {lead.latest_remark && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)', padding: '0.4rem 0.6rem', borderRadius: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lead.latest_remark}>
+                      💬 <strong style={{ color: 'var(--text-primary)' }}>{lead.latest_emp_name || 'Agent'}:</strong> {lead.latest_remark}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '0.4rem', width: '100%', marginTop: '0.2rem' }}>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWhatsappModalLead(lead);
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '0.45rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        color: '#10b981',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      💬 WhatsApp
+                    </button>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1248,17 +1697,23 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                         setSelectedLead(lead);
                       }}
                       style={{
-                        padding: '0.5rem 0.75rem',
+                        flex: 1,
+                        padding: '0.45rem',
                         borderRadius: '6px',
                         backgroundColor: 'var(--bg-surface)',
                         color: 'var(--text-primary)',
                         border: '1px solid var(--border-light)',
                         cursor: 'pointer',
-                        fontSize: '0.8rem',
-                        fontWeight: 600
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.25rem'
                       }}
+                      title="Update History & Remarks"
                     >
-                      Details
+                      📜 History
                     </button>
                   </div>
                 </div>
@@ -1273,7 +1728,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map(header => (
-                  <th key={header.id} className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === header.id ? 100 : 10, padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
+                  <th key={header.id} className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === header.id ? 99999 : 10, padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
                     {header.isPlaceholder ? null : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                         <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
@@ -1291,7 +1746,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                             </button>
                             
                             {activeFilterColumn === header.id && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 100, width: '220px', padding: '0.5rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
+                              <div className="column-filter-popup" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '6px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.22)', zIndex: 99999, minWidth: '320px', maxWidth: '480px', width: 'max-content', padding: '0.65rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
                                 {(header.id === 'last_timestamp' || header.id === 'next_follow_up_date' || header.id === 'lead_date') ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                     <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Date:</label>
@@ -1315,16 +1770,17 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                                       onChange={e => setFilterSearchText(e.target.value)}
                                       style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
                                     />
-                                    <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                       {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
                                         const rawFilterValue = header.column.getFilterValue();
                                         const currentFilterValue = Array.isArray(rawFilterValue) ? rawFilterValue : (rawFilterValue ? [rawFilterValue] : []);
                                         const isChecked = currentFilterValue.includes(val);
                                         return (
-                                          <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
+                                          <label key={val} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer', padding: '0.25rem 0.35rem', borderRadius: '4px', lineHeight: '1.35' }}>
                                             <input 
                                               type="checkbox"
                                               checked={isChecked}
+                                              style={{ marginTop: '0.15rem', flexShrink: 0 }}
                                               onChange={() => {
                                                 const newValue = isChecked 
                                                   ? currentFilterValue.filter(v => String(v) !== String(val))
@@ -1332,7 +1788,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                                                 header.column.setFilterValue(newValue.length ? newValue : undefined);
                                               }}
                                             />
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val || '(Blank)'}</span>
+                                            <span title={val} style={{ wordBreak: 'break-word', whiteSpace: 'normal', flex: 1 }}>{val || '(Blank)'}</span>
                                           </label>
                                         );
                                       })}
@@ -1356,22 +1812,13 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row, idx) => (
-              <tr 
+              <LeadTableRow 
                 key={row.id} 
-                onClick={() => setActiveRowId(row.id)}
-                style={{ 
-                  borderBottom: '1px solid var(--border-light)', 
-                  backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'),
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s ease'
-                }}
-              >
-                {row.getVisibleCells().map(cell => (
-                  <td key={cell.id} style={{ padding: '1rem 1.25rem', fontSize: '0.9rem' }}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
+                row={row} 
+                idx={idx} 
+                activeRowId={activeRowId} 
+                onRowClick={setActiveRowId} 
+              />
             ))}
           </tbody>
         </table>
@@ -1393,7 +1840,10 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           <select
             value={table.getState().pagination.pageSize}
             onChange={e => {
-              table.setPageSize(Number(e.target.value))
+              const newSize = Number(e.target.value);
+              React.startTransition(() => {
+                table.setPageSize(newSize);
+              });
             }}
             style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}
           >

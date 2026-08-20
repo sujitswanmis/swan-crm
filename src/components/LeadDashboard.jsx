@@ -232,7 +232,7 @@ export default function LeadDashboard({
     return { total, unassigned, dueToday, overdue, newLeads, inProgress, conversion, winRate };
   }, [relevantLeads]);
 
-  // Stage Breakdown Data
+  // Stage & Sub-Stage Breakdown Data
   const stageData = useMemo(() => {
     const STAGE_NAMES = [
       '01 - New Stage',
@@ -246,15 +246,40 @@ export default function LeadDashboard({
 
     return STAGE_NAMES.map(fullStage => {
       const code = fullStage.split(' - ')[0].replace(/^0/, '');
-      const count = relevantLeads.filter(l => {
+      
+      const stageLeads = relevantLeads.filter(l => {
         if (!l.status) return code === '1';
         return l.status.startsWith(code + ';') || l.status.startsWith(fullStage.split(' - ')[0]) || l.status === fullStage;
-      }).length;
+      });
+
+      // Compute sub-stage lead counts
+      const subMap = {};
+      stageLeads.forEach(l => {
+        let subName = 'General / Direct';
+        if (l.status) {
+          if (l.status.includes('>')) {
+            const parts = l.status.split('>');
+            subName = parts[parts.length - 1].trim() || parts[0];
+          } else if (l.status.includes(';')) {
+            const parts = l.status.split(';');
+            subName = parts[parts.length - 1].trim();
+          } else {
+            subName = l.status;
+          }
+        }
+        subMap[subName] = (subMap[subName] || 0) + 1;
+      });
+
+      const substages = Object.keys(subMap).map(subLabel => ({
+        label: subLabel,
+        count: subMap[subLabel]
+      })).sort((a, b) => b.count - a.count);
 
       return {
         stage: fullStage,
         shortName: fullStage.split(' - ')[1] || fullStage,
-        count,
+        count: stageLeads.length,
+        substages,
         color: STAGE_COLORS[fullStage] || '#3b82f6'
       };
     });
@@ -663,6 +688,22 @@ export default function LeadDashboard({
                   View <ArrowRight size={12} />
                 </span>
               </div>
+
+              {/* Sub-stages count breakdown list */}
+              {item.substages && item.substages.length > 0 && (
+                <div style={{ marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {item.substages.map(sub => (
+                    <div key={sub.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                      <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '78%' }} title={sub.label}>
+                        ↳ {sub.label}
+                      </span>
+                      <span style={{ fontWeight: 700, color: item.color, background: 'var(--bg-surface)', padding: '0.08rem 0.38rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.72rem' }}>
+                        {sub.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
