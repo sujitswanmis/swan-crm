@@ -896,20 +896,32 @@ export default function TeamManagement({ initialUsers = [] }) {
     if (!parentPerms.view) {
       return { view: false, add: false, edit: false, delete: false };
     }
-    const subItems = form[moduleId]?.sub_items;
-    if (!subItems || !subItems[subId]) {
-      return { ...parentPerms };
+    const moduleObj = form[moduleId] || {};
+    const subItems = moduleObj.sub_items;
+
+    // If subItems has an explicit entry for subId:
+    if (subItems && subItems[subId] !== undefined) {
+      const sub = subItems[subId];
+      if (sub === false || sub.view === false) {
+        return { view: false, add: false, edit: false, delete: false };
+      }
+      return {
+        view: true,
+        add: sub.add !== false && parentPerms.add,
+        edit: sub.edit !== false && parentPerms.edit,
+        delete: sub.delete === true
+      };
     }
-    const sub = subItems[subId];
-    if (sub.view === false) {
-      return { view: false, add: false, edit: false, delete: false };
+
+    // If module has assigned_steps (e.g. leads or recruiter), and subItems is not configured yet:
+    if (Array.isArray(moduleObj.assigned_steps) && !moduleObj.is_manager) {
+      const isAssigned = moduleObj.assigned_steps.includes(subId) || (subId === 'lead_dashboard' && moduleObj.view);
+      if (!isAssigned) {
+        return { view: false, add: false, edit: false, delete: false };
+      }
     }
-    return {
-      view: true,
-      add: sub.add !== false && parentPerms.add,
-      edit: sub.edit !== false && parentPerms.edit,
-      delete: sub.delete === true
-    };
+
+    return { ...parentPerms };
   };
 
   const handleToggleModulePerm = (moduleId, permType) => {
@@ -1030,23 +1042,39 @@ export default function TeamManagement({ initialUsers = [] }) {
   const handleSaveAccess = async () => {
     setSavingAccess(true);
     const hasBoth = accessForm.can_import_data === true && accessForm.can_export_data === true;
+    
+    // Auto-sync assigned_steps for leads & recruiter from sub_items if present
+    const updatedForm = { ...accessForm };
+    if (updatedForm.leads) {
+      const leadsSub = updatedForm.leads.sub_items;
+      if (leadsSub) {
+        updatedForm.leads.assigned_steps = Object.keys(leadsSub).filter(k => k !== 'lead_dashboard' && leadsSub[k]?.view === true);
+      }
+    }
+    if (updatedForm.recruiter) {
+      const recSub = updatedForm.recruiter.sub_items;
+      if (recSub) {
+        updatedForm.recruiter.assigned_steps = Object.keys(recSub).filter(k => recSub[k]?.view === true);
+      }
+    }
+
     setUsers(prev => prev.map(u => u.user_id === accessUser ? {
       ...u,
-      module_access: accessForm,
+      module_access: updatedForm,
       can_import_export: hasBoth,
-      can_import_data: accessForm.can_import_data === true,
-      can_export_data: accessForm.can_export_data === true,
-      can_self_reset_password: accessForm.can_self_reset_password === true,
-      can_assign_leads: accessForm.can_assign_leads === true,
-      can_delete_leads: accessForm.can_delete_leads === true,
-      can_view_all_companies: accessForm.can_view_all_companies === true,
-      can_access_audit_logs: accessForm.can_access_audit_logs === true,
-      can_manage_settings: accessForm.can_manage_settings === true,
-      can_claim_unassigned: accessForm.can_claim_unassigned === true,
-      can_bulk_actions: accessForm.can_bulk_actions === true
+      can_import_data: updatedForm.can_import_data === true,
+      can_export_data: updatedForm.can_export_data === true,
+      can_self_reset_password: updatedForm.can_self_reset_password === true,
+      can_assign_leads: updatedForm.can_assign_leads === true,
+      can_delete_leads: updatedForm.can_delete_leads === true,
+      can_view_all_companies: updatedForm.can_view_all_companies === true,
+      can_access_audit_logs: updatedForm.can_access_audit_logs === true,
+      can_manage_settings: updatedForm.can_manage_settings === true,
+      can_claim_unassigned: updatedForm.can_claim_unassigned === true,
+      can_bulk_actions: updatedForm.can_bulk_actions === true
     } : u));
 
-    const result = await updateModuleAccess(accessUser, accessForm);
+    const result = await updateModuleAccess(accessUser, updatedForm);
     setSavingAccess(false);
     if (result.success) {
       setAccessUser(null);

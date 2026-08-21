@@ -727,7 +727,10 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     }
     
     // 4. If agent access, only see leads in assigned steps AND that are either open (null) or assigned to them
-    const assignedSteps = leadsAccess.assigned_steps || [];
+    const assignedSteps = leadsAccess.assigned_steps && leadsAccess.assigned_steps.length > 0 
+      ? leadsAccess.assigned_steps 
+      : Object.keys(leadsAccess.sub_items || {}).filter(k => k !== 'lead_dashboard' && leadsAccess.sub_items[k]?.view === true);
+    
     if (assignedSteps.length > 0) {
       const filteredLeads = preFilteredLeads.filter(lead => {
         const leadStage = getStageFromStatus(lead.status);
@@ -1512,7 +1515,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                                 const leadsAccess = moduleAccess?.leads || {};
                                 const isAdmin = userRole === 'admin' || userRole === 'Admin';
                                 const isManager = leadsAccess.is_manager;
-                                const isAssigned = (leadsAccess.assigned_steps || []).includes(stage);
+                                const isAssigned = (leadsAccess.assigned_steps || []).includes(stage) || leadsAccess.sub_items?.[stage]?.view === true;
                                 
                                 if (!isAdmin && !isManager && !isAssigned) {
                                   return null;
