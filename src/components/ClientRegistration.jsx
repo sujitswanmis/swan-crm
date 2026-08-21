@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
@@ -615,6 +615,144 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     }
   }, [initialData, isEditMode]);
 
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
+
+  const ALL_CONTACT_FIELDS = useMemo(() => [
+    { key: 'phone', label: 'CP1 Mobile 1' },
+    { key: 'cp1_mobile_2', label: 'CP1 Mobile 2' },
+    { key: 'cp1_alt_1', label: 'CP1 Alternate 1' },
+    { key: 'cp1_alt_2', label: 'CP1 Alternate 2' },
+    { key: 'business_contact_1', label: 'Business Contact 1' },
+    { key: 'business_contact_2', label: 'Business Contact 2' },
+    { key: 'business_alt_1', label: 'Business Alternate 1' },
+    { key: 'business_alt_2', label: 'Business Alternate 2' },
+    { key: 'cp2_mobile_1', label: 'CP2 Mobile 1' },
+    { key: 'cp2_mobile_2', label: 'CP2 Mobile 2' },
+    { key: 'cp2_alt_1', label: 'CP2 Alternate 1' },
+    { key: 'cp2_alt_2', label: 'CP2 Alternate 2' },
+    { key: 'cp3_mobile_1', label: 'CP3 Mobile 1' },
+    { key: 'cp3_mobile_2', label: 'CP3 Mobile 2' },
+    { key: 'cp3_alt_1', label: 'CP3 Alternate 1' },
+    { key: 'cp3_alt_2', label: 'CP3 Alternate 2' }
+  ], []);
+
+  // Comprehensive Real-time duplicate check across ALL 16 contact/mobile numbers & GST
+  useEffect(() => {
+    if (isEditMode) return; // Do not check against oneself in edit mode
+
+    const enteredNumbers = [];
+    ALL_CONTACT_FIELDS.forEach(f => {
+      const val = (formData[f.key] || '').trim();
+      if (val && val.length >= 8 && !enteredNumbers.some(e => e.val === val)) {
+        enteredNumbers.push({ key: f.key, label: f.label, val });
+      }
+    });
+
+    const gst = (formData.business_gst || '').trim();
+
+    if (enteredNumbers.length === 0 && (!gst || gst.length < 8)) {
+      setDuplicateInfo(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsCheckingDuplicate(true);
+        const filters = [];
+
+        // Build exhaustive match filters across all 16 database phone/contact columns
+        const dbColumns = [
+          'phone', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2',
+          'business_contact_1', 'business_contact_2', 'business_alt_1', 'business_alt_2',
+          'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
+          'cp3_mobile_1', 'cp3_mobile_2', 'cp3_alt_1', 'cp3_alt_2'
+        ];
+
+        enteredNumbers.forEach(({ val }) => {
+          dbColumns.forEach(col => {
+            filters.push(`${col}.eq.${val}`);
+          });
+        });
+
+        if (gst && gst.length >= 8) {
+          filters.push(`business_gst.ilike.${gst}`);
+        }
+
+        if (filters.length === 0) {
+          setDuplicateInfo(null);
+          setIsCheckingDuplicate(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('leads')
+          .select('id, lead_ref_id, name, company, phone, business_contact_1, business_gst, status, created_at, created_by, entry_by, assigned_to')
+          .or(filters.join(','))
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          const match = data[0];
+          let matchedOn = 'Contact Number';
+          let matchVal = enteredNumbers[0]?.val || '';
+
+          if (gst && match.business_gst && match.business_gst.toLowerCase() === gst.toLowerCase()) {
+            matchedOn = 'Business GSTIN';
+            matchVal = gst;
+          } else {
+            // Find which exact number matched
+            const matchedEntry = enteredNumbers.find(e => 
+              match.phone === e.val || 
+              match.business_contact_1 === e.val
+            ) || enteredNumbers[0];
+            
+            if (matchedEntry) {
+              matchedOn = matchedEntry.label;
+              matchVal = matchedEntry.val;
+            }
+          }
+
+          // Resolve assigned agent name from teamMembers list
+          let assignedName = match.assigned_to || 'Unassigned';
+          if (match.assigned_to && teamMembers && teamMembers.length > 0) {
+            const member = teamMembers.find(m => m.user_id === match.assigned_to || m.id === match.assigned_to);
+            if (member) {
+              assignedName = member.emp_name ? `${member.emp_name}${member.emp_department ? ` (${member.emp_department})` : ''}` : (member.email || match.assigned_to);
+            }
+          }
+
+          setDuplicateInfo({
+            matchedOn,
+            matchVal,
+            id: match.id,
+            lead_ref_id: match.lead_ref_id,
+            name: match.name,
+            company: match.company,
+            phone: match.phone || match.business_contact_1 || matchVal,
+            status: match.status,
+            created_by: match.created_by || 'System',
+            entry_by: match.entry_by || 'N/A',
+            assigned_to: assignedName
+          });
+        } else {
+          setDuplicateInfo(null);
+        }
+      } catch (err) {
+        console.error("Duplicate check error:", err);
+      } finally {
+        setIsCheckingDuplicate(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [
+    formData.phone, formData.cp1_mobile_2, formData.cp1_alt_1, formData.cp1_alt_2,
+    formData.business_contact_1, formData.business_contact_2, formData.business_alt_1, formData.business_alt_2,
+    formData.cp2_mobile_1, formData.cp2_mobile_2, formData.cp2_alt_1, formData.cp2_alt_2,
+    formData.cp3_mobile_1, formData.cp3_mobile_2, formData.cp3_alt_1, formData.cp3_alt_2,
+    formData.business_gst, isEditMode, supabase, ALL_CONTACT_FIELDS
+  ]);
+
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
@@ -625,6 +763,17 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Guard against submitting duplicates without confirmation
+    if (!isEditMode && duplicateInfo) {
+      const proceed = window.confirm(
+        `⚠️ Duplicate Client Alert!\n\nA client with matching ${duplicateInfo.matchedOn} (${duplicateInfo.matchVal}) is already registered:\n\n• Company: ${duplicateInfo.company || 'N/A'}\n• Name: ${duplicateInfo.name || 'N/A'}\n• Lead ID: #${duplicateInfo.lead_ref_id || duplicateInfo.id}\n• Status: ${duplicateInfo.status || 'New'}\n• Created By: ${duplicateInfo.created_by}\n• Entry By: ${duplicateInfo.entry_by}\n• Assigned To: ${duplicateInfo.assigned_to}\n\nDo you still want to register this duplicate client?`
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     
     try {
@@ -1101,6 +1250,48 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             )}
           </div>
         </div>
+
+        {/* Real-Time Duplicate Alert Banner */}
+        {duplicateInfo && (
+          <div style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            border: '1.5px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: '10px',
+            padding: '1rem 1.25rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.85rem'
+          }}>
+            <AlertTriangle size={22} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span>⚠️ Duplicate Client Found in Database!</span>
+                {duplicateInfo.lead_ref_id && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', fontFamily: 'monospace' }}>
+                    #{duplicateInfo.lead_ref_id}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', marginTop: '0.35rem', lineHeight: '1.4' }}>
+                A client with matching <strong>{duplicateInfo.matchedOn}</strong> (<code>{duplicateInfo.matchVal}</code>) already exists as <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Client'}</strong> {duplicateInfo.name && duplicateInfo.company && `(${duplicateInfo.name})`} with Status: <strong>{duplicateInfo.status || 'New'}</strong>.
+              </div>
+
+              {/* Ownership & Assignment Meta Badges */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.65rem', flexWrap: 'wrap', fontSize: '0.78rem' }}>
+                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  👤 <strong>Created By:</strong> <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{duplicateInfo.created_by}</span>
+                </span>
+                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  ✍️ <strong>Entry By:</strong> <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{duplicateInfo.entry_by}</span>
+                </span>
+                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  🎯 <strong>Assigned To:</strong> <span style={{ color: 'var(--accent-color)', fontWeight: 600 }}>{duplicateInfo.assigned_to}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           
