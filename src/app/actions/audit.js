@@ -259,7 +259,18 @@ export async function logUserSession(deviceInfo) {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    const empName = roleData?.emp_name || user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'System User');
+    let empName = roleData?.emp_name;
+    if (!empName && user.email) {
+      const { data: roleByEmail } = await adminClient
+        .from('user_roles')
+        .select('emp_name')
+        .ilike('email', user.email)
+        .maybeSingle();
+      empName = roleByEmail?.emp_name;
+    }
+    if (!empName) {
+      empName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'System User');
+    }
 
     // Check if a session already exists for this user/device, and update it, else insert
     const { data: existingRecords } = await adminClient.from('user_sessions')
@@ -275,7 +286,8 @@ export async function logUserSession(deviceInfo) {
       await adminClient.from('user_sessions').update({
         last_active: new Date().toISOString(),
         is_active: true,
-        emp_name: empName
+        emp_name: empName,
+        email: user.email
       }).eq('id', existing.id);
     } else {
       await adminClient.from('user_sessions').insert([{
@@ -284,7 +296,8 @@ export async function logUserSession(deviceInfo) {
         email: user.email,
         device: deviceInfo,
         ip_address: 'Logged via Web App',
-        is_active: true
+        is_active: true,
+        last_active: new Date().toISOString()
       }]);
     }
 
@@ -292,6 +305,31 @@ export async function logUserSession(deviceInfo) {
   } catch (err) {
     console.error('Session Log Error:', err);
     return { success: false, error: err.message };
+  }
+}
+
+export async function checkSessionValidity(deviceInfo) {
+  try {
+    const adminClient = getAdminClient();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { valid: false };
+
+    const { data: session } = await adminClient
+      .from('user_sessions')
+      .select('is_active')
+      .eq('user_id', user.id)
+      .eq('device', deviceInfo)
+      .order('last_active', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (session && session.is_active === false) {
+      return { valid: false };
+    }
+    return { valid: true };
+  } catch (err) {
+    return { valid: true };
   }
 }
 

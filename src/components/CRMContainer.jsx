@@ -414,23 +414,39 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     }
   };
 
-  // Auto-track session for already logged-in users
+  // Auto-track session with periodic heartbeat & force logout enforcement
   useEffect(() => {
+    let isMounted = true;
     async function trackSession() {
       try {
-        const { logUserSession } = await import('@/app/actions/audit');
-        const device = navigator.userAgent;
-        const res = await logUserSession(device); console.log('Auto session tracking result:', res);
+        const { logUserSession, checkSessionValidity } = await import('@/app/actions/audit');
+        const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown Device';
+        
+        // 1. Send heartbeat
+        await logUserSession(device);
+        
+        // 2. Check if admin terminated this session
+        const validity = await checkSessionValidity(device);
+        if (isMounted && validity && validity.valid === false) {
+          alert("Your session has been terminated by the administrator. You will be redirected to the login page.");
+          await supabase.auth.signOut();
+          window.location.href = '/login';
+        }
       } catch (e) {
-        console.error('Auto session tracking failed:', e);
+        console.error('Session tracking error:', e);
       }
     }
     
-    // Check if we've already tracked this session in this browser tab
-    if (true) {
-      trackSession();
-      sessionStorage.setItem('session_tracked', 'true');
-    }
+    // Initial track
+    trackSession();
+
+    // Heartbeat every 2 minutes
+    const interval = setInterval(trackSession, 2 * 60 * 1000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Fetch user email & metadata avatar
