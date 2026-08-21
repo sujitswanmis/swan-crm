@@ -89,11 +89,11 @@ export default function ClientReport({
   const reportAccess = moduleAccess?.['report'] || {};
   const leadsAccess = moduleAccess?.['leads'] || {};
 
-  // Delete permission: only admin or users with explicit delete = true
-  const canDelete = isAdmin || reportAccess?.delete === true || leadsAccess?.delete === true;
+  // Delete permission: only admin or users with explicit delete = true or can_delete_leads power
+  const canDelete = isAdmin || moduleAccess?.can_delete_leads === true || reportAccess?.delete === true || leadsAccess?.delete === true;
 
-  // Assign permission: admin, managers, or users with explicit manager access
-  const canAssign = isAdmin || reportAccess?.is_manager === true || leadsAccess?.is_manager === true;
+  // Assign permission: admin, managers, or users with explicit manager access or can_assign_leads power
+  const canAssign = isAdmin || moduleAccess?.can_assign_leads === true || reportAccess?.is_manager === true || leadsAccess?.is_manager === true;
 
   // Export permission: admin or users with can_export_data power, canImportExport power, or report.export permission
   const canExport = isAdmin || moduleAccess?.can_export_data === true || canImportExport === true || moduleAccess?.can_import_export === true || reportAccess?.export === true;
