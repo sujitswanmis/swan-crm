@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Bell, Mail, MonitorSmartphone, Save, Clock, AlertTriangle } from 'lucide-react';
+import { logAuditAction } from '@/app/actions/audit';
 
 export default function NotificationsConfig() {
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,10 @@ export default function NotificationsConfig() {
     config.alertDuration = prefs.soundDuration;
     config.confirmStageChange = prefs.confirmStageChange;
     localStorage.setItem('crm_config', JSON.stringify(config));
+
+    try {
+      logAuditAction('Update Notifications', `Updated alert sound and notification preferences`);
+    } catch(e) { console.error('Audit Log failed', e); }
     
     setTimeout(() => setLoading(false), 1000);
   };

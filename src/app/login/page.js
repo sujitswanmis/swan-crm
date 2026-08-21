@@ -147,9 +147,10 @@ function LoginFormContent() {
   // Complete redirect & session tracking after successful authentication
   const completeLoginFlow = async (userId) => {
     try {
-      const { logUserSession } = await import('@/app/actions/audit');
+      const { logUserSession, logAuditAction } = await import('@/app/actions/audit');
       const device = navigator.userAgent;
       await logUserSession(device);
+      await logAuditAction('User Login', 'User successfully logged in to Web App');
     } catch (e) { 
       console.error('Failed to log session', e); 
     }

@@ -75,8 +75,32 @@ const ALL_COLUMNS = [
   { key: 'buying_timeline', label: 'Buying Timeline' }
 ];
 
-export default function ClientReport({ initialData = [], teamMembers = [], userName }) {
+export default function ClientReport({ 
+  initialData = [], 
+  teamMembers = [], 
+  userName,
+  userRole = '',
+  moduleAccess = {},
+  canImportExport = false,
+  onLeadsChange 
+}) {
   const supabase = createClient();
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const reportAccess = moduleAccess?.['report'] || {};
+  const leadsAccess = moduleAccess?.['leads'] || {};
+
+  // Delete permission: only admin or users with explicit delete = true
+  const canDelete = isAdmin || reportAccess?.delete === true || leadsAccess?.delete === true;
+
+  // Assign permission: admin, managers, or users with explicit manager access
+  const canAssign = isAdmin || reportAccess?.is_manager === true || leadsAccess?.is_manager === true;
+
+  // Export permission: admin or users with can_export_data power, canImportExport power, or report.export permission
+  const canExport = isAdmin || moduleAccess?.can_export_data === true || canImportExport === true || moduleAccess?.can_import_export === true || reportAccess?.export === true;
+
+  // Edit permission:
+  const canEdit = isAdmin || reportAccess?.edit !== false;
+
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
@@ -275,8 +299,32 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
   }, [initialData]);
 
   const handleDeleteSelected = async () => {
+    if (!canDelete) {
+      alert("Permission Denied: You do not have permission to delete leads.");
+      return;
+    }
     if (selectedRows.length === 0) return;
     if (!confirm(`Are you sure you want to delete ${selectedRows.length} lead(s)? This action cannot be undone.`)) return;
+
+    // Capture the exact names and details of the leads BEFORE deleting them
+    const targetsToDelete = leads.filter(l => selectedRows.includes(l.id));
+    let auditTargetSummary = '';
+
+    if (targetsToDelete.length === 1) {
+      const l = targetsToDelete[0];
+      const leadName = l.company || l.name || l.contact_person || 'Unnamed Lead';
+      const refId = l.lead_ref_id ? `Ref: ${l.lead_ref_id}` : `ID: ${l.id.slice(0, 8)}`;
+      const contact = l.mobile || l.phone || l.email || '';
+      auditTargetSummary = `Deleted Lead: "${leadName}" (${refId}${contact ? `, Contact: ${contact}` : ''})`;
+    } else {
+      const summaries = targetsToDelete.slice(0, 10).map((l, i) => {
+        const leadName = l.company || l.name || l.contact_person || 'Unnamed Lead';
+        const refId = l.lead_ref_id ? `Ref: ${l.lead_ref_id}` : `ID: ${l.id.slice(0, 8)}`;
+        return `${i + 1}) "${leadName}" (${refId})`;
+      });
+      const extraCount = targetsToDelete.length - 10;
+      auditTargetSummary = `Deleted ${targetsToDelete.length} lead(s): ${summaries.join('; ')}${extraCount > 0 ? ` and ${extraCount} more` : ''}`;
+    }
 
     try {
       setLoading(true);
@@ -286,9 +334,12 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
         if (error) throw error;
       }
       
-      // Log the deletion action
+      // Log the deletion action with detailed target summary
       try {
-        await logAuditAction('Delete Leads', `Deleted ${selectedRows.length} lead(s) via Report Page`);
+        await logAuditAction(
+          targetsToDelete.length === 1 ? 'Delete Lead' : 'Delete Leads',
+          auditTargetSummary
+        );
       } catch(e) { console.error('Audit Log failed', e); }
 
       setLeads(prev => prev.filter(l => !selectedRows.includes(l.id)));
@@ -301,6 +352,10 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
   };
 
   const handleAssignSelected = async () => {
+    if (!canAssign) {
+      alert("Permission Denied: You do not have permission to assign leads.");
+      return;
+    }
     if (selectedRows.length === 0 || !selectedAssignee) {
       alert("Please select leads and an employee to assign them to.");
       return;
@@ -320,6 +375,11 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
           .in('id', chunk);
         if (error) throw error;
       }
+      
+      try {
+        await logAuditAction('Bulk Assign Leads', `Assigned ${selectedRows.length} lead(s) to ${assigneeName} via Report Page`);
+      } catch(e) { console.error('Audit Log failed', e); }
+
       setLeads(prev => prev.map(l => selectedRows.includes(l.id) ? { ...l, assigned_to: selectedAssignee } : l));
       setSelectedRows([]);
       setSelectedAssignee('');
@@ -358,6 +418,10 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
   const deselectAll = () => setVisibleColumns([]);
 
   const handleExportCSV = () => {
+    if (!canExport) {
+      alert("Permission Denied: You do not have permission to export leads data.");
+      return;
+    }
     if (leads.length === 0) return;
 
     // Filter headers based on visibility
@@ -383,6 +447,10 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    try {
+      logAuditAction('Export Leads', `Exported ${leads.length} lead(s) to CSV via Report Page`);
+    } catch(e) { console.error('Audit Log failed', e); }
   };
 
   if (loading) {
@@ -527,43 +595,53 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
             </div>
           )}
 
-          {selectedRows.length > 0 && (
+          {selectedRows.length > 0 && (canAssign || canDelete) && (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-              <select 
-                value={selectedAssignee}
-                onChange={e => setSelectedAssignee(e.target.value)}
-                style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.85rem', width: '150px' }}
-              >
-                <option value="">Select Employee...</option>
-                {teamMembers.map(member => (
-                  <option key={member.user_id} value={member.user_id}>{member.emp_name || member.email}</option>
-                ))}
-              </select>
-              <button 
-                onClick={handleAssignSelected}
-                disabled={!selectedAssignee}
-                style={{ padding: '0.4rem 0.8rem', background: selectedAssignee ? '#10b981' : '#d1fae5', color: selectedAssignee ? 'white' : '#6ee7b7', border: 'none', borderRadius: '4px', cursor: selectedAssignee ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
-              >
-                <UserPlus size={14} /> Assign ({selectedRows.length})
-              </button>
+              {canAssign && (
+                <>
+                  <select 
+                    value={selectedAssignee}
+                    onChange={e => setSelectedAssignee(e.target.value)}
+                    style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.85rem', width: '150px' }}
+                  >
+                    <option value="">Select Employee...</option>
+                    {teamMembers.map(member => (
+                      <option key={member.user_id} value={member.user_id}>{member.emp_name || member.email}</option>
+                    ))}
+                  </select>
+                  <button 
+                    onClick={handleAssignSelected}
+                    disabled={!selectedAssignee}
+                    style={{ padding: '0.4rem 0.8rem', background: selectedAssignee ? '#10b981' : '#d1fae5', color: selectedAssignee ? 'white' : '#6ee7b7', border: 'none', borderRadius: '4px', cursor: selectedAssignee ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
+                  >
+                    <UserPlus size={14} /> Assign ({selectedRows.length})
+                  </button>
+                </>
+              )}
               
-              <div style={{ width: '1px', height: '24px', background: 'var(--border-light)', margin: '0 0.25rem' }}></div>
+              {canAssign && canDelete && (
+                <div style={{ width: '1px', height: '24px', background: 'var(--border-light)', margin: '0 0.25rem' }}></div>
+              )}
 
-              <button 
-                onClick={handleDeleteSelected}
-                style={{ padding: '0.4rem 0.8rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
-              >
-                <Trash2 size={14} /> Delete
-              </button>
+              {canDelete && (
+                <button 
+                  onClick={handleDeleteSelected}
+                  style={{ padding: '0.4rem 0.8rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
+                >
+                  <Trash2 size={14} /> Delete ({selectedRows.length})
+                </button>
+              )}
             </div>
           )}
 
-          <button 
-            onClick={handleExportCSV}
-            style={{ padding: '0.6rem 1rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-          >
-            <Download size={16} /> Download CSV
-          </button>
+          {canExport && (
+            <button 
+              onClick={handleExportCSV}
+              style={{ padding: '0.6rem 1rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+            >
+              <Download size={16} /> Download CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -572,14 +650,16 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${visibleColumns.length * 150}px` }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
-              <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '40px' }}>
-                <input 
-                  type="checkbox" 
-                  checked={paginatedLeads.length > 0 && paginatedLeads.every(l => selectedRows.includes(l.id))}
-                  onChange={handleSelectAllOnPage}
-                  style={{ cursor: 'pointer' }}
-                />
-              </th>
+              {(canDelete || canAssign) && (
+                <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '40px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={paginatedLeads.length > 0 && paginatedLeads.every(l => selectedRows.includes(l.id))}
+                    onChange={handleSelectAllOnPage}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </th>
+              )}
               <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '60px' }}>
                 Actions
               </th>
@@ -646,19 +726,23 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
                   transition: 'background-color 0.2s ease'
                 }}
               >
-                <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedRows.includes(lead.id)}
-                    onChange={() => toggleRowSelection(lead.id)}
-                    style={{ cursor: 'pointer' }}
-                  />
-                </td>
+                {(canDelete || canAssign) && (
+                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedRows.includes(lead.id)}
+                      onChange={() => toggleRowSelection(lead.id)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </td>
+                )}
                 <td style={{ padding: '0.75rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                    <button onClick={() => { setSelectedLead(lead); setProfileMode('edit'); setIsProfileOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Lead">
-                      <Edit2 size={16} />
-                    </button>
+                    {canEdit && (
+                      <button onClick={() => { setSelectedLead(lead); setProfileMode('edit'); setIsProfileOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Lead">
+                        <Edit2 size={16} />
+                      </button>
+                    )}
                     <button onClick={() => { setSelectedLead(lead); setProfileMode('history'); setIsProfileOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }} title="View History">
                       <FileText size={16} />
                     </button>
@@ -677,7 +761,7 @@ export default function ClientReport({ initialData = [], teamMembers = [], userN
             ))}
             {paginatedLeads.length === 0 && (
               <tr>
-                <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                <td colSpan={visibleColumns.length + ((canDelete || canAssign) ? 2 : 1)} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                   No clients registered yet.
                 </td>
               </tr>

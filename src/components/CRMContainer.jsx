@@ -21,6 +21,7 @@ import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOu
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
+import { logAuditAction } from '@/app/actions/audit';
 import { uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
 import html2canvas from 'html2canvas';
 import SettingsContainer from './Settings/SettingsContainer';
@@ -914,6 +915,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   };
 
   const handleLogout = async () => {
+    try {
+      await logAuditAction('User Logout', 'User logged out of active session');
+    } catch (e) {
+      console.error('Audit Log failed', e);
+    }
     await supabase.auth.signOut();
     window.location.href = '/login';
   };
@@ -2714,7 +2720,15 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               )}
               {activeTab === 'report' && (
                 <ErrorBoundary>
-                  <ClientReport initialData={leads} onLeadsChange={handleLeadsChange} canImportExport={canImportExport} teamMembers={teamMembers} userName={userName} />
+                  <ClientReport 
+                    initialData={leads} 
+                    onLeadsChange={handleLeadsChange} 
+                    canImportExport={canImportExport} 
+                    teamMembers={teamMembers} 
+                    userName={userName} 
+                    userRole={userRole}
+                    moduleAccess={moduleAccess}
+                  />
                 </ErrorBoundary>
               )}
               {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && (

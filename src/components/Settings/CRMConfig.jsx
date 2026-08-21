@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings2, Plus, Trash2, Save, ChevronUp, ChevronDown, PlayCircle } from 'lucide-react';
+import { logAuditAction } from '@/app/actions/audit';
 
 export default function CRMConfig() {
   const [loading, setLoading] = useState(false);
@@ -77,6 +78,12 @@ export default function CRMConfig() {
     
     // Dispatch event so other components know to update immediately
     window.dispatchEvent(new Event('crm_config_updated'));
+
+    try {
+      logAuditAction('Update CRM Config', 'Updated CRM pipeline stages, sources, and priorities configuration');
+    } catch (e) {
+      console.error('Audit Log failed', e);
+    }
 
     setTimeout(() => setLoading(false), 500);
   };

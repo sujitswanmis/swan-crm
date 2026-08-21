@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { logAuditAction } from '@/app/actions/audit';
 import { X, Send } from 'lucide-react';
 
 export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
@@ -178,6 +179,10 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     if (noteError) {
       console.error("Error inserting follow-up note:", noteError.message);
     }
+
+    try {
+      logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
+    } catch(e) { console.error('Audit Log failed', e); }
   };
 
   const handleEditChange = (e) => {
@@ -203,6 +208,10 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     if (noteError) {
       console.error("Error inserting update profile note:", noteError.message);
     }
+
+    try {
+      logAuditAction('Update Lead', `Updated profile of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}"`);
+    } catch(e) { console.error('Audit Log failed', e); }
 
     if (onLeadUpdate) {
       onLeadUpdate({ ...lead, ...editForm });

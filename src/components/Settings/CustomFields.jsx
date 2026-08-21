@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FormInput, Plus, Trash2, GripVertical, Save } from 'lucide-react';
+import { logAuditAction } from '@/app/actions/audit';
 
 export default function CustomFields() {
   const [loading, setLoading] = useState(false);
@@ -22,6 +23,9 @@ export default function CustomFields() {
 
   const handleSave = () => {
     setLoading(true);
+    try {
+      logAuditAction('Update Custom Fields', `Updated custom form fields (${fields.length} fields configured)`);
+    } catch(e) { console.error('Audit Log failed', e); }
     setTimeout(() => setLoading(false), 1000);
   };
 

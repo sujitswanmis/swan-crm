@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { logAuditAction } from '@/app/actions/audit';
 import { Trash2, Plus, Search, Building2, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function ManageDepartments() {
@@ -68,6 +69,9 @@ export default function ManageDepartments() {
 
       setNewDeptName('');
       setSuccessMsg(`Department "${trimmed}" added successfully!`);
+      try {
+        logAuditAction('Create Department', `Added new department: "${trimmed}"`);
+      } catch (e) { console.error('Audit Log failed', e); }
       loadDepartments();
     } catch (err) {
       console.error(err);
@@ -92,6 +96,9 @@ export default function ManageDepartments() {
       if (error) throw error;
 
       setSuccessMsg(`Department "${deptName}" deleted successfully.`);
+      try {
+        logAuditAction('Delete Department', `Deleted department: "${deptName}"`);
+      } catch (e) { console.error('Audit Log failed', e); }
       loadDepartments();
     } catch (err) {
       console.error(err);

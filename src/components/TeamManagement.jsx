@@ -861,8 +861,17 @@ export default function TeamManagement({ initialUsers = [] }) {
     const existingAccess = user.module_access || {};
     setAccessForm({
       ...existingAccess,
+      can_import_data: existingAccess.can_import_data === true || (user.can_import_export === true && existingAccess.can_import_data !== false),
+      can_export_data: existingAccess.can_export_data === true || (user.can_import_export === true && existingAccess.can_export_data !== false),
       can_import_export: user.can_import_export === true || existingAccess.can_import_export === true,
-      can_self_reset_password: user.can_self_reset_password === true || existingAccess.can_self_reset_password === true
+      can_assign_leads: user.can_assign_leads === true || existingAccess.can_assign_leads === true,
+      can_delete_leads: user.can_delete_leads === true || existingAccess.can_delete_leads === true,
+      can_view_all_companies: user.can_view_all_companies === true || existingAccess.can_view_all_companies === true,
+      can_self_reset_password: user.can_self_reset_password === true || existingAccess.can_self_reset_password === true,
+      can_access_audit_logs: user.can_access_audit_logs === true || existingAccess.can_access_audit_logs === true,
+      can_manage_settings: user.can_manage_settings === true || existingAccess.can_manage_settings === true,
+      can_claim_unassigned: user.can_claim_unassigned === true || existingAccess.can_claim_unassigned === true,
+      can_bulk_actions: user.can_bulk_actions === true || existingAccess.can_bulk_actions === true
     });
     setAccessSearchQuery('');
     setExpandedModules({});
@@ -1020,11 +1029,21 @@ export default function TeamManagement({ initialUsers = [] }) {
 
   const handleSaveAccess = async () => {
     setSavingAccess(true);
+    const hasBoth = accessForm.can_import_data === true && accessForm.can_export_data === true;
     setUsers(prev => prev.map(u => u.user_id === accessUser ? {
       ...u,
       module_access: accessForm,
-      can_import_export: accessForm.can_import_export === true,
-      can_self_reset_password: accessForm.can_self_reset_password === true
+      can_import_export: hasBoth,
+      can_import_data: accessForm.can_import_data === true,
+      can_export_data: accessForm.can_export_data === true,
+      can_self_reset_password: accessForm.can_self_reset_password === true,
+      can_assign_leads: accessForm.can_assign_leads === true,
+      can_delete_leads: accessForm.can_delete_leads === true,
+      can_view_all_companies: accessForm.can_view_all_companies === true,
+      can_access_audit_logs: accessForm.can_access_audit_logs === true,
+      can_manage_settings: accessForm.can_manage_settings === true,
+      can_claim_unassigned: accessForm.can_claim_unassigned === true,
+      can_bulk_actions: accessForm.can_bulk_actions === true
     } : u));
 
     const result = await updateModuleAccess(accessUser, accessForm);
@@ -2643,39 +2662,111 @@ export default function TeamManagement({ initialUsers = [] }) {
                 
                 {/* Global Permissions Section */}
                 <div style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)' }}>
-                  <div style={{ padding: '0.6rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                    Additional System Powers
+                  <div style={{ padding: '0.6rem 1rem', backgroundColor: 'var(--bg-primary)', fontWeight: 700, borderBottom: '1px solid var(--border-light)', fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚡ Additional System & Operational Powers</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Global action & privilege overrides</span>
                   </div>
-                  <div style={{ padding: '0.75rem 1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                  <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.9rem' }}>
                     {(() => {
                       const u = users.find(x => x.user_id === accessUser);
                       if (!u) return null;
-                      return (
-                        <>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={accessForm.can_import_export === true} 
-                              onChange={(e) => setAccessForm(prev => ({ ...prev, can_import_export: e.target.checked }))}
-                              disabled={u.role === 'Admin' || u.role === 'admin'}
-                              style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
-                            />
-                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Import/Export Data Power</span>
-                          </label>
+                      const isUserAdmin = u.role === 'Admin' || u.role === 'admin';
 
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={accessForm.can_self_reset_password === true} 
-                              onChange={(e) => setAccessForm(prev => ({ ...prev, can_self_reset_password: e.target.checked }))}
-                              disabled={u.role === 'Admin' || u.role === 'admin'}
-                              style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)' }}
-                            />
-                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Allow Self Password Reset (via Email OTP)</span>
-                          </label>
-                        </>
-                      );
+                      const powersList = [
+                        { key: 'can_import_data', label: '📥 Import Leads Power', desc: 'Allows uploading and bulk importing CSV lead files into CRM' },
+                        { key: 'can_export_data', label: '📤 Export / Download Data Power', desc: 'Allows downloading CSV reports and exporting lead data' },
+                        { key: 'can_assign_leads', label: '👥 Lead Assignment Power', desc: 'Allows assigning and reallocating leads to team members' },
+                        { key: 'can_delete_leads', label: '🗑️ Delete Records & Leads Power', desc: 'Allows deleting leads from pipeline and report tables' },
+                        { key: 'can_claim_unassigned', label: '🎯 Claim Open Leads Power', desc: 'Allows taking ownership of unassigned leads from open pool' },
+                        { key: 'can_bulk_actions', label: '⚡ Bulk Operations Power', desc: 'Allows bulk status changes and multi-lead batch actions' },
+                        { key: 'can_view_all_companies', label: '🏢 Multi-Company Full Access', desc: 'Allows viewing leads and data across all company entities' },
+                        { key: 'can_self_reset_password', label: '🔑 Self Password Reset', desc: 'Allows self password reset via Email OTP on login screen' },
+                        { key: 'can_access_audit_logs', label: '📜 View Activity Audit Logs', desc: 'Allows viewing security audit logs and event history in Settings' },
+                        { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' }
+                      ];
+
+                      return powersList.map(p => (
+                        <label 
+                          key={p.key} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'flex-start', 
+                            gap: '0.65rem', 
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: accessForm[p.key] === true ? 'var(--nav-active-bg)' : 'var(--bg-primary)',
+                            cursor: isUserAdmin ? 'default' : 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <input 
+                            type="checkbox" 
+                            checked={isUserAdmin || accessForm[p.key] === true} 
+                            onChange={(e) => setAccessForm(prev => ({ ...prev, [p.key]: e.target.checked }))}
+                            disabled={isUserAdmin}
+                            style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--accent-color)', marginTop: '0.15rem', flexShrink: 0 }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem', lineHeight: '1.25' }}>{p.desc}</div>
+                          </div>
+                        </label>
+                      ));
                     })()}
+                  </div>
+                </div>
+
+                {/* Quick Batch Presets Toolbar */}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Granular Module Access Matrix
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      onClick={() => {
+                        setAccessForm(prev => {
+                          const updated = { ...prev };
+                          MODULES_CONFIG.forEach(m => {
+                            updated[m.id] = { ...(updated[m.id] || {}), view: true };
+                          });
+                          return updated;
+                        });
+                      }}
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', color: '#0284c7', fontWeight: 600 }}
+                    >
+                      + Grant All VIEW
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAccessForm(prev => {
+                          const updated = { ...prev };
+                          MODULES_CONFIG.forEach(m => {
+                            updated[m.id] = { ...(updated[m.id] || {}), view: true, add: true, edit: true };
+                          });
+                          return updated;
+                        });
+                      }}
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', color: '#16a34a', fontWeight: 600 }}
+                    >
+                      + Grant Full Access
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAccessForm(prev => {
+                          const updated = { ...prev };
+                          MODULES_CONFIG.forEach(m => {
+                            if (updated[m.id]) {
+                              updated[m.id] = { ...(updated[m.id] || {}), add: false, edit: false, delete: false };
+                            }
+                          });
+                          return updated;
+                        });
+                      }}
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', color: '#d97706', fontWeight: 600 }}
+                    >
+                      Set Read-Only
+                    </button>
                   </div>
                 </div>
 

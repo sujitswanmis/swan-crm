@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { sendAdminAccountEmailOtp } from './adminMessageConfig';
+import { logAuditAction } from './audit';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -54,12 +55,20 @@ export async function getRecruitersList() {
 
 export async function updateUserRole(userId, newRole) {
   const adminClient = getAdminClient();
+  const { data: userRole } = await adminClient.from('user_roles').select('emp_name, email').eq('user_id', userId).maybeSingle();
   const { error } = await adminClient
     .from('user_roles')
     .update({ role: newRole })
     .eq('user_id', userId);
     
   if (error) throw new Error(error.message);
+
+  try {
+    await logAuditAction('Update User Role', `Updated role for ${userRole?.emp_name || userRole?.email || userId} to "${newRole}"`);
+  } catch (e) {
+    console.error('Audit Log failed', e);
+  }
+
   return true;
 }
 
@@ -369,10 +378,17 @@ export async function updateEmpStatus(userId, empStatus) {
       .eq('user_id', userId);
 
     if (fallbackErr) throw new Error(fallbackErr.message);
-    return { success: true };
   } else if (error) {
     throw new Error(error.message);
   }
+
+  try {
+    const { data: userRole } = await adminClient.from('user_roles').select('emp_name, email').eq('user_id', userId).maybeSingle();
+    await logAuditAction('Update User Status', `Changed status of user ${userRole?.emp_name || userRole?.email || userId} to "${empStatus}"`);
+  } catch (e) {
+    console.error('Audit Log failed', e);
+  }
+
   return { success: true };
 }
 
@@ -403,6 +419,14 @@ export async function updateModuleAccess(userId, accessData) {
     console.error('Error updating module access:', error);
     return { success: false, error: error.message };
   }
+
+  try {
+    const { data: userRole } = await adminClient.from('user_roles').select('emp_name, email').eq('user_id', userId).maybeSingle();
+    await logAuditAction('Update User Permissions', `Updated module permissions and access control for ${userRole?.emp_name || userRole?.email || userId}`);
+  } catch (e) {
+    console.error('Audit Log failed', e);
+  }
+
   return { success: true };
 }
 
@@ -477,6 +501,12 @@ export async function createAccountAdmin(email, password, details) {
 
   // Approve them automatically since admin created it
   await toggleUserApproval(authData.user.id, true);
+
+  try {
+    await logAuditAction('Create User', `Created new employee account for ${details?.emp_name || email} (${details?.role || 'agent'})`);
+  } catch (e) {
+    console.error('Audit Log failed', e);
+  }
 
   return { success: true, isNew: true, created: true, userId: authData.user.id };
 }
@@ -778,6 +808,12 @@ export async function deleteUserAdmin(userId) {
     }
   } catch (err) {
     console.warn('Auth user delete warning:', err);
+  }
+
+  try {
+    await logAuditAction('Delete User', `Permanently deleted user account ID: ${userId}`);
+  } catch (e) {
+    console.error('Audit Log failed', e);
   }
 
   return { success: true };

@@ -16,6 +16,7 @@ import WhatsappSendModal from './WhatsappSendModal';
 import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
+import { logAuditAction } from '@/app/actions/audit';
 import Papa from 'papaparse';
 
 const extractStatusFromNoteText = (noteText) => {
@@ -157,7 +158,8 @@ const LeadAssigneeCell = React.memo(({ info }) => {
   const [isInteracting, setIsInteracting] = useState(false);
   
   const assignedMember = teamMembers.find(m => m.user_id === assignedToId);
-  const isManager = userRole === 'admin' || userRole === 'Admin';
+  const moduleAccess = info.table.options.meta?.moduleAccess || {};
+  const isManager = userRole === 'admin' || userRole === 'Admin' || moduleAccess?.['leads']?.is_manager === true || moduleAccess?.can_assign_leads === true;
   
   const updateAssignee = async (newAssignee) => {
     const supabase = createClient();
@@ -176,6 +178,12 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
     if (noteError) {
       console.error("Error creating assignee note:", noteError.message);
+    }
+
+    try {
+      await logAuditAction('Assign Lead', `Assigned lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to ${newAssigneeName}`);
+    } catch (e) {
+      console.error('Audit Log failed', e);
     }
 
     const newNote = {
@@ -286,6 +294,12 @@ const LeadStatusCell = React.memo(({ info }) => {
     const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
     if (noteError) {
       console.error("Error creating status note:", noteError.message);
+    }
+
+    try {
+      await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
+    } catch (e) {
+      console.error('Audit Log failed', e);
     }
     
     const newNote = insertedNote || {
@@ -988,6 +1002,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   });
 
   const exportToCSV = () => {
+    const canExport = (userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_export_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.export);
+    if (!canExport) {
+      alert('Permission Denied: You do not have permission to export leads data.');
+      return;
+    }
     // Get the currently filtered rows
     const rows = table.getRowModel().rows;
     if (rows.length === 0) return alert('No data to export');
@@ -1067,6 +1086,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   };
 
   const handleFileUpload = (e) => {
+    const canImport = (userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_import_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.import);
+    if (!canImport) {
+      alert('Permission Denied: You do not have permission to import leads data.');
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     setIsImporting(true);
@@ -1104,6 +1128,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         }
         
         setIsImporting(false);
+        try {
+          await logAuditAction('Import Leads', `Imported ${successCount} leads via CSV file`);
+        } catch (e) {
+          console.error('Audit Log failed', e);
+        }
         alert(`Successfully imported ${successCount} leads!`);
         // Refresh the file input
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1158,6 +1187,12 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
     if (noteError) {
       console.error("Error creating status note:", noteError.message);
+    }
+
+    try {
+      await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
+    } catch (e) {
+      console.error('Audit Log failed', e);
     }
     
     const newNote = insertedNote || {
@@ -1365,7 +1400,8 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             )}
           </div>
 
-          {(userRole === 'admin' || userRole === 'Admin' || canImportExport || globalRolePermissions?.export) && (
+          {/* Independent Import & Export Buttons */}
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_import_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.import) && (
             <>
               <input 
                 type="file" 
@@ -1377,10 +1413,13 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 {isImporting ? '⏳ Importing...' : '⬆️ Import CSV'}
               </button>
-              <button onClick={exportToCSV} style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                📥 Export CSV
-              </button>
             </>
+          )}
+
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_export_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.export) && (
+            <button onClick={exportToCSV} style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              📥 Export CSV
+            </button>
           )}
 
           {/* View Mode Toggle: Table vs Tiles */}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, Building2, MapPin, FileText, Save } from 'lucide-react';
+import { logAuditAction } from '@/app/actions/audit';
 
 export default function BusinessProfile() {
   const [loading, setLoading] = useState(false);
@@ -11,6 +12,9 @@ export default function BusinessProfile() {
 
   const handleSave = () => {
     setLoading(true);
+    try {
+      logAuditAction('Update Business Profile', `Updated business profile: ${formData.companyName}`);
+    } catch(e) { console.error('Audit Log failed', e); }
     // Simulate API call
     setTimeout(() => setLoading(false), 1000);
   };
