@@ -493,6 +493,10 @@ const columns = [
   { accessorKey: 'our_company', header: 'Our Company' },
   { accessorKey: 'state_name', header: 'State Name' },
   { accessorKey: 'district_name', header: 'District Name' },
+  { accessorKey: 'pin_code', header: 'PIN Code' },
+  { accessorKey: 'city_name', header: 'City Name' },
+  { accessorKey: 'tehsil_name', header: 'Tehsil Name' },
+  { accessorKey: 'block_name', header: 'Block Name' },
   { accessorKey: 'priority', header: 'Lead Priority Type' },
   { accessorKey: 'address', header: 'Full Address' },
   { accessorKey: 'requirement', header: 'Requirement' },
@@ -735,15 +739,24 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   }, [columnVisibility]);
 
   const [columnOrder, setColumnOrder] = useState(() => {
+    const defaultOrder = columns.map(c => c.id || c.accessorKey).filter(Boolean);
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('leadTableColumnOrder');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Keep saved order, and append any new columns that didn't exist before
+            const existingSet = new Set(parsed);
+            const missing = defaultOrder.filter(id => !existingSet.has(id));
+            return [...parsed, ...missing];
+          }
+        }
       } catch (e) {
         console.error('Error reading leadTableColumnOrder from localStorage', e);
       }
     }
-    return columns.map(c => c.accessorKey || c.id);
+    return defaultOrder;
   });
 
   useEffect(() => {
@@ -754,14 +767,23 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
 
   const moveColumn = (columnId, direction) => {
     setColumnOrder(prev => {
-      const newOrder = [...prev];
-      const index = newOrder.indexOf(columnId);
-      if (index === -1) return prev;
+      const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
+      const currentOrder = (prev && prev.length > 0) ? [...prev] : [...allColIds];
+
+      // Append any missing columns to currentOrder
+      allColIds.forEach(id => {
+        if (!currentOrder.includes(id)) currentOrder.push(id);
+      });
+
+      const index = currentOrder.indexOf(columnId);
+      if (index === -1) return currentOrder;
       
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= newOrder.length) return prev;
+      const delta = (direction === 'up' || direction === -1) ? -1 : 1;
+      const targetIndex = index + delta;
+      if (targetIndex < 0 || targetIndex >= currentOrder.length) return currentOrder;
       
       // Swap elements
+      const newOrder = [...currentOrder];
       const temp = newOrder[index];
       newOrder[index] = newOrder[targetIndex];
       newOrder[targetIndex] = temp;
@@ -1016,7 +1038,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       'Lead ID', 'Lead Date', 'Business Type', 'Business Name', 
       'Business Contact in AIO', 'Business Mail in AIO', 
       'CP Name in AIO', 'CP Mobile in AIO', 'CP Mail in AIO', 
-      'State', 'District', 'Lead Priority Type', 'Full Address', 
+      'State', 'District', 'PIN Code', 'City Name', 'Tehsil Name', 'Block Name', 'Lead Priority Type', 'Full Address', 
       'Requirement', 'Investment', 'Buying Timeline', 'Status', 'Last Status',
       'Last Timestamp', 'Next Follow-up Date', 'Remarks', 
       'Emp Name', 'Actual Completion of Count', 'Last Follow-UP Duration in Minute'
@@ -1057,6 +1079,10 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           `"${cpMail}"`,
           `"${d.state_name || ''}"`,
           `"${d.district_name || ''}"`,
+          `"${d.pin_code || ''}"`,
+          `"${d.city_name || ''}"`,
+          `"${d.tehsil_name || ''}"`,
+          `"${d.block_name || ''}"`,
           `"${d.priority || ''}"`,
           `"${(d.address || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
           `"${(d.requirement || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
@@ -1346,56 +1372,102 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Toggle Columns</span>
-                  <button 
-                    onClick={() => {
-                      const allVisible = {};
-                      table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
-                      setColumnVisibility(allVisible);
-                    }}
-                    style={{ fontSize: '0.7rem', color: 'var(--accent-color)', background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    Show All
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
+                        setColumnOrder(allColIds);
+                        if (typeof window !== 'undefined') localStorage.removeItem('leadTableColumnOrder');
+                      }}
+                      style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title="Reset Column Order"
+                    >
+                      Reset Order
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const allVisible = {};
+                        table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
+                        setColumnVisibility(allVisible);
+                      }}
+                      style={{ fontSize: '0.7rem', color: 'var(--accent-color)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Show All
+                    </button>
+                  </div>
                 </div>
-                {table.getAllLeafColumns().map((column, index) => {
-                  if (column.id === 'actions' || column.id === 'select') return null;
-                  return (
-                    <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)', flex: 1 }}>
-                        <input
-                          type="checkbox"
-                          checked={column.getIsVisible()}
-                          onChange={column.getToggleVisibilityHandler()}
-                        />
-                        {column.columnDef.header && typeof column.columnDef.header === 'string' 
-                          ? column.columnDef.header 
-                          : column.id}
-                      </label>
-                      
-                      {/* Reorder Arrows */}
-                      {columnOrder.length > 0 && (
-                        <div style={{ display: 'flex', gap: '2px' }}>
+                {(() => {
+                  const filterableColumns = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
+                  return filterableColumns.map((column, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === filterableColumns.length - 1;
+                    return (
+                      <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.25rem 0.1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)', flex: 1, userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={column.getIsVisible()}
+                            onChange={column.getToggleVisibilityHandler()}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          {column.columnDef.header && typeof column.columnDef.header === 'string' 
+                            ? column.columnDef.header 
+                            : column.id}
+                        </label>
+                        
+                        {/* Reorder Arrows */}
+                        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
                           <button 
-                            disabled={index === 0} 
-                            onClick={() => moveColumn(column.id, -1)}
-                            style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.3 : 1, fontSize: '0.75rem', padding: '0 2px' }}
-                            title="Move Left"
+                            type="button"
+                            disabled={isFirst} 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              moveColumn(column.id, -1);
+                            }}
+                            style={{ 
+                              border: 'none', 
+                              background: 'transparent', 
+                              cursor: isFirst ? 'default' : 'pointer', 
+                              opacity: isFirst ? 0.25 : 1, 
+                              fontSize: '0.75rem', 
+                              padding: '0.1rem 0.3rem',
+                              color: isFirst ? 'var(--text-secondary)' : 'var(--text-primary)',
+                              borderRadius: '3px'
+                            }}
+                            title="Move Up"
                           >
                             ▲
                           </button>
                           <button 
-                            disabled={index === table.getAllLeafColumns().length - 1} 
-                            onClick={() => moveColumn(column.id, 1)}
-                            style={{ border: 'none', background: 'transparent', cursor: index === table.getAllLeafColumns().length - 1 ? 'default' : 'pointer', opacity: index === table.getAllLeafColumns().length - 1 ? 0.3 : 1, fontSize: '0.75rem', padding: '0 2px' }}
-                            title="Move Right"
+                            type="button"
+                            disabled={isLast} 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              moveColumn(column.id, 1);
+                            }}
+                            style={{ 
+                              border: 'none', 
+                              background: 'transparent', 
+                              cursor: isLast ? 'default' : 'pointer', 
+                              opacity: isLast ? 0.25 : 1, 
+                              fontSize: '0.75rem', 
+                              padding: '0.1rem 0.3rem',
+                              color: isLast ? 'var(--text-secondary)' : 'var(--text-primary)',
+                              borderRadius: '3px'
+                            }}
+                            title="Move Down"
                           >
                             ▼
                           </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
