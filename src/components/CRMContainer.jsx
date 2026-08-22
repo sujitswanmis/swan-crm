@@ -579,6 +579,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             const { data, error } = await supabase
               .from('lead_notes')
               .select('id, lead_id, created_at, note_text, created_by')
+              .order('created_at', { ascending: false })
               .range(p * notesPageSize, (p + 1) * notesPageSize - 1);
             
             if (error) throw error;
@@ -690,13 +691,21 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
+        setLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => current.filter(item => item.id !== payload.old.id));
+        setLeads((current) => current.filter(item => item.id !== payload.old.id));
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
         const incoming = payload.new;
         setRawLeads((current) => current.map(item => {
+          if (item.id !== incoming.lead_id) return item;
+          const existingNotes = item.lead_notes || [];
+          if (existingNotes.some(n => n.id === incoming.id)) return item;
+          return { ...item, lead_notes: [incoming, ...existingNotes] };
+        }));
+        setLeads((current) => current.map(item => {
           if (item.id !== incoming.lead_id) return item;
           const existingNotes = item.lead_notes || [];
           if (existingNotes.some(n => n.id === incoming.id)) return item;

@@ -79,44 +79,48 @@ const getLeadPhoneNumbers = (lead) => {
 };
 
 const processLeads = (rawLeads) => {
-  return rawLeads.map((lead, i) => {
-    const notes = Array.isArray(lead.lead_notes) ? [...lead.lead_notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) : [];
+  return (rawLeads || []).map((lead, i) => {
+    const notes = Array.isArray(lead.lead_notes) 
+      ? [...lead.lead_notes].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) 
+      : [];
     
     // Collect all status change entries from notes (newest first)
     const statusEntries = [];
     notes.forEach(n => {
       const parsed = extractStatusFromNoteText(n.note_text);
       if (parsed) {
-        statusEntries.push(parsed);
+        statusEntries.push({ ...parsed, created_at: n.created_at });
       }
     });
 
     let lastStatus = 'Pending New';
 
     if (statusEntries.length > 0) {
-      if (statusEntries[0].oldStatus && statusEntries[0].oldStatus !== lead.status) {
-        lastStatus = statusEntries[0].oldStatus;
-      } else {
-        const diffEntry = statusEntries.find(e => (e.oldStatus && e.oldStatus !== lead.status) || (e.newStatus && e.newStatus !== lead.status && !lead.status.startsWith(e.newStatus)));
-        if (diffEntry) {
-          lastStatus = diffEntry.oldStatus || diffEntry.newStatus;
-        } else if (statusEntries.length >= 2) {
-          lastStatus = statusEntries[1].newStatus || statusEntries[1].oldStatus || '01 - New Stage';
-        } else if (statusEntries[0].oldStatus) {
-          lastStatus = statusEntries[0].oldStatus;
+      const latestChange = statusEntries[0];
+      // 1. If latest note specifies what the previous status was (oldStatus)
+      if (latestChange.oldStatus) {
+        if (latestChange.oldStatus === 'None' || latestChange.oldStatus.toLowerCase() === 'new' || latestChange.oldStatus === '') {
+          lastStatus = 'Pending New';
         } else {
-          lastStatus = '01 - New Stage';
+          lastStatus = latestChange.oldStatus;
         }
+      } 
+      // 2. Otherwise check if there is a 2nd status change event in history
+      else if (statusEntries.length >= 2) {
+        const prevChange = statusEntries[1];
+        lastStatus = prevChange.newStatus || prevChange.oldStatus || 'Pending New';
+      } else {
+        lastStatus = 'Pending New';
       }
     } else {
       lastStatus = 'Pending New';
     }
 
-    const manualNotes = notes.filter(n => !n.note_text || (!n.note_text.includes('Status changed to:') && !n.note_text.includes('Status updated to:')));
+    const manualNotes = notes.filter(n => !n.note_text || (!n.note_text.includes('Status changed to:') && !n.note_text.includes('Status updated to:') && !n.note_text.includes('Status changed from ')));
     let latestRemark = '';
     let latestEmpName = '';
     
-    const trueRemarks = manualNotes.filter(n => !n.note_text.startsWith('Follow-up scheduled for: '));
+    const trueRemarks = manualNotes.filter(n => !n.note_text.startsWith('Follow-up scheduled for: ') && !n.note_text.startsWith('Lead assigned to: ') && n.note_text !== 'Client Registration Form Submitted' && n.note_text !== 'Profile updated' && n.note_text !== 'Client Profile was updated.');
     if (trueRemarks.length > 0) {
       latestRemark = trueRemarks[0].note_text;
       latestEmpName = trueRemarks[0].created_by || 'Agent';
@@ -646,16 +650,6 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
 
   const [data, setData] = useState(() => processLeads(initialData || []));
 
-  const getSignature = (leadsList) => {
-    if (!Array.isArray(leadsList) || leadsList.length === 0) return 'empty';
-    const len = leadsList.length;
-    const first = leadsList[0];
-    const mid = leadsList[Math.floor(len / 2)];
-    const last = leadsList[len - 1];
-    return `${len}-${first?.id}-${first?.status}-${first?.lead_notes?.length || 0}-${mid?.id}-${mid?.status}-${last?.id}-${last?.status}`;
-  };
-
-  const lastProcessedInitialDataRef = useRef(getSignature(initialData));
   const stagePrefix = stageFilter ? stageFilter.split(' - ')[0].replace(/^0/, '') + ';' : null;
   const showStage = (prefix) => !stagePrefix || stagePrefix === prefix;
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
@@ -682,10 +676,6 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [globalFilter, setGlobalFilter] = useState('');
   
   useEffect(() => {
-    const newSignature = getSignature(initialData);
-    if (newSignature === lastProcessedInitialDataRef.current) return;
-    
-    lastProcessedInitialDataRef.current = newSignature;
     setData(processLeads(initialData || []));
   }, [initialData]);
 
