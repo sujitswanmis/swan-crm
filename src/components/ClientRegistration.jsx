@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
@@ -427,6 +427,48 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [previewRows, setPreviewRows] = useState([]);
   const [duplicatesCount, setDuplicatesCount] = useState(0);
   const [filteredImportData, setFilteredImportData] = useState([]);
+  const [duplicateImportData, setDuplicateImportData] = useState([]);
+  const [allMappedData, setAllMappedData] = useState([]);
+  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'duplicates' | 'all'
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageSize, setPreviewPageSize] = useState(25);
+  const [previewSearch, setPreviewSearch] = useState('');
+
+  // Dynamically extract all mapped columns to display in preview table
+  const mappedDisplayFields = useMemo(() => {
+    const activeKeys = Object.keys(mapping).filter(k => !!mapping[k]);
+    if (activeKeys.length > 0) {
+      return IMPORT_FIELDS.filter(f => activeKeys.includes(f.key));
+    }
+    return IMPORT_FIELDS.filter(f => ['name', 'phone', 'company', 'lead_date', 'state_name', 'district_name'].includes(f.key));
+  }, [mapping]);
+
+  // Active list based on selected filter tab
+  const currentPreviewSourceList = useMemo(() => {
+    if (previewFilterTab === 'duplicates') return duplicateImportData;
+    if (previewFilterTab === 'all') return allMappedData;
+    return filteredImportData; // default 'ready'
+  }, [previewFilterTab, duplicateImportData, allMappedData, filteredImportData]);
+
+  // Real-time search across all columns in preview
+  const searchedPreviewList = useMemo(() => {
+    if (!previewSearch || !previewSearch.trim()) return currentPreviewSourceList;
+    const term = previewSearch.toLowerCase().trim();
+    return currentPreviewSourceList.filter(row => {
+      return Object.values(row).some(val => val && String(val).toLowerCase().includes(term));
+    });
+  }, [currentPreviewSourceList, previewSearch]);
+
+  const totalPreviewPages = useMemo(() => {
+    if (previewPageSize === 0) return 1;
+    return Math.max(1, Math.ceil(searchedPreviewList.length / previewPageSize));
+  }, [searchedPreviewList.length, previewPageSize]);
+
+  const paginatedPreviewRows = useMemo(() => {
+    if (previewPageSize === 0) return searchedPreviewList;
+    const start = (previewPage - 1) * previewPageSize;
+    return searchedPreviewList.slice(start, start + previewPageSize);
+  }, [searchedPreviewList, previewPage, previewPageSize]);
   const [expandedSections, setExpandedSections] = useState({
     leadInfo: true,
     businessInfo: true,
@@ -1092,8 +1134,8 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       };
 
       // Map rows based on current mapping configuration
-      const mapped = csvRows.map(row => {
-        const leadObj = {};
+      const mapped = csvRows.map((row, idx) => {
+        const leadObj = { _rowNum: idx + 1 };
         IMPORT_FIELDS.forEach(field => {
           const csvHeader = mapping[field.key];
           leadObj[field.key] = csvHeader ? (row[csvHeader] || '') : '';
@@ -1107,8 +1149,8 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         return leadObj;
       });
 
-      let filtered = mapped;
-      let duplicates = 0;
+      let ready = [];
+      let duplicatesList = [];
 
       if (phoneMappedHeader) {
         // Query database for duplicates by phone
@@ -1130,17 +1172,27 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         
         const existingPhones = new Set(existingLeads.map(l => String(l.phone).trim()).filter(Boolean));
 
-        // Filter out duplicates
-        filtered = mapped.filter(row => {
-          if (!row.phone) return true;
-          return !existingPhones.has(String(row.phone).trim());
+        mapped.forEach(row => {
+          const cleanPhone = row.phone ? String(row.phone).trim() : '';
+          if (cleanPhone && existingPhones.has(cleanPhone)) {
+            row._isDuplicate = true;
+            duplicatesList.push(row);
+          } else {
+            row._isDuplicate = false;
+            ready.push(row);
+          }
         });
-        duplicates = mapped.length - filtered.length;
+      } else {
+        ready = mapped.map(r => ({ ...r, _isDuplicate: false }));
       }
 
-      setDuplicatesCount(duplicates);
-      setFilteredImportData(filtered);
-      setPreviewRows(mapped.slice(0, 5));
+      setDuplicatesCount(duplicatesList.length);
+      setFilteredImportData(ready);
+      setDuplicateImportData(duplicatesList);
+      setAllMappedData(mapped);
+      setPreviewFilterTab('ready');
+      setPreviewPage(1);
+      setPreviewSearch('');
       setImporterStep('preview');
     } catch (err) {
       console.error(err);
@@ -1156,7 +1208,15 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       const chunkSize = 500;
       for (let i = 0; i < filteredImportData.length; i += chunkSize) {
         const chunk = filteredImportData.slice(i, i + chunkSize);
-        const { data: insertedData, error } = await supabase.from('leads').insert(chunk).select();
+        // Strip out internal preview metadata before inserting into Supabase
+        const cleanChunk = chunk.map(r => {
+          const copy = { ...r };
+          delete copy._rowNum;
+          delete copy._isDuplicate;
+          return copy;
+        });
+
+        const { data: insertedData, error } = await supabase.from('leads').insert(cleanChunk).select();
         if (error) {
           console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
           throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
@@ -1598,28 +1658,36 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       {/* Bulk Importer Modal */}
       {showImporter && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', width: '96vw', maxWidth: '1400px', height: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Upload size={20} color="var(--accent-color)" /> CSV Bulk Importer
-              </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Upload size={20} color="var(--accent-color)" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 700 }}>
+                  CSV / Excel Bulk Importer
+                </h3>
+                {importFile && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                    📄 {importFile.name}
+                  </span>
+                )}
+              </div>
               <button onClick={() => setShowImporter(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.4rem', borderRadius: '50%', backgroundColor: 'var(--th-bg)' }}><X size={18} color="var(--text-secondary)" /></button>
             </div>
             
             {/* Progress Bar / Steps */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', padding: '1rem', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', fontSize: '0.85rem' }}>
-              <span style={{ fontWeight: importerStep === 'mapping' ? 'bold' : 'normal', color: importerStep === 'mapping' ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                1. Map CSV Columns
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', padding: '0.75rem', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', fontSize: '0.85rem' }}>
+              <span style={{ fontWeight: importerStep === 'mapping' ? 700 : 500, color: importerStep === 'mapping' ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                1. Map File Columns
               </span>
               <span style={{ color: 'var(--text-secondary)' }}>➔</span>
-              <span style={{ fontWeight: importerStep === 'preview' ? 'bold' : 'normal', color: importerStep === 'preview' ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                2. Preview & Import
+              <span style={{ fontWeight: importerStep === 'preview' ? 700 : 500, color: importerStep === 'preview' ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                2. Full Preview & Verify ({allMappedData.length || csvRows.length} Rows)
               </span>
             </div>
 
             {/* Modal Content */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
               {importerStep === 'mapping' ? (
                 <div>
                   <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
@@ -1651,57 +1719,293 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                   </div>
                 </div>
               ) : (
-                <div>
-                  {/* Summary Stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                    <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{csvRows.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Total Rows Found</div>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '1rem', minHeight: 0 }}>
+                  {/* Summary Stats Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                    <div 
+                      onClick={() => { setPreviewFilterTab('all'); setPreviewPage(1); }}
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '10px', 
+                        background: previewFilterTab === 'all' ? 'var(--nav-active-bg)' : 'var(--bg-primary)', 
+                        border: `1.5px solid ${previewFilterTab === 'all' ? 'var(--accent-color)' : 'var(--border-light)'}`, 
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{allMappedData.length}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Rows Found</div>
                     </div>
-                    <div style={{ padding: '1rem', borderRadius: '10px', background: '#ecfdf5', border: '1px solid #a7f3d0', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#047857' }}>{filteredImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#065f46' }}>Ready to Import</div>
+                    <div 
+                      onClick={() => { setPreviewFilterTab('ready'); setPreviewPage(1); }}
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '10px', 
+                        background: previewFilterTab === 'ready' ? '#d1fae5' : '#ecfdf5', 
+                        border: `1.5px solid ${previewFilterTab === 'ready' ? '#059669' : '#a7f3d0'}`, 
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#047857' }}>{filteredImportData.length}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#065f46', fontWeight: 600 }}>Ready to Import</div>
                     </div>
-                    <div style={{ padding: '1rem', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fef3c7', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#b45309' }}>{duplicatesCount}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#92400e' }}>Duplicates (Skipped)</div>
+                    <div 
+                      onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '10px', 
+                        background: previewFilterTab === 'duplicates' ? '#fed7aa' : '#fffbeb', 
+                        border: `1.5px solid ${previewFilterTab === 'duplicates' ? '#ea580c' : '#fef3c7'}`, 
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#b45309' }}>{duplicateImportData.length}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>Duplicates (Safely Skipped)</div>
                     </div>
                   </div>
 
-                  {filteredImportData.length === 0 ? (
-                    <div style={{ padding: '2rem', textAlign: 'center', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', color: '#991b1b', fontSize: '0.9rem' }}>
-                      All rows in this file are duplicates of existing phone numbers in your database! There are no new clients to import.
+                  {/* Interactive Toolbar: Filter Tabs, Live Search, Rows Per Page */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    {/* Filter Tabs */}
+                    <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilterTab('ready'); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.78rem',
+                          fontWeight: previewFilterTab === 'ready' ? 700 : 500,
+                          backgroundColor: previewFilterTab === 'ready' ? 'var(--bg-surface)' : 'transparent',
+                          color: previewFilterTab === 'ready' ? '#047857' : 'var(--text-secondary)',
+                          boxShadow: previewFilterTab === 'ready' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🟢 Ready to Import ({filteredImportData.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.78rem',
+                          fontWeight: previewFilterTab === 'duplicates' ? 700 : 500,
+                          backgroundColor: previewFilterTab === 'duplicates' ? 'var(--bg-surface)' : 'transparent',
+                          color: previewFilterTab === 'duplicates' ? '#b45309' : 'var(--text-secondary)',
+                          boxShadow: previewFilterTab === 'duplicates' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ⚠️ Duplicates ({duplicateImportData.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilterTab('all'); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.78rem',
+                          fontWeight: previewFilterTab === 'all' ? 700 : 500,
+                          backgroundColor: previewFilterTab === 'all' ? 'var(--bg-surface)' : 'transparent',
+                          color: previewFilterTab === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          boxShadow: previewFilterTab === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        📋 All Rows ({allMappedData.length})
+                      </button>
                     </div>
-                  ) : (
-                    <div>
-                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                        Data Preview (First 5 Rows):
-                      </p>
-                      <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
-                          <thead style={{ background: 'var(--bg-primary)' }}>
-                            <tr>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>CP1 Name</th>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>CP1 Mobile 1</th>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>Business Name</th>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>Lead Date</th>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>State</th>
-                              <th style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)' }}>District</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewRows.map((row, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.name || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.phone || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.company || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.lead_date || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.state_name || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.75rem' }}>{row.district_name || '-'}</td>
-                              </tr>
+
+                    {/* Search & Rows Per Page */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-secondary)' }} />
+                        <input
+                          type="text"
+                          value={previewSearch}
+                          onChange={(e) => { setPreviewSearch(e.target.value); setPreviewPage(1); }}
+                          placeholder="Search in preview..."
+                          style={{
+                            padding: '0.35rem 0.6rem 0.35rem 1.9rem',
+                            fontSize: '0.8rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            width: '210px'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        <span>Rows:</span>
+                        <select
+                          value={previewPageSize}
+                          onChange={(e) => { setPreviewPageSize(Number(e.target.value)); setPreviewPage(1); }}
+                          style={{
+                            padding: '0.3rem 0.5rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.78rem'
+                          }}
+                        >
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                          <option value={500}>500</option>
+                          <option value={0}>All Rows</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full Dynamic Mapped Table */}
+                  <div style={{ 
+                    flex: 1, 
+                    overflow: 'auto', 
+                    border: '1px solid var(--border-light)', 
+                    borderRadius: '8px', 
+                    background: 'var(--bg-surface)',
+                    minHeight: '220px',
+                    maxHeight: 'calc(92vh - 350px)'
+                  }}>
+                    {searchedPreviewList.length === 0 ? (
+                      <div style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        No records match your selected filter or search query.
+                      </div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 180)}px` }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)' }}>
+                          <tr>
+                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '50px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>#</th>
+                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '110px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>Status</th>
+                            {mappedDisplayFields.map(field => (
+                              <th key={field.key} style={{ padding: '0.6rem 0.75rem', fontWeight: 700, whiteSpace: 'nowrap', borderRight: '1px solid var(--border-light)' }}>
+                                {field.label}
+                              </th>
                             ))}
-                          </tbody>
-                        </table>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedPreviewRows.map((row, idx) => {
+                            const isDup = row._isDuplicate;
+                            return (
+                              <tr 
+                                key={idx} 
+                                style={{ 
+                                  borderBottom: '1px solid var(--border-light)',
+                                  backgroundColor: isDup ? 'rgba(239, 68, 68, 0.04)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)')
+                                }}
+                              >
+                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.75rem', borderRight: '1px solid var(--border-light)', fontFamily: 'monospace' }}>
+                                  {row._rowNum || idx + 1}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap' }}>
+                                  {isDup ? (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                                      ⚠️ Duplicate
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>
+                                      🟢 Ready
+                                    </span>
+                                  )}
+                                </td>
+                                {mappedDisplayFields.map(field => (
+                                  <td key={field.key} style={{ padding: '0.5rem 0.75rem', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {row[field.key] ? String(row[field.key]) : <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>-</span>}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Pagination Controls Bar */}
+                  {searchedPreviewList.length > 0 && previewPageSize > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.5rem', fontSize: '0.78rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        Showing <strong>{(previewPage - 1) * previewPageSize + 1}</strong> to <strong>{Math.min(previewPage * previewPageSize, searchedPreviewList.length)}</strong> of <strong>{searchedPreviewList.length}</strong> rows
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          disabled={previewPage <= 1}
+                          onClick={() => setPreviewPage(1)}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            cursor: previewPage <= 1 ? 'not-allowed' : 'pointer',
+                            opacity: previewPage <= 1 ? 0.5 : 1
+                          }}
+                        >
+                          « First
+                        </button>
+                        <button
+                          type="button"
+                          disabled={previewPage <= 1}
+                          onClick={() => setPreviewPage(prev => Math.max(1, prev - 1))}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            cursor: previewPage <= 1 ? 'not-allowed' : 'pointer',
+                            opacity: previewPage <= 1 ? 0.5 : 1
+                          }}
+                        >
+                          ‹ Prev
+                        </button>
+                        <span style={{ fontWeight: 600, padding: '0 0.35rem' }}>
+                          Page {previewPage} of {totalPreviewPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={previewPage >= totalPreviewPages}
+                          onClick={() => setPreviewPage(prev => Math.min(totalPreviewPages, prev + 1))}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            cursor: previewPage >= totalPreviewPages ? 'not-allowed' : 'pointer',
+                            opacity: previewPage >= totalPreviewPages ? 0.5 : 1
+                          }}
+                        >
+                          Next ›
+                        </button>
+                        <button
+                          type="button"
+                          disabled={previewPage >= totalPreviewPages}
+                          onClick={() => setPreviewPage(totalPreviewPages)}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            cursor: previewPage >= totalPreviewPages ? 'not-allowed' : 'pointer',
+                            opacity: previewPage >= totalPreviewPages ? 0.5 : 1
+                          }}
+                        >
+                          Last »
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1710,23 +2014,24 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', background: 'var(--bg-primary)' }}>
+            <div style={{ padding: '0.85rem 1.5rem', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-primary)' }}>
               {importerStep === 'mapping' ? (
                 <>
                   <button onClick={() => setShowImporter(false)} style={{ padding: '0.5rem 1.25rem', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', background: 'var(--bg-surface)', fontWeight: 500 }}>
                     Cancel
                   </button>
-                  <button onClick={handleProceedToPreview} disabled={isSubmitting} style={{ padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px', cursor: 'pointer', background: 'var(--accent-color)', color: 'white', fontWeight: 500 }}>
+                  <button onClick={handleProceedToPreview} disabled={isSubmitting} style={{ padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px', cursor: 'pointer', background: 'var(--accent-color)', color: 'white', fontWeight: 600 }}>
                     {isSubmitting ? 'Checking duplicates...' : 'Next: Preview & Confirm'}
                   </button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => setImporterStep('mapping')} style={{ padding: '0.5rem 1.25rem', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', background: 'var(--bg-surface)', fontWeight: 500 }}>
-                    Back to Mapping
+                  <button onClick={() => setImporterStep('mapping')} style={{ padding: '0.5rem 1.25rem', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', background: 'var(--bg-surface)', fontWeight: 600 }}>
+                    ‹ Back to Mapping
                   </button>
-                  <button onClick={handleConfirmImport} disabled={isSubmitting || filteredImportData.length === 0} style={{ padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px', cursor: (isSubmitting || filteredImportData.length === 0) ? 'not-allowed' : 'pointer', background: filteredImportData.length > 0 ? '#10b981' : '#a7f3d0', color: 'white', fontWeight: 500 }}>
-                    {isSubmitting ? 'Importing...' : `Confirm & Import (${filteredImportData.length})`}
+                  <button onClick={handleConfirmImport} disabled={isSubmitting || filteredImportData.length === 0} style={{ padding: '0.5rem 1.5rem', border: 'none', borderRadius: '6px', cursor: (isSubmitting || filteredImportData.length === 0) ? 'not-allowed' : 'pointer', background: filteredImportData.length > 0 ? '#10b981' : '#a7f3d0', color: 'white', fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <CheckCircle2 size={18} />
+                    {isSubmitting ? 'Importing...' : `Confirm & Import (${filteredImportData.length} New Clients)`}
                   </button>
                 </>
               )}
