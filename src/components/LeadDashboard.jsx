@@ -8,7 +8,7 @@ import {
 import { 
   Users, UserCheck, AlertCircle, Clock, CheckCircle2, TrendingUp, 
   PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check,
-  Search, ArrowUpDown
+  Search, ArrowUpDown, Timer, Activity
 } from 'lucide-react';
 
 const STAGE_COLORS = {
@@ -31,6 +31,22 @@ export const PIPELINE_STAGES = [
   { num: 7, name: 'Stage 7', label: 'Final Stage', fullName: '07 - Final Stage', color: '#6366f1', bg: '#eef2ff' },
 ];
 
+export const HOURLY_SLOTS = [
+  { id: 'all', label: 'All Hours (Full Day)', shortLabel: 'All Hours', startHour: null, endHour: null },
+  { id: 'h09_10', label: '09:00 AM - 10:00 AM', shortLabel: '09-10 AM', startHour: 9, endHour: 10 },
+  { id: 'h10_11', label: '10:00 AM - 11:00 AM', shortLabel: '10-11 AM', startHour: 10, endHour: 11 },
+  { id: 'h11_12', label: '11:00 AM - 12:00 PM', shortLabel: '11-12 PM', startHour: 11, endHour: 12 },
+  { id: 'h12_13', label: '12:00 PM - 01:00 PM', shortLabel: '12-01 PM', startHour: 12, endHour: 13 },
+  { id: 'h13_14', label: '01:00 PM - 02:00 PM', shortLabel: '01-02 PM', startHour: 13, endHour: 14 },
+  { id: 'h14_15', label: '02:00 PM - 03:00 PM', shortLabel: '02-03 PM', startHour: 14, endHour: 15 },
+  { id: 'h15_16', label: '03:00 PM - 04:00 PM', shortLabel: '03-04 PM', startHour: 15, endHour: 16 },
+  { id: 'h16_17', label: '04:00 PM - 05:00 PM', shortLabel: '04-05 PM', startHour: 16, endHour: 17 },
+  { id: 'h17_18', label: '05:00 PM - 06:00 PM', shortLabel: '05-06 PM', startHour: 17, endHour: 18 },
+  { id: 'h18_19', label: '06:00 PM - 07:00 PM', shortLabel: '06-07 PM', startHour: 18, endHour: 19 },
+  { id: 'h19_20', label: '07:00 PM - 08:00 PM', shortLabel: '07-08 PM', startHour: 19, endHour: 20 },
+  { id: 'h_other', label: 'Other Hours (<9 AM / >8 PM)', shortLabel: 'Other', startHour: -1, endHour: -1 },
+];
+
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
 
 // Helper function for local YYYY-MM-DD string formatting (prevents UTC timezone desync)
@@ -41,141 +57,80 @@ function getLocalDateStr(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-// Helper function for precise date range evaluation across all lead dates & notes
-function isLeadInDateRange(lead, filterType, customStart, customEnd) {
-  if (filterType === 'all') return true;
-  if (!lead) return false;
+function getLocalHour(dateVal) {
+  if (!dateVal) return null;
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return null;
+  return d.getHours();
+}
 
-  const todayStr = getLocalDateStr(new Date());
-
-  // Collect all dates associated with the lead (creation, lead_date, follow_up, notes)
-  const leadDates = [];
-  if (lead.lead_date) leadDates.push(lead.lead_date.split('T')[0]);
-  if (lead.created_at) leadDates.push(lead.created_at.split('T')[0]);
-  if (lead.follow_up_date) leadDates.push(lead.follow_up_date.split('T')[0]);
-  if (Array.isArray(lead.lead_notes)) {
-    lead.lead_notes.forEach(n => {
-      if (n.created_at) leadDates.push(n.created_at.split('T')[0]);
-    });
-  }
-
-  if (leadDates.length === 0) return false;
-
+// Helper function for precomputed date bounds (O(1) checks without Date allocations)
+function getDateFilterBounds(filterType, customStart, customEnd) {
+  if (!filterType || filterType === 'all') return { isAll: true };
   const now = new Date();
+  const todayStr = getLocalDateStr(now);
 
   if (filterType === 'today') {
-    return leadDates.some(d => d === todayStr);
+    return { isAll: false, start: todayStr, end: todayStr };
   }
-
   if (filterType === 'yesterday') {
     const yest = new Date(now);
     yest.setDate(yest.getDate() - 1);
     const yestStr = getLocalDateStr(yest);
-    return leadDates.some(d => d === yestStr);
+    return { isAll: false, start: yestStr, end: yestStr };
   }
-
   if (filterType === 'this_week') {
     const currentDay = now.getDay();
     const distanceToMon = (currentDay + 6) % 7;
     const mon = new Date(now);
     mon.setDate(now.getDate() - distanceToMon);
-    const monStr = getLocalDateStr(mon);
-    return leadDates.some(d => d >= monStr && d <= todayStr);
+    return { isAll: false, start: getLocalDateStr(mon), end: todayStr };
   }
-
   if (filterType === 'last_week') {
     const currentDay = now.getDay();
     const distanceToMon = (currentDay + 6) % 7;
     const thisMon = new Date(now);
     thisMon.setDate(now.getDate() - distanceToMon);
-    
     const lastMon = new Date(thisMon);
     lastMon.setDate(thisMon.getDate() - 7);
-    
     const lastSun = new Date(thisMon);
     lastSun.setDate(thisMon.getDate() - 1);
-
-    const lastMonStr = getLocalDateStr(lastMon);
-    const lastSunStr = getLocalDateStr(lastSun);
-    return leadDates.some(d => d >= lastMonStr && d <= lastSunStr);
+    return { isAll: false, start: getLocalDateStr(lastMon), end: getLocalDateStr(lastSun) };
   }
-
   if (filterType === 'this_month') {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthStartStr = getLocalDateStr(monthStart);
-    return leadDates.some(d => d >= monthStartStr && d <= todayStr);
+    return { isAll: false, start: getLocalDateStr(monthStart), end: todayStr };
   }
-
   if (filterType === 'last_month') {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-    const startStr = getLocalDateStr(lastMonthStart);
-    const endStr = getLocalDateStr(lastMonthEnd);
-    return leadDates.some(d => d >= startStr && d <= endStr);
+    return { isAll: false, start: getLocalDateStr(lastMonthStart), end: getLocalDateStr(lastMonthEnd) };
   }
-
   if (filterType === 'custom') {
-    return leadDates.some(d => {
-      if (customStart && d < customStart) return false;
-      if (customEnd && d > customEnd) return false;
-      return true;
-    });
+    return { isAll: false, start: customStart || '0000-00-00', end: customEnd || '9999-99-99' };
   }
-
-  return true;
+  return { isAll: true };
 }
 
-// Evaluates whether a single date timestamp falls within the selected date filter range
-function isDateWithinFilter(dateVal, filterType, customStart, customEnd) {
-  if (filterType === 'all') return true;
+function checkDateWithinBounds(dateVal, bounds) {
+  if (bounds.isAll) return true;
   if (!dateVal) return false;
-  
   const dStr = typeof dateVal === 'string' ? dateVal.split('T')[0] : getLocalDateStr(new Date(dateVal));
-  const todayStr = getLocalDateStr(new Date());
-  const now = new Date();
+  return dStr >= bounds.start && dStr <= bounds.end;
+}
 
-  if (filterType === 'today') {
-    return dStr === todayStr;
+function isLeadInDateBounds(lead, bounds) {
+  if (bounds.isAll) return true;
+  if (!lead) return false;
+  if (lead.lead_date && checkDateWithinBounds(lead.lead_date, bounds)) return true;
+  if (lead.created_at && checkDateWithinBounds(lead.created_at, bounds)) return true;
+  if (lead.follow_up_date && checkDateWithinBounds(lead.follow_up_date, bounds)) return true;
+  if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
+    for (let i = 0; i < lead.lead_notes.length; i++) {
+      if (checkDateWithinBounds(lead.lead_notes[i]?.created_at, bounds)) return true;
+    }
   }
-  if (filterType === 'yesterday') {
-    const yest = new Date(now);
-    yest.setDate(yest.getDate() - 1);
-    return dStr === getLocalDateStr(yest);
-  }
-  if (filterType === 'this_week') {
-    const currentDay = now.getDay();
-    const distanceToMon = (currentDay + 6) % 7;
-    const mon = new Date(now);
-    mon.setDate(now.getDate() - distanceToMon);
-    const monStr = getLocalDateStr(mon);
-    return dStr >= monStr && dStr <= todayStr;
-  }
-  if (filterType === 'last_week') {
-    const currentDay = now.getDay();
-    const distanceToMon = (currentDay + 6) % 7;
-    const thisMon = new Date(now);
-    thisMon.setDate(now.getDate() - distanceToMon);
-    const lastMon = new Date(thisMon);
-    lastMon.setDate(thisMon.getDate() - 7);
-    const lastSun = new Date(thisMon);
-    lastSun.setDate(thisMon.getDate() - 1);
-    return dStr >= getLocalDateStr(lastMon) && dStr <= getLocalDateStr(lastSun);
-  }
-  if (filterType === 'this_month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return dStr >= getLocalDateStr(monthStart) && dStr <= todayStr;
-  }
-  if (filterType === 'last_month') {
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-    return dStr >= getLocalDateStr(lastMonthStart) && dStr <= getLocalDateStr(lastMonthEnd);
-  }
-  if (filterType === 'custom') {
-    if (customStart && dStr < customStart) return false;
-    if (customEnd && dStr > customEnd) return false;
-    return true;
-  }
-  return true;
+  return false;
 }
 
 // Extracts numerical employee ID (4 to 6 digits) from strings like "Nitya Verma - 50745" or "50745"
@@ -183,35 +138,6 @@ function extractEmpId(str) {
   if (!str) return null;
   const match = String(str).match(/\b(\d{4,6})\b/);
   return match ? match[1] : null;
-}
-
-// Matches an employee identifier against a team member object (supports name variations, emp IDs, emails, UUIDs)
-function isMatchingEmployee(identifier, member) {
-  if (!identifier || !member) return false;
-  const idStr = String(identifier).trim().toLowerCase();
-  const mId = String(member.user_id || member.id || '').trim().toLowerCase();
-  const mName = String(member.emp_name || '').trim().toLowerCase();
-  const mEmail = String(member.email || '').trim().toLowerCase();
-  const mPrefix = mEmail ? mEmail.split('@')[0].toLowerCase() : '';
-  const mEmpId = String(member.emp_id || member.emp_code || '').trim().toLowerCase();
-
-  // 1. Direct ID / UUID match
-  if (mId && idStr === mId) return true;
-
-  // 2. Direct Name / Email / Prefix match
-  if (mName && idStr === mName) return true;
-  if (mEmail && idStr === mEmail) return true;
-  if (mPrefix && idStr === mPrefix) return true;
-
-  // 3. Employee Code / ID matching (e.g. "50745" matches "Nitya - 50745" and "Nitya Verma - 50745")
-  const idCode = extractEmpId(idStr);
-  const memberCode = mEmpId || extractEmpId(mName) || extractEmpId(mId);
-  if (idCode && memberCode && idCode === memberCode) return true;
-
-  // 4. Exact Employee ID match
-  if (mEmpId && idStr === mEmpId) return true;
-
-  return false;
 }
 
 // Maps lead status string to numeric stage 1 through 7
@@ -270,11 +196,20 @@ export default function LeadDashboard({
   const [agentSearch, setAgentSearch] = useState('');
   const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
   const agentDropdownRef = useRef(null);
+  // View Tab: 'overview' | 'hourly'
+  const [activeDashboardTab, setActiveDashboardTab] = useState('overview');
 
   // Table search and sorting states for Team Lead Allocation & Action Summary
   const [tableSearch, setTableSearch] = useState('');
   const [tableSortKey, setTableSortKey] = useState('totalAssigned');
   const [tableSortDir, setTableSortDir] = useState('desc');
+
+  // Hourly Work states
+  const [selectedHourlySlot, setSelectedHourlySlot] = useState('all');
+  const [hourlyViewMode, setHourlyViewMode] = useState('timeline'); // 'timeline' | 'table' | 'matrix'
+  const [hourlyTableSearch, setHourlyTableSearch] = useState('');
+  const [hourlyTableSortKey, setHourlyTableSortKey] = useState('totalActions');
+  const [hourlyTableSortDir, setHourlyTableSortDir] = useState('desc');
 
   // Close employee dropdown when clicking outside
   useEffect(() => {
@@ -293,6 +228,51 @@ export default function LeadDashboard({
       .filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')))
       .sort((a, b) => (a.emp_name || '').localeCompare(b.emp_name || ''));
   }, [teamMembers]);
+
+  // Pre-indexed member lookup map for O(1) matching
+  const memberIndex = useMemo(() => {
+    const lookupMap = new Map();
+    const memberEntries = [];
+
+    activeTeamMembers.forEach(member => {
+      const id = member.user_id || member.id || member.emp_name;
+      const entry = {
+        id,
+        name: member.emp_name,
+        dept: member.emp_department || 'Sales',
+        role: member.role || 'Member',
+      };
+      memberEntries.push(entry);
+
+      const mId = String(member.user_id || member.id || '').trim().toLowerCase();
+      const mName = String(member.emp_name || '').trim().toLowerCase();
+      const mEmail = String(member.email || '').trim().toLowerCase();
+      const mPrefix = mEmail ? mEmail.split('@')[0].toLowerCase() : '';
+      const mEmpId = String(member.emp_id || member.emp_code || '').trim().toLowerCase();
+
+      if (mId) lookupMap.set(mId, entry);
+      if (mName) lookupMap.set(mName, entry);
+      if (mEmail) lookupMap.set(mEmail, entry);
+      if (mPrefix) lookupMap.set(mPrefix, entry);
+      if (mEmpId) lookupMap.set(mEmpId, entry);
+
+      const codeInName = extractEmpId(mName);
+      if (codeInName) lookupMap.set(codeInName, entry);
+      const codeInId = extractEmpId(mId);
+      if (codeInId) lookupMap.set(codeInId, entry);
+    });
+
+    const findMember = (identifier) => {
+      if (!identifier) return null;
+      const str = String(identifier).trim().toLowerCase();
+      if (lookupMap.has(str)) return lookupMap.get(str);
+      const code = extractEmpId(str);
+      if (code && lookupMap.has(code)) return lookupMap.get(code);
+      return null;
+    };
+
+    return { memberEntries, findMember };
+  }, [activeTeamMembers]);
 
   // Filtered Agent Options matching search input
   const filteredAgentOptions = useMemo(() => {
@@ -319,6 +299,10 @@ export default function LeadDashboard({
     setSelectedAgents(prev => prev.filter(id => id !== agentId));
   };
 
+  const dateBounds = useMemo(() => {
+    return getDateFilterBounds(dateRangeFilter, customStartDate, customEndDate);
+  }, [dateRangeFilter, customStartDate, customEndDate]);
+
   // Filter leads based on user role, selected employee chips & calendar date range
   const relevantLeads = useMemo(() => {
     let result = leads;
@@ -340,29 +324,40 @@ export default function LeadDashboard({
     }
 
     // 3. Extended Calendar Date Range Filter
-    if (dateRangeFilter !== 'all') {
-      result = result.filter(l => isLeadInDateRange(l, dateRangeFilter, customStartDate, customEndDate));
+    if (!dateBounds.isAll) {
+      result = result.filter(l => isLeadInDateBounds(l, dateBounds));
     }
 
     return result;
-  }, [leads, canViewAll, userId, moduleAccess, selectedAgents, dateRangeFilter, customStartDate, customEndDate]);
+  }, [leads, canViewAll, userId, moduleAccess, selectedAgents, dateBounds]);
 
   // Key KPI Metrics
   const metrics = useMemo(() => {
     const total = relevantLeads.length;
     const todayStr = getLocalDateStr(new Date());
 
-    const unassigned = relevantLeads.filter(l => !l.assigned_to).length;
-    const dueToday = relevantLeads.filter(l => l.follow_up_date && l.follow_up_date.split('T')[0] === todayStr).length;
-    
-    const overdue = relevantLeads.filter(l => {
-      if (!l.follow_up_date) return false;
-      return l.follow_up_date < todayStr && !['Won', 'Lost', 'Closed', '07 - Final Stage'].includes(l.status);
-    }).length;
+    let unassigned = 0;
+    let dueToday = 0;
+    let overdue = 0;
+    let newLeads = 0;
+    let inProgress = 0;
+    let conversion = 0;
 
-    const newLeads = relevantLeads.filter(l => !l.status || l.status.startsWith('01') || l.status === 'New').length;
-    const inProgress = relevantLeads.filter(l => l.status && (l.status.startsWith('02') || l.status.startsWith('03') || l.status.startsWith('04') || l.status.startsWith('05'))).length;
-    const conversion = relevantLeads.filter(l => l.status && (l.status.startsWith('06') || l.status.startsWith('07') || l.status === 'Won')).length;
+    for (let i = 0; i < relevantLeads.length; i++) {
+      const l = relevantLeads[i];
+      if (!l.assigned_to) unassigned++;
+      
+      const fDate = l.follow_up_date ? l.follow_up_date.split('T')[0] : null;
+      if (fDate) {
+        if (fDate === todayStr) dueToday++;
+        else if (fDate < todayStr && !['Won', 'Lost', 'Closed', '07 - Final Stage'].includes(l.status)) overdue++;
+      }
+
+      const st = l.status || '';
+      if (!st || st.startsWith('01') || st === 'New') newLeads++;
+      else if (st.startsWith('02') || st.startsWith('03') || st.startsWith('04') || st.startsWith('05')) inProgress++;
+      else if (st.startsWith('06') || st.startsWith('07') || st === 'Won') conversion++;
+    }
 
     const winRate = total > 0 ? ((conversion / total) * 100).toFixed(1) : 0;
 
@@ -381,133 +376,131 @@ export default function LeadDashboard({
       '07 - Final Stage'
     ];
 
-    return STAGE_NAMES.map(fullStage => {
-      const code = fullStage.split(' - ')[0].replace(/^0/, '');
-      
-      const stageLeads = relevantLeads.filter(l => {
-        if (!l.status) return code === '1';
-        return l.status.startsWith(code + ';') || l.status.startsWith(fullStage.split(' - ')[0]) || l.status === fullStage;
-      });
+    const stageMap = {
+      1: { fullStage: '01 - New Stage', count: 0, subMap: {} },
+      2: { fullStage: '02 - Contact Stage', count: 0, subMap: {} },
+      3: { fullStage: '03 - Qualification Stage', count: 0, subMap: {} },
+      4: { fullStage: '04 - Follow Up Stage', count: 0, subMap: {} },
+      5: { fullStage: '05 - Sales Process Stage', count: 0, subMap: {} },
+      6: { fullStage: '06 - Conversion Stage', count: 0, subMap: {} },
+      7: { fullStage: '07 - Final Stage', count: 0, subMap: {} },
+    };
 
-      // Compute sub-stage lead counts
-      const subMap = {};
-      stageLeads.forEach(l => {
-        let subName = 'General / Direct';
-        if (l.status) {
-          if (l.status.includes('>')) {
-            const parts = l.status.split('>');
-            subName = parts[parts.length - 1].trim() || parts[0];
-          } else if (l.status.includes(';')) {
-            const parts = l.status.split(';');
-            subName = parts[parts.length - 1].trim();
-          } else {
-            subName = l.status;
-          }
+    relevantLeads.forEach(l => {
+      const stNum = getStageNumber(l.status);
+      const target = stageMap[stNum] || stageMap[1];
+      target.count++;
+
+      let subName = 'General / Direct';
+      if (l.status) {
+        if (l.status.includes('>')) {
+          const parts = l.status.split('>');
+          subName = parts[parts.length - 1].trim() || parts[0];
+        } else if (l.status.includes(';')) {
+          const parts = l.status.split(';');
+          subName = parts[parts.length - 1].trim();
+        } else {
+          subName = l.status;
         }
-        subMap[subName] = (subMap[subName] || 0) + 1;
-      });
+      }
+      target.subMap[subName] = (target.subMap[subName] || 0) + 1;
+    });
 
-      const substages = Object.keys(subMap).map(subLabel => ({
+    return STAGE_NAMES.map((fullStage, idx) => {
+      const target = stageMap[idx + 1];
+      const substages = Object.keys(target.subMap).map(subLabel => ({
         label: subLabel,
-        count: subMap[subLabel]
+        count: target.subMap[subLabel]
       })).sort((a, b) => b.count - a.count);
 
       return {
         stage: fullStage,
         shortName: fullStage.split(' - ')[1] || fullStage,
-        count: stageLeads.length,
+        count: target.count,
         substages,
         color: STAGE_COLORS[fullStage] || '#3b82f6'
       };
     });
   }, [relevantLeads]);
 
-  // Team Lead Allocation & Action Summary Matrix (Leads Created, Stage Changes, 7-Stage Breakdown, Total Assigned)
+  // Team Lead Allocation & Action Summary Matrix in a SINGLE O(N) pass
   const teamAllocationSummary = useMemo(() => {
-    if (!canViewAll) return [];
+    if (!canViewAll || !activeTeamMembers.length) return [];
 
-    // Filter leads within active date range for created count and stage change activity
-    const dateFilteredLeads = leads.filter(l => isLeadInDateRange(l, dateRangeFilter, customStartDate, customEndDate));
+    const { memberEntries, findMember } = memberIndex;
 
-    return activeTeamMembers.map(member => {
-      // 1. Leads Created by this member strictly within the active date range
-      let leadsCreated = 0;
-      leads.forEach(lead => {
-        const isCreatedByMember = 
-          isMatchingEmployee(lead.created_by, member) ||
-          isMatchingEmployee(lead.entry_by, member) ||
-          (lead.user_id && isMatchingEmployee(lead.user_id, member));
-        
-        if (isCreatedByMember) {
-          const leadDate = lead.created_at || lead.lead_date;
-          if (isDateWithinFilter(leadDate, dateRangeFilter, customStartDate, customEndDate)) {
-            leadsCreated++;
+    const summaryMap = new Map();
+    memberEntries.forEach(entry => {
+      summaryMap.set(entry.id, {
+        id: entry.id,
+        name: entry.name,
+        dept: entry.dept,
+        role: entry.role,
+        leadsCreated: 0,
+        stageChanges: 0,
+        notesAdded: 0,
+        stage1: 0,
+        stage2: 0,
+        stage3: 0,
+        stage4: 0,
+        stage5: 0,
+        stage6: 0,
+        stage7: 0,
+        totalAssigned: 0
+      });
+    });
+
+    leads.forEach(lead => {
+      // 1. Leads Created
+      const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
+      if (creator) {
+        const leadDate = lead.created_at || lead.lead_date;
+        if (checkDateWithinBounds(leadDate, dateBounds)) {
+          const item = summaryMap.get(creator.id);
+          if (item) item.leadsCreated++;
+        }
+      }
+
+      // 2. Assigned Leads & Stage breakdown
+      const assignee = findMember(lead.assigned_to);
+      if (assignee) {
+        const item = summaryMap.get(assignee.id);
+        if (item) {
+          item.totalAssigned++;
+          const stNum = getStageNumber(lead.status);
+          if (stNum >= 1 && stNum <= 7) {
+            item[`stage${stNum}`]++;
+          } else {
+            item.stage1++;
           }
         }
-      });
+      }
 
-      // 2. Stage Changes performed by this member strictly within the active date range
-      let stageChanges = 0;
-      leads.forEach(lead => {
-        (lead.lead_notes || []).forEach(note => {
-          if (isStageChangeNote(note.note_text) && isDateWithinFilter(note.created_at, dateRangeFilter, customStartDate, customEndDate)) {
-            const isNoteAuthor = isMatchingEmployee(note.created_by, member) ||
-              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) && isMatchingEmployee(lead.assigned_to, member));
-            if (isNoteAuthor) {
-              stageChanges++;
+      // 3. Notes & Stage Changes
+      if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
+        lead.lead_notes.forEach(note => {
+          if (checkDateWithinBounds(note.created_at, dateBounds)) {
+            const noteAuthor = findMember(note.created_by) || 
+              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) ? assignee : null);
+            
+            if (noteAuthor) {
+              const item = summaryMap.get(noteAuthor.id);
+              if (item) {
+                item.notesAdded++;
+                if (isStageChangeNote(note.note_text)) {
+                  item.stageChanges++;
+                }
+              }
             }
           }
         });
-      });
+      }
+    });
 
-      // 3. Notes Added (total remarks/communication notes) by this member strictly within the active date range
-      let notesAdded = 0;
-      leads.forEach(lead => {
-        (lead.lead_notes || []).forEach(note => {
-          if (isDateWithinFilter(note.created_at, dateRangeFilter, customStartDate, customEndDate)) {
-            const isNoteAuthor = isMatchingEmployee(note.created_by, member) ||
-              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) && isMatchingEmployee(lead.assigned_to, member));
-            if (isNoteAuthor) {
-              notesAdded++;
-            }
-          }
-        });
-      });
-
-      // 4. Stage Breakdown (Distribution of assigned leads across all 7 stages in current scope)
-      const memberAssignedLeads = relevantLeads.filter(lead => isMatchingEmployee(lead.assigned_to, member));
-
-      const stages = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
-      memberAssignedLeads.forEach(lead => {
-        const stNum = getStageNumber(lead.status);
-        if (stages[stNum] !== undefined) {
-          stages[stNum]++;
-        } else {
-          stages[1]++;
-        }
-      });
-
-      const totalAssigned = memberAssignedLeads.length;
-
-      return {
-        id: member.user_id || member.id || member.emp_name,
-        name: member.emp_name,
-        dept: member.emp_department || 'Sales',
-        role: member.role || 'Member',
-        leadsCreated,
-        stageChanges,
-        notesAdded,
-        stage1: stages[1],
-        stage2: stages[2],
-        stage3: stages[3],
-        stage4: stages[4],
-        stage5: stages[5],
-        stage6: stages[6],
-        stage7: stages[7],
-        totalAssigned
-      };
-    }).filter(emp => (emp.leadsCreated > 0 || emp.stageChanges > 0 || emp.notesAdded > 0 || emp.totalAssigned > 0));
-  }, [canViewAll, leads, relevantLeads, activeTeamMembers, dateRangeFilter, customStartDate, customEndDate]);
+    return Array.from(summaryMap.values()).filter(
+      emp => (emp.leadsCreated > 0 || emp.stageChanges > 0 || emp.notesAdded > 0 || emp.totalAssigned > 0)
+    );
+  }, [canViewAll, leads, activeTeamMembers, memberIndex, dateBounds]);
 
   const handleTableSort = (key) => {
     if (tableSortKey === key) {
@@ -601,6 +594,371 @@ export default function LeadDashboard({
       .sort((a, b) => (a.follow_up_date || '').localeCompare(b.follow_up_date || ''))
       .slice(0, 8);
   }, [relevantLeads]);
+
+  // Single-pass computation for Hourly Work matrix
+  const hourlyWorkData = useMemo(() => {
+    const { memberEntries, findMember } = memberIndex;
+
+    const slotsMap = new Map();
+    HOURLY_SLOTS.forEach(slot => {
+      const memberSubMap = new Map();
+      memberEntries.forEach(entry => {
+        memberSubMap.set(entry.id, {
+          id: entry.id,
+          name: entry.name,
+          dept: entry.dept,
+          role: entry.role,
+          slotId: slot.id,
+          slotLabel: slot.label,
+          leadsCreated: 0,
+          stageChanges: 0,
+          notesAdded: 0,
+          stage1: 0,
+          stage2: 0,
+          stage3: 0,
+          stage4: 0,
+          stage5: 0,
+          stage6: 0,
+          stage7: 0,
+          totalActions: 0,
+          totalAssigned: 0
+        });
+      });
+      slotsMap.set(slot.id, memberSubMap);
+    });
+
+    const getSlotIdForHour = (hour) => {
+      if (hour === null || hour === undefined) return 'h_other';
+      if (hour >= 9 && hour <= 19) {
+        const nextHour = hour + 1;
+        const pad = (n) => String(n).padStart(2, '0');
+        const candidate = `h${pad(hour)}_${pad(nextHour)}`;
+        if (slotsMap.has(candidate)) return candidate;
+      }
+      return 'h_other';
+    };
+
+    leads.forEach(lead => {
+      // 1. Leads Created
+      const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
+      const leadDate = lead.created_at || lead.lead_date;
+      if (creator && checkDateWithinBounds(leadDate, dateBounds)) {
+        const hour = getLocalHour(leadDate);
+        const slotId = getSlotIdForHour(hour);
+
+        const slotMembers = slotsMap.get(slotId);
+        if (slotMembers) {
+          const item = slotMembers.get(creator.id);
+          if (item) {
+            item.leadsCreated++;
+            item.totalActions++;
+          }
+        }
+        const allMembers = slotsMap.get('all');
+        if (allMembers) {
+          const item = allMembers.get(creator.id);
+          if (item) {
+            item.leadsCreated++;
+            item.totalActions++;
+          }
+        }
+      }
+
+      // 2. Assigned Leads & Stage breakdown
+      const assignee = findMember(lead.assigned_to);
+      if (assignee) {
+        const stNum = getStageNumber(lead.status);
+        const allMembers = slotsMap.get('all');
+        if (allMembers) {
+          const item = allMembers.get(assignee.id);
+          if (item) {
+            item.totalAssigned++;
+            if (stNum >= 1 && stNum <= 7) item[`stage${stNum}`]++;
+            else item.stage1++;
+          }
+        }
+      }
+
+      // 3. Notes & Stage Changes
+      if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
+        lead.lead_notes.forEach(note => {
+          if (checkDateWithinBounds(note.created_at, dateBounds)) {
+            const noteAuthor = findMember(note.created_by) || 
+              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) ? assignee : null);
+            
+            if (noteAuthor) {
+              const hour = getLocalHour(note.created_at);
+              const slotId = getSlotIdForHour(hour);
+              const isStageChange = isStageChangeNote(note.note_text);
+              const stNum = getStageNumber(lead.status);
+
+              // Specific slot
+              const slotMembers = slotsMap.get(slotId);
+              if (slotMembers) {
+                const item = slotMembers.get(noteAuthor.id);
+                if (item) {
+                  item.notesAdded++;
+                  item.totalActions++;
+                  if (isStageChange) {
+                    item.stageChanges++;
+                    if (stNum >= 1 && stNum <= 7) item[`stage${stNum}`]++;
+                    else item.stage1++;
+                  }
+                }
+              }
+
+              // 'all' slot
+              const allMembers = slotsMap.get('all');
+              if (allMembers) {
+                const item = allMembers.get(noteAuthor.id);
+                if (item) {
+                  item.notesAdded++;
+                  item.totalActions++;
+                  if (isStageChange) {
+                    item.stageChanges++;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // Chart Data for Hourly Trend
+    const hourlyChartData = HOURLY_SLOTS.filter(s => s.id !== 'all').map(slot => {
+      const memberSubMap = slotsMap.get(slot.id);
+      let totalCreated = 0;
+      let totalStageChanges = 0;
+      let totalNotes = 0;
+      let totalActions = 0;
+
+      if (memberSubMap) {
+        memberSubMap.forEach(item => {
+          totalCreated += item.leadsCreated;
+          totalStageChanges += item.stageChanges;
+          totalNotes += item.notesAdded;
+          totalActions += item.totalActions;
+        });
+      }
+
+      return {
+        slot: slot.shortLabel,
+        fullName: slot.label,
+        slotId: slot.id,
+        leadsCreated: totalCreated,
+        stageChanges: totalStageChanges,
+        notesAdded: totalNotes,
+        totalActions
+      };
+    });
+
+    // Calculate total actions across all hours
+    const totalDayActions = hourlyChartData.reduce((acc, curr) => acc + curr.totalActions, 0);
+
+    return { slotsMap, hourlyChartData, totalDayActions };
+  }, [leads, memberIndex, dateBounds]);
+
+  // Grouped Timeline Slots (Hour by Hour)
+  const timelineSlots = useMemo(() => {
+    const slots = HOURLY_SLOTS.filter(s => s.id !== 'all');
+    const targetSlots = selectedHourlySlot === 'all' 
+      ? slots 
+      : slots.filter(s => s.id === selectedHourlySlot);
+
+    return targetSlots.map(slot => {
+      const subMap = hourlyWorkData.slotsMap.get(slot.id);
+      let employees = subMap ? Array.from(subMap.values()) : [];
+
+      if (canViewAll && selectedAgents.length > 0) {
+        employees = employees.filter(e => selectedAgents.includes(e.id));
+      }
+
+      if (hourlyTableSearch.trim()) {
+        const q = hourlyTableSearch.toLowerCase().trim();
+        employees = employees.filter(e => 
+          (e.name && e.name.toLowerCase().includes(q)) ||
+          (e.dept && e.dept.toLowerCase().includes(q))
+        );
+      }
+
+      // Filter to only employees who had actions in this specific hour
+      const activeEmployees = employees.filter(e => e.totalActions > 0 || e.leadsCreated > 0 || e.stageChanges > 0 || e.notesAdded > 0);
+
+      // Sort
+      activeEmployees.sort((a, b) => {
+        let valA = a[hourlyTableSortKey];
+        let valB = b[hourlyTableSortKey];
+
+        if (typeof valA === 'string') {
+          valA = valA.toLowerCase();
+          valB = (valB || '').toLowerCase();
+          return hourlyTableSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+        return hourlyTableSortDir === 'asc' ? valA - valB : valB - valA;
+      });
+
+      const totals = {
+        leadsCreated: 0,
+        stageChanges: 0,
+        notesAdded: 0,
+        stage1: 0,
+        stage2: 0,
+        stage3: 0,
+        stage4: 0,
+        stage5: 0,
+        stage6: 0,
+        stage7: 0,
+        totalActions: 0
+      };
+
+      activeEmployees.forEach(e => {
+        totals.leadsCreated += e.leadsCreated;
+        totals.stageChanges += e.stageChanges;
+        totals.notesAdded += e.notesAdded;
+        totals.stage1 += e.stage1;
+        totals.stage2 += e.stage2;
+        totals.stage3 += e.stage3;
+        totals.stage4 += e.stage4;
+        totals.stage5 += e.stage5;
+        totals.stage6 += e.stage6;
+        totals.stage7 += e.stage7;
+        totals.totalActions += e.totalActions;
+      });
+
+      return {
+        slot,
+        activeEmployees,
+        totals,
+        hasActivity: activeEmployees.length > 0
+      };
+    });
+  }, [hourlyWorkData, selectedHourlySlot, selectedAgents, canViewAll, hourlyTableSearch, hourlyTableSortKey, hourlyTableSortDir]);
+
+  // Flat timeline rows with prominent Time Slot column
+  const flatHourlyRows = useMemo(() => {
+    const rows = [];
+    timelineSlots.forEach(t => {
+      t.activeEmployees.forEach(emp => {
+        rows.push({
+          ...emp,
+          slotLabel: t.slot.label,
+          slotShort: t.slot.shortLabel,
+          slotId: t.slot.id,
+          startHour: t.slot.startHour
+        });
+      });
+    });
+
+    if (hourlyTableSortKey === 'time') {
+      rows.sort((a, b) => {
+        const hA = a.startHour ?? 99;
+        const hB = b.startHour ?? 99;
+        return hourlyTableSortDir === 'asc' ? hA - hB : hB - hA;
+      });
+    }
+
+    return rows;
+  }, [timelineSlots, hourlyTableSortKey, hourlyTableSortDir]);
+
+  // Employee x Hours Matrix Grid
+  const employeeHourlyMatrix = useMemo(() => {
+    const { memberEntries } = memberIndex;
+    const slots = HOURLY_SLOTS.filter(s => s.id !== 'all');
+
+    let list = memberEntries.map(member => {
+      const row = {
+        id: member.id,
+        name: member.name,
+        dept: member.dept,
+        role: member.role,
+        slots: {},
+        totalActions: 0,
+        totalLeads: 0,
+        totalStages: 0,
+        totalNotes: 0
+      };
+
+      slots.forEach(slot => {
+        const slotMap = hourlyWorkData.slotsMap.get(slot.id);
+        const memberData = slotMap?.get(member.id);
+        const actions = memberData ? memberData.totalActions : 0;
+        row.slots[slot.id] = {
+          actions,
+          leads: memberData?.leadsCreated || 0,
+          stages: memberData?.stageChanges || 0,
+          notes: memberData?.notesAdded || 0
+        };
+        row.totalActions += actions;
+        row.totalLeads += (memberData?.leadsCreated || 0);
+        row.totalStages += (memberData?.stageChanges || 0);
+        row.totalNotes += (memberData?.notesAdded || 0);
+      });
+
+      return row;
+    });
+
+    if (canViewAll && selectedAgents.length > 0) {
+      list = list.filter(item => selectedAgents.includes(item.id));
+    }
+
+    if (hourlyTableSearch.trim()) {
+      const q = hourlyTableSearch.toLowerCase().trim();
+      list = list.filter(item => 
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.dept && item.dept.toLowerCase().includes(q))
+      );
+    }
+
+    list.sort((a, b) => b.totalActions - a.totalActions);
+    return list.filter(e => e.totalActions > 0);
+  }, [memberIndex, hourlyWorkData, selectedAgents, canViewAll, hourlyTableSearch]);
+
+  const activeHourlyTotals = useMemo(() => {
+    const totals = {
+      leadsCreated: 0,
+      stageChanges: 0,
+      notesAdded: 0,
+      stage1: 0,
+      stage2: 0,
+      stage3: 0,
+      stage4: 0,
+      stage5: 0,
+      stage6: 0,
+      stage7: 0,
+      totalActions: 0,
+      totalAssigned: 0
+    };
+
+    flatHourlyRows.forEach(item => {
+      totals.leadsCreated += item.leadsCreated;
+      totals.stageChanges += item.stageChanges;
+      totals.notesAdded += item.notesAdded;
+      totals.stage1 += item.stage1;
+      totals.stage2 += item.stage2;
+      totals.stage3 += item.stage3;
+      totals.stage4 += item.stage4;
+      totals.stage5 += item.stage5;
+      totals.stage6 += item.stage6;
+      totals.stage7 += item.stage7;
+      totals.totalActions += item.totalActions;
+      totals.totalAssigned += item.totalAssigned;
+    });
+
+    return totals;
+  }, [flatHourlyRows]);
+
+  const handleHourlySort = (key) => {
+    if (hourlyTableSortKey === key) {
+      setHourlyTableSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setHourlyTableSortKey(key);
+      setHourlyTableSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-primary, #f8fafc)', minHeight: '100%' }}>
@@ -830,10 +1188,70 @@ export default function LeadDashboard({
           </div>
         )}
 
+        {/* Navigation Sub-Tabs: Overview vs Hourly Work */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+          <button
+            onClick={() => setActiveDashboardTab('overview')}
+            style={{
+              padding: '0.45rem 1rem',
+              borderRadius: '8px',
+              border: activeDashboardTab === 'overview' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
+              background: activeDashboardTab === 'overview' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
+              color: activeDashboardTab === 'overview' ? '#ffffff' : 'var(--text-secondary)',
+              fontWeight: activeDashboardTab === 'overview' ? 700 : 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              fontSize: '0.85rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Sparkles size={15} />
+            <span>Overview & Pipeline</span>
+          </button>
+
+          <button
+            onClick={() => setActiveDashboardTab('hourly')}
+            style={{
+              padding: '0.45rem 1rem',
+              borderRadius: '8px',
+              border: activeDashboardTab === 'hourly' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
+              background: activeDashboardTab === 'hourly' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
+              color: activeDashboardTab === 'hourly' ? '#ffffff' : 'var(--text-secondary)',
+              fontWeight: activeDashboardTab === 'hourly' ? 700 : 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              fontSize: '0.85rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Timer size={15} />
+            <span>Hourly Work</span>
+            {hourlyWorkData.totalDayActions > 0 && (
+              <span style={{
+                background: activeDashboardTab === 'hourly' ? 'rgba(255,255,255,0.25)' : '#e0e7ff',
+                color: activeDashboardTab === 'hourly' ? '#ffffff' : '#3730a3',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '0.1rem 0.45rem',
+                borderRadius: '10px'
+              }}>
+                {hourlyWorkData.totalDayActions}
+              </span>
+            )}
+          </button>
+        </div>
+
       </div>
 
-      {/* KPI Cards Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
+      {/* Overview Tab Content */}
+      {activeDashboardTab === 'overview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* KPI Cards Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
         
         {/* Total Leads */}
         <div style={{ background: 'var(--bg-surface)', padding: '1.1rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
@@ -1512,6 +1930,622 @@ export default function LeadDashboard({
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )}
+
+      {/* Hourly Work Tab Content */}
+      {activeDashboardTab === 'hourly' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Hourly Time Slot Selection Bar */}
+          <div style={{ background: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Clock size={18} style={{ color: 'var(--accent-color)' }} />
+                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  Hourly Time Slots:
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  (Click any 1-hour window to inspect team activity in that exact time slot)
+                </span>
+              </div>
+              <span style={{ fontSize: '0.75rem', background: '#eff6ff', color: '#1e40af', padding: '0.2rem 0.65rem', borderRadius: '6px', fontWeight: 700 }}>
+                Active Slot: {HOURLY_SLOTS.find(s => s.id === selectedHourlySlot)?.label || 'All Hours'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.35rem', scrollbarWidth: 'thin' }}>
+              {HOURLY_SLOTS.map(slot => {
+                const isSelected = selectedHourlySlot === slot.id;
+                const slotActions = slot.id === 'all' 
+                  ? hourlyWorkData.totalDayActions 
+                  : (hourlyWorkData.hourlyChartData.find(c => c.slotId === slot.id)?.totalActions || 0);
+
+                return (
+                  <button
+                    key={slot.id}
+                    onClick={() => setSelectedHourlySlot(slot.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.45rem 0.8rem',
+                      borderRadius: '8px',
+                      border: isSelected ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
+                      background: isSelected ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
+                      color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                      fontWeight: isSelected ? 700 : 500,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span>{slot.label}</span>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      padding: '0.1rem 0.4rem',
+                      borderRadius: '8px',
+                      background: isSelected ? 'rgba(255,255,255,0.25)' : (slotActions > 0 ? '#e0e7ff' : '#f1f5f9'),
+                      color: isSelected ? '#ffffff' : (slotActions > 0 ? '#3730a3' : '#94a3b8'),
+                      fontWeight: 700
+                    }}>
+                      {slotActions}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Hourly Action Distribution Trend Chart */}
+          <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Activity size={18} style={{ color: 'var(--accent-color)' }} />
+                  Hourly Team Productivity Trend
+                </h3>
+                <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Total output volume distribution across hourly intervals (Leads Created, Stage Changes, Remarks Added).
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.78rem', fontWeight: 600 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#3b82f6' }}></span>
+                  <span>Leads Created</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#10b981' }}></span>
+                  <span>Stage Changes</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#f59e0b' }}></span>
+                  <span>Notes Added</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ height: '220px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourlyWorkData.hourlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light, #e2e8f0)" />
+                  <XAxis dataKey="slot" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <RechartsTooltip 
+                    contentStyle={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light)', borderRadius: '8px', fontSize: '0.8rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label}
+                  />
+                  <Bar dataKey="leadsCreated" name="Leads Created" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="stageChanges" name="Stage Changes" fill="#10b981" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="notesAdded" name="Notes Added" fill="#f59e0b" stackId="a" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Hourly Work View Container (Timeline, Table, Matrix) */}
+          <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 6px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            
+            {/* Header with Title, View Mode Switcher, and Search */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Users size={18} style={{ color: 'var(--accent-color)' }} />
+                    Hourly Work — Time-Wise Employee Breakdown
+                  </h3>
+                  <span style={{ fontSize: '0.72rem', background: '#eff6ff', color: '#1e40af', padding: '0.15rem 0.55rem', borderRadius: '8px', border: '1px solid #bfdbfe', fontWeight: 700 }}>
+                    Slot: {HOURLY_SLOTS.find(s => s.id === selectedHourlySlot)?.label || 'All Hours'}
+                  </span>
+                </div>
+                <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Time ke anusar employee actions (Leads Created, Stage Changes, Notes) ki live reporting.
+                </p>
+              </div>
+
+              {/* Controls: View Mode Buttons + Search */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                
+                {/* View Mode Toggle Buttons */}
+                <div style={{ display: 'flex', background: 'var(--bg-primary, #f8fafc)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                  <button
+                    onClick={() => setHourlyViewMode('timeline')}
+                    title="Hour-by-Hour Timeline View"
+                    style={{
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: hourlyViewMode === 'timeline' ? 'var(--accent-color, #3b82f6)' : 'transparent',
+                      color: hourlyViewMode === 'timeline' ? '#ffffff' : 'var(--text-secondary)',
+                      fontSize: '0.76rem',
+                      fontWeight: hourlyViewMode === 'timeline' ? 700 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <Clock size={13} />
+                    <span>Timeline (Hour-by-Hour)</span>
+                  </button>
+
+                  <button
+                    onClick={() => setHourlyViewMode('table')}
+                    title="Unified Table with Time Column"
+                    style={{
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: hourlyViewMode === 'table' ? 'var(--accent-color, #3b82f6)' : 'transparent',
+                      color: hourlyViewMode === 'table' ? '#ffffff' : 'var(--text-secondary)',
+                      fontSize: '0.76rem',
+                      fontWeight: hourlyViewMode === 'table' ? 700 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <Layers size={13} />
+                    <span>Table View</span>
+                  </button>
+
+                  <button
+                    onClick={() => setHourlyViewMode('matrix')}
+                    title="Employee × Hours Grid Matrix"
+                    style={{
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: hourlyViewMode === 'matrix' ? 'var(--accent-color, #3b82f6)' : 'transparent',
+                      color: hourlyViewMode === 'matrix' ? '#ffffff' : 'var(--text-secondary)',
+                      fontSize: '0.76rem',
+                      fontWeight: hourlyViewMode === 'matrix' ? 700 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <Activity size={13} />
+                    <span>Matrix Grid</span>
+                  </button>
+                </div>
+
+                {/* In-table Search Bar */}
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search member..."
+                    value={hourlyTableSearch}
+                    onChange={(e) => setHourlyTableSearch(e.target.value)}
+                    style={{
+                      padding: '0.4rem 0.65rem 0.4rem 1.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary, #f8fafc)',
+                      fontSize: '0.8rem',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                      width: '160px'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* VIEW 1: TIMELINE (Hour by Hour Grouped Cards) */}
+            {hourlyViewMode === 'timeline' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {timelineSlots.map(tSlot => {
+                  return (
+                    <div 
+                      key={tSlot.slot.id} 
+                      style={{ 
+                        border: '1px solid var(--border-light)', 
+                        borderRadius: '10px', 
+                        overflow: 'hidden',
+                        background: 'var(--bg-surface)'
+                      }}
+                    >
+                      {/* Slot Header with Time Slot and summary stats */}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        background: tSlot.hasActivity ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary, #f8fafc)', 
+                        padding: '0.65rem 1rem', 
+                        borderBottom: tSlot.hasActivity ? '1px solid var(--border-light)' : 'none',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <Clock size={16} style={{ color: tSlot.hasActivity ? 'var(--accent-color, #3b82f6)' : 'var(--text-secondary)' }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                            ⏰ {tSlot.slot.label}
+                          </span>
+                          <span style={{ 
+                            fontSize: '0.72rem', 
+                            background: tSlot.hasActivity ? '#dbeafe' : 'var(--border-light)', 
+                            color: tSlot.hasActivity ? '#1e40af' : 'var(--text-secondary)', 
+                            padding: '0.12rem 0.5rem', 
+                            borderRadius: '10px', 
+                            fontWeight: 600 
+                          }}>
+                            {tSlot.activeEmployees.length} Active Member{tSlot.activeEmployees.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+
+                        {tSlot.hasActivity ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', fontSize: '0.78rem', fontWeight: 600 }}>
+                            <span style={{ color: '#059669' }}>Leads: <strong>{tSlot.totals.leadsCreated}</strong></span>
+                            <span style={{ color: '#7c3aed' }}>Stage Changes: <strong>{tSlot.totals.stageChanges}</strong></span>
+                            <span style={{ color: '#d97706' }}>Notes: <strong>{tSlot.totals.notesAdded}</strong></span>
+                            <span style={{ color: '#2563eb', background: '#eff6ff', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                              Total Actions: <strong>{tSlot.totals.totalActions}</strong>
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                            No team actions in this hour
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Active Members Table for this Time Slot */}
+                      {tSlot.hasActivity && (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                            <thead>
+                              <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '180px' }}>
+                                  Employee Name
+                                </th>
+                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                                  Leads Created
+                                </th>
+                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                                  Stage Changes
+                                </th>
+                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}>
+                                  Notes
+                                </th>
+                                {PIPELINE_STAGES.map(stg => (
+                                  <th key={stg.num} style={{ padding: '0.45rem 0.35rem', textAlign: 'center', fontWeight: 600, color: stg.color, borderRight: '1px solid var(--border-light)', fontSize: '0.72rem', minWidth: '42px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                      <span>S{stg.num}</span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{stg.label}</span>
+                                    </div>
+                                  </th>
+                                ))}
+                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)', background: 'rgba(59, 130, 246, 0.05)', minWidth: '100px' }}>
+                                  Total Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tSlot.activeEmployees.map((emp, idx) => {
+                                const isEven = idx % 2 === 0;
+                                return (
+                                  <tr 
+                                    key={emp.id} 
+                                    style={{ 
+                                      background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)',
+                                      borderBottom: '1px solid var(--border-light)'
+                                    }}
+                                  >
+                                    <td style={{ padding: '0.55rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
+                                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{emp.dept} • {emp.role}</div>
+                                    </td>
+                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.leadsCreated > 0 ? 700 : 400, color: emp.leadsCreated > 0 ? '#059669' : 'var(--text-secondary)' }}>
+                                      {emp.leadsCreated > 0 ? emp.leadsCreated : '—'}
+                                    </td>
+                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.stageChanges > 0 ? 700 : 400, color: emp.stageChanges > 0 ? '#7c3aed' : 'var(--text-secondary)' }}>
+                                      {emp.stageChanges > 0 ? emp.stageChanges : '—'}
+                                    </td>
+                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.notesAdded > 0 ? 700 : 400, color: emp.notesAdded > 0 ? '#d97706' : 'var(--text-secondary)' }}>
+                                      {emp.notesAdded > 0 ? emp.notesAdded : '—'}
+                                    </td>
+                                    {PIPELINE_STAGES.map(stg => {
+                                      const cnt = emp[`stage${stg.num}`] || 0;
+                                      return (
+                                        <td key={stg.num} style={{ padding: '0.55rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: cnt > 0 ? 600 : 400, color: cnt > 0 ? stg.color : 'var(--text-secondary)', background: cnt > 0 ? `${stg.color}08` : 'transparent' }}>
+                                          {cnt > 0 ? cnt : '—'}
+                                        </td>
+                                      );
+                                    })}
+                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', background: 'rgba(59, 130, 246, 0.03)' }}>
+                                      {emp.totalActions}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: 'var(--bg-primary, #f8fafc)', fontWeight: 700, borderTop: '1px solid var(--border-light)' }}>
+                                <td style={{ padding: '0.55rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                                  Sub-Total ({tSlot.slot.shortLabel})
+                                </td>
+                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
+                                  {tSlot.totals.leadsCreated}
+                                </td>
+                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
+                                  {tSlot.totals.stageChanges}
+                                </td>
+                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
+                                  {tSlot.totals.notesAdded}
+                                </td>
+                                {PIPELINE_STAGES.map(stg => (
+                                  <td key={stg.num} style={{ padding: '0.55rem 0.35rem', textAlign: 'center', color: stg.color, borderRight: '1px solid var(--border-light)' }}>
+                                    {tSlot.totals[`stage${stg.num}`]}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#2563eb', background: 'rgba(59, 130, 246, 0.06)' }}>
+                                  {tSlot.totals.totalActions}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* VIEW 2: UNIFIED TABLE (with prominent Time Slot column) */}
+            {hourlyViewMode === 'table' && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('time')}
+                        title="Click to sort by Time Slot"
+                        style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--accent-color)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Clock size={14} />
+                          <span>Time Slot</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('name')}
+                        style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '170px' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span>Employee Name</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('leadsCreated')}
+                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}
+                      >
+                        Leads Created
+                      </th>
+
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('stageChanges')}
+                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}
+                      >
+                        Stage Changes
+                      </th>
+
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('notesAdded')}
+                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}
+                      >
+                        Notes
+                      </th>
+
+                      <th 
+                        colSpan={7}
+                        style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', borderRight: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)', background: 'rgba(59, 130, 246, 0.04)', fontSize: '0.82rem' }}
+                      >
+                        Stage Breakdown (Stages 1 – 7)
+                      </th>
+
+                      <th 
+                        rowSpan={2}
+                        onClick={() => handleHourlySort('totalActions')}
+                        style={{ padding: '0.75rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', minWidth: '105px', background: 'rgba(59, 130, 246, 0.05)' }}
+                      >
+                        Total Actions
+                      </th>
+                    </tr>
+
+                    <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                      {PIPELINE_STAGES.map(stage => (
+                        <th key={stage.num} style={{ padding: '0.45rem 0.35rem', fontWeight: 600, color: stage.color, textAlign: 'center', fontSize: '0.73rem', borderRight: '1px solid var(--border-light)', minWidth: '45px' }}>
+                          <span>S{stage.num}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {flatHourlyRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={13} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          No hourly activity found for the selected filter.
+                        </td>
+                      </tr>
+                    ) : (
+                      flatHourlyRows.map((row, idx) => {
+                        const isEven = idx % 2 === 0;
+                        return (
+                          <tr key={`${row.slotId}-${row.id}`} style={{ background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.65rem 0.85rem', borderRight: '1px solid var(--border-light)', fontWeight: 600, color: '#1e40af', background: 'rgba(59, 130, 246, 0.02)' }}>
+                              ⏰ {row.slotShort}
+                            </td>
+                            <td style={{ padding: '0.65rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.name}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.dept}</div>
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.leadsCreated > 0 ? 700 : 400, color: row.leadsCreated > 0 ? '#059669' : 'var(--text-secondary)' }}>
+                              {row.leadsCreated > 0 ? row.leadsCreated : '—'}
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.stageChanges > 0 ? 700 : 400, color: row.stageChanges > 0 ? '#7c3aed' : 'var(--text-secondary)' }}>
+                              {row.stageChanges > 0 ? row.stageChanges : '—'}
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.notesAdded > 0 ? 700 : 400, color: row.notesAdded > 0 ? '#d97706' : 'var(--text-secondary)' }}>
+                              {row.notesAdded > 0 ? row.notesAdded : '—'}
+                            </td>
+                            {PIPELINE_STAGES.map(stage => {
+                              const cnt = row[`stage${stage.num}`] || 0;
+                              return (
+                                <td key={stage.num} style={{ padding: '0.65rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', color: cnt > 0 ? stage.color : 'var(--text-secondary)', fontWeight: cnt > 0 ? 600 : 400 }}>
+                                  {cnt > 0 ? cnt : '—'}
+                                </td>
+                              );
+                            })}
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', background: 'rgba(59, 130, 246, 0.04)' }}>
+                              {row.totalActions}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+
+                  {flatHourlyRows.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderTop: '2px solid var(--border-light)', fontWeight: 700 }}>
+                        <td colSpan={2} style={{ padding: '0.75rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                          Total ({flatHourlyRows.length} Hourly Slots Logged)
+                        </td>
+                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
+                          {activeHourlyTotals.leadsCreated}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
+                          {activeHourlyTotals.stageChanges}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
+                          {activeHourlyTotals.notesAdded}
+                        </td>
+                        {PIPELINE_STAGES.map(stage => (
+                          <td key={stage.num} style={{ padding: '0.75rem 0.35rem', textAlign: 'center', color: stage.color, borderRight: '1px solid var(--border-light)' }}>
+                            {activeHourlyTotals[`stage${stage.num}`]}
+                          </td>
+                        ))}
+                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#2563eb', background: 'rgba(59, 130, 246, 0.08)' }}>
+                          {activeHourlyTotals.totalActions}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
+            {/* VIEW 3: EMPLOYEE × HOURS MATRIX GRID */}
+            {hourlyViewMode === 'matrix' && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                      <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '180px' }}>
+                        Employee Name
+                      </th>
+                      {HOURLY_SLOTS.filter(s => s.id !== 'all').map(slot => (
+                        <th key={slot.id} style={{ padding: '0.6rem 0.4rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '55px', fontSize: '0.74rem' }}>
+                          <div>{slot.shortLabel.split(' ')[0]}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{slot.shortLabel.split(' ')[1]}</div>
+                        </th>
+                      ))}
+                      <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', background: 'rgba(59, 130, 246, 0.06)', minWidth: '90px' }}>
+                        Total Day Output
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {employeeHourlyMatrix.length === 0 ? (
+                      <tr>
+                        <td colSpan={14} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          No employee activity recorded in this date range.
+                        </td>
+                      </tr>
+                    ) : (
+                      employeeHourlyMatrix.map((emp, idx) => {
+                        const isEven = idx % 2 === 0;
+                        return (
+                          <tr key={emp.id} style={{ background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.6rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{emp.dept}</div>
+                            </td>
+
+                            {HOURLY_SLOTS.filter(s => s.id !== 'all').map(slot => {
+                              const cell = emp.slots[slot.id];
+                              const cnt = cell?.actions || 0;
+                              return (
+                                <td 
+                                  key={slot.id} 
+                                  title={`${emp.name} at ${slot.label}: ${cnt} actions (Leads: ${cell?.leads || 0}, Stages: ${cell?.stages || 0}, Notes: ${cell?.notes || 0})`}
+                                  style={{ 
+                                    padding: '0.6rem 0.4rem', 
+                                    textAlign: 'center', 
+                                    borderRight: '1px solid var(--border-light)',
+                                    fontWeight: cnt > 0 ? 700 : 400,
+                                    color: cnt > 0 ? '#1e40af' : 'var(--text-secondary)',
+                                    background: cnt >= 20 ? 'rgba(59, 130, 246, 0.18)' : cnt >= 10 ? 'rgba(59, 130, 246, 0.10)' : cnt > 0 ? 'rgba(59, 130, 246, 0.04)' : 'transparent'
+                                  }}
+                                >
+                                  {cnt > 0 ? cnt : '—'}
+                                </td>
+                              );
+                            })}
+
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 800, color: '#2563eb', background: 'rgba(59, 130, 246, 0.06)' }}>
+                              {emp.totalActions}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
           </div>
         </div>
       )}

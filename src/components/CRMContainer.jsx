@@ -954,12 +954,6 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     });
     
     const newPath = `/${tabId}`;
-
-    // Reset stage filter if navigating away from leads
-    if (tabId !== 'leads') {
-      localStorage.setItem('crmActiveStage', '');
-      setLeadsFilterStage(null);
-    }
     
     // Update URL instantly using native History API with a clean slate
     window.history.pushState(null, '', newPath);
