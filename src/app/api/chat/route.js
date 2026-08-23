@@ -6,12 +6,67 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+function getIstDateRange(dateStr) {
+  // If dateStr is like "2026-08-23", calculate IST (UTC+05:30) boundaries in UTC ISO format
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  let targetDate = dateStr;
+  if (!targetDate || !datePattern.test(targetDate)) {
+    // Default to today in IST
+    targetDate = new Date(Date.now() + 5.5 * 3600000).toISOString().split('T')[0];
+  }
+  const startUtc = new Date(new Date(`${targetDate}T00:00:00+05:30`).getTime()).toISOString();
+  const endUtc = new Date(new Date(`${targetDate}T23:59:59.999+05:30`).getTime()).toISOString();
+  return { targetDate, startUtc, endUtc };
+}
+
 const tools = [
   {
     type: "function",
     function: {
+      name: "get_daily_team_activity_summary",
+      description: "Get a comprehensive employee-wise daily work summary (who did what, leads created, calls made, stage changes, assignments, notes, follow-ups) for today or any specific date. MUST be called whenever the user asks for 'aaj ka summary', 'daily report', 'kaun kya kam kia', 'employee wise work summary', 'team performance today', or daily activity.",
+      parameters: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            description: "The date in YYYY-MM-DD format (e.g. '2026-08-23'). Defaults to today."
+          },
+          scope: {
+            type: "string",
+            enum: ["me", "all"],
+            description: "If user is Admin, use 'all'. Otherwise 'me'."
+          }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_employee_daily_activity",
+      description: "Get a detailed breakdown of work done by a specific employee (leads created, stage changes, calls made, notes, follow-ups) on a given date.",
+      parameters: {
+        type: "object",
+        properties: {
+          emp_name: {
+            type: "string",
+            description: "The name or email of the employee (e.g. 'Kajal Goyal', 'Nitya', 'Saloni Singh', 'Harmanjot Kaur')"
+          },
+          date: {
+            type: "string",
+            description: "The date in YYYY-MM-DD format (e.g., '2026-08-23'). Defaults to today."
+          }
+        },
+        required: ["emp_name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "get_leads_summary",
-      description: "Get a summary of leads grouped by status. Useful for answering questions like 'how many leads do I have?' or 'team summary'.",
+      description: "Get a summary of leads grouped by status. Useful for answering questions like 'how many leads do I have?' or 'status count'.",
       parameters: {
         type: "object",
         properties: {
@@ -29,13 +84,13 @@ const tools = [
     type: "function",
     function: {
       name: "search_leads",
-      description: "Search leads by name, email, phone, company, or lead ID (UUID or Ref ID).",
+      description: "Search leads by company name, contact person, phone, email, or Lead Ref ID.",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "The search term (name, company, phone, etc.)"
+            description: "The search term (company, name, phone, lead_ref_id)"
           },
           scope: {
             type: "string",
@@ -69,13 +124,13 @@ const tools = [
     type: "function",
     function: {
       name: "get_leads_by_date",
-      description: "Get leads that were created or followed up on a specific date. MUST be used when the user asks about activity on a specific day (e.g. 'yesterday', 'today', 'on Monday').",
+      description: "Get leads that were created or followed up on a specific date (e.g. 'yesterday', 'today', or specific YYYY-MM-DD).",
       parameters: {
         type: "object",
         properties: {
           date: {
             type: "string",
-            description: "The date in YYYY-MM-DD format (e.g., '2026-06-08'). Calculate this based on the current date provided in the system prompt."
+            description: "The date in YYYY-MM-DD format (e.g., '2026-08-23')."
           },
           scope: {
             type: "string",
@@ -91,7 +146,7 @@ const tools = [
     type: "function",
     function: {
       name: "get_users_summary",
-      description: "Get the total count of registered users/employees/agents in the CRM system, grouped by role. Use this whenever the user asks about 'users', 'agents', or 'team members'.",
+      description: "Get the total count of registered users/employees/agents in the CRM system, grouped by role.",
       parameters: {
         type: "object",
         properties: {}
@@ -102,7 +157,7 @@ const tools = [
     type: "function",
     function: {
       name: "search_users",
-      description: "Search for an employee, agent, or user by their name, email, or employee ID. Use this when the user asks for details about a specific employee.",
+      description: "Search for an employee, agent, or user by their name, email, employee ID, or department.",
       parameters: {
         type: "object",
         properties: {
@@ -112,27 +167,6 @@ const tools = [
           }
         },
         required: ["query"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_employee_daily_activity",
-      description: "Get a summary of an employee's activity (how many leads they updated, grouped by lead status) for a specific date.",
-      parameters: {
-        type: "object",
-        properties: {
-          emp_name: {
-            type: "string",
-            description: "The exact name of the employee (e.g. 'Kajal Goyal')"
-          },
-          date: {
-            type: "string",
-            description: "The date in YYYY-MM-DD format (e.g., '2026-06-09')"
-          }
-        },
-        required: ["emp_name", "date"]
       }
     }
   }
@@ -147,9 +181,180 @@ async function executeTool(toolCall, userId, isAdmin) {
     // Ignore parse error
   }
   
-  const scope = isAdmin && args.scope === 'all' ? 'all' : 'me';
+  const scope = isAdmin && args.scope === 'all' ? 'all' : (isAdmin ? 'all' : 'me');
   
   try {
+    if (name === 'get_daily_team_activity_summary') {
+      const { targetDate, startUtc, endUtc } = getIstDateRange(args.date);
+
+      // Fetch audit logs for the day
+      let allAudit = [];
+      let page = 0;
+      while (true) {
+        let q = supabase
+          .from('audit_logs')
+          .select('id, emp_name, email, user_id, action, target, created_at')
+          .gte('created_at', startUtc)
+          .lte('created_at', endUtc)
+          .range(page * 1000, (page + 1) * 1000 - 1);
+        
+        if (scope === 'me') {
+          q = q.eq('user_id', userId);
+        }
+
+        const { data, error } = await q;
+        if (error || !data || data.length === 0) break;
+        allAudit = allAudit.concat(data);
+        if (data.length < 1000) break;
+        page++;
+      }
+
+      // Fetch lead notes for the day
+      const { data: todayNotes } = await supabase
+        .from('lead_notes')
+        .select('id, lead_id, note_text, created_by, created_at')
+        .gte('created_at', startUtc)
+        .lte('created_at', endUtc);
+
+      // Group by employee
+      const employees = {};
+
+      allAudit.forEach(log => {
+        const emp = log.emp_name || log.email || 'System User';
+        if (!employees[emp]) {
+          employees[emp] = {
+            emp_name: emp,
+            total_actions: 0,
+            leads_created_count: 0,
+            leads_created_sample: [],
+            stage_changes_count: 0,
+            stage_breakdown: {},
+            leads_assigned_count: 0,
+            follow_ups_set_count: 0,
+            notes_count: 0
+          };
+        }
+        employees[emp].total_actions++;
+
+        if (log.action === 'Create Lead') {
+          employees[emp].leads_created_count++;
+          if (employees[emp].leads_created_sample.length < 5) {
+            employees[emp].leads_created_sample.push(log.target.replace(/^Created New Lead:\s*/i, ''));
+          }
+        } else if (log.action === 'Stage Changed') {
+          employees[emp].stage_changes_count++;
+          const match = log.target.match(/to\s+"([^"]+)"/i);
+          const stageName = match ? match[1].split('>').pop() || match[1] : 'Updated';
+          employees[emp].stage_breakdown[stageName] = (employees[emp].stage_breakdown[stageName] || 0) + 1;
+        } else if (log.action === 'Assign Lead') {
+          employees[emp].leads_assigned_count++;
+        } else if (log.action === 'Set Follow-up' || (log.target && log.target.toLowerCase().includes('follow-up'))) {
+          employees[emp].follow_ups_set_count++;
+        }
+      });
+
+      (todayNotes || []).forEach(note => {
+        const noteAuthor = note.created_by || 'Unknown';
+        let matchedKey = Object.keys(employees).find(e => e.toLowerCase().includes(noteAuthor.toLowerCase()) || noteAuthor.toLowerCase().includes(e.toLowerCase()));
+        if (!matchedKey) {
+          if (scope === 'all' || noteAuthor.toLowerCase().includes(userId.toLowerCase())) {
+            matchedKey = noteAuthor;
+            employees[matchedKey] = {
+              emp_name: matchedKey,
+              total_actions: 0,
+              leads_created_count: 0,
+              leads_created_sample: [],
+              stage_changes_count: 0,
+              stage_breakdown: {},
+              leads_assigned_count: 0,
+              follow_ups_set_count: 0,
+              notes_count: 0
+            };
+          }
+        }
+        if (matchedKey && employees[matchedKey]) {
+          employees[matchedKey].notes_count++;
+        }
+      });
+
+      const employeeList = Object.values(employees).sort((a, b) => (b.total_actions + b.notes_count) - (a.total_actions + a.notes_count));
+
+      return JSON.stringify({
+        date: targetDate,
+        total_team_actions: allAudit.length,
+        total_notes_written: (todayNotes || []).length,
+        active_employees_count: employeeList.length,
+        employees_summary: employeeList
+      });
+    }
+
+    if (name === 'get_employee_daily_activity') {
+      const { targetDate, startUtc, endUtc } = getIstDateRange(args.date);
+      const empSearch = (args.emp_name || '').trim();
+
+      // Query audit logs
+      const { data: empLogs } = await supabase
+        .from('audit_logs')
+        .select('id, emp_name, action, target, created_at')
+        .gte('created_at', startUtc)
+        .lte('created_at', endUtc)
+        .or(`emp_name.ilike.%${empSearch}%,email.ilike.%${empSearch}%`)
+        .order('created_at', { ascending: false });
+
+      // Query lead notes
+      const { data: empNotes } = await supabase
+        .from('lead_notes')
+        .select('id, lead_id, note_text, created_by, created_at')
+        .gte('created_at', startUtc)
+        .lte('created_at', endUtc)
+        .ilike('created_by', `%${empSearch}%`)
+        .order('created_at', { ascending: false });
+
+      const logsList = empLogs || [];
+      const notesList = empNotes || [];
+
+      if (logsList.length === 0 && notesList.length === 0) {
+        return JSON.stringify({
+          employee: empSearch,
+          date: targetDate,
+          summary: `No activity recorded for ${empSearch} on ${targetDate}.`
+        });
+      }
+
+      const stageBreakdown = {};
+      const leadsCreated = [];
+      const leadsAssigned = [];
+      const followUpsSet = [];
+
+      logsList.forEach(log => {
+        if (log.action === 'Create Lead') {
+          leadsCreated.push(log.target.replace(/^Created New Lead:\s*/i, ''));
+        } else if (log.action === 'Stage Changed') {
+          const match = log.target.match(/to\s+"([^"]+)"/i);
+          const stageName = match ? match[1].split('>').pop() || match[1] : 'Updated';
+          stageBreakdown[stageName] = (stageBreakdown[stageName] || 0) + 1;
+        } else if (log.action === 'Assign Lead') {
+          leadsAssigned.push(log.target);
+        } else if (log.action === 'Set Follow-up') {
+          followUpsSet.push(log.target);
+        }
+      });
+
+      return JSON.stringify({
+        employee: empSearch,
+        date: targetDate,
+        total_actions: logsList.length,
+        total_notes: notesList.length,
+        leads_created_count: leadsCreated.length,
+        leads_created_sample: leadsCreated.slice(0, 10),
+        stage_changes_count: Object.values(stageBreakdown).reduce((a, b) => a + b, 0),
+        stage_breakdown: stageBreakdown,
+        leads_assigned_count: leadsAssigned.length,
+        notes_sample: notesList.slice(0, 5).map(n => n.note_text),
+        recent_activity_logs: logsList.slice(0, 15).map(l => ({ action: l.action, detail: l.target, time: l.created_at }))
+      });
+    }
+
     if (name === 'get_leads_summary' || name === 'get_my_leads_summary') {
       let allData = [];
       let page = 0;
@@ -181,7 +386,7 @@ async function executeTool(toolCall, userId, isAdmin) {
 
       let query = supabase
         .from('leads')
-        .select('id, created_at, lead_ref_id, name, company, phone, business_contact_1, email, status, follow_up_date, requirement');
+        .select('lead_ref_id, name, company, phone, status, assigned_to, follow_up_date, requirement');
         
       if (isUUID) {
         query = query.eq('id', q);
@@ -222,11 +427,11 @@ async function executeTool(toolCall, userId, isAdmin) {
     }
     
     if (name === 'get_recent_follow_ups') {
-      const today = new Date().toISOString().split('T')[0];
+      const { targetDate } = getIstDateRange();
       let query = supabase
         .from('leads')
-        .select('id, name, company, phone, status, follow_up_date')
-        .lte('follow_up_date', today)
+        .select('lead_ref_id, name, company, phone, status, assigned_to, follow_up_date')
+        .lte('follow_up_date', targetDate)
         .neq('status', 'Converted')
         .order('follow_up_date', { ascending: true })
         .limit(15);
@@ -239,11 +444,11 @@ async function executeTool(toolCall, userId, isAdmin) {
     }
     
     if (name === 'get_leads_by_date') {
-      // Find leads created on that date or follow up date is that date
+      const { targetDate, startUtc, endUtc } = getIstDateRange(args.date);
       let query = supabase
         .from('leads')
-        .select('id, name, company, phone, status, follow_up_date, created_at')
-        .or(`and(created_at.gte.${args.date}T00:00:00.000Z,created_at.lte.${args.date}T23:59:59.999Z),follow_up_date.eq.${args.date}`)
+        .select('lead_ref_id, name, company, phone, status, assigned_to, follow_up_date, created_at')
+        .or(`and(created_at.gte.${startUtc},created_at.lte.${endUtc}),follow_up_date.eq.${targetDate}`)
         .order('created_at', { ascending: false })
         .limit(20);
         
@@ -251,41 +456,7 @@ async function executeTool(toolCall, userId, isAdmin) {
         
       const { data, error } = await query;
       if (error) throw error;
-      return JSON.stringify({ leads: data, date: args.date, scope_applied: scope });
-    }
-    
-    if (name === 'get_employee_daily_activity') {
-      const startOfDay = args.date + 'T00:00:00.000Z';
-      const endOfDay = args.date + 'T23:59:59.999Z';
-      
-      const { data: notes, error: notesError } = await supabase
-        .from('lead_notes')
-        .select('lead_id, note_text')
-        .ilike('created_by', `%${args.emp_name}%`)
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay);
-        
-      if (notesError) throw notesError;
-      
-      if (!notes || notes.length === 0) {
-        return JSON.stringify({ summary: "No activity found for this employee on this date." });
-      }
-      
-      const leadIds = [...new Set(notes.map(n => n.lead_id))];
-      
-      const { data: leads, error: leadsError } = await supabase
-        .from('leads')
-        .select('id, status')
-        .in('id', leadIds);
-        
-      if (leadsError) throw leadsError;
-      
-      const summary = leads.reduce((acc, lead) => {
-        acc[lead.status] = (acc[lead.status] || 0) + 1;
-        return acc;
-      }, {});
-      
-      return JSON.stringify({ total_leads_interacted: leadIds.length, status_summary: summary, total_actions: notes.length });
+      return JSON.stringify({ leads: data, date: targetDate, scope_applied: scope });
     }
     
     return JSON.stringify({ error: 'Tool not found' });
@@ -408,29 +579,36 @@ export async function POST(req) {
       console.error('RAG Error:', err);
     }
 
+    const currentIstDateStr = new Date(Date.now() + 5.5 * 3600000).toISOString().split('T')[0];
+    const currentIstFormatted = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
     let currentMessages = [
       { 
         role: 'system', 
         content: `You are New Swan AI, an extremely smart and adaptive professional CRM assistant. You have FULL VISION CAPABILITIES and can analyze data, text, and uploaded images perfectly. 
-Current Date and Time (IST): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}${knowledgeContext}
+Current Date and Time (IST): ${currentIstFormatted} (Date: ${currentIstDateStr})${knowledgeContext}
 - If the user uploads an image, YOU MUST LOOK AT THE IMAGE and describe it or answer questions about it. Do not say you cannot see it.
 - Use the search_users tool to look up details about any specific employee, agent, or team member mentioned by the user (e.g. "Who is Sujit Kumar Gupta?").
 - Read and respect the user's intent.${isPremiumFallback ? ' Note: The user has reached their premium model limit, so you are running on a fallback basic model.' : ''}
 - You are STRICTLY FORBIDDEN from generating, drawing, or attempting to create images under any circumstances.
-- You have access to tools that fetch live CRM data. When a user asks about their leads, use the tools.
-- CRITICAL: BEFORE using the search_leads tool, ALWAYS check the "COMPANY KNOWLEDGE BASE" section (if provided above). If the requested information (like company contact details, policies, etc.) is in the knowledge base, use that instead of searching for a lead!
+- You have access to tools that fetch live CRM data. When a user asks about their leads or team activity, USE THE TOOLS IMMEDIATELY.
+- CRITICAL: Whenever the user asks for daily summary, work summary, employee performance, "aaj ka summary", "daily report", "kaun kya kam kia", "aaj ka kaam", ALWAYS CALL 'get_daily_team_activity_summary' or 'get_employee_daily_activity'! NEVER say no activity was recorded without calling these tools first!
+- CRITICAL: BEFORE using the search_leads tool, check if the request is about general company information in the knowledge base.
+- NEVER display raw database UUIDs (e.g. 'f87f583e-67dd-4d5b-9627-254ca5e65640') in user responses. Display Lead Ref ID (or Lead ID / Company Name) instead.
 ${isAdmin ? "- YOU ARE TALKING TO AN ADMIN. You have the super-power to view data for the ENTIRE TEAM. If the admin asks for team data or 'all' leads, set the scope to 'all' in your tools." : "- You ONLY see data belonging to the logged-in user."}
 
 IMPORTANT BEHAVIORAL RULES:
 1. ALWAYS adapt your tone and language to match the user. If they use short, casual phrases, you reply concisely. 
-2. HINGLISH RULE: If the user speaks in Hinglish (Hindi written in English alphabet, e.g. "kya haal hai"), you MUST reply in natural, conversational WhatsApp-style Hinglish. 
-   - DO NOT use stiff, formal Hindi transliterations (e.g., avoid "karya karne mein saksham").
-   - DO NOT use phonetic spellings with diacritics (e.g., write "Computer" instead of "Kampyūtar" or "Kampyutar").
-   - Use standard English spellings for common English loan words (e.g., "Computer", "Data", "Internet", "Keyboard").
-   - Use natural conversational phrasing (e.g., "Computer ek electronic device hai jo data ko process karta hai").
+2. HINGLISH RULE: If the user speaks in Hinglish (Hindi written in English alphabet, e.g. "aaj ka Summary do employee wise kaun kya kam kia h"), you MUST reply in natural, conversational WhatsApp-style Hinglish. 
+   - DO NOT use stiff, formal Hindi transliterations.
+   - DO NOT use phonetic spellings with diacritics.
+   - Use standard English spellings for common English loan words (e.g., "Leads", "Calls", "Summary", "Stages", "Follow-ups").
+   - Structure daily summaries with a clean Markdown summary table:
+     | Employee | Total Actions | Leads Created | Stage / Call Updates | Notes / Follow-ups |
+     Followed by crisp, clear bullet points highlighting key contributions for active employees.
 3. ALWAYS structure your responses using advanced, beautiful Markdown formatting:
    - Use clear, descriptive headings (e.g. ### or ####) for different sections.
-   - Use bullet points (*) or numbered lists (1.) for paragraphs containing lists or points. Do NOT write list items as plain text or space-separated text blocks.
+   - Use bullet points (*) or numbered lists (1.) for paragraphs containing lists or points.
    - Whenever you present tabular data, statistics, comparisons, lists of products, or user details, YOU MUST use a clean Markdown table format (| Header | Header |) instead of plain paragraphs.
    - Use bold text (**text**) for emphasis on important metrics, names, or terms.
    - Keep your layout extremely clean, organized, and highly readable so it is easy for users to scan and comprehend instantly. NEVER use raw HTML tags like <br> in your responses.`

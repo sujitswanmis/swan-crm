@@ -712,7 +712,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 1rem 1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>
             <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {showTrash ? 'Recycle Bin' : 'Recent History'}
@@ -728,7 +728,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
           
           {sessions.filter(s => showTrash ? s.isDeleted : !s.isDeleted).map(session => (
             <div key={session.id} style={{ 
-              position: 'relative', display: 'flex', alignItems: 'center', width: '100%', gap: '0.25rem',
+              position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, gap: '0.25rem',
               background: (!showTrash && currentSessionId === session.id) ? 'var(--nav-active-bg)' : 'transparent',
               borderRadius: '8px'
             }}>
@@ -741,7 +741,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
-                  flex: 1, background: 'transparent',
+                  flex: 1, minWidth: 0, background: 'transparent',
                   border: 'none', borderRadius: '8px', cursor: showTrash ? 'default' : 'pointer', textAlign: 'left',
                   color: (!showTrash && currentSessionId === session.id) ? 'var(--accent-color)' : 'var(--text-primary)',
                   fontWeight: (!showTrash && currentSessionId === session.id) ? '600' : 'normal'
@@ -760,10 +760,10 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                       if (e.key === 'Enter') saveTitle(session.id);
                       if (e.key === 'Escape') setRenamingSessionId(null);
                     }}
-                    style={{ flex: 1, border: '1px solid var(--accent-color)', borderRadius: '4px', padding: '0.1rem 0.25rem', fontSize: '0.9rem', outline: 'none', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+                    style={{ flex: 1, minWidth: 0, border: '1px solid var(--accent-color)', borderRadius: '4px', padding: '0.1rem 0.25rem', fontSize: '0.9rem', outline: 'none', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                   />
                 ) : (
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem' }}>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', minWidth: 0, flex: 1 }}>
                     {session.title}
                   </span>
                 )}
@@ -930,7 +930,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                   padding: msg.role === 'user' ? '0.85rem 1.1rem' : '0.25rem 0',
                   borderRadius: msg.role === 'user' ? '1.25rem' : '0',
                   borderBottomRightRadius: msg.role === 'user' ? '0.35rem' : '1.25rem',
-                  overflowX: 'auto', position: 'relative'
+                  position: 'relative'
                 }}>
                   {msg.role === 'ai' ? (
                     (() => {
