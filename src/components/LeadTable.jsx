@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -17,6 +17,7 @@ import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
+import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import Papa from 'papaparse';
 
 const extractStatusFromNoteText = (noteText) => {
@@ -78,7 +79,7 @@ const getLeadPhoneNumbers = (lead) => {
   return unique;
 };
 
-const processLeads = (rawLeads) => {
+const processLeads = (rawLeads, teamMembers = []) => {
   return (rawLeads || []).map((lead, i) => {
     const notes = Array.isArray(lead.lead_notes) 
       ? [...lead.lead_notes].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) 
@@ -123,9 +124,9 @@ const processLeads = (rawLeads) => {
     const trueRemarks = manualNotes.filter(n => !n.note_text.startsWith('Follow-up scheduled for: ') && !n.note_text.startsWith('Lead assigned to: ') && n.note_text !== 'Client Registration Form Submitted' && n.note_text !== 'Profile updated' && n.note_text !== 'Client Profile was updated.');
     if (trueRemarks.length > 0) {
       latestRemark = trueRemarks[0].note_text;
-      latestEmpName = trueRemarks[0].created_by || 'Agent';
+      latestEmpName = normalizeEmployeeName(trueRemarks[0].created_by || 'Agent', teamMembers);
     } else if (manualNotes.length > 0) {
-      latestEmpName = manualNotes[0].created_by || 'Agent';
+      latestEmpName = normalizeEmployeeName(manualNotes[0].created_by || 'Agent', teamMembers);
     }
 
     let duration = 0;
@@ -139,12 +140,23 @@ const processLeads = (rawLeads) => {
       lastTimestamp = notes[0].created_at;
     }
 
+    const stateName = normalizeStateName(lead.state_name || lead.state || '');
+    const districtName = normalizeDistrictName(lead.district_name || lead.district || '');
+    const cityName = normalizeCityName(lead.city_name || lead.city || '');
+    const createdBy = normalizeEmployeeName(lead.created_by, teamMembers);
+    const entryBy = normalizeEmployeeName(lead.entry_by, teamMembers);
+
     return { 
       ...lead, 
       sr_no: i + 1,
       last_status: lastStatus,
       latest_remark: latestRemark,
       latest_emp_name: latestEmpName,
+      state_name: stateName,
+      district_name: districtName,
+      city_name: cityName,
+      created_by: createdBy,
+      entry_by: entryBy,
       completion_count: manualNotes.length,
       last_follow_up_duration: duration,
       last_timestamp: lastTimestamp,
@@ -202,7 +214,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       assigned_to: valToSet,
       lead_notes: [...(lead.lead_notes || []), newNote]
     };
-    const processed = processLeads([updatedRawLead])[0];
+    const processed = processLeads([updatedRawLead], teamMembers)[0];
     if (info.table.options.meta?.updateLeadInState) {
       info.table.options.meta.updateLeadInState(processed);
     }
@@ -318,7 +330,7 @@ const LeadStatusCell = React.memo(({ info }) => {
       ...updates,
       lead_notes: [newNote, ...(lead.lead_notes || [])]
     };
-    const processed = processLeads([updatedRawLead])[0];
+    const processed = processLeads([updatedRawLead], teamMembers)[0];
     if (info.table.options.meta?.updateLeadInState) {
       info.table.options.meta.updateLeadInState(processed);
     }
@@ -648,7 +660,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
 
-  const [data, setData] = useState(() => processLeads(initialData || []));
+  const [data, setData] = useState(() => processLeads(initialData || [], teamMembers));
 
   const stagePrefix = stageFilter ? stageFilter.split(' - ')[0].replace(/^0/, '') + ';' : null;
   const showStage = (prefix) => !stagePrefix || stagePrefix === prefix;
@@ -676,8 +688,8 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [globalFilter, setGlobalFilter] = useState('');
   
   useEffect(() => {
-    setData(processLeads(initialData || []));
-  }, [initialData]);
+    setData(processLeads(initialData || [], teamMembers));
+  }, [initialData, teamMembers]);
 
   useEffect(() => {
     if (searchQuery !== undefined && searchQuery !== null) {
@@ -862,6 +874,17 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   // Phase 3: Column Filter UI State
   const [activeFilterColumn, setActiveFilterColumn] = useState(null);
   const [filterSearchText, setFilterSearchText] = useState('');
+
+  const activeFilterCount = (columnFilters?.length || 0) + (globalFilter ? 1 : 0);
+
+  const handleClearAllFilters = () => {
+    setColumnFilters([]);
+    setGlobalFilter('');
+    setActiveFilterColumn(null);
+    setFilterSearchText('');
+    table.resetColumnFilters();
+    table.resetGlobalFilter();
+  };
   
   const getUniqueValues = (columnId) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -878,6 +901,23 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         const val = row.original[columnId];
         const member = teamMembers.find(m => m.user_id === val);
         return member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
+      }
+      if (columnId === 'state_name') {
+        const val = row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state;
+        return normalizeStateName(val);
+      }
+      if (columnId === 'district_name') {
+        const val = row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district;
+        return normalizeDistrictName(val);
+      }
+      if (columnId === 'city_name') {
+        const val = row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city;
+        return normalizeCityName(val);
+      }
+      if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+        const teamMembers = table.options.meta?.teamMembers || [];
+        const val = row.getValue(columnId) || row.original[columnId];
+        return normalizeEmployeeName(val, teamMembers);
       }
       if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
         return formatDateTime(row.original[columnId]);
@@ -898,7 +938,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       return val !== null && val !== undefined && val !== '' ? String(val) : '';
     });
     
-    return [...new Set(vals.filter(Boolean))].sort();
+    return [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   };
 
   const multiSelectFilter = (row, columnId, filterValue) => {
@@ -910,6 +950,23 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       const teamMembers = table.options.meta?.teamMembers || [];
       const member = teamMembers.find(m => m.user_id === val);
       val = member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
+    } else if (columnId === 'state_name') {
+      val = normalizeStateName(val || row.original.state_name || row.original.state || row.original.business_state);
+      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeStateName(f));
+      return normalizedFilters.includes(val);
+    } else if (columnId === 'district_name') {
+      val = normalizeDistrictName(val || row.original.district_name || row.original.district || row.original.business_district);
+      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeDistrictName(f));
+      return normalizedFilters.includes(val);
+    } else if (columnId === 'city_name') {
+      val = normalizeCityName(val || row.original.city_name || row.original.city || row.original.business_city);
+      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeCityName(f));
+      return normalizedFilters.includes(val);
+    } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+      const teamMembers = table.options.meta?.teamMembers || [];
+      val = normalizeEmployeeName(val || row.original[columnId], teamMembers);
+      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeEmployeeName(f, teamMembers));
+      return normalizedFilters.includes(val);
     } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
       if (typeof filterValue === 'string' && filterValue.includes('-')) {
         const rawDate = row.original[columnId];
@@ -947,7 +1004,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         return val.startsWith(f) || val === f;
       });
     }
-    return filters.some(f => val.includes(f) || val === f);
+    return filters.includes(val);
   };
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
@@ -1223,7 +1280,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       ...updates,
       lead_notes: [newNote, ...(lead.lead_notes || [])]
     };
-    const processed = processLeads([updatedRawLead])[0];
+    const processed = processLeads([updatedRawLead], teamMembers)[0];
     setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
     if (onLeadsChange) {
       onLeadsChange(processed);
@@ -1282,15 +1339,16 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       
       {/* Search, Filters, and Export Header */}
-      <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary)' }}>
+      <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.75rem 1rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary)' }}>
         
-        <div style={{ display: 'flex', gap: '1rem', flex: 1, minWidth: '300px' }}>
+        {/* Left Side: Search, Status Filter & Clear Filters (Stays unified) */}
+        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', flex: '1 1 auto', minWidth: 'fit-content' }}>
           <input 
             type="text" 
             placeholder="🔍 Search name, email, phone..." 
             value={globalFilter ?? ''}
             onChange={e => setGlobalFilter(e.target.value)}
-            style={{ flex: 1, padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '200px' }}
+            style={{ padding: '0.55rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '180px', width: '220px', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
           />
           {(() => {
             const rawStatusFilter = table.getColumn('status')?.getFilterValue();
@@ -1302,7 +1360,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               <select 
                 value={scalarStatusFilter}
                 onChange={e => table.getColumn('status')?.setFilterValue(e.target.value || undefined)}
-                style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '150px' }}
+                style={{ padding: '0.55rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '140px', maxWidth: '200px', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
               >
                 {scalarStatusFilter === '__multiple__' && (
                   <option value="__multiple__" disabled>{`${rawStatusFilter.length} Statuses Selected`}</option>
@@ -1329,10 +1387,35 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             );
           })()}
 
+          {activeFilterCount > 0 && (
+            <button
+              onClick={handleClearAllFilters}
+              title="Reset all active column filters and search queries in one click"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.85rem',
+                borderRadius: '6px',
+                border: '1px solid #fca5a5',
+                background: '#fef2f2',
+                color: '#dc2626',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }}
+            >
+              <RotateCcw size={14} />
+              <span>Clear All Filters ({activeFilterCount})</span>
+            </button>
+          )}
 
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        {/* Right Side: Columns, Import/Export, Table/Tiles & Add Lead */}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
           
           <div style={{ position: 'relative' }}>
             <button 
@@ -2176,7 +2259,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
              // Process just this single lead to get its new formatted fields
              // Since processLeads expects an array of raw leads, we can pass it
              // and merge back into our data state
-             const processed = processLeads([updatedRawLead])[0];
+             const processed = processLeads([updatedRawLead], teamMembers)[0];
              setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
              setSelectedLead(processed);
           }}

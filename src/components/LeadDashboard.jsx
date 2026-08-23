@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import { 
   Users, UserCheck, AlertCircle, Clock, CheckCircle2, TrendingUp, 
-  PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check
+  PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check,
+  Search, ArrowUpDown
 } from 'lucide-react';
 
 const STAGE_COLORS = {
@@ -19,6 +20,16 @@ const STAGE_COLORS = {
   '06 - Conversion Stage': '#10b981',
   '07 - Final Stage': '#6366f1'
 };
+
+export const PIPELINE_STAGES = [
+  { num: 1, name: 'Stage 1', label: 'New', fullName: '01 - New Stage', color: '#3b82f6', bg: '#eff6ff' },
+  { num: 2, name: 'Stage 2', label: 'Contact', fullName: '02 - Contact Stage', color: '#06b6d4', bg: '#ecfeff' },
+  { num: 3, name: 'Stage 3', label: 'Qualification', fullName: '03 - Qualification Stage', color: '#8b5cf6', bg: '#f5f3ff' },
+  { num: 4, name: 'Stage 4', label: 'Follow Up', fullName: '04 - Follow Up Stage', color: '#f59e0b', bg: '#fffbeb' },
+  { num: 5, name: 'Stage 5', label: 'Sales Process', fullName: '05 - Sales Process Stage', color: '#ec4899', bg: '#fdf2f8' },
+  { num: 6, name: 'Stage 6', label: 'Conversion', fullName: '06 - Conversion Stage', color: '#10b981', bg: '#ecfdf5' },
+  { num: 7, name: 'Stage 7', label: 'Final Stage', fullName: '07 - Final Stage', color: '#6366f1', bg: '#eef2ff' },
+];
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
 
@@ -114,6 +125,127 @@ function isLeadInDateRange(lead, filterType, customStart, customEnd) {
   return true;
 }
 
+// Evaluates whether a single date timestamp falls within the selected date filter range
+function isDateWithinFilter(dateVal, filterType, customStart, customEnd) {
+  if (filterType === 'all') return true;
+  if (!dateVal) return false;
+  
+  const dStr = typeof dateVal === 'string' ? dateVal.split('T')[0] : getLocalDateStr(new Date(dateVal));
+  const todayStr = getLocalDateStr(new Date());
+  const now = new Date();
+
+  if (filterType === 'today') {
+    return dStr === todayStr;
+  }
+  if (filterType === 'yesterday') {
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    return dStr === getLocalDateStr(yest);
+  }
+  if (filterType === 'this_week') {
+    const currentDay = now.getDay();
+    const distanceToMon = (currentDay + 6) % 7;
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - distanceToMon);
+    const monStr = getLocalDateStr(mon);
+    return dStr >= monStr && dStr <= todayStr;
+  }
+  if (filterType === 'last_week') {
+    const currentDay = now.getDay();
+    const distanceToMon = (currentDay + 6) % 7;
+    const thisMon = new Date(now);
+    thisMon.setDate(now.getDate() - distanceToMon);
+    const lastMon = new Date(thisMon);
+    lastMon.setDate(thisMon.getDate() - 7);
+    const lastSun = new Date(thisMon);
+    lastSun.setDate(thisMon.getDate() - 1);
+    return dStr >= getLocalDateStr(lastMon) && dStr <= getLocalDateStr(lastSun);
+  }
+  if (filterType === 'this_month') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return dStr >= getLocalDateStr(monthStart) && dStr <= todayStr;
+  }
+  if (filterType === 'last_month') {
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    return dStr >= getLocalDateStr(lastMonthStart) && dStr <= getLocalDateStr(lastMonthEnd);
+  }
+  if (filterType === 'custom') {
+    if (customStart && dStr < customStart) return false;
+    if (customEnd && dStr > customEnd) return false;
+    return true;
+  }
+  return true;
+}
+
+// Extracts numerical employee ID (4 to 6 digits) from strings like "Nitya Verma - 50745" or "50745"
+function extractEmpId(str) {
+  if (!str) return null;
+  const match = String(str).match(/\b(\d{4,6})\b/);
+  return match ? match[1] : null;
+}
+
+// Matches an employee identifier against a team member object (supports name variations, emp IDs, emails, UUIDs)
+function isMatchingEmployee(identifier, member) {
+  if (!identifier || !member) return false;
+  const idStr = String(identifier).trim().toLowerCase();
+  const mId = String(member.user_id || member.id || '').trim().toLowerCase();
+  const mName = String(member.emp_name || '').trim().toLowerCase();
+  const mEmail = String(member.email || '').trim().toLowerCase();
+  const mPrefix = mEmail ? mEmail.split('@')[0].toLowerCase() : '';
+  const mEmpId = String(member.emp_id || member.emp_code || '').trim().toLowerCase();
+
+  // 1. Direct ID / UUID match
+  if (mId && idStr === mId) return true;
+
+  // 2. Direct Name / Email / Prefix match
+  if (mName && idStr === mName) return true;
+  if (mEmail && idStr === mEmail) return true;
+  if (mPrefix && idStr === mPrefix) return true;
+
+  // 3. Employee Code / ID matching (e.g. "50745" matches "Nitya - 50745" and "Nitya Verma - 50745")
+  const idCode = extractEmpId(idStr);
+  const memberCode = mEmpId || extractEmpId(mName) || extractEmpId(mId);
+  if (idCode && memberCode && idCode === memberCode) return true;
+
+  // 4. Exact Employee ID match
+  if (mEmpId && idStr === mEmpId) return true;
+
+  return false;
+}
+
+// Maps lead status string to numeric stage 1 through 7
+function getStageNumber(status) {
+  if (!status) return 1;
+  const st = String(status).trim();
+  if (st.startsWith('1;') || st.startsWith('01') || st === 'New' || st === 'Pending') return 1;
+  if (st.startsWith('2;') || st.startsWith('02')) return 2;
+  if (st.startsWith('3;') || st.startsWith('03')) return 3;
+  if (st.startsWith('4;') || st.startsWith('04')) return 4;
+  if (st.startsWith('5;') || st.startsWith('05')) return 5;
+  if (st.startsWith('6;') || st.startsWith('06')) return 6;
+  if (st.startsWith('7;') || st.startsWith('07') || ['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => st.toLowerCase().includes(k.toLowerCase()))) return 7;
+  
+  const match = st.match(/^0?([1-7])/);
+  if (match) return parseInt(match[1], 10);
+  return 1;
+}
+
+// Detects whether a lead note represents a stage or status update event
+function isStageChangeNote(noteText) {
+  if (!noteText || typeof noteText !== 'string') return false;
+  const lower = noteText.toLowerCase();
+  return (
+    lower.includes('status changed') ||
+    lower.includes('stage changed') ||
+    lower.includes('status updated') ||
+    lower.includes('stage updated') ||
+    lower.includes('status changed to') ||
+    lower.includes('status:') ||
+    /(?:status|stage)\s+(?:changed|updated)/i.test(noteText)
+  );
+}
+
 export default function LeadDashboard({ 
   leads = [], 
   teamMembers = [], 
@@ -138,6 +270,11 @@ export default function LeadDashboard({
   const [agentSearch, setAgentSearch] = useState('');
   const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
   const agentDropdownRef = useRef(null);
+
+  // Table search and sorting states for Team Lead Allocation & Action Summary
+  const [tableSearch, setTableSearch] = useState('');
+  const [tableSortKey, setTableSortKey] = useState('totalAssigned');
+  const [tableSortDir, setTableSortDir] = useState('desc');
 
   // Close employee dropdown when clicking outside
   useEffect(() => {
@@ -285,37 +422,164 @@ export default function LeadDashboard({
     });
   }, [relevantLeads]);
 
-  // Agent Performance Breakdown Matrix
-  const agentPerformance = useMemo(() => {
+  // Team Lead Allocation & Action Summary Matrix (Leads Created, Stage Changes, 7-Stage Breakdown, Total Assigned)
+  const teamAllocationSummary = useMemo(() => {
     if (!canViewAll) return [];
 
-    const map = {};
-    activeTeamMembers.forEach(m => {
-      map[m.user_id || m.id] = {
-        name: m.emp_name,
-        dept: m.emp_department || 'Sales',
-        assignedCount: 0,
-        dueFollowUps: 0,
-        conversions: 0
-      };
-    });
+    // Filter leads within active date range for created count and stage change activity
+    const dateFilteredLeads = leads.filter(l => isLeadInDateRange(l, dateRangeFilter, customStartDate, customEndDate));
 
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    relevantLeads.forEach(lead => {
-      if (lead.assigned_to && map[lead.assigned_to]) {
-        map[lead.assigned_to].assignedCount += 1;
-        if (lead.follow_up_date === todayStr) map[lead.assigned_to].dueFollowUps += 1;
-        if (lead.status && (lead.status.startsWith('06') || lead.status.startsWith('07'))) {
-          map[lead.assigned_to].conversions += 1;
+    return activeTeamMembers.map(member => {
+      // 1. Leads Created by this member strictly within the active date range
+      let leadsCreated = 0;
+      leads.forEach(lead => {
+        const isCreatedByMember = 
+          isMatchingEmployee(lead.created_by, member) ||
+          isMatchingEmployee(lead.entry_by, member) ||
+          (lead.user_id && isMatchingEmployee(lead.user_id, member));
+        
+        if (isCreatedByMember) {
+          const leadDate = lead.created_at || lead.lead_date;
+          if (isDateWithinFilter(leadDate, dateRangeFilter, customStartDate, customEndDate)) {
+            leadsCreated++;
+          }
         }
+      });
+
+      // 2. Stage Changes performed by this member strictly within the active date range
+      let stageChanges = 0;
+      leads.forEach(lead => {
+        (lead.lead_notes || []).forEach(note => {
+          if (isStageChangeNote(note.note_text) && isDateWithinFilter(note.created_at, dateRangeFilter, customStartDate, customEndDate)) {
+            const isNoteAuthor = isMatchingEmployee(note.created_by, member) ||
+              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) && isMatchingEmployee(lead.assigned_to, member));
+            if (isNoteAuthor) {
+              stageChanges++;
+            }
+          }
+        });
+      });
+
+      // 3. Notes Added (total remarks/communication notes) by this member strictly within the active date range
+      let notesAdded = 0;
+      leads.forEach(lead => {
+        (lead.lead_notes || []).forEach(note => {
+          if (isDateWithinFilter(note.created_at, dateRangeFilter, customStartDate, customEndDate)) {
+            const isNoteAuthor = isMatchingEmployee(note.created_by, member) ||
+              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) && isMatchingEmployee(lead.assigned_to, member));
+            if (isNoteAuthor) {
+              notesAdded++;
+            }
+          }
+        });
+      });
+
+      // 4. Stage Breakdown (Distribution of assigned leads across all 7 stages in current scope)
+      const memberAssignedLeads = relevantLeads.filter(lead => isMatchingEmployee(lead.assigned_to, member));
+
+      const stages = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+      memberAssignedLeads.forEach(lead => {
+        const stNum = getStageNumber(lead.status);
+        if (stages[stNum] !== undefined) {
+          stages[stNum]++;
+        } else {
+          stages[1]++;
+        }
+      });
+
+      const totalAssigned = memberAssignedLeads.length;
+
+      return {
+        id: member.user_id || member.id || member.emp_name,
+        name: member.emp_name,
+        dept: member.emp_department || 'Sales',
+        role: member.role || 'Member',
+        leadsCreated,
+        stageChanges,
+        notesAdded,
+        stage1: stages[1],
+        stage2: stages[2],
+        stage3: stages[3],
+        stage4: stages[4],
+        stage5: stages[5],
+        stage6: stages[6],
+        stage7: stages[7],
+        totalAssigned
+      };
+    }).filter(emp => (emp.leadsCreated > 0 || emp.stageChanges > 0 || emp.notesAdded > 0 || emp.totalAssigned > 0));
+  }, [canViewAll, leads, relevantLeads, activeTeamMembers, dateRangeFilter, customStartDate, customEndDate]);
+
+  const handleTableSort = (key) => {
+    if (tableSortKey === key) {
+      setTableSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTableSortKey(key);
+      setTableSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const filteredAndSortedTeamSummary = useMemo(() => {
+    let result = [...teamAllocationSummary];
+
+    // Search filter
+    if (tableSearch.trim()) {
+      const q = tableSearch.toLowerCase().trim();
+      result = result.filter(item => 
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.dept && item.dept.toLowerCase().includes(q))
+      );
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      let valA = a[tableSortKey];
+      let valB = b[tableSortKey];
+
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = (valB || '').toLowerCase();
+        return tableSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
+
+      valA = Number(valA) || 0;
+      valB = Number(valB) || 0;
+      return tableSortDir === 'asc' ? valA - valB : valB - valA;
     });
 
-    return Object.values(map)
-      .filter(a => a.assignedCount > 0 || a.dueFollowUps > 0)
-      .sort((a, b) => b.assignedCount - a.assignedCount);
-  }, [relevantLeads, activeTeamMembers, canViewAll]);
+    return result;
+  }, [teamAllocationSummary, tableSearch, tableSortKey, tableSortDir]);
+
+  const teamSummaryTotals = useMemo(() => {
+    const totals = {
+      leadsCreated: 0,
+      stageChanges: 0,
+      notesAdded: 0,
+      stage1: 0,
+      stage2: 0,
+      stage3: 0,
+      stage4: 0,
+      stage5: 0,
+      stage6: 0,
+      stage7: 0,
+      totalAssigned: 0
+    };
+
+    filteredAndSortedTeamSummary.forEach(item => {
+      totals.leadsCreated += item.leadsCreated;
+      totals.stageChanges += item.stageChanges;
+      totals.notesAdded += item.notesAdded;
+      totals.stage1 += item.stage1;
+      totals.stage2 += item.stage2;
+      totals.stage3 += item.stage3;
+      totals.stage4 += item.stage4;
+      totals.stage5 += item.stage5;
+      totals.stage6 += item.stage6;
+      totals.stage7 += item.stage7;
+      totals.totalAssigned += item.totalAssigned;
+    });
+
+    return totals;
+  }, [filteredAndSortedTeamSummary]);
 
   // Source Distribution Data
   const sourceData = useMemo(() => {
@@ -765,55 +1029,448 @@ export default function LeadDashboard({
 
       </div>
 
-      {/* Admin / Manager Team Performance Leaderboard Matrix */}
-      {canViewAll && agentPerformance.length > 0 && (
+      {/* Admin / Manager Team Performance & Stage Allocation Matrix */}
+      {canViewAll && teamAllocationSummary.length > 0 && (
         <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Users size={18} style={{ color: 'var(--accent-color)' }} />
-                Team Lead Allocation & Action Summary
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Users size={18} style={{ color: 'var(--accent-color)' }} />
+                  Team Lead Allocation & Action Summary
+                </h3>
+                <span style={{ fontSize: '0.72rem', background: dateRangeFilter === 'today' ? '#ecfdf5' : 'var(--bg-primary, #f8fafc)', color: dateRangeFilter === 'today' ? '#059669' : 'var(--text-secondary)', padding: '0.15rem 0.55rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontWeight: 600 }}>
+                  Period: {dateRangeFilter === 'all' ? 'All Time' : dateRangeFilter === 'today' ? 'Today' : dateRangeFilter === 'yesterday' ? 'Yesterday' : dateRangeFilter === 'this_week' ? 'This Week' : dateRangeFilter === 'last_week' ? 'Last Week' : dateRangeFilter === 'this_month' ? 'This Month' : dateRangeFilter === 'last_month' ? 'Last Month' : 'Custom Range'}
+                </span>
+              </div>
               <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Overview of assigned lead workloads and daily follow-up responsibilities by team member.
+                Overview of leads created, stage transitions, and pipeline stage breakdown across all team members.
               </p>
+            </div>
+
+            {/* In-table Search Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Search member..."
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  style={{
+                    padding: '0.4rem 0.65rem 0.4rem 1.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    width: '170px'
+                  }}
+                />
+              </div>
             </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
-                <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Agent Name</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Total Assigned</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Due Today</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Conversions</th>
+                {/* Primary Header Row */}
+                <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                  <th 
+                    rowSpan={2}
+                    onClick={() => handleTableSort('name')}
+                    title="Click to sort by Employee Name"
+                    style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-secondary)', 
+                      textAlign: 'left', 
+                      cursor: 'pointer', 
+                      verticalAlign: 'middle', 
+                      borderRight: '1px solid var(--border-light)', 
+                      minWidth: '180px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span>Employee Name</span>
+                      <ArrowUpDown size={13} style={{ opacity: tableSortKey === 'name' ? 1 : 0.35, color: tableSortKey === 'name' ? 'var(--accent-color)' : 'inherit' }} />
+                    </div>
+                  </th>
+
+                  <th 
+                    rowSpan={2}
+                    onClick={() => handleTableSort('leadsCreated')}
+                    title="Click to sort by Leads Created"
+                    style={{ 
+                      padding: '0.75rem 0.75rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-secondary)', 
+                      textAlign: 'center', 
+                      cursor: 'pointer', 
+                      verticalAlign: 'middle', 
+                      borderRight: '1px solid var(--border-light)', 
+                      minWidth: '110px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                      <span>Leads Created</span>
+                      <ArrowUpDown size={13} style={{ opacity: tableSortKey === 'leadsCreated' ? 1 : 0.35, color: tableSortKey === 'leadsCreated' ? 'var(--accent-color)' : 'inherit' }} />
+                    </div>
+                  </th>
+
+                  <th 
+                    rowSpan={2}
+                    onClick={() => handleTableSort('stageChanges')}
+                    title="Click to sort by Stage Changes"
+                    style={{ 
+                      padding: '0.75rem 0.75rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-secondary)', 
+                      textAlign: 'center', 
+                      cursor: 'pointer', 
+                      verticalAlign: 'middle', 
+                      borderRight: '1px solid var(--border-light)', 
+                      minWidth: '110px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                      <span>Stage Changes</span>
+                      <ArrowUpDown size={13} style={{ opacity: tableSortKey === 'stageChanges' ? 1 : 0.35, color: tableSortKey === 'stageChanges' ? 'var(--accent-color)' : 'inherit' }} />
+                    </div>
+                  </th>
+
+                  <th 
+                    rowSpan={2}
+                    onClick={() => handleTableSort('notesAdded')}
+                    title="Click to sort by Notes Added"
+                    style={{ 
+                      padding: '0.75rem 0.75rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-secondary)', 
+                      textAlign: 'center', 
+                      cursor: 'pointer', 
+                      verticalAlign: 'middle', 
+                      borderRight: '1px solid var(--border-light)', 
+                      minWidth: '95px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                      <span>Notes</span>
+                      <ArrowUpDown size={13} style={{ opacity: tableSortKey === 'notesAdded' ? 1 : 0.35, color: tableSortKey === 'notesAdded' ? 'var(--accent-color)' : 'inherit' }} />
+                    </div>
+                  </th>
+
+                  {/* Stage Breakdown Spanning Header */}
+                  <th 
+                    colSpan={7}
+                    style={{ 
+                      padding: '0.55rem 0.75rem', 
+                      fontWeight: 700, 
+                      color: 'var(--text-primary)', 
+                      textAlign: 'center', 
+                      borderRight: '1px solid var(--border-light)',
+                      borderBottom: '1px solid var(--border-light)',
+                      background: 'rgba(59, 130, 246, 0.04)',
+                      fontSize: '0.82rem',
+                      letterSpacing: '0.3px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                      <Layers size={14} style={{ color: 'var(--accent-color)' }} />
+                      <span>Stage Breakdown</span>
+                      <span style={{ fontSize: '0.72rem', background: 'var(--bg-surface)', padding: '0.1rem 0.45rem', borderRadius: '10px', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        Stages 1 – 7
+                      </span>
+                    </div>
+                  </th>
+
+                  <th 
+                    rowSpan={2}
+                    onClick={() => handleTableSort('totalAssigned')}
+                    title="Click to sort by Total Assigned Leads"
+                    style={{ 
+                      padding: '0.75rem 0.75rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-secondary)', 
+                      textAlign: 'center', 
+                      cursor: 'pointer', 
+                      verticalAlign: 'middle', 
+                      minWidth: '110px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                      <span>Total Assigned</span>
+                      <ArrowUpDown size={13} style={{ opacity: tableSortKey === 'totalAssigned' ? 1 : 0.35, color: tableSortKey === 'totalAssigned' ? 'var(--accent-color)' : 'inherit' }} />
+                    </div>
+                  </th>
+                </tr>
+
+                {/* Sub-Header Row: Individual Stage Columns 1 to 7 */}
+                <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                  {PIPELINE_STAGES.map(stage => {
+                    const key = `stage${stage.num}`;
+                    const isSorted = tableSortKey === key;
+                    return (
+                      <th
+                        key={stage.num}
+                        onClick={() => handleTableSort(key)}
+                        title={`Sort by ${stage.fullName}`}
+                        style={{
+                          padding: '0.45rem 0.4rem',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          borderRight: '1px solid var(--border-light)',
+                          minWidth: '85px',
+                          background: isSorted ? `${stage.color}15` : 'transparent',
+                          transition: 'background 0.15s',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
+                          <span style={{ 
+                            fontWeight: 700, 
+                            color: stage.color, 
+                            fontSize: '0.78rem',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.2rem' 
+                          }}>
+                            {stage.name}
+                            {isSorted && <span style={{ fontSize: '0.65rem' }}>{tableSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </span>
+                          <span style={{ fontSize: '0.67rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                            {stage.label}
+                          </span>
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
+
               <tbody>
-                {agentPerformance.map((agent, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{agent.name}</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{agent.dept}</td>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>
-                      <span style={{ padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#eff6ff', color: '#2563eb', fontSize: '0.82rem' }}>
-                        {agent.assignedCount} leads
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <span style={{ padding: '0.2rem 0.6rem', borderRadius: '12px', background: agent.dueFollowUps > 0 ? '#fef3c7' : '#f1f5f9', color: agent.dueFollowUps > 0 ? '#d97706' : '#64748b', fontSize: '0.82rem', fontWeight: 600 }}>
-                        {agent.dueFollowUps}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <span style={{ padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#d1fae5', color: '#059669', fontSize: '0.82rem', fontWeight: 600 }}>
-                        {agent.conversions}
-                      </span>
+                {filteredAndSortedTeamSummary.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No matching team members found.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredAndSortedTeamSummary.map((item, idx) => {
+                    const initials = (item.name || 'U')
+                      .split(' ')
+                      .filter(Boolean)
+                      .map(p => p[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase();
+
+                    return (
+                      <tr 
+                        key={item.id || idx}
+                        style={{ 
+                          borderBottom: '1px solid var(--border-light)',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.015)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {/* Employee Name & Dept */}
+                        <td style={{ padding: '0.65rem 1rem', borderRight: '1px solid var(--border-light)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                            <div style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '8px',
+                              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                              color: '#ffffff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              flexShrink: 0
+                            }}>
+                              {initials}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.86rem' }}>
+                                {item.name}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                                {item.dept}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Leads Created */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                          {item.leadsCreated > 0 ? (
+                            <span style={{ 
+                              padding: '0.2rem 0.6rem', 
+                              borderRadius: '12px', 
+                              background: '#ecfdf5', 
+                              color: '#059669', 
+                              fontSize: '0.82rem', 
+                              fontWeight: 700,
+                              display: 'inline-block'
+                            }}>
+                              {item.leadsCreated}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)', opacity: 0.35, fontSize: '0.82rem' }}>0</span>
+                          )}
+                        </td>
+
+                        {/* Stage Changes */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                          {item.stageChanges > 0 ? (
+                            <span style={{ 
+                              padding: '0.2rem 0.6rem', 
+                              borderRadius: '12px', 
+                              background: '#f5f3ff', 
+                              color: '#7c3aed', 
+                              fontSize: '0.82rem', 
+                              fontWeight: 700,
+                              display: 'inline-block'
+                            }}>
+                              {item.stageChanges}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)', opacity: 0.35, fontSize: '0.82rem' }}>0</span>
+                          )}
+                        </td>
+
+                        {/* Notes Added */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                          {item.notesAdded > 0 ? (
+                            <span style={{ 
+                              padding: '0.2rem 0.6rem', 
+                              borderRadius: '12px', 
+                              background: '#fffbeb', 
+                              color: '#d97706', 
+                              fontSize: '0.82rem', 
+                              fontWeight: 700,
+                              display: 'inline-block'
+                            }}>
+                              {item.notesAdded}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)', opacity: 0.35, fontSize: '0.82rem' }}>0</span>
+                          )}
+                        </td>
+
+                        {/* Stage Breakdown 1 to 7 */}
+                        {PIPELINE_STAGES.map(stage => {
+                          const count = item[`stage${stage.num}`] || 0;
+                          return (
+                            <td 
+                              key={stage.num} 
+                              style={{ 
+                                padding: '0.55rem 0.4rem', 
+                                textAlign: 'center', 
+                                borderRight: '1px solid var(--border-light)' 
+                              }}
+                            >
+                              {count > 0 ? (
+                                <span 
+                                  onClick={() => onNavigateStage && onNavigateStage(stage.fullName)}
+                                  title={`View ${count} leads in ${stage.fullName}`}
+                                  style={{ 
+                                    padding: '0.2rem 0.55rem', 
+                                    borderRadius: '10px', 
+                                    background: stage.bg, 
+                                    color: stage.color, 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: 700,
+                                    display: 'inline-block',
+                                    cursor: onNavigateStage ? 'pointer' : 'default',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                    transition: 'transform 0.1s'
+                                  }}
+                                >
+                                  {count}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)', opacity: 0.3, fontSize: '0.8rem' }}>-</span>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {/* Total Assigned */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                          <span style={{ 
+                            padding: '0.2rem 0.65rem', 
+                            borderRadius: '12px', 
+                            background: '#eff6ff', 
+                            color: '#2563eb', 
+                            fontSize: '0.82rem', 
+                            fontWeight: 700,
+                            display: 'inline-block'
+                          }}>
+                            {item.totalAssigned}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
+
+              {/* Summary Totals Footer */}
+              {filteredAndSortedTeamSummary.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderTop: '2px solid var(--border-light)', fontWeight: 700 }}>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', borderRight: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>Total (Team Summary)</span>
+                        <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                          ({filteredAndSortedTeamSummary.length})
+                        </span>
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)', fontSize: '0.86rem' }}>
+                      {teamSummaryTotals.leadsCreated}
+                    </td>
+
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)', fontSize: '0.86rem' }}>
+                      {teamSummaryTotals.stageChanges}
+                    </td>
+
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)', fontSize: '0.86rem' }}>
+                      {teamSummaryTotals.notesAdded}
+                    </td>
+
+                    {PIPELINE_STAGES.map(stage => (
+                      <td 
+                        key={stage.num} 
+                        style={{ 
+                          padding: '0.75rem 0.4rem', 
+                          textAlign: 'center', 
+                          color: stage.color, 
+                          borderRight: '1px solid var(--border-light)',
+                          fontSize: '0.86rem' 
+                        }}
+                      >
+                        {teamSummaryTotals[`stage${stage.num}`]}
+                      </td>
+                    ))}
+
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#2563eb', fontSize: '0.86rem' }}>
+                      {teamSummaryTotals.totalAssigned}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

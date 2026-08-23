@@ -97,6 +97,36 @@ export const formatFollowUpDateTime = (dateVal) => {
   };
 };
 
+const KeepAliveTab = React.memo(
+  function KeepAliveTab({ isActive, isVisited, children, style = {} }) {
+    if (!isVisited) return null;
+    return (
+      <div
+        style={{
+          display: isActive ? 'flex' : 'none',
+          flex: 1,
+          minHeight: 0,
+          flexDirection: 'column',
+          height: '100%',
+          contain: isActive ? 'none' : 'strict',
+          contentVisibility: isActive ? 'visible' : 'hidden',
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 1. If the tab was inactive and remains inactive, completely skip rendering!
+    if (!prevProps.isActive && !nextProps.isActive) {
+      return true;
+    }
+    // 2. When the tab is active or toggling visibility, always re-render immediately for live realtime updates!
+    return false;
+  }
+);
+
 export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -149,6 +179,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLoadedCount, setSyncLoadedCount] = useState(0);
   const [syncTotalCount, setSyncTotalCount] = useState(0);
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([activeTab]));
+
+  useEffect(() => {
+    if (activeTab) {
+      setVisitedTabs(prev => {
+        if (prev.has(activeTab)) return prev;
+        const next = new Set(prev);
+        next.add(activeTab);
+        return next;
+      });
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     async function loadPermissions() {
@@ -907,7 +949,9 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       setLastScreenCapture(null);
     }
 
-    setActiveTab(tabId);
+    React.startTransition(() => {
+      setActiveTab(tabId);
+    });
     
     const newPath = `/${tabId}`;
 
@@ -2712,12 +2756,21 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             <PremiumProgressLoader message="Loading workspace" active={!isMounted} />
           ) : (
             <>
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && activeTab === 'dashboard' && (
+              {/* Dashboard */}
+              <KeepAliveTab 
+                isActive={activeTab === 'dashboard'} 
+                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && visitedTabs.has('dashboard')}
+              >
                 <ErrorBoundary>
                   <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'leads' && (
+              </KeepAliveTab>
+
+              {/* Leads Database */}
+              <KeepAliveTab 
+                isActive={activeTab === 'leads'} 
+                isVisited={visitedTabs.has('leads')}
+              >
                 <ErrorBoundary>
                   {loadingLeads ? (
                     <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
@@ -2725,11 +2778,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} onStageChange={handleStageChange} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
                   )}
                 </ErrorBoundary>
-              )}
+              </KeepAliveTab>
+
+              {/* Placeholders */}
               {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
               {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'recruiter' && (
+
+              {/* Recruiter */}
+              <KeepAliveTab 
+                isActive={activeTab === 'recruiter'} 
+                isVisited={visitedTabs.has('recruiter')}
+              >
                 <ErrorBoundary>
                   <RecruiterDashboard 
                     userRole={userRole} 
@@ -2739,14 +2799,26 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     isAdmin={userRole === 'admin' || userRole === 'Admin'}
                   />
                 </ErrorBoundary>
-              )}
+              </KeepAliveTab>
+
+              {/* Placeholders */}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'registration' && (
+
+              {/* Client Registration */}
+              <KeepAliveTab 
+                isActive={activeTab === 'registration'} 
+                isVisited={visitedTabs.has('registration')}
+              >
                 <ErrorBoundary>
                   <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'report' && (
+              </KeepAliveTab>
+
+              {/* Client Report */}
+              <KeepAliveTab 
+                isActive={activeTab === 'report'} 
+                isVisited={visitedTabs.has('report')}
+              >
                 <ErrorBoundary>
                   <ClientReport 
                     initialData={leads} 
@@ -2758,89 +2830,171 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     moduleAccess={moduleAccess}
                   />
                 </ErrorBoundary>
-              )}
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && activeTab === 'ai' && (
+              </KeepAliveTab>
+
+              {/* AI Assistant */}
+              <KeepAliveTab 
+                isActive={activeTab === 'ai'} 
+                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && visitedTabs.has('ai')}
+              >
                 <ErrorBoundary>
                   <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'aiadmin' && (
+              </KeepAliveTab>
+
+              {/* AI Admin */}
+              <KeepAliveTab 
+                isActive={activeTab === 'aiadmin'} 
+                isVisited={visitedTabs.has('aiadmin')}
+              >
                 <ErrorBoundary>
                   <AiAdminModule />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'aiknowledgebase' && (
+              </KeepAliveTab>
+
+              {/* AI Knowledge Base */}
+              <KeepAliveTab 
+                isActive={activeTab === 'aiknowledgebase'} 
+                isVisited={visitedTabs.has('aiknowledgebase')}
+              >
                 <ErrorBoundary>
                   <AIKnowledgeBaseModule />
                 </ErrorBoundary>
-              )}
-              {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && activeTab === 'callcenter' && (
+              </KeepAliveTab>
+
+              {/* Call Center */}
+              <KeepAliveTab 
+                isActive={activeTab === 'callcenter'} 
+                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && visitedTabs.has('callcenter')}
+              >
                 <ErrorBoundary>
                   <CallCenterModule userId={userId} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'calladmin' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+              </KeepAliveTab>
+
+              {/* Call Admin */}
+              <KeepAliveTab 
+                isActive={activeTab === 'calladmin'} 
+                isVisited={visitedTabs.has('calladmin') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view)}
+              >
                 <ErrorBoundary>
                   <CallAdminModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'aicallcenter' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+              </KeepAliveTab>
+
+              {/* AI Call Center */}
+              <KeepAliveTab 
+                isActive={activeTab === 'aicallcenter'} 
+                isVisited={visitedTabs.has('aicallcenter') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view)}
+              >
                 <ErrorBoundary>
                   <AiCallCenterModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'team' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+              </KeepAliveTab>
+
+              {/* Team Management */}
+              <KeepAliveTab 
+                isActive={activeTab === 'team'} 
+                isVisited={visitedTabs.has('team') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view)}
+              >
                 <ErrorBoundary>
                   <TeamManagement initialUsers={teamMembers} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'workplace' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view || moduleAccess['team']?.view) && (
+              </KeepAliveTab>
+
+              {/* Workplace */}
+              <KeepAliveTab 
+                isActive={activeTab === 'workplace'} 
+                isVisited={visitedTabs.has('workplace') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view || moduleAccess['team']?.view)}
+              >
                 <ErrorBoundary>
                   <UniversalWorkplaceModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'party' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['party']?.view || moduleAccess['team']?.view) && (
+              </KeepAliveTab>
+
+              {/* Party Master */}
+              <KeepAliveTab 
+                isActive={activeTab === 'party'} 
+                isVisited={visitedTabs.has('party') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['party']?.view || moduleAccess['team']?.view)}
+              >
                 <ErrorBoundary>
                   <PartyMasterModule />
                 </ErrorBoundary>
-              )}
-              {(activeTab === 'location_master' || activeTab === 'location_territory' || activeTab === 'location-master') && (
+              </KeepAliveTab>
+
+              {/* Location Management */}
+              <KeepAliveTab 
+                isActive={activeTab === 'location_master' || activeTab === 'location_territory' || activeTab === 'location-master'} 
+                isVisited={visitedTabs.has('location_master') || visitedTabs.has('location_territory') || visitedTabs.has('location-master')}
+              >
                 <ErrorBoundary>
                   <LocationManagementModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'public_users' && (userRole === 'admin' || userRole === 'Admin' || moduleAccess['public_users']?.view) && (
+              </KeepAliveTab>
+
+              {/* Public Users */}
+              <KeepAliveTab 
+                isActive={activeTab === 'public_users'} 
+                isVisited={visitedTabs.has('public_users') && (userRole === 'admin' || userRole === 'Admin' || moduleAccess['public_users']?.view)}
+              >
                 <ErrorBoundary>
                   <PublicUserManagement />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'whatsapp_official' && (
+              </KeepAliveTab>
+
+              {/* WhatsApp Official */}
+              <KeepAliveTab 
+                isActive={activeTab === 'whatsapp_official'} 
+                isVisited={visitedTabs.has('whatsapp_official')}
+              >
                 <ErrorBoundary>
                   <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'whatsapp_unofficial' && (
+              </KeepAliveTab>
+
+              {/* WhatsApp Unofficial */}
+              <KeepAliveTab 
+                isActive={activeTab === 'whatsapp_unofficial'} 
+                isVisited={visitedTabs.has('whatsapp_unofficial')}
+              >
                 <ErrorBoundary>
                   <WhatsappUnofficialModule userRole={userRole} userId={userId} moduleAccess={moduleAccess} />
                 </ErrorBoundary>
-              )}
+              </KeepAliveTab>
+
+              {/* Placeholders */}
               {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
               {activeTab === 'rcs_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>RCS Configuration (Coming Soon)</h2><p>API setup and webhook configurations for RCS messaging.</p></div>}
-              {activeTab === 'email_config' && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+
+              {/* Email Config */}
+              <KeepAliveTab 
+                isActive={activeTab === 'email_config'} 
+                isVisited={visitedTabs.has('email_config') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view)}
+              >
                 <ErrorBoundary>
                   <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'admin_message_config' && (
+              </KeepAliveTab>
+
+              {/* Admin Message Config */}
+              <KeepAliveTab 
+                isActive={activeTab === 'admin_message_config'} 
+                isVisited={visitedTabs.has('admin_message_config')}
+              >
                 <ErrorBoundary>
                   <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
-              {activeTab === 'settings' && (
+              </KeepAliveTab>
+
+              {/* Settings */}
+              <KeepAliveTab 
+                isActive={activeTab === 'settings'} 
+                isVisited={visitedTabs.has('settings')}
+              >
                 <ErrorBoundary>
                   <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
-              )}
+              </KeepAliveTab>
             </>
           )}
         </div>

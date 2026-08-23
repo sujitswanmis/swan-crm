@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
+import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send } from 'lucide-react';
 
 export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
@@ -92,7 +93,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     if (!newNote.trim()) return;
 
     const { data: { user } } = await supabase.auth.getUser();
-    const actor = userName || user?.email?.split('@')[0] || 'Agent';
+    const actor = normalizeEmployeeName(userName || user?.email?.split('@')[0] || 'Agent');
 
     const { data: inserted, error } = await supabase
       .from('lead_notes')
@@ -190,14 +191,15 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
   };
 
   const handleSaveEdit = async () => {
-    const { error: updateError } = await supabase.from('leads').update(editForm).eq('id', lead.id);
+    const cleanForm = normalizeLeadRecord({ ...editForm });
+    const { error: updateError } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
     if (updateError) {
       alert("Error saving changes: " + updateError.message);
       return;
     }
     
     const { data: { user } } = await supabase.auth.getUser();
-    const actor = userName || user?.email?.split('@')[0] || 'System';
+    const actor = normalizeEmployeeName(userName || user?.email?.split('@')[0] || 'System');
     
     // Log history
     const { error: noteError } = await supabase.from('lead_notes').insert([{
@@ -214,7 +216,7 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     } catch(e) { console.error('Audit Log failed', e); }
 
     if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, ...editForm });
+      onLeadUpdate({ ...lead, ...cleanForm });
     }
     
     setIsEditing(false);

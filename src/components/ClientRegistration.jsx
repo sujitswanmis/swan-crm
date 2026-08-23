@@ -8,6 +8,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
+import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -820,11 +821,11 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const actor = user?.email?.split('@')[0] || 'Unknown';
+      const actor = normalizeEmployeeName(user?.email?.split('@')[0] || 'Unknown', teamMembers);
       
-      const payload = {
+      const payload = normalizeLeadRecord({
         ...formData
-      };
+      }, teamMembers);
       
       // Convert empty strings back to null ONLY for date/uuid fields to avoid breaking NOT NULL text constraints
       for (const key in payload) {
@@ -1210,7 +1211,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         const chunk = filteredImportData.slice(i, i + chunkSize);
         // Strip out internal preview metadata before inserting into Supabase
         const cleanChunk = chunk.map(r => {
-          const copy = { ...r };
+          const copy = normalizeLeadRecord({ ...r }, teamMembers);
           delete copy._rowNum;
           delete copy._isDuplicate;
           return copy;
