@@ -963,21 +963,36 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     }
   };
 
-  const handleStageChange = (stage) => {
+  const handleStageChange = (stage, subtab = null) => {
     setLeadsFilterStage(stage);
     
     const params = new URLSearchParams(window.location.search);
     if (stage) {
       params.set('stage', stage);
       localStorage.setItem('crmActiveStage', stage);
+      if (subtab) {
+        params.set('subtab', subtab);
+        localStorage.setItem('crm_lead_dashboard_subtab', subtab);
+      } else if (stage === 'hourly_work') {
+        params.set('subtab', 'hourly');
+        localStorage.setItem('crm_lead_dashboard_subtab', 'hourly');
+      } else if (stage === 'lead_dashboard' || stage === 'dashboard') {
+        const existingSub = params.get('subtab') || localStorage.getItem('crm_lead_dashboard_subtab') || 'overview';
+        params.set('subtab', existingSub);
+      }
     } else {
       params.set('stage', 'all');
+      params.delete('subtab');
       localStorage.removeItem('crmActiveStage');
     }
     
     // Update URL instantly
     const queryString = params.toString() ? `?${params.toString()}` : '';
     window.history.pushState(null, '', `${window.location.pathname}${queryString}`);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('popstate'));
+    }
   };
 
   const handleLogout = async () => {
@@ -1553,16 +1568,35 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                                 const dashboardAccess = moduleAccess?.lead_dashboard || {};
                                 const isAdmin = userRole === 'admin' || userRole === 'Admin';
                                 const canSeeDashboard = isAdmin || leadsAccess.view !== false || dashboardAccess.view || leadsAccess.is_manager || (leadsAccess.assigned_steps || []).includes('lead_dashboard');
+                                const canSeeHourly = isAdmin || leadsAccess.is_manager || (leadsAccess.view !== false && leadsAccess.sub_items?.hourly_work?.view !== false);
                                 if (!canSeeDashboard) return null;
 
                                 return (
-                                  <button
-                                    onClick={() => { handleTabChange('leads'); handleStageChange('lead_dashboard'); }}
-                                    className="submenu-item"
-                                    data-active={activeTab === 'leads' && (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard')}
-                                  >
-                                    📊 Lead Dashboard
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => { 
+                                        handleTabChange('leads'); 
+                                        handleStageChange('lead_dashboard', 'overview'); 
+                                      }}
+                                      className="submenu-item"
+                                      data-active={activeTab === 'leads' && (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard')}
+                                    >
+                                      📊 Lead Dashboard
+                                    </button>
+                                    {canSeeHourly && (
+                                      <button
+                                        onClick={() => { 
+                                          handleTabChange('leads'); 
+                                          handleStageChange('hourly_work', 'hourly');
+                                        }}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'leads' && leadsFilterStage === 'hourly_work'}
+                                        style={{ fontSize: '0.82rem', paddingLeft: '1.75rem', opacity: 0.9 }}
+                                      >
+                                        ⏰ Hourly Work
+                                      </button>
+                                    )}
+                                  </>
                                 );
                               })()}
 
@@ -1883,9 +1917,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 <h1 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0 }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
-                    leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard' 
-                      ? 'Lead Dashboard' 
-                      : (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads')
+                    leadsFilterStage === 'hourly_work' 
+                      ? 'Hourly Work Report'
+                      : (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard' 
+                        ? 'Lead Dashboard' 
+                        : (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads'))
                   )}
                   {activeTab === 'orders' && 'Order Management'}
                   {activeTab === 'mrp' && 'MRP System'}

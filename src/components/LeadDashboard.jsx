@@ -74,8 +74,16 @@ function getLocalDateStr(d = new Date()) {
 function getLocalHour(dateVal) {
   if (!dateVal) return null;
   const d = new Date(dateVal);
-  if (isNaN(d.getTime())) return null;
-  return d.getHours();
+  if (!isNaN(d.getTime())) return d.getHours();
+  if (typeof dateVal === 'string' && dateVal.includes(':')) {
+    const parts = dateVal.split(' ');
+    const timePart = parts.find(p => p.includes(':'));
+    if (timePart) {
+      const h = parseInt(timePart.split(':')[0], 10);
+      if (!isNaN(h)) return h;
+    }
+  }
+  return null;
 }
 
 function getSlotIdForHour(hour) {
@@ -137,9 +145,27 @@ function getDateFilterBounds(filterType, customStart, customEnd) {
 }
 
 function checkDateWithinBounds(dateVal, bounds) {
-  if (bounds.isAll) return true;
+  if (!bounds || bounds.isAll) return true;
   if (!dateVal) return false;
-  const dStr = typeof dateVal === 'string' ? dateVal.split('T')[0] : getLocalDateStr(new Date(dateVal));
+  let dStr = '';
+  if (typeof dateVal === 'string') {
+    if (dateVal.includes('T')) {
+      dStr = getLocalDateStr(new Date(dateVal));
+    } else if (dateVal.includes('/')) {
+      const parts = dateVal.split(' ')[0].split('/');
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          dStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        } else if (parts[0].length === 4) {
+          dStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+    } else {
+      dStr = dateVal.split(' ')[0];
+    }
+  } else {
+    dStr = getLocalDateStr(new Date(dateVal));
+  }
   return dStr >= bounds.start && dStr <= bounds.end;
 }
 
@@ -223,6 +249,7 @@ export default function LeadDashboard({
   userId = '', 
   userName = '', 
   moduleAccess = {}, 
+  defaultTab,
   onNavigateStage, 
   onOpenProfile 
 }) {
@@ -242,8 +269,87 @@ export default function LeadDashboard({
   const [agentSearch, setAgentSearch] = useState('');
   const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
   const agentDropdownRef = useRef(null);
-  // View Tab: 'overview' | 'hourly'
-  const [activeDashboardTab, setActiveDashboardTab] = useState('overview');
+
+  // View Tab: 'overview' | 'hourly' (Persisted in localStorage & URL query params)
+  const [activeDashboardTab, setActiveDashboardTab] = useState(() => {
+    if (defaultTab === 'hourly' || defaultTab === 'overview') {
+      return defaultTab;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const stageParam = urlParams.get('stage');
+        const subtabParam = urlParams.get('subtab') || urlParams.get('tab');
+        if (stageParam === 'hourly_work' || subtabParam === 'hourly') {
+          return 'hourly';
+        }
+        if (subtabParam === 'overview') {
+          return 'overview';
+        }
+        const saved = localStorage.getItem('crm_lead_dashboard_subtab');
+        if (saved === 'hourly' || saved === 'overview') {
+          return saved;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return 'overview';
+  });
+
+  // Sync when defaultTab prop changes from parent
+  useEffect(() => {
+    if (defaultTab && (defaultTab === 'hourly' || defaultTab === 'overview')) {
+      setActiveDashboardTab(defaultTab);
+    }
+  }, [defaultTab]);
+
+  // Sync activeDashboardTab with localStorage & URL
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('crm_lead_dashboard_subtab', activeDashboardTab);
+        const url = new URL(window.location.href);
+        const currentStage = url.searchParams.get('stage');
+        if (currentStage === 'lead_dashboard' || currentStage === 'dashboard') {
+          url.searchParams.set('subtab', activeDashboardTab);
+          window.history.replaceState({}, '', url.toString());
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [activeDashboardTab]);
+
+  // Fallback to overview if hourly access is not allowed
+  useEffect(() => {
+    if (!canViewHourlyWork && activeDashboardTab === 'hourly') {
+      setActiveDashboardTab('overview');
+    }
+  }, [canViewHourlyWork, activeDashboardTab]);
+
+  // Listen for external tab sync (e.g. from sidebar clicks or storage events)
+  useEffect(() => {
+    const handleSyncTab = () => {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const subtabParam = urlParams.get('subtab');
+        const saved = localStorage.getItem('crm_lead_dashboard_subtab');
+        const target = subtabParam || saved;
+        if ((target === 'hourly' || target === 'overview') && target !== activeDashboardTab) {
+          if (target === 'hourly' && !canViewHourlyWork) return;
+          setActiveDashboardTab(target);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleSyncTab);
+    window.addEventListener('popstate', handleSyncTab);
+    return () => {
+      window.removeEventListener('storage', handleSyncTab);
+      window.removeEventListener('popstate', handleSyncTab);
+    };
+  }, [activeDashboardTab, canViewHourlyWork]);
 
   // Table search and sorting states for Team Lead Allocation & Action Summary
   const [tableSearch, setTableSearch] = useState('');
@@ -329,7 +435,39 @@ export default function LeadDashboard({
       if (lookupMap.has(str)) return lookupMap.get(str);
       const code = extractEmpId(str);
       if (code && lookupMap.has(code)) return lookupMap.get(code);
-      return null;
+
+      // Check if identifier contains a name or partial match in memberEntries
+      for (let i = 0; i < memberEntries.length; i++) {
+        const e = memberEntries[i];
+        const eName = (e.name || '').toLowerCase();
+        if (eName && (eName.includes(str) || str.includes(eName))) {
+          lookupMap.set(str, e);
+          return e;
+        }
+      }
+
+      // Check if it's an automated system string
+      if (
+        str === 'system' || 
+        str.includes('webhook') || 
+        str.includes('bot') || 
+        str.includes('automation') ||
+        str === 'null' ||
+        str === 'undefined'
+      ) {
+        return null;
+      }
+
+      // Dynamic fallback member entry for admin / unlisted users (e.g. Sujit Gupta)
+      const cleanName = String(identifier).trim();
+      const dynamicEntry = {
+        id: cleanName,
+        name: cleanName,
+        dept: 'Management',
+        role: 'Admin'
+      };
+      lookupMap.set(str, dynamicEntry);
+      return dynamicEntry;
     };
 
     return { memberEntries, findMember };
@@ -517,23 +655,61 @@ export default function LeadDashboard({
       if (creator) {
         const leadDate = lead.created_at || lead.lead_date;
         if (checkDateWithinBounds(leadDate, dateBounds)) {
-          const item = summaryMap.get(creator.id);
-          if (item) item.leadsCreated++;
+          let item = summaryMap.get(creator.id);
+          if (!item) {
+            item = {
+              id: creator.id,
+              name: creator.name,
+              dept: creator.dept || 'Management',
+              role: creator.role || 'Admin',
+              leadsCreated: 0,
+              stageChanges: 0,
+              notesAdded: 0,
+              stage1: 0,
+              stage2: 0,
+              stage3: 0,
+              stage4: 0,
+              stage5: 0,
+              stage6: 0,
+              stage7: 0,
+              totalAssigned: 0
+            };
+            summaryMap.set(creator.id, item);
+          }
+          item.leadsCreated++;
         }
       }
 
       // 2. Assigned Leads & Stage breakdown
       const assignee = findMember(lead.assigned_to);
       if (assignee) {
-        const item = summaryMap.get(assignee.id);
-        if (item) {
-          item.totalAssigned++;
-          const stNum = getStageNumber(lead.status);
-          if (stNum >= 1 && stNum <= 7) {
-            item[`stage${stNum}`]++;
-          } else {
-            item.stage1++;
-          }
+        let item = summaryMap.get(assignee.id);
+        if (!item) {
+          item = {
+            id: assignee.id,
+            name: assignee.name,
+            dept: assignee.dept || 'Management',
+            role: assignee.role || 'Admin',
+            leadsCreated: 0,
+            stageChanges: 0,
+            notesAdded: 0,
+            stage1: 0,
+            stage2: 0,
+            stage3: 0,
+            stage4: 0,
+            stage5: 0,
+            stage6: 0,
+            stage7: 0,
+            totalAssigned: 0
+          };
+          summaryMap.set(assignee.id, item);
+        }
+        item.totalAssigned++;
+        const stNum = getStageNumber(lead.status);
+        if (stNum >= 1 && stNum <= 7) {
+          item[`stage${stNum}`]++;
+        } else {
+          item.stage1++;
         }
       }
 
@@ -555,12 +731,30 @@ export default function LeadDashboard({
               const isAssignmentLog = isSystemLogOrAssignmentNote(note.note_text);
               
               if (!isAssignmentLog) {
-                const item = summaryMap.get(noteAuthor.id);
-                if (item) {
-                  item.notesAdded++;
-                  if (isStageChange) {
-                    item.stageChanges++;
-                  }
+                let item = summaryMap.get(noteAuthor.id);
+                if (!item) {
+                  item = {
+                    id: noteAuthor.id,
+                    name: noteAuthor.name,
+                    dept: noteAuthor.dept || 'Management',
+                    role: noteAuthor.role || 'Admin',
+                    leadsCreated: 0,
+                    stageChanges: 0,
+                    notesAdded: 0,
+                    stage1: 0,
+                    stage2: 0,
+                    stage3: 0,
+                    stage4: 0,
+                    stage5: 0,
+                    stage6: 0,
+                    stage7: 0,
+                    totalAssigned: 0
+                  };
+                  summaryMap.set(noteAuthor.id, item);
+                }
+                item.notesAdded++;
+                if (isStageChange) {
+                  item.stageChanges++;
                 }
               }
             }
@@ -669,19 +863,24 @@ export default function LeadDashboard({
 
   // Single-pass computation for Hourly Work matrix
   const hourlyWorkData = useMemo(() => {
-    const { memberEntries, findMember } = memberIndex;
+    const { findMember } = memberIndex;
 
     const slotsMap = new Map();
     HOURLY_SLOTS.forEach(slot => {
-      const memberSubMap = new Map();
-      memberEntries.forEach(entry => {
-        memberSubMap.set(entry.id, {
-          id: entry.id,
-          name: entry.name,
-          dept: entry.dept,
-          role: entry.role,
-          slotId: slot.id,
-          slotLabel: slot.label,
+      slotsMap.set(slot.id, new Map());
+    });
+
+    const getOrCreateSlotMember = (subMap, author, slotId, slotLabel) => {
+      if (!subMap || !author) return null;
+      let item = subMap.get(author.id);
+      if (!item) {
+        item = {
+          id: author.id,
+          name: author.name,
+          dept: author.dept || 'Management',
+          role: author.role || 'Admin',
+          slotId: slotId,
+          slotLabel: slotLabel,
           leadsWorkedSet: new Set(),
           leadsWorked: 0,
           leadsCreated: 0,
@@ -697,10 +896,11 @@ export default function LeadDashboard({
           stage7: 0,
           totalActions: 0,
           totalAssigned: 0
-        });
-      });
-      slotsMap.set(slot.id, memberSubMap);
-    });
+        };
+        subMap.set(author.id, item);
+      }
+      return item;
+    };
 
     leads.forEach(lead => {
       // 1. Leads Created
@@ -712,7 +912,7 @@ export default function LeadDashboard({
 
         const slotMembers = slotsMap.get(slotId);
         if (slotMembers) {
-          const item = slotMembers.get(creator.id);
+          const item = getOrCreateSlotMember(slotMembers, creator, slotId, slotId);
           if (item) {
             item.leadsCreated++;
             item.totalActions++;
@@ -721,7 +921,7 @@ export default function LeadDashboard({
         }
         const allMembers = slotsMap.get('all');
         if (allMembers) {
-          const item = allMembers.get(creator.id);
+          const item = getOrCreateSlotMember(allMembers, creator, 'all', 'All Hours');
           if (item) {
             item.leadsCreated++;
             item.totalActions++;
@@ -736,7 +936,7 @@ export default function LeadDashboard({
         const stNum = getStageNumber(lead.status);
         const allMembers = slotsMap.get('all');
         if (allMembers) {
-          const item = allMembers.get(assignee.id);
+          const item = getOrCreateSlotMember(allMembers, assignee, 'all', 'All Hours');
           if (item) {
             item.totalAssigned++;
             if (stNum >= 1 && stNum <= 7) item[`stage${stNum}`]++;
@@ -771,7 +971,7 @@ export default function LeadDashboard({
                 // Specific slot
                 const slotMembers = slotsMap.get(slotId);
                 if (slotMembers) {
-                  const item = slotMembers.get(noteAuthor.id);
+                  const item = getOrCreateSlotMember(slotMembers, noteAuthor, slotId, slotId);
                   if (item) {
                     item.notesAdded++;
                     if (lead.id) item.leadsWorkedSet.add(lead.id);
@@ -789,7 +989,7 @@ export default function LeadDashboard({
                 // 'all' slot
                 const allMembers = slotsMap.get('all');
                 if (allMembers) {
-                  const item = allMembers.get(noteAuthor.id);
+                  const item = getOrCreateSlotMember(allMembers, noteAuthor, 'all', 'All Hours');
                   if (item) {
                     item.notesAdded++;
                     if (lead.id) item.leadsWorkedSet.add(lead.id);

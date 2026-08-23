@@ -636,7 +636,7 @@ const columns = [
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
 ];
 
-const LeadTableRow = React.memo(({ row, activeRowId, idx, onRowClick }) => {
+const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
   return (
     <tr 
       onClick={() => onRowClick(row.id)}
@@ -654,7 +654,7 @@ const LeadTableRow = React.memo(({ row, activeRowId, idx, onRowClick }) => {
       ))}
     </tr>
   );
-});
+};
 
 export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, onStageChange, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
@@ -1009,24 +1009,26 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
-  useEffect(() => {
-    if (stageFilter) {
-      const stagePrefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';'; // '01' -> '1;'
-      setColumnFilters(prev => {
-        const others = prev.filter(f => f.id !== 'status');
-        return [...others, { id: 'status', value: [stagePrefix] }];
-      });
-    } else if (stageFilter === null) {
-      // Clear status filter if it was set programmatically by a stage filter
-      setColumnFilters(prev => {
-        const hasStageFilter = prev.some(f => f.id === 'status' && f.value && f.value.length === 1 && f.value[0].endsWith(';'));
-        return hasStageFilter ? prev.filter(f => f.id !== 'status') : prev;
-      });
+  // Filter raw data by stageFilter directly at data level (avoids contaminating user columnFilters)
+  const stageFilteredData = useMemo(() => {
+    if (!stageFilter || stageFilter === 'all' || stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
+      return data;
     }
+    const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';'; // '01' -> '1;', '03' -> '3;'
+    return data.filter(lead => {
+      const st = lead.status || '';
+      if (prefix === '1;' && (!st || !/^[1-7];/.test(st))) return true;
+      return st.startsWith(prefix) || st === stageFilter;
+    });
+  }, [data, stageFilter]);
+
+  // Cleanly reset any active column filters when navigating between stage tabs
+  useEffect(() => {
+    setColumnFilters([]);
   }, [stageFilter]);
 
   const table = useReactTable({
-    data,
+    data: stageFilteredData,
     columns: finalColumns,
     autoResetPageIndex: false,
     state: {
@@ -1297,7 +1299,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     }).catch(err => console.error("WhatsApp Automation Error:", err));
   };
 
-  if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard') {
+  if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
     return (
       <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
         <LeadDashboard
@@ -1307,6 +1309,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           userId={userId}
           userName={userName}
           moduleAccess={moduleAccess}
+          defaultTab={stageFilter === 'hourly_work' ? 'hourly' : undefined}
           onNavigateStage={(stg) => {
             if (onStageChange) onStageChange(stg);
           }}
