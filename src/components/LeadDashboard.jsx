@@ -8,8 +8,22 @@ import {
 import { 
   Users, UserCheck, AlertCircle, Clock, CheckCircle2, TrendingUp, 
   PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check,
-  Search, ArrowUpDown, Timer, Activity
+  Search, ArrowUpDown, Timer, Activity, Eye, ExternalLink, FileText, Building2, User
 } from 'lucide-react';
+
+const formatActionTimestamp = (ts) => {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return String(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+};
+
+const formatActionDate = (ts) => {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const STAGE_COLORS = {
   '01 - New Stage': '#3b82f6',
@@ -62,6 +76,16 @@ function getLocalHour(dateVal) {
   const d = new Date(dateVal);
   if (isNaN(d.getTime())) return null;
   return d.getHours();
+}
+
+function getSlotIdForHour(hour) {
+  if (hour === null || hour === undefined) return 'h_other';
+  if (hour >= 9 && hour <= 19) {
+    const nextHour = hour + 1;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `h${pad(hour)}_${pad(nextHour)}`;
+  }
+  return 'h_other';
 }
 
 // Helper function for precomputed date bounds (O(1) checks without Date allocations)
@@ -172,6 +196,26 @@ function isStageChangeNote(noteText) {
   );
 }
 
+// Detects whether a lead note is an automated system log or lead assignment event (NOT a manual agent remark)
+function isSystemLogOrAssignmentNote(noteText) {
+  if (!noteText || typeof noteText !== 'string') return false;
+  const lower = noteText.toLowerCase().trim();
+  return (
+    lower.startsWith('lead assigned to') ||
+    lower.startsWith('assigned to') ||
+    lower.startsWith('lead reassigned to') ||
+    lower.startsWith('reassigned to') ||
+    lower.startsWith('follow-up scheduled for') ||
+    lower.includes('client registration form submitted') ||
+    lower.includes('profile updated') ||
+    lower.includes('client profile was updated') ||
+    lower.includes('auto-assigned') ||
+    lower.includes('bulk assigned') ||
+    lower.includes('imported via') ||
+    lower.includes('lead imported')
+  );
+}
+
 export default function LeadDashboard({ 
   leads = [], 
   teamMembers = [], 
@@ -185,6 +229,8 @@ export default function LeadDashboard({
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = Boolean(moduleAccess?.leads?.is_manager);
   const canViewAll = isAdmin || isManager;
+  const leadsAccess = moduleAccess?.leads || {};
+  const canViewHourlyWork = isAdmin || isManager || (leadsAccess.view !== false && leadsAccess.sub_items?.hourly_work?.view !== false);
 
   // Filter States
   const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'all', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'custom'
@@ -210,6 +256,21 @@ export default function LeadDashboard({
   const [hourlyTableSearch, setHourlyTableSearch] = useState('');
   const [hourlyTableSortKey, setHourlyTableSortKey] = useState('totalActions');
   const [hourlyTableSortDir, setHourlyTableSortDir] = useState('desc');
+
+  // Interactive Drilldown Popup state
+  const [hourlyDrilldown, setHourlyDrilldown] = useState(null);
+  const [drilldownSearch, setDrilldownSearch] = useState('');
+
+  // Close drilldown on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && hourlyDrilldown) {
+        setHourlyDrilldown(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hourlyDrilldown]);
 
   // Close employee dropdown when clicking outside
   useEffect(() => {
@@ -480,15 +541,26 @@ export default function LeadDashboard({
       if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
         lead.lead_notes.forEach(note => {
           if (checkDateWithinBounds(note.created_at, dateBounds)) {
-            const noteAuthor = findMember(note.created_by) || 
-              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) ? assignee : null);
+            const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
+            const isSystemLog = !rawAuthor || 
+              rawAuthor.toLowerCase() === 'system' || 
+              rawAuthor.toLowerCase().includes('webhook') || 
+              rawAuthor.toLowerCase().includes('bot') || 
+              rawAuthor.toLowerCase().includes('automation');
+
+            const noteAuthor = !isSystemLog ? findMember(rawAuthor) : null;
             
             if (noteAuthor) {
-              const item = summaryMap.get(noteAuthor.id);
-              if (item) {
-                item.notesAdded++;
-                if (isStageChangeNote(note.note_text)) {
-                  item.stageChanges++;
+              const isStageChange = isStageChangeNote(note.note_text);
+              const isAssignmentLog = isSystemLogOrAssignmentNote(note.note_text);
+              
+              if (!isAssignmentLog) {
+                const item = summaryMap.get(noteAuthor.id);
+                if (item) {
+                  item.notesAdded++;
+                  if (isStageChange) {
+                    item.stageChanges++;
+                  }
                 }
               }
             }
@@ -610,8 +682,11 @@ export default function LeadDashboard({
           role: entry.role,
           slotId: slot.id,
           slotLabel: slot.label,
+          leadsWorkedSet: new Set(),
+          leadsWorked: 0,
           leadsCreated: 0,
           stageChanges: 0,
+          remarksAdded: 0,
           notesAdded: 0,
           stage1: 0,
           stage2: 0,
@@ -627,17 +702,6 @@ export default function LeadDashboard({
       slotsMap.set(slot.id, memberSubMap);
     });
 
-    const getSlotIdForHour = (hour) => {
-      if (hour === null || hour === undefined) return 'h_other';
-      if (hour >= 9 && hour <= 19) {
-        const nextHour = hour + 1;
-        const pad = (n) => String(n).padStart(2, '0');
-        const candidate = `h${pad(hour)}_${pad(nextHour)}`;
-        if (slotsMap.has(candidate)) return candidate;
-      }
-      return 'h_other';
-    };
-
     leads.forEach(lead => {
       // 1. Leads Created
       const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
@@ -652,6 +716,7 @@ export default function LeadDashboard({
           if (item) {
             item.leadsCreated++;
             item.totalActions++;
+            if (lead.id) item.leadsWorkedSet.add(lead.id);
           }
         }
         const allMembers = slotsMap.get('all');
@@ -660,6 +725,7 @@ export default function LeadDashboard({
           if (item) {
             item.leadsCreated++;
             item.totalActions++;
+            if (lead.id) item.leadsWorkedSet.add(lead.id);
           }
         }
       }
@@ -683,39 +749,56 @@ export default function LeadDashboard({
       if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
         lead.lead_notes.forEach(note => {
           if (checkDateWithinBounds(note.created_at, dateBounds)) {
-            const noteAuthor = findMember(note.created_by) || 
-              ((note.created_by === 'System' || note.created_by === 'Agent' || !note.created_by) ? assignee : null);
+            const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
+            const isSystemLog = !rawAuthor || 
+              rawAuthor.toLowerCase() === 'system' || 
+              rawAuthor.toLowerCase().includes('webhook') || 
+              rawAuthor.toLowerCase().includes('bot') || 
+              rawAuthor.toLowerCase().includes('automation');
+
+            const noteAuthor = !isSystemLog ? findMember(rawAuthor) : null;
             
             if (noteAuthor) {
-              const hour = getLocalHour(note.created_at);
-              const slotId = getSlotIdForHour(hour);
               const isStageChange = isStageChangeNote(note.note_text);
-              const stNum = getStageNumber(lead.status);
+              const isAssignmentLog = isSystemLogOrAssignmentNote(note.note_text);
 
-              // Specific slot
-              const slotMembers = slotsMap.get(slotId);
-              if (slotMembers) {
-                const item = slotMembers.get(noteAuthor.id);
-                if (item) {
-                  item.notesAdded++;
-                  item.totalActions++;
-                  if (isStageChange) {
-                    item.stageChanges++;
-                    if (stNum >= 1 && stNum <= 7) item[`stage${stNum}`]++;
-                    else item.stage1++;
+              // Skip assignment and system logs from employee actions
+              if (!isAssignmentLog) {
+                const hour = getLocalHour(note.created_at);
+                const slotId = getSlotIdForHour(hour);
+                const stNum = getStageNumber(lead.status);
+
+                // Specific slot
+                const slotMembers = slotsMap.get(slotId);
+                if (slotMembers) {
+                  const item = slotMembers.get(noteAuthor.id);
+                  if (item) {
+                    item.notesAdded++;
+                    if (lead.id) item.leadsWorkedSet.add(lead.id);
+                    if (isStageChange) {
+                      item.stageChanges++;
+                      if (stNum >= 1 && stNum <= 7) item[`stage${stNum}`]++;
+                      else item.stage1++;
+                    } else {
+                      item.remarksAdded++;
+                    }
+                    item.totalActions = item.leadsCreated + item.stageChanges + item.remarksAdded;
                   }
                 }
-              }
 
-              // 'all' slot
-              const allMembers = slotsMap.get('all');
-              if (allMembers) {
-                const item = allMembers.get(noteAuthor.id);
-                if (item) {
-                  item.notesAdded++;
-                  item.totalActions++;
-                  if (isStageChange) {
-                    item.stageChanges++;
+                // 'all' slot
+                const allMembers = slotsMap.get('all');
+                if (allMembers) {
+                  const item = allMembers.get(noteAuthor.id);
+                  if (item) {
+                    item.notesAdded++;
+                    if (lead.id) item.leadsWorkedSet.add(lead.id);
+                    if (isStageChange) {
+                      item.stageChanges++;
+                    } else {
+                      item.remarksAdded++;
+                    }
+                    item.totalActions = item.leadsCreated + item.stageChanges + item.remarksAdded;
                   }
                 }
               }
@@ -725,19 +808,28 @@ export default function LeadDashboard({
       }
     });
 
+    // Populate leadsWorked counts from Set size
+    slotsMap.forEach(memberSubMap => {
+      memberSubMap.forEach(item => {
+        item.leadsWorked = item.leadsWorkedSet ? item.leadsWorkedSet.size : 0;
+      });
+    });
+
     // Chart Data for Hourly Trend
     const hourlyChartData = HOURLY_SLOTS.filter(s => s.id !== 'all').map(slot => {
       const memberSubMap = slotsMap.get(slot.id);
+      let totalWorked = 0;
       let totalCreated = 0;
       let totalStageChanges = 0;
-      let totalNotes = 0;
+      let totalRemarks = 0;
       let totalActions = 0;
 
       if (memberSubMap) {
         memberSubMap.forEach(item => {
+          totalWorked += item.leadsWorked;
           totalCreated += item.leadsCreated;
           totalStageChanges += item.stageChanges;
-          totalNotes += item.notesAdded;
+          totalRemarks += item.remarksAdded;
           totalActions += item.totalActions;
         });
       }
@@ -746,9 +838,10 @@ export default function LeadDashboard({
         slot: slot.shortLabel,
         fullName: slot.label,
         slotId: slot.id,
+        leadsWorked: totalWorked,
         leadsCreated: totalCreated,
         stageChanges: totalStageChanges,
-        notesAdded: totalNotes,
+        notesAdded: totalRemarks,
         totalActions
       };
     });
@@ -783,7 +876,7 @@ export default function LeadDashboard({
       }
 
       // Filter to only employees who had actions in this specific hour
-      const activeEmployees = employees.filter(e => e.totalActions > 0 || e.leadsCreated > 0 || e.stageChanges > 0 || e.notesAdded > 0);
+      const activeEmployees = employees.filter(e => e.totalActions > 0 || e.leadsCreated > 0 || e.stageChanges > 0 || e.notesAdded > 0 || e.leadsWorked > 0);
 
       // Sort
       activeEmployees.sort((a, b) => {
@@ -802,8 +895,10 @@ export default function LeadDashboard({
       });
 
       const totals = {
+        leadsWorked: 0,
         leadsCreated: 0,
         stageChanges: 0,
+        remarksAdded: 0,
         notesAdded: 0,
         stage1: 0,
         stage2: 0,
@@ -816,8 +911,10 @@ export default function LeadDashboard({
       };
 
       activeEmployees.forEach(e => {
+        totals.leadsWorked += e.leadsWorked;
         totals.leadsCreated += e.leadsCreated;
         totals.stageChanges += e.stageChanges;
+        totals.remarksAdded += e.remarksAdded;
         totals.notesAdded += e.notesAdded;
         totals.stage1 += e.stage1;
         totals.stage2 += e.stage2;
@@ -877,8 +974,10 @@ export default function LeadDashboard({
         role: member.role,
         slots: {},
         totalActions: 0,
+        totalWorked: 0,
         totalLeads: 0,
         totalStages: 0,
+        totalRemarks: 0,
         totalNotes: 0
       };
 
@@ -888,13 +987,17 @@ export default function LeadDashboard({
         const actions = memberData ? memberData.totalActions : 0;
         row.slots[slot.id] = {
           actions,
+          worked: memberData?.leadsWorked || 0,
           leads: memberData?.leadsCreated || 0,
           stages: memberData?.stageChanges || 0,
+          remarks: memberData?.remarksAdded || 0,
           notes: memberData?.notesAdded || 0
         };
         row.totalActions += actions;
+        row.totalWorked += (memberData?.leadsWorked || 0);
         row.totalLeads += (memberData?.leadsCreated || 0);
         row.totalStages += (memberData?.stageChanges || 0);
+        row.totalRemarks += (memberData?.remarksAdded || 0);
         row.totalNotes += (memberData?.notesAdded || 0);
       });
 
@@ -914,13 +1017,15 @@ export default function LeadDashboard({
     }
 
     list.sort((a, b) => b.totalActions - a.totalActions);
-    return list.filter(e => e.totalActions > 0);
+    return list.filter(e => e.totalActions > 0 || e.totalWorked > 0);
   }, [memberIndex, hourlyWorkData, selectedAgents, canViewAll, hourlyTableSearch]);
 
   const activeHourlyTotals = useMemo(() => {
     const totals = {
+      leadsWorked: 0,
       leadsCreated: 0,
       stageChanges: 0,
+      remarksAdded: 0,
       notesAdded: 0,
       stage1: 0,
       stage2: 0,
@@ -934,8 +1039,10 @@ export default function LeadDashboard({
     };
 
     flatHourlyRows.forEach(item => {
+      totals.leadsWorked += (item.leadsWorked || 0);
       totals.leadsCreated += item.leadsCreated;
       totals.stageChanges += item.stageChanges;
+      totals.remarksAdded += (item.remarksAdded || 0);
       totals.notesAdded += item.notesAdded;
       totals.stage1 += item.stage1;
       totals.stage2 += item.stage2;
@@ -959,6 +1066,176 @@ export default function LeadDashboard({
       setHourlyTableSortDir(key === 'name' ? 'asc' : 'desc');
     }
   };
+
+  // Helper to trigger interactive drilldown popup
+  const openDrilldown = (member, slot, metricKey, metricLabel) => {
+    setDrilldownSearch('');
+    setHourlyDrilldown({
+      member,
+      slotId: slot.id,
+      slotLabel: slot.label,
+      metricKey,
+      metricLabel
+    });
+  };
+
+  // Extract detailed action logs for the open drilldown modal
+  const drilldownItems = useMemo(() => {
+    if (!hourlyDrilldown) return [];
+    const { member, slotId, metricKey } = hourlyDrilldown;
+    const { findMember } = memberIndex;
+
+    const items = [];
+    const processedActionKeys = new Set();
+    const uniqueLeadsMap = new Map(); // Dedicated deduplication map for 'leadsWorked'
+
+    leads.forEach(lead => {
+      const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
+      const leadDate = lead.created_at || lead.lead_date;
+      const leadHour = getLocalHour(leadDate);
+      const leadSlotId = getSlotIdForHour(leadHour);
+
+      // 1. Lead Creation Action
+      if (creator && creator.id === member.id && checkDateWithinBounds(leadDate, dateBounds)) {
+        if (slotId === 'all' || slotId === leadSlotId) {
+          const isTargetStage = metricKey.startsWith('stage') && getStageNumber(lead.status) === Number(metricKey.replace('stage', ''));
+          const shouldInclude = 
+            metricKey === 'all' || 
+            metricKey === 'totalActions' || 
+            metricKey === 'leadsWorked' || 
+            metricKey === 'leadsCreated' ||
+            isTargetStage;
+
+          if (shouldInclude) {
+            const actionKey = `create-${lead.id}-${leadDate}`;
+            if (!processedActionKeys.has(actionKey)) {
+              processedActionKeys.add(actionKey);
+              const itemObj = {
+                id: actionKey,
+                type: 'create',
+                typeLabel: 'Lead Created',
+                typeBadgeColor: '#059669',
+                lead,
+                leadId: lead.lead_ref_id || lead.lead_id || lead.lead_no || (lead.id ? String(lead.id).slice(0, 8) : '—'),
+                businessName: lead.company || lead.company_name || lead.business_name || lead.firm_name || '—',
+                contactPerson: lead.name || lead.contact_person || lead.client_name || lead.customer_name || '—',
+                phone: lead.phone || lead.mobile || '—',
+                stage: lead.status || '01 - New Stage',
+                stageNum: getStageNumber(lead.status),
+                timestamp: leadDate,
+                noteText: lead.notes || lead.remarks || 'New lead registered in CRM',
+                author: creator.name
+              };
+
+              if (metricKey === 'leadsWorked') {
+                const leadKey = lead.id || lead.lead_ref_id;
+                if (leadKey && !uniqueLeadsMap.has(leadKey)) {
+                  uniqueLeadsMap.set(leadKey, itemObj);
+                }
+              } else {
+                items.push(itemObj);
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Notes & Stage Changes
+      if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
+        lead.lead_notes.forEach((note, nIdx) => {
+          if (checkDateWithinBounds(note.created_at, dateBounds)) {
+            const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
+            const isSystemLog = !rawAuthor || 
+              rawAuthor.toLowerCase() === 'system' || 
+              rawAuthor.toLowerCase().includes('webhook') || 
+              rawAuthor.toLowerCase().includes('bot') || 
+              rawAuthor.toLowerCase().includes('automation');
+
+            const noteAuthor = !isSystemLog ? findMember(rawAuthor) : null;
+
+            if (noteAuthor && noteAuthor.id === member.id) {
+              const noteHour = getLocalHour(note.created_at);
+              const noteSlotId = getSlotIdForHour(noteHour);
+
+              if (slotId === 'all' || slotId === noteSlotId) {
+                const isStageChange = isStageChangeNote(note.note_text);
+                const isAssignmentLog = isSystemLogOrAssignmentNote(note.note_text);
+
+                // Exclude system assignment logs from employee drilldown
+                if (isAssignmentLog) return;
+
+                const stNum = getStageNumber(lead.status);
+
+                let shouldInclude = false;
+                if (metricKey === 'all' || metricKey === 'totalActions' || metricKey === 'leadsWorked') {
+                  shouldInclude = true;
+                } else if (metricKey === 'stageChanges' && isStageChange) {
+                  shouldInclude = true;
+                } else if (metricKey === 'remarksAdded' && !isStageChange) {
+                  shouldInclude = true;
+                } else if (metricKey.startsWith('stage')) {
+                  const targetStNum = Number(metricKey.replace('stage', ''));
+                  shouldInclude = (stNum === targetStNum);
+                }
+
+                if (shouldInclude) {
+                  const actionKey = `note-${note.id || nIdx}-${note.created_at}`;
+                  if (!processedActionKeys.has(actionKey)) {
+                    processedActionKeys.add(actionKey);
+                    const itemObj = {
+                      id: actionKey,
+                      type: isStageChange ? 'stage_change' : 'remark',
+                      typeLabel: isStageChange ? 'Stage Change' : 'Remark Note',
+                      typeBadgeColor: isStageChange ? '#7c3aed' : '#d97706',
+                      lead,
+                      leadId: lead.lead_ref_id || lead.lead_id || lead.lead_no || (lead.id ? String(lead.id).slice(0, 8) : '—'),
+                      businessName: lead.company || lead.company_name || lead.business_name || lead.firm_name || '—',
+                      contactPerson: lead.name || lead.contact_person || lead.client_name || lead.customer_name || '—',
+                      phone: lead.phone || lead.mobile || '—',
+                      stage: lead.status || '01 - New Stage',
+                      stageNum: stNum,
+                      timestamp: note.created_at,
+                      noteText: note.note_text || '—',
+                      author: noteAuthor.name
+                    };
+
+                    if (metricKey === 'leadsWorked') {
+                      const leadKey = lead.id || lead.lead_ref_id;
+                      if (leadKey) {
+                        const existing = uniqueLeadsMap.get(leadKey);
+                        if (!existing || new Date(note.created_at || 0) > new Date(existing.timestamp || 0)) {
+                          uniqueLeadsMap.set(leadKey, itemObj);
+                        }
+                      }
+                    } else {
+                      items.push(itemObj);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    });
+
+    const resultList = metricKey === 'leadsWorked' ? Array.from(uniqueLeadsMap.values()) : items;
+    resultList.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    return resultList;
+  }, [hourlyDrilldown, leads, memberIndex, dateBounds]);
+
+  const filteredDrilldownItems = useMemo(() => {
+    if (!drilldownSearch.trim()) return drilldownItems;
+    const q = drilldownSearch.toLowerCase().trim();
+    return drilldownItems.filter(item => 
+      String(item.leadId).toLowerCase().includes(q) ||
+      String(item.businessName).toLowerCase().includes(q) ||
+      String(item.contactPerson).toLowerCase().includes(q) ||
+      String(item.phone).toLowerCase().includes(q) ||
+      String(item.stage).toLowerCase().includes(q) ||
+      String(item.noteText).toLowerCase().includes(q)
+    );
+  }, [drilldownItems, drilldownSearch]);
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-primary, #f8fafc)', minHeight: '100%' }}>
@@ -1211,38 +1488,40 @@ export default function LeadDashboard({
             <span>Overview & Pipeline</span>
           </button>
 
-          <button
-            onClick={() => setActiveDashboardTab('hourly')}
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: '8px',
-              border: activeDashboardTab === 'hourly' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
-              background: activeDashboardTab === 'hourly' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
-              color: activeDashboardTab === 'hourly' ? '#ffffff' : 'var(--text-secondary)',
-              fontWeight: activeDashboardTab === 'hourly' ? 700 : 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              fontSize: '0.85rem',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Timer size={15} />
-            <span>Hourly Work</span>
-            {hourlyWorkData.totalDayActions > 0 && (
-              <span style={{
-                background: activeDashboardTab === 'hourly' ? 'rgba(255,255,255,0.25)' : '#e0e7ff',
-                color: activeDashboardTab === 'hourly' ? '#ffffff' : '#3730a3',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '0.1rem 0.45rem',
-                borderRadius: '10px'
-              }}>
-                {hourlyWorkData.totalDayActions}
-              </span>
-            )}
-          </button>
+          {canViewHourlyWork && (
+            <button
+              onClick={() => setActiveDashboardTab('hourly')}
+              style={{
+                padding: '0.45rem 1rem',
+                borderRadius: '8px',
+                border: activeDashboardTab === 'hourly' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
+                background: activeDashboardTab === 'hourly' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
+                color: activeDashboardTab === 'hourly' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: activeDashboardTab === 'hourly' ? 700 : 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.85rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Timer size={15} />
+              <span>Hourly Work</span>
+              {hourlyWorkData.totalDayActions > 0 && (
+                <span style={{
+                  background: activeDashboardTab === 'hourly' ? 'rgba(255,255,255,0.25)' : '#e0e7ff',
+                  color: activeDashboardTab === 'hourly' ? '#ffffff' : '#3730a3',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '10px'
+                }}>
+                  {hourlyWorkData.totalDayActions}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
       </div>
@@ -2204,10 +2483,19 @@ export default function LeadDashboard({
 
                         {tSlot.hasActivity ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', fontSize: '0.78rem', fontWeight: 600 }}>
-                            <span style={{ color: '#059669' }}>Leads: <strong>{tSlot.totals.leadsCreated}</strong></span>
-                            <span style={{ color: '#7c3aed' }}>Stage Changes: <strong>{tSlot.totals.stageChanges}</strong></span>
-                            <span style={{ color: '#d97706' }}>Notes: <strong>{tSlot.totals.notesAdded}</strong></span>
-                            <span style={{ color: '#2563eb', background: '#eff6ff', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                            <span style={{ color: '#2563eb' }}>
+                              Leads Worked: <strong>{tSlot.totals.leadsWorked}</strong>
+                            </span>
+                            <span style={{ color: '#059669' }}>
+                              Created: <strong>{tSlot.totals.leadsCreated}</strong>
+                            </span>
+                            <span style={{ color: '#7c3aed' }}>
+                              Stage Changes: <strong>{tSlot.totals.stageChanges}</strong>
+                            </span>
+                            <span style={{ color: '#d97706' }}>
+                              Remarks: <strong>{tSlot.totals.remarksAdded}</strong>
+                            </span>
+                            <span style={{ color: '#1e40af', background: '#eff6ff', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
                               Total Actions: <strong>{tSlot.totals.totalActions}</strong>
                             </span>
                           </div>
@@ -2224,27 +2512,30 @@ export default function LeadDashboard({
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                             <thead>
                               <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
-                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '180px' }}>
+                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '170px' }}>
                                   Employee Name
                                 </th>
-                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                                <th style={{ padding: '0.6rem 0.65rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                                  Leads Worked
+                                </th>
+                                <th style={{ padding: '0.6rem 0.65rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
                                   Leads Created
                                 </th>
-                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                                <th style={{ padding: '0.6rem 0.65rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
                                   Stage Changes
                                 </th>
-                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}>
-                                  Notes
+                                <th style={{ padding: '0.6rem 0.65rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '80px' }}>
+                                  Remarks
                                 </th>
                                 {PIPELINE_STAGES.map(stg => (
-                                  <th key={stg.num} style={{ padding: '0.45rem 0.35rem', textAlign: 'center', fontWeight: 600, color: stg.color, borderRight: '1px solid var(--border-light)', fontSize: '0.72rem', minWidth: '42px' }}>
+                                  <th key={stg.num} style={{ padding: '0.45rem 0.35rem', textAlign: 'center', fontWeight: 600, color: stg.color, borderRight: '1px solid var(--border-light)', fontSize: '0.72rem', minWidth: '40px' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <span>S{stg.num}</span>
                                       <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{stg.label}</span>
                                     </div>
                                   </th>
                                 ))}
-                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)', background: 'rgba(59, 130, 246, 0.05)', minWidth: '100px' }}>
+                                <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)', background: 'rgba(59, 130, 246, 0.05)', minWidth: '95px' }}>
                                   Total Actions
                                 </th>
                               </tr>
@@ -2264,25 +2555,96 @@ export default function LeadDashboard({
                                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
                                       <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{emp.dept} • {emp.role}</div>
                                     </td>
-                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.leadsCreated > 0 ? 700 : 400, color: emp.leadsCreated > 0 ? '#059669' : 'var(--text-secondary)' }}>
-                                      {emp.leadsCreated > 0 ? emp.leadsCreated : '—'}
+
+                                    {/* Leads Worked Clickable Button */}
+                                    <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                                      {emp.leadsWorked > 0 ? (
+                                        <button
+                                          onClick={() => openDrilldown(emp, tSlot.slot, 'leadsWorked', 'Leads Worked')}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#2563eb', textDecoration: 'underline', textUnderlineOffset: '2px', fontSize: '0.84rem' }}
+                                          title="Click to view detailed Lead ID, Business Name, CP Name and Notes"
+                                        >
+                                          {emp.leadsWorked}
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                      )}
                                     </td>
-                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.stageChanges > 0 ? 700 : 400, color: emp.stageChanges > 0 ? '#7c3aed' : 'var(--text-secondary)' }}>
-                                      {emp.stageChanges > 0 ? emp.stageChanges : '—'}
+
+                                    {/* Leads Created Clickable Button */}
+                                    <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                                      {emp.leadsCreated > 0 ? (
+                                        <button
+                                          onClick={() => openDrilldown(emp, tSlot.slot, 'leadsCreated', 'Leads Created')}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#059669', textDecoration: 'underline', textUnderlineOffset: '2px', fontSize: '0.84rem' }}
+                                          title="Click to view Created Leads"
+                                        >
+                                          {emp.leadsCreated}
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                      )}
                                     </td>
-                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: emp.notesAdded > 0 ? 700 : 400, color: emp.notesAdded > 0 ? '#d97706' : 'var(--text-secondary)' }}>
-                                      {emp.notesAdded > 0 ? emp.notesAdded : '—'}
+
+                                    {/* Stage Changes Clickable Button */}
+                                    <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                                      {emp.stageChanges > 0 ? (
+                                        <button
+                                          onClick={() => openDrilldown(emp, tSlot.slot, 'stageChanges', 'Stage Changes')}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#7c3aed', textDecoration: 'underline', textUnderlineOffset: '2px', fontSize: '0.84rem' }}
+                                          title="Click to view Stage Changes"
+                                        >
+                                          {emp.stageChanges}
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                      )}
                                     </td>
-                                    {PIPELINE_STAGES.map(stg => {
-                                      const cnt = emp[`stage${stg.num}`] || 0;
+
+                                    {/* Remarks Clickable Button */}
+                                    <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                                      {emp.remarksAdded > 0 ? (
+                                        <button
+                                          onClick={() => openDrilldown(emp, tSlot.slot, 'remarksAdded', 'Remarks')}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#d97706', textDecoration: 'underline', textUnderlineOffset: '2px', fontSize: '0.84rem' }}
+                                          title="Click to view Remarks / Notes"
+                                        >
+                                          {emp.remarksAdded}
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Stages 1 to 7 Clickable Buttons */}
+                                    {PIPELINE_STAGES.map(stage => {
+                                      const cnt = emp[`stage${stage.num}`] || 0;
                                       return (
-                                        <td key={stg.num} style={{ padding: '0.55rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: cnt > 0 ? 600 : 400, color: cnt > 0 ? stg.color : 'var(--text-secondary)', background: cnt > 0 ? `${stg.color}08` : 'transparent' }}>
-                                          {cnt > 0 ? cnt : '—'}
+                                        <td key={stage.num} style={{ padding: '0.55rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', background: cnt > 0 ? `${stage.color}08` : 'transparent' }}>
+                                          {cnt > 0 ? (
+                                            <button
+                                              onClick={() => openDrilldown(emp, tSlot.slot, `stage${stage.num}`, stage.fullName)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.2rem', fontWeight: 700, color: stage.color, textDecoration: 'underline', textUnderlineOffset: '2px', fontSize: '0.82rem' }}
+                                              title={`Click to view ${stage.fullName} leads`}
+                                            >
+                                              {cnt}
+                                            </button>
+                                          ) : (
+                                            <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                          )}
                                         </td>
                                       );
                                     })}
-                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', background: 'rgba(59, 130, 246, 0.03)' }}>
-                                      {emp.totalActions}
+
+                                    {/* Total Actions Clickable Button */}
+                                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.03)' }}>
+                                      <button
+                                        onClick={() => openDrilldown(emp, tSlot.slot, 'all', 'All Actions')}
+                                        style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '6px', cursor: 'pointer', padding: '0.2rem 0.55rem', fontWeight: 800, color: '#1e40af', fontSize: '0.84rem' }}
+                                        title="Click to view detailed Action Logs popup"
+                                      >
+                                        {emp.totalActions}
+                                      </button>
                                     </td>
                                   </tr>
                                 );
@@ -2293,14 +2655,17 @@ export default function LeadDashboard({
                                 <td style={{ padding: '0.55rem 1rem', borderRight: '1px solid var(--border-light)' }}>
                                   Sub-Total ({tSlot.slot.shortLabel})
                                 </td>
-                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
+                                <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', color: '#2563eb', borderRight: '1px solid var(--border-light)' }}>
+                                  {tSlot.totals.leadsWorked}
+                                </td>
+                                <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
                                   {tSlot.totals.leadsCreated}
                                 </td>
-                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
+                                <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
                                   {tSlot.totals.stageChanges}
                                 </td>
-                                <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
-                                  {tSlot.totals.notesAdded}
+                                <td style={{ padding: '0.55rem 0.65rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
+                                  {tSlot.totals.remarksAdded}
                                 </td>
                                 {PIPELINE_STAGES.map(stg => (
                                   <td key={stg.num} style={{ padding: '0.55rem 0.35rem', textAlign: 'center', color: stg.color, borderRight: '1px solid var(--border-light)' }}>
@@ -2331,7 +2696,7 @@ export default function LeadDashboard({
                         rowSpan={2}
                         onClick={() => handleHourlySort('time')}
                         title="Click to sort by Time Slot"
-                        style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--accent-color)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}
+                        style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--accent-color)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '140px' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <Clock size={14} />
@@ -2343,7 +2708,7 @@ export default function LeadDashboard({
                       <th 
                         rowSpan={2}
                         onClick={() => handleHourlySort('name')}
-                        style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '170px' }}
+                        style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '160px' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <span>Employee Name</span>
@@ -2353,8 +2718,16 @@ export default function LeadDashboard({
 
                       <th 
                         rowSpan={2}
+                        onClick={() => handleHourlySort('leadsWorked')}
+                        style={{ padding: '0.75rem 0.65rem', fontWeight: 700, color: '#2563eb', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}
+                      >
+                        Leads Worked
+                      </th>
+
+                      <th 
+                        rowSpan={2}
                         onClick={() => handleHourlySort('leadsCreated')}
-                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}
+                        style={{ padding: '0.75rem 0.65rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}
                       >
                         Leads Created
                       </th>
@@ -2362,17 +2735,17 @@ export default function LeadDashboard({
                       <th 
                         rowSpan={2}
                         onClick={() => handleHourlySort('stageChanges')}
-                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}
+                        style={{ padding: '0.75rem 0.65rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}
                       >
                         Stage Changes
                       </th>
 
                       <th 
                         rowSpan={2}
-                        onClick={() => handleHourlySort('notesAdded')}
-                        style={{ padding: '0.75rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}
+                        onClick={() => handleHourlySort('remarksAdded')}
+                        style={{ padding: '0.75rem 0.65rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '80px' }}
                       >
-                        Notes
+                        Remarks
                       </th>
 
                       <th 
@@ -2385,7 +2758,7 @@ export default function LeadDashboard({
                       <th 
                         rowSpan={2}
                         onClick={() => handleHourlySort('totalActions')}
-                        style={{ padding: '0.75rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', minWidth: '105px', background: 'rgba(59, 130, 246, 0.05)' }}
+                        style={{ padding: '0.75rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', cursor: 'pointer', verticalAlign: 'middle', minWidth: '95px', background: 'rgba(59, 130, 246, 0.05)' }}
                       >
                         Total Actions
                       </th>
@@ -2393,7 +2766,7 @@ export default function LeadDashboard({
 
                     <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                       {PIPELINE_STAGES.map(stage => (
-                        <th key={stage.num} style={{ padding: '0.45rem 0.35rem', fontWeight: 600, color: stage.color, textAlign: 'center', fontSize: '0.73rem', borderRight: '1px solid var(--border-light)', minWidth: '45px' }}>
+                        <th key={stage.num} style={{ padding: '0.45rem 0.35rem', fontWeight: 600, color: stage.color, textAlign: 'center', fontSize: '0.73rem', borderRight: '1px solid var(--border-light)', minWidth: '40px' }}>
                           <span>S{stage.num}</span>
                         </th>
                       ))}
@@ -2403,13 +2776,14 @@ export default function LeadDashboard({
                   <tbody>
                     {flatHourlyRows.length === 0 ? (
                       <tr>
-                        <td colSpan={13} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        <td colSpan={14} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                           No hourly activity found for the selected filter.
                         </td>
                       </tr>
                     ) : (
                       flatHourlyRows.map((row, idx) => {
                         const isEven = idx % 2 === 0;
+                        const targetSlot = HOURLY_SLOTS.find(s => s.id === row.slotId) || { id: row.slotId, label: row.slotLabel };
                         return (
                           <tr key={`${row.slotId}-${row.id}`} style={{ background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                             <td style={{ padding: '0.65rem 0.85rem', borderRight: '1px solid var(--border-light)', fontWeight: 600, color: '#1e40af', background: 'rgba(59, 130, 246, 0.02)' }}>
@@ -2419,25 +2793,96 @@ export default function LeadDashboard({
                               <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.name}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.dept}</div>
                             </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.leadsCreated > 0 ? 700 : 400, color: row.leadsCreated > 0 ? '#059669' : 'var(--text-secondary)' }}>
-                              {row.leadsCreated > 0 ? row.leadsCreated : '—'}
+
+                            {/* Leads Worked */}
+                            <td style={{ padding: '0.65rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                              {row.leadsWorked > 0 ? (
+                                <button
+                                  onClick={() => openDrilldown(row, targetSlot, 'leadsWorked', 'Leads Worked')}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#2563eb', textDecoration: 'underline', fontSize: '0.84rem' }}
+                                  title="Click to view detailed Lead ID, Business Name, CP Name and Notes"
+                                >
+                                  {row.leadsWorked}
+                                </button>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                              )}
                             </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.stageChanges > 0 ? 700 : 400, color: row.stageChanges > 0 ? '#7c3aed' : 'var(--text-secondary)' }}>
-                              {row.stageChanges > 0 ? row.stageChanges : '—'}
+
+                            {/* Leads Created */}
+                            <td style={{ padding: '0.65rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                              {row.leadsCreated > 0 ? (
+                                <button
+                                  onClick={() => openDrilldown(row, targetSlot, 'leadsCreated', 'Leads Created')}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#059669', textDecoration: 'underline', fontSize: '0.84rem' }}
+                                  title="Click to view Created Leads"
+                                >
+                                  {row.leadsCreated}
+                                </button>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                              )}
                             </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', fontWeight: row.notesAdded > 0 ? 700 : 400, color: row.notesAdded > 0 ? '#d97706' : 'var(--text-secondary)' }}>
-                              {row.notesAdded > 0 ? row.notesAdded : '—'}
+
+                            {/* Stage Changes */}
+                            <td style={{ padding: '0.65rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                              {row.stageChanges > 0 ? (
+                                <button
+                                  onClick={() => openDrilldown(row, targetSlot, 'stageChanges', 'Stage Changes')}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#7c3aed', textDecoration: 'underline', fontSize: '0.84rem' }}
+                                  title="Click to view Stage Changes"
+                                >
+                                  {row.stageChanges}
+                                </button>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                              )}
                             </td>
+
+                            {/* Remarks */}
+                            <td style={{ padding: '0.65rem 0.65rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                              {row.remarksAdded > 0 ? (
+                                <button
+                                  onClick={() => openDrilldown(row, targetSlot, 'remarksAdded', 'Remarks')}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.35rem', fontWeight: 700, color: '#d97706', textDecoration: 'underline', fontSize: '0.84rem' }}
+                                  title="Click to view Remarks / Notes"
+                                >
+                                  {row.remarksAdded}
+                                </button>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                              )}
+                            </td>
+
+                            {/* Stages 1 to 7 */}
                             {PIPELINE_STAGES.map(stage => {
                               const cnt = row[`stage${stage.num}`] || 0;
                               return (
-                                <td key={stage.num} style={{ padding: '0.65rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', color: cnt > 0 ? stage.color : 'var(--text-secondary)', fontWeight: cnt > 0 ? 600 : 400 }}>
-                                  {cnt > 0 ? cnt : '—'}
+                                <td key={stage.num} style={{ padding: '0.65rem 0.35rem', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>
+                                  {cnt > 0 ? (
+                                    <button
+                                      onClick={() => openDrilldown(row, targetSlot, `stage${stage.num}`, stage.fullName)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.2rem', fontWeight: 700, color: stage.color, textDecoration: 'underline', fontSize: '0.82rem' }}
+                                      title={`Click to view ${stage.fullName} leads`}
+                                    >
+                                      {cnt}
+                                    </button>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                  )}
                                 </td>
                               );
                             })}
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb', background: 'rgba(59, 130, 246, 0.04)' }}>
-                              {row.totalActions}
+
+                            {/* Total Actions */}
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.04)' }}>
+                              <button
+                                onClick={() => openDrilldown(row, targetSlot, 'all', 'All Actions')}
+                                style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '6px', cursor: 'pointer', padding: '0.2rem 0.55rem', fontWeight: 800, color: '#1e40af', fontSize: '0.84rem' }}
+                                title="Click to view detailed Action Logs popup"
+                              >
+                                {row.totalActions}
+                              </button>
                             </td>
                           </tr>
                         );
@@ -2451,14 +2896,17 @@ export default function LeadDashboard({
                         <td colSpan={2} style={{ padding: '0.75rem 1rem', borderRight: '1px solid var(--border-light)' }}>
                           Total ({flatHourlyRows.length} Hourly Slots Logged)
                         </td>
-                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center', color: '#2563eb', borderRight: '1px solid var(--border-light)' }}>
+                          {activeHourlyTotals.leadsWorked}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center', color: '#059669', borderRight: '1px solid var(--border-light)' }}>
                           {activeHourlyTotals.leadsCreated}
                         </td>
-                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center', color: '#7c3aed', borderRight: '1px solid var(--border-light)' }}>
                           {activeHourlyTotals.stageChanges}
                         </td>
-                        <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
-                          {activeHourlyTotals.notesAdded}
+                        <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center', color: '#d97706', borderRight: '1px solid var(--border-light)' }}>
+                          {activeHourlyTotals.remarksAdded}
                         </td>
                         {PIPELINE_STAGES.map(stage => (
                           <td key={stage.num} style={{ padding: '0.75rem 0.35rem', textAlign: 'center', color: stage.color, borderRight: '1px solid var(--border-light)' }}>
@@ -2519,23 +2967,36 @@ export default function LeadDashboard({
                               return (
                                 <td 
                                   key={slot.id} 
-                                  title={`${emp.name} at ${slot.label}: ${cnt} actions (Leads: ${cell?.leads || 0}, Stages: ${cell?.stages || 0}, Notes: ${cell?.notes || 0})`}
                                   style={{ 
                                     padding: '0.6rem 0.4rem', 
                                     textAlign: 'center', 
                                     borderRight: '1px solid var(--border-light)',
-                                    fontWeight: cnt > 0 ? 700 : 400,
-                                    color: cnt > 0 ? '#1e40af' : 'var(--text-secondary)',
                                     background: cnt >= 20 ? 'rgba(59, 130, 246, 0.18)' : cnt >= 10 ? 'rgba(59, 130, 246, 0.10)' : cnt > 0 ? 'rgba(59, 130, 246, 0.04)' : 'transparent'
                                   }}
                                 >
-                                  {cnt > 0 ? cnt : '—'}
+                                  {cnt > 0 ? (
+                                    <button
+                                      onClick={() => openDrilldown(emp, slot, 'all', `${slot.label} Actions`)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.2rem', fontWeight: 700, color: '#1e40af', textDecoration: 'underline', fontSize: '0.8rem' }}
+                                      title={`Click to inspect ${emp.name} at ${slot.label}`}
+                                    >
+                                      {cnt}
+                                    </button>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                  )}
                                 </td>
                               );
                             })}
 
-                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: 800, color: '#2563eb', background: 'rgba(59, 130, 246, 0.06)' }}>
-                              {emp.totalActions}
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.06)' }}>
+                              <button
+                                onClick={() => openDrilldown(emp, { id: 'all', label: 'Full Day' }, 'all', 'Full Day Output')}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.2rem', fontWeight: 800, color: '#2563eb', textDecoration: 'underline', fontSize: '0.85rem' }}
+                                title={`Click to view all full day logs for ${emp.name}`}
+                              >
+                                {emp.totalActions}
+                              </button>
                             </td>
                           </tr>
                         );
@@ -2546,6 +3007,369 @@ export default function LeadDashboard({
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Hourly Action Drilldown Report Modal */}
+      {hourlyDrilldown && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem'
+          }}
+          onClick={() => setHourlyDrilldown(null)}
+        >
+          <div 
+            style={{
+              background: 'var(--bg-surface, #ffffff)',
+              width: '100%',
+              maxWidth: '960px',
+              maxHeight: '90vh',
+              borderRadius: '16px',
+              border: '1px solid var(--border-light, #e2e8f0)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid var(--border-light, #e2e8f0)',
+              background: 'var(--bg-primary, #f8fafc)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.75rem'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <FileText size={20} style={{ color: '#2563eb' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Hourly Activity & Lead Breakdown Report
+                  </h3>
+                  <span style={{
+                    fontSize: '0.75rem',
+                    background: '#dbeafe',
+                    color: '#1e40af',
+                    padding: '0.15rem 0.55rem',
+                    borderRadius: '12px',
+                    fontWeight: 700
+                  }}>
+                    {hourlyDrilldown.metricLabel}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span>👤 Employee: <strong style={{ color: 'var(--text-primary)' }}>{hourlyDrilldown.member.name}</strong> ({hourlyDrilldown.member.dept || 'Sales'} • {hourlyDrilldown.member.role || 'Agent'})</span>
+                  <span>•</span>
+                  <span>⏰ Time Slot: <strong style={{ color: '#2563eb' }}>{hourlyDrilldown.slotLabel}</strong></span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{
+                  fontSize: '0.8rem',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  fontWeight: 700
+                }}>
+                  Total Logs: {filteredDrilldownItems.length}
+                </span>
+                <button
+                  onClick={() => setHourlyDrilldown(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-secondary)',
+                    padding: '0.35rem',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Close Report (Esc)"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Filter & Search Bar */}
+            <div style={{
+              padding: '0.85rem 1.5rem',
+              borderBottom: '1px solid var(--border-light, #e2e8f0)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              background: 'var(--bg-surface)'
+            }}>
+              {/* Metric Quick Switcher */}
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'all', label: 'All Actions' },
+                  { key: 'leadsWorked', label: 'Leads Worked' },
+                  { key: 'leadsCreated', label: 'Created' },
+                  { key: 'stageChanges', label: 'Stage Changes' },
+                  { key: 'remarksAdded', label: 'Remarks' },
+                ].map(btn => {
+                  const isActive = hourlyDrilldown.metricKey === btn.key;
+                  return (
+                    <button
+                      key={btn.key}
+                      onClick={() => setHourlyDrilldown(prev => ({ ...prev, metricKey: btn.key, metricLabel: btn.label }))}
+                      style={{
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: '6px',
+                        border: isActive ? '1px solid #2563eb' : '1px solid var(--border-light)',
+                        background: isActive ? '#eff6ff' : 'var(--bg-primary, #f8fafc)',
+                        color: isActive ? '#1e40af' : 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        fontWeight: isActive ? 700 : 500,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {btn.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* In-Modal Search Box */}
+              <div style={{ position: 'relative', width: '260px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Search lead, CP, business, note..."
+                  value={drilldownSearch}
+                  onChange={(e) => setDrilldownSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.4rem 0.65rem 0.4rem 1.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-primary)',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '0' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                  <tr>
+                    <th style={{ padding: '0.65rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', width: '40px', fontWeight: 600 }}>#</th>
+                    <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '100px' }}>Lead ID</th>
+                    <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '160px' }}>Business Name</th>
+                    <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '140px' }}>Contact Person (CP)</th>
+                    <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '130px' }}>Stage</th>
+                    <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '110px' }}>Time (Timestamp)</th>
+                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 600, minWidth: '220px' }}>Action & Remarks / Note</th>
+                    <th style={{ padding: '0.65rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 600, width: '90px' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDrilldownItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>No Matching Action Logs Found</div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>No leads or notes recorded under this metric for this time slot.</div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredDrilldownItems.map((item, idx) => {
+                      const stageColor = STAGE_COLORS[item.stage] || '#3b82f6';
+                      return (
+                        <tr 
+                          key={item.id}
+                          style={{
+                            borderBottom: '1px solid var(--border-light)',
+                            background: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)'
+                          }}
+                        >
+                          {/* Index */}
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                            {idx + 1}
+                          </td>
+
+                          {/* Lead ID */}
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <button
+                              onClick={() => {
+                                setHourlyDrilldown(null);
+                                onOpenProfile && onOpenProfile(item.lead, 'history');
+                              }}
+                              style={{
+                                background: '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                color: '#1e40af',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                              title="Click to open Lead Profile"
+                            >
+                              <span>#{String(item.leadId || '').replace(/^#/, '')}</span>
+                              <ExternalLink size={11} />
+                            </button>
+                          </td>
+
+                          {/* Business Name */}
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {item.businessName}
+                            </div>
+                          </td>
+
+                          {/* Contact Person */}
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {item.contactPerson}
+                            </div>
+                            {item.phone && item.phone !== '—' && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                                📞 {item.phone}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Stage */}
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '9999px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              color: stageColor,
+                              background: `${stageColor}15`,
+                              border: `1px solid ${stageColor}30`,
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {item.stage?.split(';')[0] || item.stage}
+                            </span>
+                          </td>
+
+                          {/* Timestamp */}
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                            <div style={{ fontWeight: 700, color: '#1e40af', fontSize: '0.8rem' }}>
+                              ⏰ {formatActionTimestamp(item.timestamp)}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              {formatActionDate(item.timestamp)}
+                            </div>
+                          </td>
+
+                          {/* Action Type & Note Text */}
+                          <td style={{ padding: '0.65rem 1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
+                              <span style={{
+                                fontSize: '0.68rem',
+                                padding: '0.1rem 0.45rem',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                                background: `${item.typeBadgeColor}15`,
+                                color: item.typeBadgeColor,
+                                border: `1px solid ${item.typeBadgeColor}30`
+                              }}>
+                                {item.typeLabel}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                              {item.noteText}
+                            </div>
+                          </td>
+
+                          {/* Action Button */}
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => {
+                                setHourlyDrilldown(null);
+                                onOpenProfile && onOpenProfile(item.lead, 'history');
+                              }}
+                              style={{
+                                padding: '0.35rem 0.65rem',
+                                borderRadius: '6px',
+                                background: 'var(--accent-color, #2563eb)',
+                                color: '#ffffff',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <Eye size={12} />
+                              <span>Profile</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '0.75rem 1.5rem',
+              borderTop: '1px solid var(--border-light, #e2e8f0)',
+              background: 'var(--bg-primary, #f8fafc)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '0.8rem',
+              color: 'var(--text-secondary)'
+            }}>
+              <span>Showing <strong>{filteredDrilldownItems.length}</strong> action log records for <strong>{hourlyDrilldown.member.name}</strong></span>
+              <button
+                onClick={() => setHourlyDrilldown(null)}
+                style={{
+                  padding: '0.4rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

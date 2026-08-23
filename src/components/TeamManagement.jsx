@@ -21,7 +21,7 @@ const DEFAULT_DEPARTMENTS = [
 ];
 
 const LEAD_STAGES = [
-  'lead_dashboard', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
+  'lead_dashboard', 'hourly_work', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
   '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'
 ];
 
@@ -915,7 +915,7 @@ export default function TeamManagement({ initialUsers = [] }) {
 
     // If module has assigned_steps (e.g. leads or recruiter), and subItems is not configured yet:
     if (Array.isArray(moduleObj.assigned_steps) && !moduleObj.is_manager) {
-      const isAssigned = moduleObj.assigned_steps.includes(subId) || (subId === 'lead_dashboard' && moduleObj.view);
+      const isAssigned = moduleObj.assigned_steps.includes(subId) || ((subId === 'lead_dashboard' || subId === 'hourly_work') && moduleObj.view);
       if (!isAssigned) {
         return { view: false, add: false, edit: false, delete: false };
       }
@@ -1048,7 +1048,7 @@ export default function TeamManagement({ initialUsers = [] }) {
     if (updatedForm.leads) {
       const leadsSub = updatedForm.leads.sub_items;
       if (leadsSub) {
-        updatedForm.leads.assigned_steps = Object.keys(leadsSub).filter(k => k !== 'lead_dashboard' && leadsSub[k]?.view === true);
+        updatedForm.leads.assigned_steps = Object.keys(leadsSub).filter(k => k !== 'lead_dashboard' && k !== 'hourly_work' && leadsSub[k]?.view === true);
       }
     }
     if (updatedForm.recruiter) {
@@ -2952,7 +2952,7 @@ export default function TeamManagement({ initialUsers = [] }) {
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                     {module.subItems.map(sub => {
                                       const subAccess = getSubItemPerms(accessForm, module.id, sub.id);
-                                      const isSubViewOnly = sub.id === 'lead_dashboard' || module.viewOnly;
+                                      const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly;
 
                                       return (
                                         <div key={sub.id} style={{ display: 'flex', alignItems: 'center', padding: '0.35rem 0.5rem', borderRadius: '4px', backgroundColor: subAccess.view ? '#f0f9ff' : 'transparent', borderBottom: '1px solid var(--border-light)' }}>

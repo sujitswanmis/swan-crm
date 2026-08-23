@@ -19,6 +19,7 @@ export const MODULES_CONFIG = [
     subItemsType: 'leads_stages',
     subItems: [
       { id: 'lead_dashboard', label: '📊 Lead Dashboard' },
+      { id: 'hourly_work', label: '⏰ Hourly Work' },
       { id: '01 - New Stage', label: '01 - New Stage' },
       { id: '02 - Contact Stage', label: '02 - Contact Stage' },
       { id: '03 - Qualification Stage', label: '03 - Qualification Stage' },
