@@ -1082,6 +1082,23 @@ export default function TeamManagement({ initialUsers = [] }) {
     const result = await updateModuleAccess(accessUser, updatedForm);
     setSavingAccess(false);
     if (result.success) {
+      // ⚡ Realtime broadcast to active sessions so changes apply instantly without refreshing
+      try {
+        const supabaseClient = createClient();
+        const syncChannel = supabaseClient.channel('crm_realtime_permission_sync');
+        await syncChannel.send({
+          type: 'broadcast',
+          event: 'permission_updated',
+          payload: {
+            userId: accessUser,
+            moduleAccess: updatedForm,
+            timestamp: Date.now()
+          }
+        });
+      } catch (err) {
+        console.error('Realtime broadcast failed:', err);
+      }
+
       setAccessUser(null);
       fetchUsers(false);
     } else {

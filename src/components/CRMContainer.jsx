@@ -128,6 +128,44 @@ const KeepAliveTab = React.memo(
   }
 );
 
+export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  if (isAdmin) return true;
+  if (!moduleAccess) return false;
+
+  if (tabId === 'dashboard') return moduleAccess['analytics']?.view !== false;
+  if (tabId === 'ai') return moduleAccess['ai']?.view === true || moduleAccess['new_swan_ai']?.view === true;
+  if (tabId === 'callcenter') return moduleAccess['callcenter']?.view === true;
+  if (tabId === 'registration') return moduleAccess['registration']?.view === true;
+  if (tabId === 'report') return moduleAccess['report']?.view === true;
+  if (tabId === 'leads') return moduleAccess['leads']?.view === true;
+  if (tabId === 'orders') return moduleAccess['orders']?.view === true;
+  if (tabId === 'mrp') return moduleAccess['mrp']?.view === true;
+  if (tabId === 'mrp_against') return moduleAccess['mrp_against']?.view === true;
+  if (tabId === 'recruiter') return moduleAccess['recruiter']?.view === true;
+  if (tabId === 'joining') return moduleAccess['joining']?.view === true;
+  if (tabId === 'team') return moduleAccess['team']?.view === true;
+  if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
+  if (tabId === 'party') return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
+  if (tabId === 'location_master' || tabId === 'location_territory' || tabId === 'location-master') {
+    return moduleAccess['location_master']?.view === true || moduleAccess['location_territory']?.view === true;
+  }
+  if (tabId === 'public_users') return moduleAccess['public_users']?.view === true;
+  if (tabId === 'aiadmin') return moduleAccess['aiadmin']?.view === true;
+  if (tabId === 'aiknowledgebase') return moduleAccess['aiknowledgebase']?.view === true;
+  if (tabId === 'calladmin') return moduleAccess['calladmin']?.view === true;
+  if (tabId === 'aicallcenter') return moduleAccess['aicallcenter']?.view === true;
+  if (tabId === 'whatsapp_official') return moduleAccess['whatsapp_official']?.view === true;
+  if (tabId === 'whatsapp_unofficial') return moduleAccess['whatsapp_unofficial']?.view === true;
+  if (tabId === 'sms_config') return moduleAccess['sms_config']?.view === true;
+  if (tabId === 'rcs_config') return moduleAccess['rcs_config']?.view === true;
+  if (tabId === 'email_config') return moduleAccess['email_config']?.view === true;
+  if (tabId === 'admin_message_config') return moduleAccess['admin_message_config']?.view === true;
+  if (tabId === 'settings') return moduleAccess['settings']?.view === true;
+
+  return moduleAccess[tabId]?.view === true;
+}
+
 export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess: initialModuleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -143,6 +181,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   // Real-time Permission Synchronizer: Automatically updates permissions without refreshing
   useEffect(() => {
     if (!userId) return;
+
+    // 1. Broadcast channel listener (instant cross-session notification)
+    const broadcastChannel = supabase
+      .channel('crm_realtime_permission_sync')
+      .on('broadcast', { event: 'permission_updated' }, (message) => {
+        if (message?.payload?.userId === userId) {
+          setModuleAccess(message.payload.moduleAccess || {});
+        }
+      })
+      .subscribe();
+
+    // 2. Postgres changes fallback on user_roles
     const roleChannel = supabase
       .channel(`user_role_realtime_${userId}`)
       .on('postgres_changes', { 
@@ -158,9 +208,10 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       .subscribe();
 
     return () => {
+      supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(roleChannel);
     };
-  }, [userId]);
+  }, [userId, supabase]);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const hasLeadsAccess = isAdmin || 
@@ -984,6 +1035,22 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       }
     }
   }, [moduleAccess, userRole, activeTab, leadsFilterStage]);
+
+  // Live Active Tab Access Guard: If current active tab is revoked by Admin, immediately switch to first allowed tab
+  useEffect(() => {
+    if (isAdmin) return;
+    if (!isTabPermitted(activeTab, moduleAccess, userRole)) {
+      const allPossibleTabs = [
+        'dashboard', 'leads', 'registration', 'report', 'orders', 'mrp', 'mrp_against',
+        'recruiter', 'joining', 'party', 'workplace', 'callcenter', 'whatsapp_official',
+        'whatsapp_unofficial', 'calladmin', 'aicallcenter', 'email_config', 'admin_message_config', 'settings'
+      ];
+      const nextAllowedTab = allPossibleTabs.find(t => isTabPermitted(t, moduleAccess, userRole));
+      if (nextAllowedTab) {
+        handleTabChange(nextAllowedTab);
+      }
+    }
+  }, [moduleAccess, userRole, activeTab, isAdmin]);
 
   const handleTabChange = async (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
@@ -2831,7 +2898,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Dashboard */}
               <KeepAliveTab 
                 isActive={activeTab === 'dashboard'} 
-                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && visitedTabs.has('dashboard')}
+                isVisited={isTabPermitted('dashboard', moduleAccess, userRole) && visitedTabs.has('dashboard')}
               >
                 <ErrorBoundary>
                   <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />
@@ -2841,7 +2908,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Leads Database */}
               <KeepAliveTab 
                 isActive={activeTab === 'leads'} 
-                isVisited={visitedTabs.has('leads')}
+                isVisited={isTabPermitted('leads', moduleAccess, userRole) && visitedTabs.has('leads')}
               >
                 <ErrorBoundary>
                   {loadingLeads ? (
@@ -2860,7 +2927,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Recruiter */}
               <KeepAliveTab 
                 isActive={activeTab === 'recruiter'} 
-                isVisited={visitedTabs.has('recruiter')}
+                isVisited={isTabPermitted('recruiter', moduleAccess, userRole) && visitedTabs.has('recruiter')}
               >
                 <ErrorBoundary>
                   <RecruiterDashboard 
@@ -2879,7 +2946,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Client Registration */}
               <KeepAliveTab 
                 isActive={activeTab === 'registration'} 
-                isVisited={visitedTabs.has('registration')}
+                isVisited={isTabPermitted('registration', moduleAccess, userRole) && visitedTabs.has('registration')}
               >
                 <ErrorBoundary>
                   <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />
@@ -2889,7 +2956,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Client Report */}
               <KeepAliveTab 
                 isActive={activeTab === 'report'} 
-                isVisited={visitedTabs.has('report')}
+                isVisited={isTabPermitted('report', moduleAccess, userRole) && visitedTabs.has('report')}
               >
                 <ErrorBoundary>
                   <ClientReport 
@@ -2907,7 +2974,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* AI Assistant */}
               <KeepAliveTab 
                 isActive={activeTab === 'ai'} 
-                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['new_swan_ai']?.view) && visitedTabs.has('ai')}
+                isVisited={isTabPermitted('ai', moduleAccess, userRole) && visitedTabs.has('ai')}
               >
                 <ErrorBoundary>
                   <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />
@@ -2917,7 +2984,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* AI Admin */}
               <KeepAliveTab 
                 isActive={activeTab === 'aiadmin'} 
-                isVisited={visitedTabs.has('aiadmin')}
+                isVisited={isTabPermitted('aiadmin', moduleAccess, userRole) && visitedTabs.has('aiadmin')}
               >
                 <ErrorBoundary>
                   <AiAdminModule />
@@ -2927,7 +2994,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* AI Knowledge Base */}
               <KeepAliveTab 
                 isActive={activeTab === 'aiknowledgebase'} 
-                isVisited={visitedTabs.has('aiknowledgebase')}
+                isVisited={isTabPermitted('aiknowledgebase', moduleAccess, userRole) && visitedTabs.has('aiknowledgebase')}
               >
                 <ErrorBoundary>
                   <AIKnowledgeBaseModule />
@@ -2937,7 +3004,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Call Center */}
               <KeepAliveTab 
                 isActive={activeTab === 'callcenter'} 
-                isVisited={(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && visitedTabs.has('callcenter')}
+                isVisited={isTabPermitted('callcenter', moduleAccess, userRole) && visitedTabs.has('callcenter')}
               >
                 <ErrorBoundary>
                   <CallCenterModule userId={userId} />
@@ -2947,7 +3014,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Call Admin */}
               <KeepAliveTab 
                 isActive={activeTab === 'calladmin'} 
-                isVisited={visitedTabs.has('calladmin') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view)}
+                isVisited={isTabPermitted('calladmin', moduleAccess, userRole) && visitedTabs.has('calladmin')}
               >
                 <ErrorBoundary>
                   <CallAdminModule moduleAccess={moduleAccess} userRole={userRole} />
@@ -2957,7 +3024,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* AI Call Center */}
               <KeepAliveTab 
                 isActive={activeTab === 'aicallcenter'} 
-                isVisited={visitedTabs.has('aicallcenter') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view)}
+                isVisited={isTabPermitted('aicallcenter', moduleAccess, userRole) && visitedTabs.has('aicallcenter')}
               >
                 <ErrorBoundary>
                   <AiCallCenterModule moduleAccess={moduleAccess} userRole={userRole} />
@@ -2967,7 +3034,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Team Management */}
               <KeepAliveTab 
                 isActive={activeTab === 'team'} 
-                isVisited={visitedTabs.has('team') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view)}
+                isVisited={isTabPermitted('team', moduleAccess, userRole) && visitedTabs.has('team')}
               >
                 <ErrorBoundary>
                   <TeamManagement initialUsers={teamMembers} />
@@ -2977,7 +3044,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Workplace */}
               <KeepAliveTab 
                 isActive={activeTab === 'workplace'} 
-                isVisited={visitedTabs.has('workplace') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view || moduleAccess['team']?.view)}
+                isVisited={isTabPermitted('workplace', moduleAccess, userRole) && visitedTabs.has('workplace')}
               >
                 <ErrorBoundary>
                   <UniversalWorkplaceModule moduleAccess={moduleAccess} userRole={userRole} />
@@ -2987,7 +3054,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Party Master */}
               <KeepAliveTab 
                 isActive={activeTab === 'party'} 
-                isVisited={visitedTabs.has('party') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['party']?.view || moduleAccess['team']?.view)}
+                isVisited={isTabPermitted('party', moduleAccess, userRole) && visitedTabs.has('party')}
               >
                 <ErrorBoundary>
                   <PartyMasterModule />
@@ -2997,7 +3064,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Location Management */}
               <KeepAliveTab 
                 isActive={activeTab === 'location_master' || activeTab === 'location_territory' || activeTab === 'location-master'} 
-                isVisited={visitedTabs.has('location_master') || visitedTabs.has('location_territory') || visitedTabs.has('location-master')}
+                isVisited={isTabPermitted('location_master', moduleAccess, userRole) && (visitedTabs.has('location_master') || visitedTabs.has('location_territory') || visitedTabs.has('location-master'))}
               >
                 <ErrorBoundary>
                   <LocationManagementModule moduleAccess={moduleAccess} userRole={userRole} />
@@ -3007,7 +3074,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Public Users */}
               <KeepAliveTab 
                 isActive={activeTab === 'public_users'} 
-                isVisited={visitedTabs.has('public_users') && (userRole === 'admin' || userRole === 'Admin' || moduleAccess['public_users']?.view)}
+                isVisited={isTabPermitted('public_users', moduleAccess, userRole) && visitedTabs.has('public_users')}
               >
                 <ErrorBoundary>
                   <PublicUserManagement />
@@ -3017,7 +3084,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* WhatsApp Official */}
               <KeepAliveTab 
                 isActive={activeTab === 'whatsapp_official'} 
-                isVisited={visitedTabs.has('whatsapp_official')}
+                isVisited={isTabPermitted('whatsapp_official', moduleAccess, userRole) && visitedTabs.has('whatsapp_official')}
               >
                 <ErrorBoundary>
                   <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} />
@@ -3027,7 +3094,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* WhatsApp Unofficial */}
               <KeepAliveTab 
                 isActive={activeTab === 'whatsapp_unofficial'} 
-                isVisited={visitedTabs.has('whatsapp_unofficial')}
+                isVisited={isTabPermitted('whatsapp_unofficial', moduleAccess, userRole) && visitedTabs.has('whatsapp_unofficial')}
               >
                 <ErrorBoundary>
                   <WhatsappUnofficialModule userRole={userRole} userId={userId} moduleAccess={moduleAccess} />
@@ -3041,7 +3108,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Email Config */}
               <KeepAliveTab 
                 isActive={activeTab === 'email_config'} 
-                isVisited={visitedTabs.has('email_config') && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view)}
+                isVisited={isTabPermitted('email_config', moduleAccess, userRole) && visitedTabs.has('email_config')}
               >
                 <ErrorBoundary>
                   <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} />
@@ -3051,7 +3118,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Admin Message Config */}
               <KeepAliveTab 
                 isActive={activeTab === 'admin_message_config'} 
-                isVisited={visitedTabs.has('admin_message_config')}
+                isVisited={isTabPermitted('admin_message_config', moduleAccess, userRole) && visitedTabs.has('admin_message_config')}
               >
                 <ErrorBoundary>
                   <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole} />
@@ -3061,7 +3128,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
               {/* Settings */}
               <KeepAliveTab 
                 isActive={activeTab === 'settings'} 
-                isVisited={visitedTabs.has('settings')}
+                isVisited={isTabPermitted('settings', moduleAccess, userRole) && visitedTabs.has('settings')}
               >
                 <ErrorBoundary>
                   <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
