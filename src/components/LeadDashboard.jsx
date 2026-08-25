@@ -10,6 +10,7 @@ import {
   PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check,
   Search, ArrowUpDown, Timer, Activity, Eye, ExternalLink, FileText, Building2, User
 } from 'lucide-react';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
 
 const formatActionTimestamp = (ts) => {
   if (!ts) return '—';
@@ -256,8 +257,8 @@ export default function LeadDashboard({
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = Boolean(moduleAccess?.leads?.is_manager);
   const canViewAll = isAdmin || isManager;
-  const leadsAccess = moduleAccess?.leads || {};
-  const canViewHourlyWork = isAdmin || isManager || (leadsAccess.view !== false && leadsAccess.sub_items?.hourly_work?.view !== false);
+  const canViewOverview = getSubItemPermissions(moduleAccess, userRole, 'leads', 'lead_dashboard').view;
+  const canViewHourlyWork = getSubItemPermissions(moduleAccess, userRole, 'leads', 'hourly_work').view;
 
   // Filter States
   const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'all', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'custom'
@@ -272,37 +273,45 @@ export default function LeadDashboard({
 
   // View Tab: 'overview' | 'hourly' (Persisted in localStorage & URL query params)
   const [activeDashboardTab, setActiveDashboardTab] = useState(() => {
-    if (defaultTab === 'hourly' || defaultTab === 'overview') {
-      return defaultTab;
+    if (defaultTab === 'hourly' && canViewHourlyWork) {
+      return 'hourly';
+    }
+    if (defaultTab === 'overview' && canViewOverview) {
+      return 'overview';
     }
     if (typeof window !== 'undefined') {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const stageParam = urlParams.get('stage');
         const subtabParam = urlParams.get('subtab') || urlParams.get('tab');
-        if (stageParam === 'hourly_work' || subtabParam === 'hourly') {
+        if ((stageParam === 'hourly_work' || subtabParam === 'hourly') && canViewHourlyWork) {
           return 'hourly';
         }
-        if (subtabParam === 'overview') {
+        if (subtabParam === 'overview' && canViewOverview) {
           return 'overview';
         }
         const saved = localStorage.getItem('crm_lead_dashboard_subtab');
-        if (saved === 'hourly' || saved === 'overview') {
-          return saved;
+        if (saved === 'hourly' && canViewHourlyWork) {
+          return 'hourly';
+        }
+        if (saved === 'overview' && canViewOverview) {
+          return 'overview';
         }
       } catch (e) {
         // ignore
       }
     }
-    return 'overview';
+    return canViewOverview ? 'overview' : (canViewHourlyWork ? 'hourly' : 'overview');
   });
 
   // Sync when defaultTab prop changes from parent
   useEffect(() => {
-    if (defaultTab && (defaultTab === 'hourly' || defaultTab === 'overview')) {
-      setActiveDashboardTab(defaultTab);
+    if (defaultTab === 'hourly' && canViewHourlyWork) {
+      setActiveDashboardTab('hourly');
+    } else if (defaultTab === 'overview' && canViewOverview) {
+      setActiveDashboardTab('overview');
     }
-  }, [defaultTab]);
+  }, [defaultTab, canViewHourlyWork, canViewOverview]);
 
   // Sync activeDashboardTab with localStorage & URL
   useEffect(() => {
@@ -311,7 +320,7 @@ export default function LeadDashboard({
         localStorage.setItem('crm_lead_dashboard_subtab', activeDashboardTab);
         const url = new URL(window.location.href);
         const currentStage = url.searchParams.get('stage');
-        if (currentStage === 'lead_dashboard' || currentStage === 'dashboard') {
+        if (currentStage === 'lead_dashboard' || currentStage === 'dashboard' || currentStage === 'hourly_work') {
           url.searchParams.set('subtab', activeDashboardTab);
           window.history.replaceState({}, '', url.toString());
         }
@@ -324,9 +333,12 @@ export default function LeadDashboard({
   // Fallback to overview if hourly access is not allowed
   useEffect(() => {
     if (!canViewHourlyWork && activeDashboardTab === 'hourly') {
-      setActiveDashboardTab('overview');
+      setActiveDashboardTab(canViewOverview ? 'overview' : 'none');
     }
-  }, [canViewHourlyWork, activeDashboardTab]);
+    if (!canViewOverview && activeDashboardTab === 'overview' && canViewHourlyWork) {
+      setActiveDashboardTab('hourly');
+    }
+  }, [canViewHourlyWork, canViewOverview, activeDashboardTab]);
 
   // Listen for external tab sync (e.g. from sidebar clicks or storage events)
   useEffect(() => {
@@ -1667,26 +1679,28 @@ export default function LeadDashboard({
 
         {/* Navigation Sub-Tabs: Overview vs Hourly Work */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
-          <button
-            onClick={() => setActiveDashboardTab('overview')}
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: '8px',
-              border: activeDashboardTab === 'overview' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
-              background: activeDashboardTab === 'overview' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
-              color: activeDashboardTab === 'overview' ? '#ffffff' : 'var(--text-secondary)',
-              fontWeight: activeDashboardTab === 'overview' ? 700 : 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              fontSize: '0.85rem',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Sparkles size={15} />
-            <span>Overview & Pipeline</span>
-          </button>
+          {canViewOverview && (
+            <button
+              onClick={() => setActiveDashboardTab('overview')}
+              style={{
+                padding: '0.45rem 1rem',
+                borderRadius: '8px',
+                border: activeDashboardTab === 'overview' ? '1px solid var(--accent-color, #3b82f6)' : '1px solid var(--border-light)',
+                background: activeDashboardTab === 'overview' ? 'var(--accent-color, #3b82f6)' : 'var(--bg-primary, #f8fafc)',
+                color: activeDashboardTab === 'overview' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: activeDashboardTab === 'overview' ? 700 : 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.85rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Sparkles size={15} />
+              <span>Overview & Pipeline</span>
+            </button>
+          )}
 
           {canViewHourlyWork && (
             <button
@@ -1726,8 +1740,15 @@ export default function LeadDashboard({
 
       </div>
 
+      {!canViewOverview && !canViewHourlyWork && (
+        <div className="card" style={{ padding: '3rem', margin: '2rem auto', maxWidth: '600px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+          <p>You do not have permission to view Lead Dashboard or Hourly Work.</p>
+        </div>
+      )}
+
       {/* Overview Tab Content */}
-      {activeDashboardTab === 'overview' && (
+      {activeDashboardTab === 'overview' && canViewOverview && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
@@ -2416,7 +2437,7 @@ export default function LeadDashboard({
   )}
 
       {/* Hourly Work Tab Content */}
-      {activeDashboardTab === 'hourly' && (
+      {activeDashboardTab === 'hourly' && canViewHourlyWork && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Hourly Time Slot Selection Bar */}

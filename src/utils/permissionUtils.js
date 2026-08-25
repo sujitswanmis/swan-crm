@@ -54,9 +54,14 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
     return { ...parentPerms };
   }
 
+  // If user is a Manager for this module, full unrestricted sub-item access
+  if (m.is_manager) {
+    return { ...parentPerms };
+  }
+
   const subItems = m.sub_items;
   // If sub_items object is explicitly configured with entries:
-  if (subItems && typeof subItems === 'object') {
+  if (subItems && typeof subItems === 'object' && Object.keys(subItems).length > 0) {
     if (subItems[subItemId] !== undefined) {
       const sub = subItems[subItemId];
       if (sub === false || (typeof sub === 'object' && sub.view === false)) {
@@ -73,16 +78,15 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
           delete: sub.delete === true
         };
       }
-    } else if (Object.keys(subItems).length > 0) {
+    } else {
       // If granular sub_items is defined for this module and subItemId is NOT in it -> Denied!
       return { view: false, add: false, edit: false, delete: false };
     }
   }
 
-  // If module uses assigned_steps (e.g. leads / recruiter):
-  if (Array.isArray(m.assigned_steps) && !m.is_manager) {
-    const isAssigned = m.assigned_steps.includes(subItemId) || 
-      ((subItemId === 'lead_dashboard' || subItemId === 'hourly_work') && m.view);
+  // Fallback for legacy assigned_steps (e.g. leads / recruiter):
+  if (Array.isArray(m.assigned_steps)) {
+    const isAssigned = m.assigned_steps.includes(subItemId);
     if (!isAssigned) {
       return { view: false, add: false, edit: false, delete: false };
     }

@@ -37,6 +37,7 @@ import EmailConfigModule from './EmailConfig/EmailConfigModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
+import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
@@ -127,12 +128,40 @@ const KeepAliveTab = React.memo(
   }
 );
 
-export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
+export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess: initialModuleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const supabase = createClient();
   
+  const [moduleAccess, setModuleAccess] = useState(initialModuleAccess);
+
+  useEffect(() => {
+    setModuleAccess(initialModuleAccess);
+  }, [initialModuleAccess]);
+
+  // Real-time Permission Synchronizer: Automatically updates permissions without refreshing
+  useEffect(() => {
+    if (!userId) return;
+    const roleChannel = supabase
+      .channel(`user_role_realtime_${userId}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'user_roles', 
+        filter: `user_id=eq.${userId}` 
+      }, (payload) => {
+        if (payload.new && payload.new.module_access) {
+          setModuleAccess(payload.new.module_access);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(roleChannel);
+    };
+  }, [userId]);
+
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const hasLeadsAccess = isAdmin || 
     !!(moduleAccess?.['leads']?.view || 
@@ -937,6 +966,25 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     return () => window.removeEventListener('popstate', handlePopState);
   }, [moduleAccess, userRole]);
 
+  // Ensure active lead filter stage is allowed based on granular permissions
+  useEffect(() => {
+    if (activeTab === 'leads' && leadsFilterStage) {
+      if (leadsFilterStage === 'hourly_work') {
+        const canHourly = getSubItemPermissions(moduleAccess, userRole, 'leads', 'hourly_work').view;
+        if (!canHourly) {
+          const canDashboard = getSubItemPermissions(moduleAccess, userRole, 'leads', 'lead_dashboard').view;
+          handleStageChange(canDashboard ? 'lead_dashboard' : null);
+        }
+      } else if (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard') {
+        const canDashboard = getSubItemPermissions(moduleAccess, userRole, 'leads', 'lead_dashboard').view;
+        if (!canDashboard) {
+          const canHourly = getSubItemPermissions(moduleAccess, userRole, 'leads', 'hourly_work').view;
+          handleStageChange(canHourly ? 'hourly_work' : null);
+        }
+      }
+    }
+  }, [moduleAccess, userRole, activeTab, leadsFilterStage]);
+
   const handleTabChange = async (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
       try {
@@ -1564,25 +1612,23 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           <div className={`submenu-list ${leadDataExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               {(() => {
-                                const leadsAccess = moduleAccess?.leads || {};
-                                const dashboardAccess = moduleAccess?.lead_dashboard || {};
-                                const isAdmin = userRole === 'admin' || userRole === 'Admin';
-                                const canSeeDashboard = isAdmin || leadsAccess.view !== false || dashboardAccess.view || leadsAccess.is_manager || (leadsAccess.assigned_steps || []).includes('lead_dashboard');
-                                const canSeeHourly = isAdmin || leadsAccess.is_manager || (leadsAccess.view !== false && leadsAccess.sub_items?.hourly_work?.view !== false);
-                                if (!canSeeDashboard) return null;
+                                const canSeeDashboard = getSubItemPermissions(moduleAccess, userRole, 'leads', 'lead_dashboard').view;
+                                const canSeeHourly = getSubItemPermissions(moduleAccess, userRole, 'leads', 'hourly_work').view;
 
                                 return (
                                   <>
-                                    <button
-                                      onClick={() => { 
-                                        handleTabChange('leads'); 
-                                        handleStageChange('lead_dashboard', 'overview'); 
-                                      }}
-                                      className="submenu-item"
-                                      data-active={activeTab === 'leads' && (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard')}
-                                    >
-                                      📊 Lead Dashboard
-                                    </button>
+                                    {canSeeDashboard && (
+                                      <button
+                                        onClick={() => { 
+                                          handleTabChange('leads'); 
+                                          handleStageChange('lead_dashboard', 'overview'); 
+                                        }}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'leads' && (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard')}
+                                      >
+                                        📊 Lead Dashboard
+                                      </button>
+                                    )}
                                     {canSeeHourly && (
                                       <button
                                         onClick={() => { 
@@ -1609,12 +1655,8 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                               </button>
 
                               {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
-                                const leadsAccess = moduleAccess?.leads || {};
-                                const isAdmin = userRole === 'admin' || userRole === 'Admin';
-                                const isManager = leadsAccess.is_manager;
-                                const isAssigned = (leadsAccess.assigned_steps || []).includes(stage) || leadsAccess.sub_items?.[stage]?.view === true;
-                                
-                                if (!isAdmin && !isManager && !isAssigned) {
+                                const stagePerms = getSubItemPermissions(moduleAccess, userRole, 'leads', stage);
+                                if (!stagePerms.view) {
                                   return null;
                                 }
 

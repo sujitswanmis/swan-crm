@@ -920,7 +920,7 @@ export default function TeamManagement({ initialUsers = [] }) {
 
     // If module has assigned_steps (e.g. leads or recruiter), and subItems is not configured yet:
     if (Array.isArray(moduleObj.assigned_steps) && !moduleObj.is_manager) {
-      const isAssigned = moduleObj.assigned_steps.includes(subId) || ((subId === 'lead_dashboard' || subId === 'hourly_work') && moduleObj.view);
+      const isAssigned = moduleObj.assigned_steps.includes(subId);
       if (!isAssigned) {
         return { view: false, add: false, edit: false, delete: false };
       }
@@ -1053,7 +1053,7 @@ export default function TeamManagement({ initialUsers = [] }) {
     if (updatedForm.leads) {
       const leadsSub = updatedForm.leads.sub_items;
       if (leadsSub) {
-        updatedForm.leads.assigned_steps = Object.keys(leadsSub).filter(k => k !== 'lead_dashboard' && k !== 'hourly_work' && leadsSub[k]?.view === true);
+        updatedForm.leads.assigned_steps = Object.keys(leadsSub).filter(k => leadsSub[k]?.view === true);
       }
     }
     if (updatedForm.recruiter) {
