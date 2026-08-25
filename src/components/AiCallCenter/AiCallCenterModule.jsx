@@ -3,12 +3,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Settings2, Megaphone, Users, CheckCircle2, PlayCircle, Loader2, StopCircle, RefreshCw, Plus, Upload, PhoneOutgoing, ArrowLeft } from 'lucide-react';
 import Papa from 'papaparse';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
-export default function AiCallCenterModule() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+const ALL_AICALL_TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: <Megaphone size={18} /> },
+  { id: 'campaigns', label: 'Campaigns', icon: <PhoneOutgoing size={18} /> },
+  { id: 'settings', label: 'Incoming Settings', icon: <Settings2 size={18} /> }
+];
+
+export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' }) {
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'aicallcenter', ALL_AICALL_TABS);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs[0]?.id || 'dashboard';
+  });
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
+
   const [activeCampaignId, setActiveCampaignId] = useState(null);
 
   const renderTab = () => {
+    if (visibleTabs.length === 0) {
+      return (
+        <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+          <p>You do not have permission to view any sub-pages in AI Call Center.</p>
+        </div>
+      );
+    }
+
     if (activeCampaignId) return <CampaignDetail id={activeCampaignId} onBack={() => setActiveCampaignId(null)} />;
 
     switch (activeTab) {
@@ -31,13 +58,9 @@ export default function AiCallCenterModule() {
         </div>
       </div>
 
-      {!activeCampaignId && (
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: <Megaphone size={18} /> },
-            { id: 'campaigns', label: 'Campaigns', icon: <PhoneOutgoing size={18} /> },
-            { id: 'settings', label: 'Incoming Settings', icon: <Settings2 size={18} /> }
-          ].map(t => (
+      {!activeCampaignId && visibleTabs.length > 0 && (
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem', overflowX: 'auto' }}>
+          {visibleTabs.map(t => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}

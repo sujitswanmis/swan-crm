@@ -900,17 +900,22 @@ export default function TeamManagement({ initialUsers = [] }) {
     const subItems = moduleObj.sub_items;
 
     // If subItems has an explicit entry for subId:
-    if (subItems && subItems[subId] !== undefined) {
-      const sub = subItems[subId];
-      if (sub === false || sub.view === false) {
+    if (subItems && typeof subItems === 'object') {
+      if (subItems[subId] !== undefined) {
+        const sub = subItems[subId];
+        if (sub === false || sub.view === false) {
+          return { view: false, add: false, edit: false, delete: false };
+        }
+        return {
+          view: true,
+          add: sub.add !== false && parentPerms.add,
+          edit: sub.edit !== false && parentPerms.edit,
+          delete: sub.delete === true
+        };
+      }
+      if (Object.keys(subItems).length > 0) {
         return { view: false, add: false, edit: false, delete: false };
       }
-      return {
-        view: true,
-        add: sub.add !== false && parentPerms.add,
-        edit: sub.edit !== false && parentPerms.edit,
-        delete: sub.delete === true
-      };
     }
 
     // If module has assigned_steps (e.g. leads or recruiter), and subItems is not configured yet:

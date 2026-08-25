@@ -13,27 +13,44 @@ import {
   saveWhatsappAutomation,
   deleteWhatsappAutomation
 } from '@/app/actions/whatsapp';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
-export default function WhatsappOfficial() {
+const ALL_WA_TABS = [
+  { id: 'templates', label: 'Templates Library', icon: MessageSquare },
+  { id: 'automations', label: 'Stage Automations', icon: Repeat },
+  { id: 'settings', label: 'Global Settings', icon: Settings }
+];
+
+export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_official', ALL_WA_TABS);
+
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param) return param;
+      if (param && visibleTabs.some(t => t.id === param)) return param;
     }
-    return 'templates';
+    return visibleTabs[0]?.id || 'templates';
   });
+
+  // Ensure active tab stays within allowed tabs if permissions change
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
     const handlePopState = () => {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param && param !== activeTab) setActiveTab(param);
+      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab]);
+  }, [activeTab, visibleTabs]);
 
   const handleTabChange = (tabId) => {
+    if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
     const params = new URLSearchParams(window.location.search);
     params.set('wa_tab', tabId);
@@ -172,29 +189,37 @@ export default function WhatsappOfficial() {
     if (res.success) loadAllData();
   };
 
+  const templatesPerms = getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'templates');
+  const automationsPerms = getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'automations');
+  const settingsPerms = getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'settings');
+
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+        <p>You do not have permission to view any sub-pages under WhatsApp Official.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={{ padding: '2rem', minHeight: '80vh' }}>
       
       {/* Top Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem', marginBottom: '2rem' }}>
-        <button 
-          onClick={() => handleTabChange('templates')}
-          style={{ padding: '0.5rem 1rem', background: activeTab === 'templates' ? 'var(--accent-color)' : 'transparent', color: activeTab === 'templates' ? 'white' : 'var(--text-secondary)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-        >
-          <MessageSquare size={18} /> Templates Library
-        </button>
-        <button 
-          onClick={() => handleTabChange('automations')}
-          style={{ padding: '0.5rem 1rem', background: activeTab === 'automations' ? 'var(--accent-color)' : 'transparent', color: activeTab === 'automations' ? 'white' : 'var(--text-secondary)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-        >
-          <Repeat size={18} /> Stage Automations
-        </button>
-        <button 
-          onClick={() => handleTabChange('settings')}
-          style={{ padding: '0.5rem 1rem', background: activeTab === 'settings' ? 'var(--accent-color)' : 'transparent', color: activeTab === 'settings' ? 'white' : 'var(--text-secondary)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-        >
-          <Settings size={18} /> Global Settings
-        </button>
+      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem', marginBottom: '2rem', overflowX: 'auto' }}>
+        {visibleTabs.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button 
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              style={{ padding: '0.5rem 1rem', background: isActive ? 'var(--accent-color)' : 'transparent', color: isActive ? 'white' : 'var(--text-secondary)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+            >
+              <Icon size={18} /> {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* SETTINGS TAB */}
@@ -211,6 +236,7 @@ export default function WhatsappOfficial() {
             <textarea 
               value={apiKeyNsmlr}
               onChange={(e) => setApiKeyNsmlr(e.target.value)}
+              disabled={!settingsPerms.edit}
               placeholder="eyJhbGciOiJIUzI1..."
               style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', minHeight: '80px', fontSize: '0.85rem', fontFamily: 'monospace' }}
             />
@@ -222,18 +248,23 @@ export default function WhatsappOfficial() {
             <textarea 
               value={apiKeyNstlp}
               onChange={(e) => setApiKeyNstlp(e.target.value)}
+              disabled={!settingsPerms.edit}
               placeholder="https://api.nextel.io/API_V2/Whatsapp/send_session/..."
               style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', minHeight: '80px', fontSize: '0.85rem', fontFamily: 'monospace' }}
             />
           </div>
 
-          <button 
-            onClick={handleSaveSettings}
-            disabled={loading}
-            style={{ padding: '0.75rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-          >
-            <Save size={18} /> {loading ? 'Saving...' : 'Save Settings'}
-          </button>
+          {settingsPerms.edit ? (
+            <button 
+              onClick={handleSaveSettings}
+              disabled={loading}
+              style={{ padding: '0.75rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+            >
+              <Save size={18} /> {loading ? 'Saving...' : 'Save Settings'}
+            </button>
+          ) : (
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>🔒 Read-only view. Contact administrator to update API keys.</span>
+          )}
         </div>
       )}
 
@@ -242,12 +273,14 @@ export default function WhatsappOfficial() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.25rem' }}>Message Templates</h2>
-            <button 
-              onClick={() => { setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '' }); setShowTemplateForm(true); }}
-              style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-            >
-              <Plus size={18} /> Create New Template
-            </button>
+            {templatesPerms.add && (
+              <button 
+                onClick={() => { setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '' }); setShowTemplateForm(true); }}
+                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+              >
+                <Plus size={18} /> Create New Template
+              </button>
+            )}
           </div>
 
           {showTemplateForm && (
@@ -331,12 +364,16 @@ export default function WhatsappOfficial() {
                   </div>
                   
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
-                    <button onClick={() => { setCurrentTemplate(tpl); setShowTemplateForm(true); window.scrollTo(0, 0); }} style={{ flex: 1, padding: '0.4rem', background: 'var(--th-bg)', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}>
-                      Edit
-                    </button>
-                    <button onClick={() => handleDeleteTemplate(tpl.id)} style={{ padding: '0.4rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Trash2 size={16} />
-                    </button>
+                    {templatesPerms.edit && (
+                      <button onClick={() => { setCurrentTemplate(tpl); setShowTemplateForm(true); window.scrollTo(0, 0); }} style={{ flex: 1, padding: '0.4rem', background: 'var(--th-bg)', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}>
+                        Edit
+                      </button>
+                    )}
+                    {templatesPerms.delete && (
+                      <button onClick={() => handleDeleteTemplate(tpl.id)} style={{ padding: '0.4rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -358,12 +395,14 @@ export default function WhatsappOfficial() {
               <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Stage-Based Automation Rules</h2>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Map your templates to specific CRM stages to send automated drip campaigns.</p>
             </div>
-            <button 
-              onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once' }); setShowAutoForm(true); }}
-              style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-            >
-              <Plus size={18} /> Add New Rule
-            </button>
+            {automationsPerms.add && (
+              <button 
+                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once' }); setShowAutoForm(true); }}
+                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+              >
+                <Plus size={18} /> Add New Rule
+              </button>
+            )}
           </div>
 
           {showAutoForm && (
@@ -494,8 +533,12 @@ export default function WhatsappOfficial() {
                         }
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        <button onClick={() => { setCurrentAuto(auto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
-                        <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                        {automationsPerms.edit && (
+                          <button onClick={() => { setCurrentAuto(auto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
+                        )}
+                        {automationsPerms.delete && (
+                          <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                        )}
                       </td>
                     </tr>
                   ))

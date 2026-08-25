@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageSquare, LayoutDashboard, Settings, Smartphone, Shield, TestTube, FileText } from 'lucide-react';
+import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 // Subcomponents (to be implemented)
 import Dashboard from './Dashboard';
@@ -10,43 +11,58 @@ import TestMessage from './TestMessage';
 import MessageLogs from './MessageLogs';
 
 const MODULE_TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, adminOnly: false },
-  { id: 'live_chat', label: 'Live Chat Inbox', icon: <MessageSquare size={18} />, adminOnly: false },
-  { id: 'instances', label: 'Instance Management', icon: <Smartphone size={18} />, adminOnly: true },
-  { id: 'auth', label: 'User Authorization', icon: <Shield size={18} />, adminOnly: true },
-  { id: 'test', label: 'Test Message', icon: <TestTube size={18} />, adminOnly: true },
-  { id: 'logs', label: 'Message Logs', icon: <FileText size={18} />, adminOnly: false },
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  { id: 'live_chat', label: 'Live Chat Inbox', icon: <MessageSquare size={18} /> },
+  { id: 'instances', label: 'Instance Management', icon: <Smartphone size={18} /> },
+  { id: 'auth', label: 'User Authorization', icon: <Shield size={18} /> },
+  { id: 'test', label: 'Test Message', icon: <TestTube size={18} /> },
+  { id: 'logs', label: 'Message Logs', icon: <FileText size={18} /> },
 ];
 
-export default function WhatsappUnofficialModule({ userRole, userId }) {
+export default function WhatsappUnofficialModule({ userRole, userId, moduleAccess = {} }) {
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_unofficial', MODULE_TABS);
+
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param) return param;
+      if (param && visibleTabs.some(t => t.id === param)) return param;
     }
-    return 'dashboard';
+    return visibleTabs[0]?.id || 'dashboard';
   });
+
+  // Ensure active tab stays valid
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
     const handlePopState = () => {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param && param !== activeTab) setActiveTab(param);
+      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab]);
+  }, [activeTab, visibleTabs]);
 
   const handleTabChange = (tabId) => {
+    if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
     const params = new URLSearchParams(window.location.search);
     params.set('wa_tab', tabId);
     window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
   };
-  
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
 
-  const visibleTabs = MODULE_TABS.filter(tab => !tab.adminOnly || isAdmin);
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="card" style={{ padding: '3rem', margin: '2rem auto', maxWidth: '600px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+        <p>You do not have permission to view any sub-pages under WhatsApp UnOfficial.</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%', gap: '1.5rem', padding: '1rem', backgroundColor: 'var(--bg-default)' }}>

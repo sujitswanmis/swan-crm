@@ -31,9 +31,35 @@ import {
   importBulkLocationsCentral
 } from '@/app/actions/centralLocationMaster';
 import LocationPicker from './LocationPicker';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
-export default function LocationManagementModule() {
-  const [activeTab, setActiveTab] = useState('explorer'); // 1 to 11
+const ALL_LOCATION_TABS = [
+  { id: 'explorer', label: '1. Explorer' },
+  { id: 'states', label: '2. States / UTs' },
+  { id: 'districts', label: '3. Districts' },
+  { id: 'subdistricts', label: '4. Tehsil / Sub-District' },
+  { id: 'blocks', label: '5. Development Blocks' },
+  { id: 'settlements', label: '6. Cities / Towns / Villages' },
+  { id: 'post_offices', label: '7. PIN / Post Offices' },
+  { id: 'aliases', label: '8. Aliases' },
+  { id: 'import', label: '9. Import' },
+  { id: 'requests', label: '10. Location Requests' },
+  { id: 'history', label: '11. Change History' }
+];
+
+export default function LocationManagementModule({ moduleAccess = {}, userRole = '' }) {
+  const locModuleId = moduleAccess['location_master'] ? 'location_master' : 'location_territory';
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, locModuleId, ALL_LOCATION_TABS);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs[0]?.id || 'explorer';
+  });
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
   const [loading, setLoading] = useState(false);
 
   // 100% Database-Driven Explorer State
@@ -523,42 +549,37 @@ export default function LocationManagementModule() {
         </div>
       </div>
 
-      {/* 11 Sub-Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1.5rem', background: '#ffffff', padding: '0.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        {[
-          { id: 'explorer', label: '1. Explorer' },
-          { id: 'states', label: '2. States / UTs' },
-          { id: 'districts', label: '3. Districts' },
-          { id: 'subdistricts', label: '4. Tehsil / Sub-District' },
-          { id: 'blocks', label: '5. Development Blocks' },
-          { id: 'settlements', label: '6. Cities / Towns / Villages' },
-          { id: 'post_offices', label: '7. PIN / Post Offices' },
-          { id: 'aliases', label: '8. Aliases' },
-          { id: 'import', label: '9. Import' },
-          { id: 'requests', label: '10. Location Requests' },
-          { id: 'history', label: '11. Change History' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-              if (tab.id === 'requests') loadRequests();
-            }}
-            style={{
-              padding: '0.5rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              background: activeTab === tab.id ? '#2563eb' : 'transparent',
-              color: activeTab === tab.id ? '#ffffff' : '#64748b'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Sub-Navigation Tabs */}
+      {visibleTabs.length === 0 ? (
+        <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+          <p>You do not have permission to view any sub-pages under Location Master.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1.5rem', background: '#ffffff', padding: '0.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          {visibleTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === 'requests') loadRequests();
+              }}
+              style={{
+                padding: '0.5rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: activeTab === tab.id ? '#2563eb' : 'transparent',
+                color: activeTab === tab.id ? '#ffffff' : '#64748b'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 1. LOCATION EXPLORER (LIGHT CRM THEME) */}
       {activeTab === 'explorer' && (

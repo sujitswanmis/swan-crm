@@ -15,6 +15,7 @@ import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
 import PageNavigationConfig from './PageNavigationConfig';
 import ManageDepartments from './ManageDepartments';
+import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile', icon: <Building2 size={18} /> },
@@ -33,17 +34,7 @@ const SETTINGS_TABS = [
 ];
 
 export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
-  
-  const visibleTabs = SETTINGS_TABS.filter(tab => {
-    if (isAdmin) return true;
-    const settingsAccess = moduleAccess['settings'];
-    if (!settingsAccess || settingsAccess.view === false) return false;
-    if (settingsAccess.sub_items && settingsAccess.sub_items[tab.id]) {
-      return settingsAccess.sub_items[tab.id].view !== false;
-    }
-    return true;
-  });
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
 
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -52,6 +43,13 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
     }
     return visibleTabs[0]?.id || 'business';
   });
+
+  // Ensure active tab stays valid if permissions change
+  React.useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
@@ -69,6 +67,15 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
     params.set('setting', tabId);
     window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
   };
+
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="card" style={{ padding: '3rem', margin: '2rem auto', maxWidth: '600px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+        <p>You do not have permission to view any settings pages.</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%', gap: '1.5rem', padding: '1rem' }}>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 // ─── Helpers ────────────────────────────────────────────────
 const TABS = [
@@ -862,8 +863,19 @@ function TabSettings() {
 }
 
 // ─── Main Component ──────────────────────────────────────────
-export default function CallAdminModule() {
-  const [activeTab, setActiveTab] = useState('agents');
+export default function CallAdminModule({ moduleAccess = {}, userRole = '' }) {
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'calladmin', TABS);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs[0]?.id || 'agents';
+  });
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
+
   const [agents, setAgents] = useState([]);
   const [endpoints, setEndpoints] = useState([]);
   const [users, setUsers] = useState([]);
@@ -890,6 +902,15 @@ export default function CallAdminModule() {
 
   if (loading) return <PremiumProgressLoader message="Loading Call Center Administration" active={loading} />;
 
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+        <p>You do not have permission to view any sub-pages in Call Admin.</p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#f8fafc' }}>
       {/* Header */}
@@ -902,8 +923,8 @@ export default function CallAdminModule() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display:'flex', gap:'0', borderBottom:'2px solid #f1f5f9' }}>
-          {TABS.map(tab => {
+        <div style={{ display:'flex', gap:'0', borderBottom:'2px solid #f1f5f9', overflowX: 'auto' }}>
+          {visibleTabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (

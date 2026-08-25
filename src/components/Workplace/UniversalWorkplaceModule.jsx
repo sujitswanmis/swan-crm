@@ -9,6 +9,7 @@ import { getAccessProfiles } from '@/app/actions/accessControl';
 import { getRecursiveSubordinatesTree } from '@/app/actions/hierarchy';
 import { getWorkflowDefinitions, createWorkflowDefinition, addWorkflowStage, deleteWorkflowDefinition, restoreWorkflowDefinition, mapStageField, purgeWorkflowDefinition } from '@/app/actions/workflowEngine';
 import LocationTerritoryModule from './LocationTerritoryModule';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
 
 const DESIGNATION_CATEGORIES = [
   'Management', 'Head of Department', 'Senior Manager', 'Manager',
@@ -30,23 +31,21 @@ const DESIGNATION_LEVELS = [
 ];
 
 export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole = '' }) {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
-  const workplaceAccess = moduleAccess['workplace'];
-
   const canViewTab = (tabId) => {
-    if (isAdmin) return true;
-    if (!workplaceAccess || workplaceAccess.view === false) return false;
-    if (workplaceAccess.sub_items && workplaceAccess.sub_items[tabId]) {
-      return workplaceAccess.sub_items[tabId].view !== false;
-    }
-    return true;
+    return getSubItemPermissions(moduleAccess, userRole, 'workplace', tabId).view === true;
   };
 
+  const allowedTabs = ['employees', 'designations', 'org', 'access', 'location_territory', 'workflow'].filter(t => canViewTab(t));
+
   const [activeSubTab, setActiveSubTab] = useState(() => {
-    const tabs = ['employees', 'designations', 'org', 'access', 'location_territory', 'workflow'];
-    const firstAllowed = tabs.find(t => canViewTab(t));
-    return firstAllowed || 'employees';
+    return allowedTabs[0] || 'employees';
   });
+
+  useEffect(() => {
+    if (allowedTabs.length > 0 && !allowedTabs.includes(activeSubTab)) {
+      setActiveSubTab(allowedTabs[0]);
+    }
+  }, [moduleAccess, userRole, activeSubTab]);
   const [loading, setLoading] = useState(false);
 
   // Data states

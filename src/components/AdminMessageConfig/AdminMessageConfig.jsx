@@ -12,9 +12,28 @@ import {
   saveAdminMessageConfig, 
   testAdminChannel 
 } from '@/app/actions/adminMessageConfig';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+
+const ALL_ADMIN_MSG_TABS = [
+  { id: 'email', label: 'Email Setup (SMTP & OTPs)', icon: Mail },
+  { id: 'wa_official', label: 'WhatsApp Official', icon: MessageSquare },
+  { id: 'wa_unofficial', label: 'WhatsApp Unofficial', icon: Phone },
+  { id: 'sms', label: 'SMS Configuration', icon: FileText },
+  { id: 'rcs', label: 'RCS Configuration', icon: Globe }
+];
 
 export default function AdminMessageConfig({ moduleAccess = {}, userRole = '' }) {
-  const [activeTab, setActiveTab] = useState('email');
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'admin_message_config', ALL_ADMIN_MSG_TABS);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs[0]?.id || 'email';
+  });
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState(null);
 
@@ -138,45 +157,46 @@ export default function AdminMessageConfig({ moduleAccess = {}, userRole = '' })
       </div>
 
       {/* Tabs Navigation */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', overflowX: 'auto' }}>
-        {[
-          { id: 'email', label: 'Email Setup (SMTP & OTPs)', icon: Mail },
-          { id: 'wa_official', label: 'WhatsApp Official', icon: MessageSquare },
-          { id: 'wa_unofficial', label: 'WhatsApp Unofficial', icon: Phone },
-          { id: 'sms', label: 'SMS Configuration', icon: FileText },
-          { id: 'rcs', label: 'RCS Configuration', icon: Globe }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setTestResponse(null);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.75rem 1.25rem',
-                border: 'none',
-                background: 'none',
-                borderBottom: isActive ? '3px solid #4338ca' : '3px solid transparent',
-                color: isActive ? '#4338ca' : 'var(--text-secondary)',
-                fontWeight: isActive ? 700 : 500,
-                fontSize: '0.92rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Icon size={18} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {visibleTabs.length === 0 ? (
+        <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+          <p>You do not have permission to view any sub-tabs under Admin Message Config.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', overflowX: 'auto' }}>
+          {visibleTabs.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setTestResponse(null);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem 1.25rem',
+                  border: 'none',
+                  background: 'none',
+                  borderBottom: isActive ? '3px solid #4338ca' : '3px solid transparent',
+                  color: isActive ? '#4338ca' : 'var(--text-secondary)',
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.92rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Icon size={18} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 1. EMAIL SETUP TAB (SuPuja Creations Admin SMTP) */}
