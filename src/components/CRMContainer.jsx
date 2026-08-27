@@ -35,6 +35,7 @@ import LocationManagementModule from './Location/LocationManagementModule';
 import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
 import EmailConfigModule from './EmailConfig/EmailConfigModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
+import SessionExpiryTracker from './SessionExpiryTracker';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -2588,6 +2589,13 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                 </div>
               )}
             </div>
+
+            {/* Live Session Inactivity Expiry Countdown & Mouse Tracker */}
+            <SessionExpiryTracker 
+              userEmail={userEmail} 
+              userName={userName} 
+              userRole={userRole} 
+            />
 
             {/* Theme Switcher Button (Square Button Box) */}
             <div style={{ position: 'relative' }} ref={themeMenuRef}>

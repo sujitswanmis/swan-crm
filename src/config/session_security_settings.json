@@ -1,0 +1,8 @@
+{
+  "inactivityTimeoutMinutes": 60,
+  "enableAutoLogout": true,
+  "showTimerInHeader": true,
+  "warningSeconds": 60,
+  "idleThresholdSeconds": 60,
+  "updatedAt": "2026-08-27T06:32:26.053Z"
+}

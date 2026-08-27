@@ -1,6 +1,9 @@
+'use client';
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop } from 'lucide-react';
+import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity } from 'lucide-react';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
+import { getSessionSecuritySettings, saveSessionSecuritySettings, getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
 import { createClient } from '@/utils/supabase/client';
 
 function parseDeviceInfo(userAgent) {
@@ -38,11 +41,44 @@ export default function ActiveSessionsConfig() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
+  // Settings State
+  const [settings, setSettings] = useState({
+    inactivityTimeoutMinutes: 60,
+    enableAutoLogout: true,
+    showTimerInHeader: true,
+    warningSeconds: 60,
+    idleThresholdSeconds: 60
+  });
+  const [isCustomTimeout, setIsCustomTimeout] = useState(false);
+  const [customTimeoutInput, setCustomTimeoutInput] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSuccessMsg, setSettingsSuccessMsg] = useState(null);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
+  // 1. Fetch Admin Session Security Settings
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await getSessionSecuritySettings();
+      if (res?.success && res?.settings) {
+        setSettings(res.settings);
+        const standardPresets = [15, 30, 45, 60, 120];
+        if (!standardPresets.includes(res.settings.inactivityTimeoutMinutes)) {
+          setIsCustomTimeout(true);
+          setCustomTimeoutInput(String(res.settings.inactivityTimeoutMinutes));
+        } else {
+          setIsCustomTimeout(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching session settings:', err);
+    }
+  }, []);
+
+  // 2. Fetch Sessions & Daily Activity Metrics
   const fetchSessions = useCallback(async (isManualRefresh = false) => {
     try {
       if (isManualRefresh) setRefreshing(true);
@@ -61,7 +97,17 @@ export default function ActiveSessionsConfig() {
         if (u.email && u.emp_name) userMap[u.email.toLowerCase()] = u.emp_name;
       });
 
-      // 2. Fetch user sessions
+      // 2. Fetch employee activity metrics from today
+      const activityRes = await getEmployeeDailyActivitySummary();
+      const activityMap = {};
+      if (activityRes?.success && activityRes?.employees) {
+        activityRes.employees.forEach(emp => {
+          if (emp.userId) activityMap[emp.userId] = emp;
+          if (emp.email) activityMap[emp.email.toLowerCase()] = emp;
+        });
+      }
+
+      // 3. Fetch user sessions
       let query = supabase
         .from('user_sessions')
         .select('*')
@@ -76,7 +122,6 @@ export default function ActiveSessionsConfig() {
         query = query.lte('last_active', endOfDay.toISOString());
       }
 
-      // Limit to 500 records overall for performance
       query = query.limit(500);
 
       const { data: sessionsData, error: sessionErr } = await query;
@@ -103,6 +148,14 @@ export default function ActiveSessionsConfig() {
           const isActive = s.is_active === true && isWithin30Mins;
           const parsedDevice = parseDeviceInfo(s.device);
 
+          // Merge live activity stats if available
+          const act = (s.user_id && activityMap[s.user_id]) || (s.email && activityMap[s.email.toLowerCase()]);
+          
+          let liveStatus = 'offline';
+          if (isActive) {
+            liveStatus = act?.liveStatus || 'working';
+          }
+
           return {
             id: s.id,
             user: resolvedName,
@@ -116,6 +169,10 @@ export default function ActiveSessionsConfig() {
             }),
             lastActiveRaw: lastActiveDate,
             isActive,
+            liveStatus,
+            activeDurationFormatted: act?.activeDurationFormatted || '0m 00s',
+            idleDurationFormatted: act?.idleDurationFormatted || '0m 00s',
+            totalDurationFormatted: act?.totalDurationFormatted || '0m 00s',
             current: false
           };
         });
@@ -138,10 +195,11 @@ export default function ActiveSessionsConfig() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => {
+    fetchSettings();
     fetchSessions();
-    const timer = setInterval(() => fetchSessions(false), 30000); // 30s auto-refresh
+    const timer = setInterval(() => fetchSessions(false), 20000); // 20s auto-refresh
     return () => clearInterval(timer);
-  }, [fetchSessions]);
+  }, [fetchSettings, fetchSessions]);
 
   useEffect(() => {
     // Client-side search filtering
@@ -174,16 +232,53 @@ export default function ActiveSessionsConfig() {
     fetchSessions(true);
   };
 
+  // Save Settings Handler
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    setSettingsSuccessMsg(null);
+    setError(null);
+
+    let finalTimeout = settings.inactivityTimeoutMinutes;
+    if (isCustomTimeout) {
+      const parsedCustom = parseInt(customTimeoutInput, 10);
+      if (isNaN(parsedCustom) || parsedCustom < 1) {
+        setError('Please enter a valid custom timeout in minutes (minimum 1 minute).');
+        setSavingSettings(false);
+        return;
+      }
+      finalTimeout = parsedCustom;
+    }
+
+    const payload = {
+      ...settings,
+      inactivityTimeoutMinutes: finalTimeout
+    };
+
+    const res = await saveSessionSecuritySettings(payload);
+    setSavingSettings(false);
+
+    if (res?.success) {
+      setSettings(res.settings);
+      setSettingsSuccessMsg(`✅ Session settings saved! Users will now expire after ${res.settings.inactivityTimeoutMinutes} minutes of inactivity.`);
+      window.dispatchEvent(new Event('session_config_updated'));
+      setTimeout(() => setSettingsSuccessMsg(null), 5000);
+    } else {
+      setError(res?.error || 'Failed to save session settings');
+    }
+  };
+
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div style={{ padding: '2rem', maxWidth: '1150px', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)', marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem' }}>
             <Monitor size={24} color="var(--accent-color)" />
-            Monitor User Sessions
+            Monitor User Sessions & Inactivity Rules
           </h2>
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
-            View currently active real-time users (heartbeat within 30 mins) and full logout history.
+            Configure automatic session timeout duration and monitor real-time employee active/idle working hours.
           </p>
         </div>
 
@@ -210,10 +305,180 @@ export default function ActiveSessionsConfig() {
       </div>
 
       {error && (
-        <div style={{ padding: '1rem', background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', border: '1px solid #fecaca' }}>
-          {error}
+        <div style={{ padding: '1rem', background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <AlertCircle size={18} />
+          <span>{error}</span>
         </div>
       )}
+
+      {settingsSuccessMsg && (
+        <div style={{ padding: '1rem', background: '#dcfce7', color: '#166534', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <CheckCircle2 size={18} />
+          <span>{settingsSuccessMsg}</span>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SECTION: ADMIN SESSION TIMEOUT & INACTIVITY CONFIGURATION */}
+      {/* ========================================================================= */}
+      <div style={{
+        background: 'var(--bg-primary)',
+        padding: '1.5rem',
+        borderRadius: '12px',
+        border: '1px solid var(--border-light)',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <Sliders size={20} color="var(--accent-color)" />
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+              Session Inactivity & Auto-Logout Settings
+            </h3>
+          </div>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            Applies to all employee logins across Web CRM
+          </span>
+        </div>
+
+        {/* Timeout Duration Selector */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+            Inactivity Timeout Duration (Minutes)
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            {[15, 30, 45, 60, 120].map((mins) => {
+              const isSelected = !isCustomTimeout && settings.inactivityTimeoutMinutes === mins;
+              return (
+                <button
+                  key={mins}
+                  type="button"
+                  onClick={() => {
+                    setIsCustomTimeout(false);
+                    setSettings(prev => ({ ...prev, inactivityTimeoutMinutes: mins }));
+                  }}
+                  style={{
+                    padding: '0.55rem 1.1rem',
+                    borderRadius: '8px',
+                    border: isSelected ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
+                    backgroundColor: isSelected ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
+                    color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)',
+                    fontWeight: isSelected ? 700 : 500,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {mins} Minutes
+                </button>
+              );
+            })}
+
+            {/* Custom Minutes Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsCustomTimeout(true);
+                if (!customTimeoutInput) setCustomTimeoutInput(String(settings.inactivityTimeoutMinutes || 90));
+              }}
+              style={{
+                padding: '0.55rem 1.1rem',
+                borderRadius: '8px',
+                border: isCustomTimeout ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
+                backgroundColor: isCustomTimeout ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
+                color: isCustomTimeout ? 'var(--accent-color)' : 'var(--text-primary)',
+                fontWeight: isCustomTimeout ? 700 : 500,
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              Custom
+            </button>
+
+            {isCustomTimeout && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.5rem' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={customTimeoutInput}
+                  onChange={(e) => setCustomTimeoutInput(e.target.value)}
+                  placeholder="e.g. 90"
+                  style={{
+                    width: '90px',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--accent-color)',
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    fontWeight: 600
+                  }}
+                />
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Mins</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Toggles & Options Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          
+          {/* Toggle 1: Auto-Logout */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Automatic Logout</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Log out user when timer reaches 00:00</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.enableAutoLogout}
+              onChange={(e) => setSettings(prev => ({ ...prev, enableAutoLogout: e.target.checked }))}
+              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
+            />
+          </div>
+
+          {/* Toggle 2: Show Live Timer in Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Show Timer in Header</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Users can see countdown clock in topbar</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.showTimerInHeader}
+              onChange={(e) => setSettings(prev => ({ ...prev, showTimerInHeader: e.target.checked }))}
+              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
+            />
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={handleSaveSettings}
+            disabled={savingSettings}
+            style={{
+              padding: '0.65rem 1.75rem',
+              backgroundColor: 'var(--accent-color)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              cursor: savingSettings ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+            }}
+          >
+            {savingSettings ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            {savingSettings ? 'Saving...' : 'Save Timeout Settings'}
+          </button>
+        </div>
+      </div>
 
       {/* Global Search & Date Filters */}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -248,17 +513,17 @@ export default function ActiveSessionsConfig() {
 
       {loading && allSessions.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-          ⏳ Loading live user sessions...
+          ⏳ Loading live user sessions and activity durations...
         </div>
       ) : (
         <>
-          {/* Section 1: Active User Sessions */}
+          {/* Section 1: Active User Sessions & Employee Time Tracking */}
           <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 8px #10b981' }} />
                 <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                  Active User Sessions ({filteredActive.length})
+                  Active User Sessions & Time Tracking ({filteredActive.length})
                 </h3>
               </div>
 
@@ -277,14 +542,16 @@ export default function ActiveSessionsConfig() {
                 No active user sessions right now. (Users become active on login/action).
               </div>
             ) : (
-              <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+              <div style={{ maxHeight: '460px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Emp Name & Email</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name & Email</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Real-Time Status</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Active Work (Today)</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Idle / Away</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device / Browser</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Source</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Active</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Heartbeat</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
@@ -302,20 +569,56 @@ export default function ActiveSessionsConfig() {
                             <span style={{ fontWeight: 600 }}>{session.user}</span>
                             {session.current && (
                               <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem', background: '#10b981', color: 'white', borderRadius: '10px', fontWeight: 600 }}>
-                                Current Device
+                                Current
                               </span>
                             )}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '0.1rem' }}>{session.email}</div>
                         </td>
+
+                        {/* Real-time Status Badge */}
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          {session.liveStatus === 'working' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontWeight: 600, fontSize: '0.78rem' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16a34a' }} />
+                              🟢 Working (Live)
+                            </span>
+                          )}
+                          {session.liveStatus === 'away' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#fef3c7', color: '#b45309', fontWeight: 600, fontSize: '0.78rem' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                              🟡 Away (Idle)
+                            </span>
+                          )}
+                          {session.liveStatus === 'offline' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '0.78rem' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#94a3b8' }} />
+                              🔴 Offline
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Active Work Time */}
+                        <td style={{ padding: '0.75rem 1rem', color: '#15803d', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                          {session.activeDurationFormatted}
+                        </td>
+
+                        {/* Idle Time */}
+                        <td style={{ padding: '0.75rem 1rem', color: '#b45309', fontWeight: 600, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                          {session.idleDurationFormatted}
+                        </td>
+
                         <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }} title={session.deviceObj?.raw}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>
                             <span>{session.deviceObj?.icon}</span>
                             <span>{session.deviceObj?.label}</span>
                           </span>
                         </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{session.ip}</td>
-                        <td style={{ padding: '0.75rem 1rem', color: '#10b981', fontWeight: 600 }}>{session.lastActive}</td>
+
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                          {session.lastActive}
+                        </td>
+
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                           {!session.current ? (
                             <button 
@@ -325,7 +628,7 @@ export default function ActiveSessionsConfig() {
                               <LogOut size={13} /> Force Logout
                             </button>
                           ) : (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Active session</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Your session</span>
                           )}
                         </td>
                       </tr>
