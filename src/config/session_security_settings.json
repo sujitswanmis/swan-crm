@@ -4,5 +4,60 @@
   "showTimerInHeader": true,
   "warningSeconds": 60,
   "idleThresholdSeconds": 60,
-  "updatedAt": "2026-08-27T06:32:26.053Z"
+  "dailyWorkTargetHours": 9,
+  "dailyLunchBreakMinutes": 30,
+  "totalShiftHours": 9.5,
+  "breakRules": [
+    {
+      "id": "tea",
+      "label": "Tea / Coffee Break",
+      "icon": "☕",
+      "defaultMins": 5,
+      "enabled": true
+    },
+    {
+      "id": "lunch",
+      "label": "Lunch Break",
+      "icon": "🍱",
+      "defaultMins": 30,
+      "enabled": true
+    },
+    {
+      "id": "washroom",
+      "label": "Washroom Break",
+      "icon": "🚻",
+      "defaultMins": 5,
+      "enabled": true
+    },
+    {
+      "id": "water",
+      "label": "Drinking Water / Hydration",
+      "icon": "💧",
+      "defaultMins": 3,
+      "enabled": true
+    },
+    {
+      "id": "rest",
+      "label": "Rest / Short Break",
+      "icon": "🛌",
+      "defaultMins": 5,
+      "enabled": true
+    },
+    {
+      "id": "meeting",
+      "label": "Team Discussion / Meeting",
+      "icon": "👥",
+      "defaultMins": 60,
+      "enabled": true
+    },
+    {
+      "id": "custom_1787817245987",
+      "label": "Smoking",
+      "icon": "🚬",
+      "defaultMins": 8,
+      "enabled": true
+    }
+  ],
+  "updatedAt": "2026-08-27T07:54:30.348Z",
+  "updatedBy": "sujitswanmis@gmail.com"
 }

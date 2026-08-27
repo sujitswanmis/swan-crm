@@ -4,13 +4,38 @@
       "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
       "email": "sujitswanmis@gmail.com",
       "empName": "Sujit Gupta",
-      "activeSeconds": 240,
-      "idleSeconds": 5,
+      "activeSeconds": 3233,
+      "idleSeconds": 558,
       "firstSeen": "2026-08-27T06:33:31.127Z",
-      "lastSeen": "2026-08-27T06:41:38.123Z",
-      "status": "away",
+      "lastSeen": "2026-08-27T08:06:30.527Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
-      "ip": "Logged via Web App"
+      "ip": "Logged via Web App",
+      "currentBreak": null,
+      "breaks": [
+        {
+          "id": "brk_1787816736442",
+          "type": "Tea / Coffee Break",
+          "icon": "☕",
+          "startTime": "2026-08-27T07:45:36.437Z",
+          "startTimeFormatted": "01:15 pm",
+          "endTime": "2026-08-27T07:45:40.692Z",
+          "durationSeconds": 4,
+          "endTimeFormatted": "01:15 pm",
+          "durationFormatted": "0m 04s"
+        },
+        {
+          "id": "brk_1787817286804",
+          "type": "Tea / Coffee Break",
+          "icon": "☕",
+          "startTime": "2026-08-27T07:54:46.798Z",
+          "startTimeFormatted": "01:24 pm",
+          "endTime": "2026-08-27T07:55:03.365Z",
+          "durationSeconds": 17,
+          "endTimeFormatted": "01:25 pm",
+          "durationFormatted": "0m 17s"
+        }
+      ]
     }
   }
 }

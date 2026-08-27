@@ -1,9 +1,18 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Clock, ShieldAlert, Activity, CheckCircle2, RefreshCw, AlertTriangle, UserCheck } from 'lucide-react';
+import { Clock, ShieldAlert, Activity, CheckCircle2, RefreshCw, AlertTriangle, UserCheck, Coffee, Utensils, Play, X, ChevronRight, Droplets, Users, BedDouble } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { getSessionSecuritySettings, recordUserActivityHeartbeat } from '@/app/actions/sessionSettings';
+import { getSessionSecuritySettings, recordUserActivityHeartbeat, startEmployeeBreak, endEmployeeBreak, getCurrentEmployeeStatus } from '@/app/actions/sessionSettings';
+
+const BREAK_TYPES = [
+  { id: 'tea', label: 'Tea / Coffee Break', icon: '☕', defaultMins: 15 },
+  { id: 'lunch', label: 'Lunch Break', icon: '🍱', defaultMins: 30 },
+  { id: 'washroom', label: 'Washroom Break', icon: '🚻', defaultMins: 10 },
+  { id: 'water', label: 'Drinking Water / Hydration', icon: '💧', defaultMins: 5 },
+  { id: 'rest', label: 'Rest / Short Break', icon: '🛌', defaultMins: 15 },
+  { id: 'meeting', label: 'Team Discussion / Meeting', icon: '👥', defaultMins: 30 }
+];
 
 export default function SessionExpiryTracker({ userEmail = '', userName = '', userRole = '' }) {
   const [settings, setSettings] = useState({
@@ -17,22 +26,42 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(60 * 60);
   const [isAway, setIsAway] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [todayActiveSec, setTodayActiveSec] = useState(0);
   const [todayIdleSec, setTodayIdleSec] = useState(0);
+
+  // Break State
+  const [currentBreak, setCurrentBreak] = useState(null); // { id, type, icon, startTime }
+  const [breakElapsedSec, setBreakElapsedSec] = useState(0);
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Refs for tracking without re-triggering intervals
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
+  const dropdownContainerRef = useRef(null);
   const lastActivityTimestamp = useRef(Date.now());
   const activeAccumulator = useRef(0);
   const idleAccumulator = useRef(0);
   const isCurrentlyActive = useRef(true);
   const isLoggingOut = useRef(false);
+  const currentBreakRef = useRef(null);
+  currentBreakRef.current = currentBreak;
 
-  // 1. Fetch Admin Session Settings on mount & listen to changes
-  const fetchSettings = useCallback(async () => {
+  // Click Outside Listener for Dropdown
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 1. Fetch Admin Session Settings & Current Break Status on mount
+  const fetchSettingsAndStatus = useCallback(async () => {
     try {
       const res = await getSessionSecuritySettings();
       if (res?.success && res?.settings) {
@@ -40,17 +69,23 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
         const fullTimeout = (res.settings.inactivityTimeoutMinutes || 60) * 60;
         setTimeLeftSeconds(fullTimeout);
       }
+
+      const statusRes = await getCurrentEmployeeStatus();
+      if (statusRes?.success && statusRes.currentBreak) {
+        setCurrentBreak(statusRes.currentBreak);
+        const elapsed = Math.max(0, Math.floor((Date.now() - new Date(statusRes.currentBreak.startTime).getTime()) / 1000));
+        setBreakElapsedSec(elapsed);
+      }
     } catch (e) {
-      console.error('Failed to load session settings:', e);
+      console.error('Failed to load session settings / break status:', e);
     }
   }, []);
 
   useEffect(() => {
-    fetchSettings();
+    fetchSettingsAndStatus();
 
-    // Listen for live updates when Admin saves settings
     const handleConfigUpdate = () => {
-      fetchSettings();
+      fetchSettingsAndStatus();
     };
 
     window.addEventListener('session_config_updated', handleConfigUpdate);
@@ -60,33 +95,33 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       window.removeEventListener('session_config_updated', handleConfigUpdate);
       window.removeEventListener('crm_config_updated', handleConfigUpdate);
     };
-  }, [fetchSettings]);
+  }, [fetchSettingsAndStatus]);
 
-  // 2. User Activity Reset Handler (Mouse, Touch, Keydown, Scroll)
+  // 2. User Activity Reset Handler
   const handleUserActivity = useCallback(() => {
+    // If user is actively on break, do not override break status by mouse movement
+    if (currentBreakRef.current) return;
+
     const now = Date.now();
     lastActivityTimestamp.current = now;
 
-    // Reset away status to working
     if (!isCurrentlyActive.current) {
       isCurrentlyActive.current = true;
       setIsAway(false);
     }
 
-    // Dismiss warning modal if user moves mouse
     setShowWarningModal(false);
 
-    // Reset countdown timer to full duration
     const fullDuration = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
     setTimeLeftSeconds(fullDuration);
   }, []);
 
-  // Set up throttled event listeners
+  // Event Listeners for Activity Reset
   useEffect(() => {
     let lastEventTime = 0;
     const throttledActivity = () => {
       const now = Date.now();
-      if (now - lastEventTime > 800) { // Max once per 800ms to keep CPU 0%
+      if (now - lastEventTime > 800) {
         lastEventTime = now;
         handleUserActivity();
       }
@@ -104,10 +139,18 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, [handleUserActivity]);
 
-  // 3. Main 1-Second Ticking Engine (Countdown & Working/Idle Accumulation)
+  // 3. Main 1-Second Ticking Engine
   useEffect(() => {
     const timer = setInterval(() => {
       if (isLoggingOut.current) return;
+
+      // If user is currently ON BREAK
+      if (currentBreakRef.current) {
+        setBreakElapsedSec(prev => prev + 1);
+        idleAccumulator.current += 1;
+        setTodayIdleSec(prev => prev + 1);
+        return;
+      }
 
       const now = Date.now();
       const idleDiffSec = Math.floor((now - lastActivityTimestamp.current) / 1000);
@@ -116,7 +159,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       const warningThreshold = settingsRef.current.warningSeconds || 60;
       const enableAutoLogout = settingsRef.current.enableAutoLogout !== false;
 
-      // Check if user has been inactive for > idleThreshold
+      // Check if inactive for > idleThreshold
       if (idleDiffSec >= idleThreshold) {
         if (isCurrentlyActive.current) {
           isCurrentlyActive.current = false;
@@ -133,18 +176,18 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
         setTodayActiveSec(prev => prev + 1);
       }
 
-      // Calculate remaining countdown seconds based on inactivity duration
+      // Calculate remaining countdown
       const remaining = Math.max(0, fullDuration - idleDiffSec);
       setTimeLeftSeconds(remaining);
 
-      // Warning Modal Trigger (when <= warningThreshold)
+      // Warning Modal (< 60s)
       if (enableAutoLogout && remaining <= warningThreshold && remaining > 0) {
         setShowWarningModal(true);
       } else if (remaining > warningThreshold) {
         setShowWarningModal(false);
       }
 
-      // Auto-Logout Trigger when remaining reaches 0
+      // Auto-Logout Trigger
       if (enableAutoLogout && remaining <= 0 && !isLoggingOut.current) {
         isLoggingOut.current = true;
         handleAutoLogout();
@@ -157,14 +200,18 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   // 4. Periodic Server Heartbeat (Every 30 seconds)
   useEffect(() => {
     const sendHeartbeat = async () => {
-      if (activeAccumulator.current === 0 && idleAccumulator.current === 0) return;
-
       const activeToSend = activeAccumulator.current;
       const idleToSend = idleAccumulator.current;
       activeAccumulator.current = 0;
       idleAccumulator.current = 0;
 
-      const currentStatus = isCurrentlyActive.current ? 'working' : 'away';
+      let currentStatus = 'working';
+      if (currentBreakRef.current) {
+        currentStatus = 'on_break';
+      } else if (!isCurrentlyActive.current) {
+        currentStatus = 'away';
+      }
+
       const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
 
       try {
@@ -175,6 +222,15 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           device
         });
 
+        if (res && (res.forceLogout === true || res.valid === false)) {
+          isLoggingOut.current = true;
+          alert('Your session has been terminated by the administrator.');
+          const supabase = createClient();
+          await supabase.auth.signOut();
+          window.location.href = '/login?reason=force_logout';
+          return;
+        }
+
         if (res?.success && res.todaySummary) {
           setTodayActiveSec(res.todaySummary.activeSeconds);
           setTodayIdleSec(res.todaySummary.idleSeconds);
@@ -184,11 +240,48 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       }
     };
 
-    const interval = setInterval(sendHeartbeat, 30000); // Sync every 30s
+    const interval = setInterval(sendHeartbeat, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // 5. Handle Auto Logout Execution
+  // 5. Break Handlers
+  const handleStartBreak = async (breakTypeObj) => {
+    setActionLoading(true);
+    try {
+      const res = await startEmployeeBreak({
+        breakType: breakTypeObj.label,
+        breakIcon: breakTypeObj.icon
+      });
+      if (res?.success && res.currentBreak) {
+        setCurrentBreak(res.currentBreak);
+        setBreakElapsedSec(0);
+        setShowBreakModal(false);
+        setIsDropdownOpen(false);
+      }
+    } catch (err) {
+      console.error('Failed to start break:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEndBreak = async () => {
+    setActionLoading(true);
+    try {
+      const res = await endEmployeeBreak();
+      if (res?.success) {
+        setCurrentBreak(null);
+        setBreakElapsedSec(0);
+        handleUserActivity();
+      }
+    } catch (err) {
+      console.error('Failed to end break:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 6. Handle Auto Logout
   const handleAutoLogout = async () => {
     try {
       const supabase = createClient();
@@ -218,16 +311,21 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
   if (!settings.showTimerInHeader) return null;
 
-  // Determine badge styling based on remaining time
+  // Determine badge styling based on remaining time & break status
   const isUrgent = timeLeftSeconds <= (settings.warningSeconds || 60);
-  const isLowTime = timeLeftSeconds <= 300; // <= 5 minutes
+  const isLowTime = timeLeftSeconds <= 300;
 
   let badgeBg = '#f0fdf4';
   let badgeBorder = '#bbf7d0';
   let badgeColor = '#15803d';
   let dotColor = '#10b981';
 
-  if (isUrgent) {
+  if (currentBreak) {
+    badgeBg = '#fff7ed';
+    badgeBorder = '#ffedd5';
+    badgeColor = '#c2410c';
+    dotColor = '#f97316';
+  } else if (isUrgent) {
     badgeBg = '#fef2f2';
     badgeBorder = '#fecaca';
     badgeColor = '#b91c1c';
@@ -242,140 +340,343 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   return (
     <>
       {/* ========================================================================= */}
-      {/* 1. TOPBAR LIVE SESSION TIMER BADGE */}
+      {/* 1. TOPBAR LIVE SESSION TIMER & BREAK CONTROLS */}
       {/* ========================================================================= */}
-      <div 
-        style={{ position: 'relative' }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
-        <div
-          onClick={handleUserActivity}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-            padding: '0.35rem 0.65rem',
-            backgroundColor: badgeBg,
-            border: `1px solid ${badgeBorder}`,
-            borderRadius: '10px',
-            color: badgeColor,
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            userSelect: 'none',
-            transition: 'all 0.2s',
-            boxShadow: isUrgent ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 1px 2px rgba(0,0,0,0.04)',
-            animation: isUrgent ? 'pulse 1s infinite' : 'none'
-          }}
-          title="Click to reset / extend session"
-        >
-          {/* Pulsing Status Dot */}
-          <span 
-            style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: dotColor,
-              display: 'inline-block',
-              boxShadow: `0 0 6px ${dotColor}`
-            }}
-          />
-
-          <Clock size={14} style={{ color: badgeColor }} />
-          
-          <span style={{ fontFamily: 'monospace', letterSpacing: '0.5px', fontSize: '0.82rem' }}>
-            {formatTimeRemaining(timeLeftSeconds)}
-          </span>
-
-          <span style={{ fontSize: '0.7rem', opacity: 0.85, fontWeight: 500 }} className="desktop-only">
-            {isAway ? 'Away' : 'Active'}
-          </span>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* HOVER TOOLTIP / STATUS DETAILS POPOVER */}
-        {/* ========================================================================= */}
-        {isHovered && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            width: '240px',
-            backgroundColor: 'var(--bg-surface, #ffffff)',
-            border: '1px solid var(--border-light, #e2e8f0)',
-            borderRadius: '12px',
-            padding: '0.85rem',
-            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
-            zIndex: 10000,
-            fontSize: '0.8rem',
-            color: 'var(--text-primary, #0f172a)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-light, #e2e8f0)', paddingBottom: '0.4rem' }}>
-              <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Activity size={15} color="var(--accent-color, #4338ca)" /> Work & Session Time
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }} ref={dropdownContainerRef}>
+        
+        {/* If ON BREAK: Show Prominent End Break Button */}
+        {currentBreak ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.35rem 0.75rem',
+                backgroundColor: '#fff7ed',
+                border: '1px solid #fdba74',
+                borderRadius: '10px',
+                color: '#c2410c',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                boxShadow: '0 0 10px rgba(249, 115, 22, 0.25)',
+                animation: 'pulse 1.5s infinite'
+              }}
+            >
+              <span>{currentBreak.icon || '☕'}</span>
+              <span>{currentBreak.type || 'On Break'}</span>
+              <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                ({formatTimeRemaining(breakElapsedSec)})
               </span>
-              <span style={{ 
-                fontSize: '0.68rem', 
-                padding: '0.1rem 0.4rem', 
-                borderRadius: '10px', 
-                backgroundColor: isAway ? '#fef3c7' : '#dcfce7',
-                color: isAway ? '#b45309' : '#166534',
-                fontWeight: 600
-              }}>
-                {isAway ? '🟡 Away (Idle)' : '🟢 Working'}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', color: 'var(--text-secondary, #64748b)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Inactivity Timeout:</span>
-                <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{settings.inactivityTimeoutMinutes} mins</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Remaining Before Logout:</span>
-                <strong style={{ color: badgeColor, fontFamily: 'monospace' }}>{formatTimeRemaining(timeLeftSeconds)}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Active Work Today:</span>
-                <strong style={{ color: '#16a34a' }}>{formatHoursMinutes(todayActiveSec)}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Idle / Break Today:</span>
-                <strong style={{ color: '#d97706' }}>{formatHoursMinutes(todayIdleSec)}</strong>
-              </div>
             </div>
 
             <button
               type="button"
-              onClick={handleUserActivity}
+              onClick={handleEndBreak}
+              disabled={actionLoading}
               style={{
-                marginTop: '0.65rem',
-                width: '100%',
-                padding: '0.45rem',
-                backgroundColor: 'var(--accent-color, #4338ca)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontWeight: 600,
-                fontSize: '0.75rem',
-                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.35rem'
+                gap: '0.35rem',
+                padding: '0.4rem 0.85rem',
+                backgroundColor: '#16a34a',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                boxShadow: '0 4px 10px rgba(22, 163, 74, 0.3)',
+                transition: 'all 0.15s'
               }}
+              title="Click to end break and resume working"
             >
-              <RefreshCw size={13} /> Reset / Extend Session
+              <Play size={14} fill="#ffffff" />
+              <span>Resume Work</span>
             </button>
+          </div>
+        ) : (
+          /* Normal Working / Session Timer Click-to-Open Dropdown */
+          <div style={{ position: 'relative' }}>
+            <div
+              onClick={() => {
+                handleUserActivity();
+                setIsDropdownOpen(prev => !prev);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.35rem 0.65rem',
+                backgroundColor: isDropdownOpen ? 'rgba(67, 56, 202, 0.08)' : badgeBg,
+                border: isDropdownOpen ? '1px solid var(--accent-color, #4338ca)' : `1px solid ${badgeBorder}`,
+                borderRadius: '10px',
+                color: isDropdownOpen ? 'var(--accent-color, #4338ca)' : badgeColor,
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'all 0.2s',
+                boxShadow: isUrgent ? '0 0 10px rgba(239, 68, 68, 0.4)' : (isDropdownOpen ? '0 0 0 2px rgba(67, 56, 202, 0.2)' : '0 1px 2px rgba(0,0,0,0.04)'),
+                animation: isUrgent ? 'pulse 1s infinite' : 'none'
+              }}
+              title="Click to view work time or take a break"
+            >
+              <span 
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: dotColor,
+                  display: 'inline-block',
+                  boxShadow: `0 0 6px ${dotColor}`
+                }}
+              />
+
+              <Clock size={14} style={{ color: isDropdownOpen ? 'var(--accent-color, #4338ca)' : badgeColor }} />
+              
+              <span style={{ fontFamily: 'monospace', letterSpacing: '0.5px', fontSize: '0.82rem' }}>
+                {formatTimeRemaining(timeLeftSeconds)}
+              </span>
+
+              <span style={{ fontSize: '0.7rem', opacity: 0.85, fontWeight: 500 }} className="desktop-only">
+                {isAway ? 'Away' : 'Active'}
+              </span>
+            </div>
+
+            {/* Click-to-Open Dropdown Menu */}
+            {isDropdownOpen && (
+              <div 
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  width: '270px',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  borderRadius: '14px',
+                  padding: '1rem',
+                  boxShadow: '0 15px 35px -5px rgba(0,0,0,0.2), 0 5px 15px rgba(0,0,0,0.08)',
+                  zIndex: 100000,
+                  fontSize: '0.82rem',
+                  color: 'var(--text-primary, #0f172a)',
+                  animation: 'fadeIn 0.15s ease-out'
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', borderBottom: '1px solid var(--border-light, #e2e8f0)', paddingBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                    <Activity size={16} color="var(--accent-color, #4338ca)" /> Work & Session Time
+                  </span>
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    padding: '0.15rem 0.45rem', 
+                    borderRadius: '10px', 
+                    backgroundColor: isAway ? '#fef3c7' : '#dcfce7',
+                    color: isAway ? '#b45309' : '#166534',
+                    fontWeight: 700
+                  }}>
+                    {isAway ? '🟡 Away (Idle)' : '🟢 Working'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', color: 'var(--text-secondary, #64748b)', marginBottom: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Inactivity Timeout:</span>
+                    <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{settings.inactivityTimeoutMinutes} mins</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Remaining Before Logout:</span>
+                    <strong style={{ color: badgeColor, fontFamily: 'monospace' }}>{formatTimeRemaining(timeLeftSeconds)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Active Work Today:</span>
+                    <strong style={{ color: '#16a34a' }}>{formatHoursMinutes(todayActiveSec)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Lunch / Breaks Today:</span>
+                    <strong style={{ color: '#d97706' }}>{formatHoursMinutes(todayIdleSec)}</strong>
+                  </div>
+                </div>
+
+                {/* Take Break Button & Reset Button */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBreakModal(true);
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem',
+                      backgroundColor: '#ea580c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.45rem',
+                      boxShadow: '0 2px 8px rgba(234, 88, 12, 0.3)',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <Coffee size={16} />
+                    <span>☕ Take a Break (Tea / Rest)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUserActivity();
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      backgroundColor: 'var(--bg-surface, #f8fafc)',
+                      color: 'var(--text-primary, #0f172a)',
+                      border: '1px solid var(--border-light, #cbd5e1)',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <RefreshCw size={13} /> Reset / Extend Session
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. SESSION EXPIRY WARNING MODAL (< 60 SECONDS) */}
+      {/* 2. BREAK SELECTION MODAL (TEA, LUNCH, WASHROOM, REST, ETC.) */}
       {/* ========================================================================= */}
-      {showWarningModal && (
+      {showBreakModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '460px',
+            width: '100%',
+            padding: '1.5rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            animation: 'scaleIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Coffee size={22} color="#ea580c" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
+                  Take a Break
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBreakModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 1rem 0' }}>
+              Select your break reason. Exact Start Time and Duration will be tracked accurately for shift records.
+            </p>
+
+            {/* Break Options Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {((Array.isArray(settings.breakRules) && settings.breakRules.length > 0)
+                ? settings.breakRules.filter(b => b.enabled !== false)
+                : BREAK_TYPES
+              ).map(b => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => handleStartBreak(b)}
+                  disabled={actionLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fff7ed';
+                    e.currentTarget.style.borderColor = '#fdba74';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '1.4rem' }}>{b.icon || '☕'}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{b.label}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Standard: ~{b.defaultMins} mins</div>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} color="#94a3b8" />
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowBreakModal(false)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#475569',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. SESSION EXPIRY WARNING MODAL (< 60 SECONDS) */}
+      {/* ========================================================================= */}
+      {showWarningModal && !currentBreak && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -423,7 +724,6 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
               You have been inactive for a while. For data security, your session will automatically terminate in:
             </p>
 
-            {/* Big Countdown Clock */}
             <div style={{
               backgroundColor: '#fef2f2',
               border: '2px dashed #fca5a5',
@@ -443,10 +743,6 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
                 {formatTimeRemaining(timeLeftSeconds)}
               </span>
             </div>
-
-            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1.5rem' }}>
-              Move your mouse, type, or click the button below to stay logged in.
-            </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <button

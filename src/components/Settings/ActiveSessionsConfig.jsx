@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, Plus, Trash2, Edit3 } from 'lucide-react';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
 import { getSessionSecuritySettings, saveSessionSecuritySettings, getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
 import { createClient } from '@/utils/supabase/client';
+
+const EMOJI_OPTIONS = ['☕', '🍱', '🚻', '💧', '🛌', '👥', '🤲', '🚬', '📞', '🤝', '🏃', '🥪', '🍕', '🍎', '🧘', '🩺'];
 
 function parseDeviceInfo(userAgent) {
   if (!userAgent || userAgent === 'Unknown Device') return { icon: '🖥️', label: 'Web Browser', raw: userAgent || '' };
@@ -34,6 +36,9 @@ function parseDeviceInfo(userAgent) {
 }
 
 export default function ActiveSessionsConfig() {
+  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'live' | 'settings'
+
+  // Sessions State
   const [allSessions, setAllSessions] = useState([]);
   const [filteredActive, setFilteredActive] = useState([]);
   const [filteredInactive, setFilteredInactive] = useState([]);
@@ -41,20 +46,42 @@ export default function ActiveSessionsConfig() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
+  // Daily 9-Hour Shift Report State
+  const [selectedReportDate, setSelectedReportDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dailyEmployees, setDailyEmployees] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportFilterStatus, setReportFilterStatus] = useState('all'); // 'all' | 'present' | 'completed' | 'absent'
+  const [reportSearchQuery, setReportSearchQuery] = useState('');
+
+  // Break Detail Modal State
+  const [selectedEmployeeBreaks, setSelectedEmployeeBreaks] = useState(null);
+
   // Settings State
   const [settings, setSettings] = useState({
     inactivityTimeoutMinutes: 60,
     enableAutoLogout: true,
     showTimerInHeader: true,
     warningSeconds: 60,
-    idleThresholdSeconds: 60
+    idleThresholdSeconds: 60,
+    dailyWorkTargetHours: 9,
+    dailyLunchBreakMinutes: 30,
+    breakRules: []
   });
   const [isCustomTimeout, setIsCustomTimeout] = useState(false);
   const [customTimeoutInput, setCustomTimeoutInput] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState(null);
 
-  // Filters
+  // New Custom Break Form State in Tab 3
+  const [showAddBreakModal, setShowAddBreakModal] = useState(false);
+  const [openEmojiPickerIdx, setOpenEmojiPickerIdx] = useState(null);
+  const [newBreakForm, setNewBreakForm] = useState({
+    label: '',
+    icon: '☕',
+    defaultMins: 15
+  });
+
+  // Filters for Live Sessions tab
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -78,7 +105,24 @@ export default function ActiveSessionsConfig() {
     }
   }, []);
 
-  // 2. Fetch Sessions & Daily Activity Metrics
+  // 2. Fetch Daily 9-Hour Shift Report for Selected Date
+  const fetchDailyReport = useCallback(async (dateToFetch) => {
+    setReportLoading(true);
+    try {
+      const res = await getEmployeeDailyActivitySummary(dateToFetch);
+      if (res?.success && res?.employees) {
+        setDailyEmployees(res.employees);
+      } else {
+        setDailyEmployees([]);
+      }
+    } catch (err) {
+      console.error('Error fetching daily report:', err);
+    } finally {
+      setReportLoading(false);
+    }
+  }, []);
+
+  // 3. Fetch Live User Sessions
   const fetchSessions = useCallback(async (isManualRefresh = false) => {
     try {
       if (isManualRefresh) setRefreshing(true);
@@ -86,7 +130,6 @@ export default function ActiveSessionsConfig() {
 
       const supabase = createClient();
       
-      // 1. Fetch user roles for name mapping
       const { data: userRoles } = await supabase
         .from('user_roles')
         .select('user_id, email, emp_name');
@@ -97,17 +140,6 @@ export default function ActiveSessionsConfig() {
         if (u.email && u.emp_name) userMap[u.email.toLowerCase()] = u.emp_name;
       });
 
-      // 2. Fetch employee activity metrics from today
-      const activityRes = await getEmployeeDailyActivitySummary();
-      const activityMap = {};
-      if (activityRes?.success && activityRes?.employees) {
-        activityRes.employees.forEach(emp => {
-          if (emp.userId) activityMap[emp.userId] = emp;
-          if (emp.email) activityMap[emp.email.toLowerCase()] = emp;
-        });
-      }
-
-      // 3. Fetch user sessions
       let query = supabase
         .from('user_sessions')
         .select('*')
@@ -123,12 +155,9 @@ export default function ActiveSessionsConfig() {
       }
 
       query = query.limit(500);
-
       const { data: sessionsData, error: sessionErr } = await query;
 
-      if (sessionErr) {
-        throw new Error('Session DB Error: ' + sessionErr.message);
-      }
+      if (sessionErr) throw new Error('Session DB Error: ' + sessionErr.message);
 
       if (sessionsData) {
         const now = Date.now();
@@ -148,14 +177,6 @@ export default function ActiveSessionsConfig() {
           const isActive = s.is_active === true && isWithin30Mins;
           const parsedDevice = parseDeviceInfo(s.device);
 
-          // Merge live activity stats if available
-          const act = (s.user_id && activityMap[s.user_id]) || (s.email && activityMap[s.email.toLowerCase()]);
-          
-          let liveStatus = 'offline';
-          if (isActive) {
-            liveStatus = act?.liveStatus || 'working';
-          }
-
           return {
             id: s.id,
             user: resolvedName,
@@ -169,10 +190,7 @@ export default function ActiveSessionsConfig() {
             }),
             lastActiveRaw: lastActiveDate,
             isActive,
-            liveStatus,
-            activeDurationFormatted: act?.activeDurationFormatted || '0m 00s',
-            idleDurationFormatted: act?.idleDurationFormatted || '0m 00s',
-            totalDurationFormatted: act?.totalDurationFormatted || '0m 00s',
+            liveStatus: isActive ? 'working' : 'offline',
             current: false
           };
         });
@@ -197,12 +215,15 @@ export default function ActiveSessionsConfig() {
   useEffect(() => {
     fetchSettings();
     fetchSessions();
-    const timer = setInterval(() => fetchSessions(false), 20000); // 20s auto-refresh
+    const timer = setInterval(() => fetchSessions(false), 20000);
     return () => clearInterval(timer);
   }, [fetchSettings, fetchSessions]);
 
   useEffect(() => {
-    // Client-side search filtering
+    fetchDailyReport(selectedReportDate);
+  }, [selectedReportDate, fetchDailyReport]);
+
+  useEffect(() => {
     let filtered = allSessions;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -214,7 +235,6 @@ export default function ActiveSessionsConfig() {
       );
     }
     
-    // Split into Active and Inactive
     setFilteredActive(filtered.filter(s => s.isActive));
     setFilteredInactive(filtered.filter(s => !s.isActive));
   }, [searchQuery, allSessions]);
@@ -230,6 +250,40 @@ export default function ActiveSessionsConfig() {
     await forceLogoutAllOtherSessions(currentDevice);
     alert('All other devices have been logged out.');
     fetchSessions(true);
+  };
+
+  // Break Types Editor Handlers in Tab 3
+  const handleUpdateBreakRule = (idx, field, value) => {
+    const updated = [...(settings.breakRules || [])];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setSettings(prev => ({ ...prev, breakRules: updated }));
+  };
+
+  const handleDeleteBreakRule = (idx) => {
+    if (!confirm('Are you sure you want to delete this break type?')) return;
+    const updated = (settings.breakRules || []).filter((_, i) => i !== idx);
+    setSettings(prev => ({ ...prev, breakRules: updated }));
+  };
+
+  const handleAddBreakRule = () => {
+    if (!newBreakForm.label.trim()) {
+      alert('Please enter a Break Name');
+      return;
+    }
+    const newId = `custom_${Date.now()}`;
+    const newRule = {
+      id: newId,
+      label: newBreakForm.label.trim(),
+      icon: newBreakForm.icon || '☕',
+      defaultMins: Number(newBreakForm.defaultMins) || 15,
+      enabled: true
+    };
+    setSettings(prev => ({
+      ...prev,
+      breakRules: [...(prev.breakRules || []), newRule]
+    }));
+    setShowAddBreakModal(false);
+    setNewBreakForm({ label: '', icon: '☕', defaultMins: 15 });
   };
 
   // Save Settings Handler
@@ -259,7 +313,7 @@ export default function ActiveSessionsConfig() {
 
     if (res?.success) {
       setSettings(res.settings);
-      setSettingsSuccessMsg(`✅ Session settings saved! Users will now expire after ${res.settings.inactivityTimeoutMinutes} minutes of inactivity.`);
+      setSettingsSuccessMsg(`✅ Break rules & session settings saved! All agents will immediately see updated break options.`);
       window.dispatchEvent(new Event('session_config_updated'));
       setTimeout(() => setSettingsSuccessMsg(null), 5000);
     } else {
@@ -267,24 +321,106 @@ export default function ActiveSessionsConfig() {
     }
   };
 
+  // Filtered Daily Employees
+  const filteredDailyEmployees = useMemo(() => {
+    return dailyEmployees.filter(emp => {
+      if (reportFilterStatus === 'present' && !emp.hasActivityToday) return false;
+      if (reportFilterStatus === 'absent' && emp.hasActivityToday) return false;
+      if (reportFilterStatus === 'completed' && !emp.isTargetMet) return false;
+
+      if (reportSearchQuery.trim()) {
+        const q = reportSearchQuery.toLowerCase();
+        const matchName = (emp.empName || '').toLowerCase().includes(q);
+        const matchEmail = (emp.email || '').toLowerCase().includes(q);
+        const matchDept = (emp.department || '').toLowerCase().includes(q);
+        const matchDesig = (emp.designation || '').toLowerCase().includes(q);
+        const matchEmpId = (emp.empId || '').toLowerCase().includes(q);
+        return matchName || matchEmail || matchDept || matchDesig || matchEmpId;
+      }
+      return true;
+    });
+  }, [dailyEmployees, reportFilterStatus, reportSearchQuery]);
+
+  // 📥 Export to Excel / CSV Handler
+  const handleExportCSV = () => {
+    if (!filteredDailyEmployees || filteredDailyEmployees.length === 0) {
+      alert('No employee activity data available to export.');
+      return;
+    }
+
+    const headers = [
+      'Date',
+      'Employee ID',
+      'Employee Name',
+      'Department',
+      'Designation',
+      'Official Email',
+      'Check-In Time (First Log)',
+      'Last Active Time',
+      'Active Work Time',
+      'Lunch / Break Time',
+      'Total Breaks Count',
+      'Total Shift Time',
+      '9-Hour Target Met (540 Mins)',
+      'Completion %',
+      'Shift Evaluation Status'
+    ];
+
+    const rows = filteredDailyEmployees.map(emp => [
+      `"${selectedReportDate}"`,
+      `"${emp.empId || ''}"`,
+      `"${emp.empName || ''}"`,
+      `"${emp.department || ''}"`,
+      `"${emp.designation || ''}"`,
+      `"${emp.email || ''}"`,
+      `"${emp.firstSeenFormatted || ''}"`,
+      `"${emp.lastSeenFormatted || ''}"`,
+      `"${emp.activeDurationFormatted || ''}"`,
+      `"${emp.idleDurationFormatted || ''}"`,
+      `"${emp.breakCount || 0} Breaks"`,
+      `"${emp.totalDurationFormatted || ''}"`,
+      `"${emp.isTargetMet ? 'YES (9h Completed)' : 'NO'}"`,
+      `"${emp.workProgressPercent || 0}%"`,
+      `"${emp.isTargetMet ? 'Full Day (9h Met)' : (emp.liveStatus === 'working' ? 'In Progress' : (emp.hasActivityToday ? 'Shortfall (<9h)' : 'Not Logged In / Absent'))}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Swan_CRM_9Hour_Work_Report_${selectedReportDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Report KPIs
+  const totalRosterCount = dailyEmployees.length;
+  const presentCount = dailyEmployees.filter(e => e.hasActivityToday).length;
+  const absentCount = totalRosterCount - presentCount;
+  const targetCompletedCount = dailyEmployees.filter(e => e.isTargetMet).length;
+
   return (
-    <div style={{ padding: '2rem', maxWidth: '1150px', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div style={{ padding: '2rem', maxWidth: '1200px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)', marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem' }}>
             <Monitor size={24} color="var(--accent-color)" />
-            Monitor User Sessions & Inactivity Rules
+            Employee Shift Monitoring & Inactivity Rules
           </h2>
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
-            Configure automatic session timeout duration and monitor real-time employee active/idle working hours.
+            9-Hour (540 mins) Active Working Goal + Custom Breaks & Inactivity Policy Manager.
           </p>
         </div>
 
         <button
-          onClick={() => fetchSessions(true)}
-          disabled={refreshing || loading}
+          onClick={() => {
+            fetchSessions(true);
+            fetchDailyReport(selectedReportDate);
+          }}
+          disabled={refreshing || loading || reportLoading}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -299,8 +435,8 @@ export default function ActiveSessionsConfig() {
             color: 'var(--text-primary)'
           }}
         >
-          <RefreshCw size={15} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-          {refreshing ? 'Refreshing...' : 'Refresh Status'}
+          <RefreshCw size={15} style={{ animation: (refreshing || reportLoading) ? 'spin 1s linear infinite' : 'none' }} />
+          {(refreshing || reportLoading) ? 'Refreshing...' : 'Refresh Status'}
         </button>
       </div>
 
@@ -319,386 +455,1215 @@ export default function ActiveSessionsConfig() {
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION: ADMIN SESSION TIMEOUT & INACTIVITY CONFIGURATION */}
+      {/* 3-TAB SWITCHER NAVIGATION */}
       {/* ========================================================================= */}
       <div style={{
-        background: 'var(--bg-primary)',
-        padding: '1.5rem',
-        borderRadius: '12px',
-        border: '1px solid var(--border-light)',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+        display: 'flex',
+        gap: '0.5rem',
+        borderBottom: '1px solid var(--border-light)',
+        paddingBottom: '0.5rem',
+        flexWrap: 'wrap'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Sliders size={20} color="var(--accent-color)" />
-            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-              Session Inactivity & Auto-Logout Settings
-            </h3>
-          </div>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Applies to all employee logins across Web CRM
+        <button
+          type="button"
+          onClick={() => setActiveTab('report')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            backgroundColor: activeTab === 'report' ? 'var(--accent-color)' : 'var(--bg-surface)',
+            color: activeTab === 'report' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'report' ? '0 2px 5px rgba(67, 56, 202, 0.25)' : 'none',
+            transition: 'all 0.15s'
+          }}
+        >
+          <Briefcase size={16} />
+          <span>Daily 9.5h Work Report</span>
+          <span style={{ fontSize: '0.72rem', padding: '0.1rem 0.45rem', borderRadius: '10px', backgroundColor: activeTab === 'report' ? 'rgba(255,255,255,0.25)' : '#e2e8f0', color: activeTab === 'report' ? '#fff' : '#475569' }}>
+            {totalRosterCount} Employees
           </span>
-        </div>
+        </button>
 
-        {/* Timeout Duration Selector */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-            Inactivity Timeout Duration (Minutes)
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            {[15, 30, 45, 60, 120].map((mins) => {
-              const isSelected = !isCustomTimeout && settings.inactivityTimeoutMinutes === mins;
-              return (
-                <button
-                  key={mins}
-                  type="button"
-                  onClick={() => {
-                    setIsCustomTimeout(false);
-                    setSettings(prev => ({ ...prev, inactivityTimeoutMinutes: mins }));
-                  }}
+        <button
+          type="button"
+          onClick={() => setActiveTab('live')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            backgroundColor: activeTab === 'live' ? 'var(--accent-color)' : 'var(--bg-surface)',
+            color: activeTab === 'live' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'live' ? '0 2px 5px rgba(67, 56, 202, 0.25)' : 'none',
+            transition: 'all 0.15s'
+          }}
+        >
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+          <span>Live Active Sessions ({filteredActive.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('settings')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            backgroundColor: activeTab === 'settings' ? 'var(--accent-color)' : 'var(--bg-surface)',
+            color: activeTab === 'settings' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'settings' ? '0 2px 5px rgba(67, 56, 202, 0.25)' : 'none',
+            transition: 'all 0.15s'
+          }}
+        >
+          <Sliders size={16} />
+          <span>Inactivity & Shift Rules (Custom Breaks)</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: DAILY 9.5-HOUR SHIFT WORK REPORT & EXCEL EXPORT */}
+      {/* ========================================================================= */}
+      {activeTab === 'report' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Shift Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #4338ca 0%, #312e81 100%)',
+            color: '#ffffff',
+            padding: '1.25rem 1.5rem',
+            borderRadius: '12px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            boxShadow: '0 10px 15px -3px rgba(67, 56, 202, 0.3)'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.85, marginBottom: '0.2rem' }}>
+                Office Working Shift Standard
+              </div>
+              <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span>💼 9.0 Hours (540 Mins) Active Work</span>
+                <span style={{ fontSize: '0.9rem', opacity: 0.8 }}>+</span>
+                <span>🍱 30 Mins Lunch Break</span>
+              </h3>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.35rem' }}>
+                Total Shift Duration: <b>9 Hours 30 Minutes (570 Mins)</b>
+              </div>
+            </div>
+
+            {/* Date Selector & Export Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'rgba(255, 255, 255, 0.15)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.25)' }}>
+                <Calendar size={16} />
+                <input
+                  type="date"
+                  value={selectedReportDate}
+                  onChange={(e) => setSelectedReportDate(e.target.value)}
                   style={{
-                    padding: '0.55rem 1.1rem',
-                    borderRadius: '8px',
-                    border: isSelected ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
-                    backgroundColor: isSelected ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
-                    color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)',
-                    fontWeight: isSelected ? 700 : 500,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s'
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.55rem 1rem',
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 10px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                <Download size={15} />
+                <span>Export Excel / CSV</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Daily KPIs Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Total Company Roster</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
+                {totalRosterCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Employees</span>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 500 }}>Present / Active Today</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#16a34a', marginTop: '0.2rem' }}>
+                {presentCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>({Math.round((presentCount / (totalRosterCount || 1)) * 100)}%)</span>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 500 }}>9-Hour Goal Completed</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#4338ca', marginTop: '0.2rem' }}>
+                {targetCompletedCount}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 500 }}>Not Logged In / Absent</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#dc2626', marginTop: '0.2rem' }}>
+                {absentCount}
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Status Filter Pills */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setReportFilterStatus('all')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: reportFilterStatus === 'all' ? 'var(--accent-color)' : 'var(--bg-surface)',
+                  color: reportFilterStatus === 'all' ? '#ffffff' : 'var(--text-primary)',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                All ({totalRosterCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportFilterStatus('present')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: reportFilterStatus === 'present' ? '#16a34a' : 'var(--bg-surface)',
+                  color: reportFilterStatus === 'present' ? '#ffffff' : '#16a34a',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Present Today ({presentCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportFilterStatus('completed')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: reportFilterStatus === 'completed' ? '#4338ca' : 'var(--bg-surface)',
+                  color: reportFilterStatus === 'completed' ? '#ffffff' : '#4338ca',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                9h Met ({targetCompletedCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportFilterStatus('absent')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: reportFilterStatus === 'absent' ? '#dc2626' : 'var(--bg-surface)',
+                  color: reportFilterStatus === 'absent' ? '#ffffff' : '#dc2626',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Not Logged In ({absentCount})
+              </button>
+            </div>
+
+            {/* Quick Search */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: '240px' }}>
+              <Search size={15} color="var(--text-secondary)" />
+              <input
+                type="text"
+                placeholder="Search name, department, ID..."
+                value={reportSearchQuery}
+                onChange={(e) => setReportSearchQuery(e.target.value)}
+                style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', width: '100%', fontSize: '0.85rem' }}
+              />
+            </div>
+          </div>
+
+          {/* Detailed Employee 9-Hour Shift Table */}
+          <div style={{ background: 'var(--bg-primary)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+              Company Employee Shift & Productivity Breakdown ({filteredDailyEmployees.length})
+            </h3>
+
+            {reportLoading ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                ⏳ Loading daily work records for {selectedReportDate}...
+              </div>
+            ) : filteredDailyEmployees.length === 0 ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
+                No employee matched the filter criteria for {selectedReportDate}.
+              </div>
+            ) : (
+              <div style={{ maxHeight: '520px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
+                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Details</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Check-In (First Log) & Last Seen</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Active Work (Goal: 9h)</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Lunch & Breaks</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, minWidth: '170px' }}>9h Goal Progress</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Shift Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDailyEmployees.map((emp, i) => {
+                      const isComplete = emp.isTargetMet;
+                      const pct = emp.workProgressPercent || 0;
+                      const hasBreaks = emp.breaks && emp.breaks.length > 0;
+                      const isOnBreak = emp.currentBreak || emp.liveStatus === 'on_break';
+                      
+                      return (
+                        <tr 
+                          key={emp.userId || emp.email || i} 
+                          style={{ 
+                            borderBottom: i < dailyEmployees.length - 1 ? '1px solid var(--border-light)' : 'none', 
+                            background: isComplete ? 'rgba(16, 185, 129, 0.04)' : (emp.hasActivityToday ? 'var(--bg-surface)' : 'rgba(0,0,0,0.015)')
+                          }}
+                        >
+                          {/* Name, ID, Department */}
+                          <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{emp.empName}</span>
+                              {emp.empId && (
+                                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', backgroundColor: '#e2e8f0', color: '#475569', borderRadius: '4px', fontWeight: 600 }}>
+                                  {emp.empId}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              {emp.department || emp.designation ? `${emp.department} ${emp.designation ? '• ' + emp.designation : ''}` : emp.email}
+                            </div>
+                          </td>
+
+                          {/* Check-In & Last Seen */}
+                          <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                            {emp.hasActivityToday ? (
+                              <>
+                                <div>In: <b style={{ color: '#16a34a', fontWeight: 700 }}>{emp.firstSeenFormatted}</b></div>
+                                <div>Last: <b style={{ color: 'var(--text-primary)' }}>{emp.lastSeenFormatted}</b></div>
+                              </>
+                            ) : (
+                              <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not Logged In</span>
+                            )}
+                          </td>
+
+                          {/* Active Work Time */}
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <div style={{ color: isComplete ? '#15803d' : (emp.hasActivityToday ? '#4338ca' : '#94a3b8'), fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem' }}>
+                              {emp.activeDurationFormatted}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>of 9h 00m (540m)</div>
+                          </td>
+
+                          {/* Lunch / Breaks Timeline Button */}
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            {isOnBreak ? (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.5rem', backgroundColor: '#fff7ed', border: '1px solid #fdba74', color: '#c2410c', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, animation: 'pulse 1.5s infinite' }}>
+                                <span>{emp.currentBreak?.icon || '☕'}</span>
+                                <span>On {emp.currentBreak?.type || 'Break'}</span>
+                              </div>
+                            ) : (
+                              <div>
+                                <div style={{ color: emp.lunchTakenMinutes > 30 ? '#d97706' : (emp.hasActivityToday ? '#64748b' : '#94a3b8'), fontWeight: 600, fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                                  {emp.idleDurationFormatted}
+                                </div>
+                                {hasBreaks ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedEmployeeBreaks({ empName: emp.empName, email: emp.email, breaks: emp.breaks })}
+                                    style={{
+                                      marginTop: '0.2rem',
+                                      padding: '0.15rem 0.45rem',
+                                      backgroundColor: '#f1f5f9',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '6px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      color: '#334155',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem'
+                                    }}
+                                  >
+                                    <Coffee size={11} color="#d97706" />
+                                    <span>{emp.breakCount} Breaks (View)</span>
+                                  </button>
+                                ) : (
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                    {emp.hasActivityToday ? (emp.lunchTakenMinutes > 30 ? `(+${emp.lunchTakenMinutes - 30}m excess)` : '(within 30m lunch)') : '--'}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Progress Bar */}
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                              <span style={{ color: isComplete ? '#16a34a' : (emp.hasActivityToday ? 'var(--text-primary)' : '#94a3b8') }}>{pct}% Complete</span>
+                              {isComplete && <Check size={13} color="#16a34a" />}
+                            </div>
+                            <div style={{ width: '100%', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                              <div 
+                                style={{ 
+                                  width: `${pct}%`, 
+                                  height: '100%', 
+                                  backgroundColor: isComplete ? '#16a34a' : (pct > 50 ? '#4338ca' : '#f59e0b'),
+                                  borderRadius: '6px',
+                                  transition: 'width 0.3s'
+                                }} 
+                              />
+                            </div>
+                          </td>
+
+                          {/* Shift Evaluation Status */}
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                            {isComplete ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontWeight: 700, fontSize: '0.76rem', border: '1px solid #bbf7d0' }}>
+                                <Award size={13} /> Full Day (9h Met)
+                              </span>
+                            ) : isOnBreak ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fff7ed', color: '#c2410c', fontWeight: 700, fontSize: '0.76rem', border: '1px solid #fdba74' }}>
+                                {emp.currentBreak?.icon || '☕'} On {emp.currentBreak?.type || 'Break'}
+                              </span>
+                            ) : emp.liveStatus === 'working' ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#e0e7ff', color: '#3730a3', fontWeight: 600, fontSize: '0.76rem' }}>
+                                🟢 In Progress
+                              </span>
+                            ) : emp.liveStatus === 'away' ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fef3c7', color: '#92400e', fontWeight: 600, fontSize: '0.76rem' }}>
+                                🟡 Away / Idle
+                              </span>
+                            ) : emp.hasActivityToday ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#ffedd5', color: '#c2410c', fontWeight: 600, fontSize: '0.76rem' }}>
+                                🟠 Shortfall (&lt;9h)
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#f1f5f9', color: '#64748b', fontWeight: 500, fontSize: '0.76rem' }}>
+                                🔴 Not Logged In
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BREAK DETAILS MODAL FOR SELECTED EMPLOYEE */}
+      {/* ========================================================================= */}
+      {selectedEmployeeBreaks && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            padding: '1.5rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            animation: 'scaleIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Coffee size={20} color="#ea580c" />
+                  <span>Break History: {selectedEmployeeBreaks.empName}</span>
+                </h3>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>
+                  Date: {selectedReportDate} • Total Breaks: {selectedEmployeeBreaks.breaks?.length || 0}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeBreaks(null)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Breaks List */}
+            {(!selectedEmployeeBreaks.breaks || selectedEmployeeBreaks.breaks.length === 0) ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
+                No recorded breaks for this employee today.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '360px', overflowY: 'auto' }}>
+                {selectedEmployeeBreaks.breaks.map((b, idx) => (
+                  <div 
+                    key={b.id || idx}
+                    style={{
+                      padding: '0.75rem 1rem',
+                      borderRadius: '10px',
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <span style={{ fontSize: '1.3rem' }}>{b.icon || '☕'}</span>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>{b.type}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          Start: <b style={{ color: '#0f172a' }}>{b.startTimeFormatted}</b> • End: <b style={{ color: '#0f172a' }}>{b.endTimeFormatted || 'In Progress'}</b>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#ea580c', fontFamily: 'monospace' }}>
+                        {b.durationFormatted || `${Math.round((b.durationSeconds || 0) / 60)}m`}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeBreaks(null)}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'var(--accent-color, #4338ca)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: LIVE ACTIVE SESSIONS TABLE */}
+      {/* ========================================================================= */}
+      {activeTab === 'live' && (
+        <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                Real-Time Active User Sessions ({filteredActive.length})
+              </h3>
+            </div>
+
+            {filteredActive.length > 1 && (
+              <button 
+                onClick={handleForceLogoutAll}
+                style={{ padding: '0.45rem 1rem', background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <LogOut size={14} /> Force Logout All Other Devices
+              </button>
+            )}
+          </div>
+          
+          {filteredActive.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
+              No active user sessions right now. (Users become active on login/action).
+            </div>
+          ) : (
+            <div style={{ maxHeight: '460px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
+                  <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name & Email</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Real-Time Status</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device / Browser</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Source</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Heartbeat</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredActive.map((session, i) => (
+                    <tr 
+                      key={session.id} 
+                      style={{ 
+                        borderBottom: i < filteredActive.length - 1 ? '1px solid var(--border-light)' : 'none', 
+                        background: session.current ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface)' 
+                      }}
+                    >
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600 }}>{session.user}</span>
+                          {session.current && (
+                            <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem', background: '#10b981', color: 'white', borderRadius: '10px', fontWeight: 600 }}>
+                              Current
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '0.1rem' }}>{session.email}</div>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontWeight: 600, fontSize: '0.78rem' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16a34a' }} />
+                          🟢 Working (Live)
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }} title={session.deviceObj?.raw}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          <span>{session.deviceObj?.icon}</span>
+                          <span>{session.deviceObj?.label}</span>
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{session.ip}</td>
+
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                        {session.lastActive}
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                        {!session.current ? (
+                          <button 
+                            onClick={() => handleForceLogout(session.id)}
+                            style={{ background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, padding: '0.35rem 0.65rem', borderRadius: '6px', transition: 'all 0.15s' }}
+                          >
+                            <LogOut size={13} /> Force Logout
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Your session</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: INACTIVITY TIMEOUT, SHIFT RULES & CUSTOM BREAK TYPES MANAGER */}
+      {/* ========================================================================= */}
+      {activeTab === 'settings' && (
+        <div style={{
+          background: 'var(--bg-primary)',
+          padding: '1.5rem',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <Sliders size={20} color="var(--accent-color)" />
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                Inactivity Auto-Logout & Custom Break Policy Manager
+              </h3>
+            </div>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Saved to Supabase & applies company-wide to all agents
+            </span>
+          </div>
+
+          {/* Section A: Inactivity Timeout */}
+          <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
+            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+              Inactivity Auto-Logout Duration (Countdown Timer)
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              {[15, 30, 45, 60, 120].map((mins) => {
+                const isSelected = !isCustomTimeout && settings.inactivityTimeoutMinutes === mins;
+                return (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => {
+                      setIsCustomTimeout(false);
+                      setSettings(prev => ({ ...prev, inactivityTimeoutMinutes: mins }));
+                    }}
+                    style={{
+                      padding: '0.55rem 1.1rem',
+                      borderRadius: '8px',
+                      border: isSelected ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
+                      backgroundColor: isSelected ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
+                      color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)',
+                      fontWeight: isSelected ? 700 : 500,
+                      fontSize: '0.88rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {mins} Minutes
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomTimeout(true);
+                  if (!customTimeoutInput) setCustomTimeoutInput(String(settings.inactivityTimeoutMinutes || 90));
+                }}
+                style={{
+                  padding: '0.55rem 1.1rem',
+                  borderRadius: '8px',
+                  border: isCustomTimeout ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
+                  backgroundColor: isCustomTimeout ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
+                  color: isCustomTimeout ? 'var(--accent-color)' : 'var(--text-primary)',
+                  fontWeight: isCustomTimeout ? 700 : 500,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                Custom
+              </button>
+
+              {isCustomTimeout && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.5rem' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={customTimeoutInput}
+                    onChange={(e) => setCustomTimeoutInput(e.target.value)}
+                    placeholder="e.g. 90"
+                    style={{
+                      width: '90px',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--accent-color)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      fontWeight: 600
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Mins</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section B: Office Shift Standard Configuration */}
+          <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
+            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+              Office Working Hours & Lunch Standard
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+              <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Target Active Work Time</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#4338ca', marginTop: '0.2rem' }}>
+                  9 Hours (540 Minutes)
+                </div>
+              </div>
+
+              <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Designated Lunch Break</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#d97706', marginTop: '0.2rem' }}>
+                  30 Minutes
+                </div>
+              </div>
+
+              <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Total Office Shift Length</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#16a34a', marginTop: '0.2rem' }}>
+                  9 Hours 30 Mins (570m)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section C: COMPANY BREAK TYPES & CUSTOM RULES POLICY (NEW EDITABLE MANAGER) */}
+          <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  ☕ Company Break Types & Policy Rules
+                </label>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Edit existing break names, time limits, or add new custom breaks for agents.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAddBreakModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.45rem 0.9rem',
+                  backgroundColor: '#ea580c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(234, 88, 12, 0.25)'
+                }}
+              >
+                <Plus size={15} />
+                <span>Add Custom Break</span>
+              </button>
+            </div>
+
+            {/* Editable Break Types List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {(settings.breakRules || []).map((rule, idx) => (
+                <div
+                  key={rule.id || idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.75rem 1rem',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '10px',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem'
                   }}
                 >
-                  {mins} Minutes
-                </button>
-              );
-            })}
+                  {/* Icon & Name Input */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: '1 1 240px' }}>
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenEmojiPickerIdx(openEmojiPickerIdx === idx ? null : idx)}
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          fontSize: '1.4rem',
+                          borderRadius: '10px',
+                          border: openEmojiPickerIdx === idx ? '2px solid #ea580c' : '1px solid var(--border-light, #cbd5e1)',
+                          backgroundColor: 'var(--bg-primary, #ffffff)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                        }}
+                        title="Click to change icon"
+                      >
+                        {rule.icon || '☕'}
+                      </button>
 
-            {/* Custom Minutes Button */}
+                      {openEmojiPickerIdx === idx && (
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 6px)',
+                            left: 0,
+                            zIndex: 10000,
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '12px',
+                            padding: '0.6rem',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(6, 1fr)',
+                            gap: '0.35rem',
+                            boxShadow: '0 12px 28px rgba(0,0,0,0.18)',
+                            width: '230px'
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {EMOJI_OPTIONS.map(em => (
+                            <button
+                              key={em}
+                              type="button"
+                              onClick={() => {
+                                handleUpdateBreakRule(idx, 'icon', em);
+                                setOpenEmojiPickerIdx(null);
+                              }}
+                              style={{
+                                fontSize: '1.3rem',
+                                padding: '0.35rem',
+                                borderRadius: '6px',
+                                border: rule.icon === em ? '2px solid #ea580c' : '1px solid transparent',
+                                backgroundColor: rule.icon === em ? '#fff7ed' : 'transparent',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif'
+                              }}
+                            >
+                              {em}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={rule.label}
+                      onChange={(e) => handleUpdateBreakRule(idx, 'label', e.target.value)}
+                      placeholder="Break Label (e.g. Tea Break)"
+                      style={{
+                        flex: 1,
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.9rem',
+                        fontWeight: 600
+                      }}
+                    />
+                  </div>
+
+                  {/* Standard Duration Input & Toggle & Delete */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Limit:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="180"
+                        value={rule.defaultMins || 15}
+                        onChange={(e) => handleUpdateBreakRule(idx, 'defaultMins', Number(e.target.value))}
+                        style={{
+                          width: '65px',
+                          padding: '0.45rem 0.5rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>mins</span>
+                    </div>
+
+                    {/* Enable / Disable Checkbox */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: rule.enabled !== false ? '#16a34a' : '#94a3b8', fontWeight: 600, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled !== false}
+                        onChange={(e) => handleUpdateBreakRule(idx, 'enabled', e.target.checked)}
+                        style={{ accentColor: '#16a34a', width: '16px', height: '16px' }}
+                      />
+                      <span>{rule.enabled !== false ? 'Active' : 'Disabled'}</span>
+                    </label>
+
+                    {/* Delete button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBreakRule(idx)}
+                      style={{
+                        padding: '0.4rem',
+                        backgroundColor: '#fee2e2',
+                        color: '#dc2626',
+                        border: '1px solid #fecaca',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                      title="Delete this break type"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section D: Toggles */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Automatic Logout</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Log out user when countdown reaches 00:00</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.enableAutoLogout}
+                onChange={(e) => setSettings(prev => ({ ...prev, enableAutoLogout: e.target.checked }))}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Show Timer in Header</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Users can see countdown clock in topbar</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.showTimerInHeader}
+                onChange={(e) => setSettings(prev => ({ ...prev, showTimerInHeader: e.target.checked }))}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
+              />
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
             <button
               type="button"
-              onClick={() => {
-                setIsCustomTimeout(true);
-                if (!customTimeoutInput) setCustomTimeoutInput(String(settings.inactivityTimeoutMinutes || 90));
-              }}
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
               style={{
-                padding: '0.55rem 1.1rem',
+                padding: '0.75rem 2rem',
+                backgroundColor: 'var(--accent-color)',
+                color: '#ffffff',
+                border: 'none',
                 borderRadius: '8px',
-                border: isCustomTimeout ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
-                backgroundColor: isCustomTimeout ? 'rgba(67, 56, 202, 0.08)' : 'var(--bg-surface)',
-                color: isCustomTimeout ? 'var(--accent-color)' : 'var(--text-primary)',
-                fontWeight: isCustomTimeout ? 700 : 500,
-                fontSize: '0.88rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s'
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                cursor: savingSettings ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 4px 12px rgba(67, 56, 202, 0.25)'
               }}
             >
-              Custom
+              {savingSettings ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={18} />}
+              {savingSettings ? 'Saving...' : 'Save Shift, Break & Inactivity Rules'}
             </button>
+          </div>
+        </div>
+      )}
 
-            {isCustomTimeout && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.5rem' }}>
+      {/* ========================================================================= */}
+      {/* MODAL: ADD NEW CUSTOM BREAK TYPE */}
+      {/* ========================================================================= */}
+      {showAddBreakModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '440px',
+            width: '100%',
+            padding: '1.5rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            animation: 'scaleIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Coffee size={22} color="#ea580c" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
+                  Add Custom Break Type
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddBreakModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>
+                  Choose Emoji Icon:
+                </label>
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                  {EMOJI_OPTIONS.map(em => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => setNewBreakForm(p => ({ ...p, icon: em }))}
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        fontSize: '1.25rem',
+                        borderRadius: '8px',
+                        border: newBreakForm.icon === em ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                        backgroundColor: newBreakForm.icon === em ? '#fff7ed' : '#f8fafc',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>
+                  Break Name / Reason:
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Prayer / Namaz Break"
+                  value={newBreakForm.label}
+                  onChange={(e) => setNewBreakForm(p => ({ ...p, label: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>
+                  Standard Duration Limit (Minutes):
+                </label>
                 <input
                   type="number"
                   min="1"
-                  max="1440"
-                  value={customTimeoutInput}
-                  onChange={(e) => setCustomTimeoutInput(e.target.value)}
-                  placeholder="e.g. 90"
+                  max="180"
+                  value={newBreakForm.defaultMins}
+                  onChange={(e) => setNewBreakForm(p => ({ ...p, defaultMins: e.target.value }))}
                   style={{
-                    width: '90px',
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--accent-color)',
-                    background: 'var(--bg-surface)',
-                    color: 'var(--text-primary)',
+                    width: '100%',
+                    padding: '0.6rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
                     fontSize: '0.9rem',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    outline: 'none'
                   }}
                 />
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Mins</span>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Toggles & Options Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-          
-          {/* Toggle 1: Auto-Logout */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Automatic Logout</div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Log out user when timer reaches 00:00</div>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.enableAutoLogout}
-              onChange={(e) => setSettings(prev => ({ ...prev, enableAutoLogout: e.target.checked }))}
-              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
-            />
-          </div>
 
-          {/* Toggle 2: Show Live Timer in Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Show Timer in Header</div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Users can see countdown clock in topbar</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowAddBreakModal(false)}
+                style={{
+                  padding: '0.55rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#475569',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAddBreakRule}
+                style={{
+                  padding: '0.55rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#ea580c',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(234, 88, 12, 0.25)'
+                }}
+              >
+                Add Break
+              </button>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.showTimerInHeader}
-              onChange={(e) => setSettings(prev => ({ ...prev, showTimerInHeader: e.target.checked }))}
-              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent-color)' }}
-            />
           </div>
         </div>
-
-        {/* Save Button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={handleSaveSettings}
-            disabled={savingSettings}
-            style={{
-              padding: '0.65rem 1.75rem',
-              backgroundColor: 'var(--accent-color)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '0.9rem',
-              cursor: savingSettings ? 'not-allowed' : 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
-            }}
-          >
-            {savingSettings ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-            {savingSettings ? 'Saving...' : 'Save Timeout Settings'}
-          </button>
-        </div>
-      </div>
-
-      {/* Global Search & Date Filters */}
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', flex: 1, minWidth: '260px' }}>
-          <Search size={18} color="var(--text-secondary)" />
-          <input 
-            type="text" 
-            placeholder="Search employee, email, IP, or browser..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', width: '100%', fontSize: '0.9rem' }}
-          />
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-          <Calendar size={18} color="var(--text-secondary)" />
-          <input 
-            type="date" 
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-          />
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>to</span>
-          <input 
-            type="date" 
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-          />
-        </div>
-      </div>
-
-      {loading && allSessions.length === 0 ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-          ⏳ Loading live user sessions and activity durations...
-        </div>
-      ) : (
-        <>
-          {/* Section 1: Active User Sessions & Employee Time Tracking */}
-          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 8px #10b981' }} />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                  Active User Sessions & Time Tracking ({filteredActive.length})
-                </h3>
-              </div>
-
-              {filteredActive.length > 1 && (
-                <button 
-                  onClick={handleForceLogoutAll}
-                  style={{ padding: '0.45rem 1rem', background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-                >
-                  <LogOut size={14} /> Force Logout All Other Devices
-                </button>
-              )}
-            </div>
-            
-            {filteredActive.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
-                No active user sessions right now. (Users become active on login/action).
-              </div>
-            ) : (
-              <div style={{ maxHeight: '460px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name & Email</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Real-Time Status</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Active Work (Today)</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Idle / Away</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device / Browser</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Heartbeat</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredActive.map((session, i) => (
-                      <tr 
-                        key={session.id} 
-                        style={{ 
-                          borderBottom: i < filteredActive.length - 1 ? '1px solid var(--border-light)' : 'none', 
-                          background: session.current ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface)' 
-                        }}
-                      >
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ fontWeight: 600 }}>{session.user}</span>
-                            {session.current && (
-                              <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem', background: '#10b981', color: 'white', borderRadius: '10px', fontWeight: 600 }}>
-                                Current
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '0.1rem' }}>{session.email}</div>
-                        </td>
-
-                        {/* Real-time Status Badge */}
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          {session.liveStatus === 'working' && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontWeight: 600, fontSize: '0.78rem' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16a34a' }} />
-                              🟢 Working (Live)
-                            </span>
-                          )}
-                          {session.liveStatus === 'away' && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#fef3c7', color: '#b45309', fontWeight: 600, fontSize: '0.78rem' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                              🟡 Away (Idle)
-                            </span>
-                          )}
-                          {session.liveStatus === 'offline' && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '0.78rem' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#94a3b8' }} />
-                              🔴 Offline
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Active Work Time */}
-                        <td style={{ padding: '0.75rem 1rem', color: '#15803d', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                          {session.activeDurationFormatted}
-                        </td>
-
-                        {/* Idle Time */}
-                        <td style={{ padding: '0.75rem 1rem', color: '#b45309', fontWeight: 600, fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                          {session.idleDurationFormatted}
-                        </td>
-
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }} title={session.deviceObj?.raw}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                            <span>{session.deviceObj?.icon}</span>
-                            <span>{session.deviceObj?.label}</span>
-                          </span>
-                        </td>
-
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                          {session.lastActive}
-                        </td>
-
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                          {!session.current ? (
-                            <button 
-                              onClick={() => handleForceLogout(session.id)}
-                              style={{ background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, padding: '0.35rem 0.65rem', borderRadius: '6px', transition: 'all 0.15s' }}
-                            >
-                              <LogOut size={13} /> Force Logout
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Your session</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: User Session Logs (Inactive / Expired) */}
-          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <History size={20} color="var(--text-secondary)" />
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                User Session Logs ({filteredInactive.length})
-              </h3>
-            </div>
-            
-            {filteredInactive.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
-                No past session logs found.
-              </div>
-            ) : (
-              <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>User & Email</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Device / Browser</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>IP Source</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Active (Expired/Logout)</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredInactive.map((session, i) => (
-                      <tr 
-                        key={session.id} 
-                        style={{ 
-                          borderBottom: i < filteredInactive.length - 1 ? '1px solid var(--border-light)' : 'none', 
-                          background: 'var(--bg-surface)' 
-                        }}
-                      >
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          <div style={{ fontWeight: 600 }}>{session.user}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '0.1rem' }}>{session.email}</div>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }} title={session.deviceObj?.raw}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            <span>{session.deviceObj?.icon}</span>
-                            <span>{session.deviceObj?.label}</span>
-                          </span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{session.ip}</td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{session.lastActive}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'var(--bg-primary)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '12px' }}>
-                            <ShieldOff size={12} /> Logged Out / Expired
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
       )}
+
     </div>
   );
 }

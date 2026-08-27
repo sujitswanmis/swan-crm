@@ -545,15 +545,22 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         const { logUserSession, checkSessionValidity } = await import('@/app/actions/audit');
         const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown Device';
         
-        // 1. Send heartbeat
-        await logUserSession(device);
-        
-        // 2. Check if admin terminated this session
+        // 1. Check if admin terminated this session FIRST
         const validity = await checkSessionValidity(device);
         if (isMounted && validity && validity.valid === false) {
-          alert("Your session has been terminated by the administrator. You will be redirected to the login page.");
+          alert("Your session has been terminated by the administrator.");
           await supabase.auth.signOut();
-          window.location.href = '/login';
+          window.location.href = '/login?reason=force_logout';
+          return;
+        }
+
+        // 2. Send heartbeat only if session is active
+        const logRes = await logUserSession(device);
+        if (isMounted && logRes && logRes.valid === false) {
+          alert("Your session has been terminated by the administrator.");
+          await supabase.auth.signOut();
+          window.location.href = '/login?reason=force_logout';
+          return;
         }
       } catch (e) {
         console.error('Session tracking error:', e);
@@ -563,8 +570,8 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     // Initial track
     trackSession();
 
-    // Heartbeat every 2 minutes
-    const interval = setInterval(trackSession, 2 * 60 * 1000);
+    // Check validity & heartbeat every 20 seconds
+    const interval = setInterval(trackSession, 20 * 1000);
 
     return () => {
       isMounted = false;

@@ -1,7 +1,7 @@
 'use server';
 
-import { createClient } from '@/utils/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/utils/supabase/server';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -10,301 +10,287 @@ const getAdminClient = () => {
   );
 };
 
-// Helper to determine module name from action/target if not explicit
-function detectModule(action = '', target = '') {
-  const text = `${action} ${target}`.toLowerCase();
-  if (text.includes('lead') || text.includes('stage') || text.includes('party') || text.includes('order')) return 'Leads & CRM';
-  if (text.includes('user') || text.includes('role') || text.includes('permission') || text.includes('employee') || text.includes('password') || text.includes('team')) return 'Team & Access';
-  if (text.includes('config') || text.includes('setting') || text.includes('profile') || text.includes('field') || text.includes('department') || text.includes('notification')) return 'Enterprise Settings';
-  if (text.includes('session') || text.includes('login') || text.includes('logout') || text.includes('auth')) return 'Auth & Security';
-  if (text.includes('export') || text.includes('import') || text.includes('report') || text.includes('data')) return 'Data & Reports';
-  if (text.includes('whatsapp') || text.includes('sms') || text.includes('email') || text.includes('message')) return 'Messaging';
-  if (text.includes('call') || text.includes('campaign') || text.includes('agent') || text.includes('sip')) return 'Call Center';
-  return 'General';
-}
-
-// Function to fetch the current user's name/email and log the action
-export async function logAuditAction(action, target, customUserInfo = null) {
+export async function logAuditAction(action, target, details = {}) {
   try {
-    const adminClient = getAdminClient();
-    let userId = customUserInfo?.user_id || null;
-    let userEmail = customUserInfo?.email || null;
-    let empName = customUserInfo?.emp_name || null;
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!userId || !userEmail || !empName) {
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        userId = userId || user.id;
-        userEmail = userEmail || user.email;
+    let empName = user?.user_metadata?.full_name || user?.user_metadata?.emp_name;
+    if (!empName && user?.id) {
+      const adminClient = getAdminClient();
+      const { data: roleData } = await adminClient
+        .from('user_roles')
+        .select('emp_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-        // Fetch emp_name via admin client to avoid RLS issues
-        const { data: roleData } = await adminClient
-          .from('user_roles')
-          .select('emp_name')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (roleData?.emp_name && roleData.emp_name !== 'System User') {
-          empName = roleData.emp_name;
-        } else if (user.email) {
-          const { data: roleByEmail } = await adminClient
-            .from('user_roles')
-            .select('emp_name')
-            .eq('email', user.email)
-            .maybeSingle();
-          if (roleByEmail?.emp_name && roleByEmail.emp_name !== 'System User') {
-            empName = roleByEmail.emp_name;
-          }
-        }
-
-        if (!empName || empName === 'System User') {
-          empName = user.user_metadata?.full_name || 
-                    user.user_metadata?.name || 
-                    user.user_metadata?.emp_name || 
-                    (user.email ? user.email.split('@')[0] : 'System User');
-        }
+      if (roleData?.emp_name) {
+        empName = roleData.emp_name;
       }
     }
 
-    if (!userId && !userEmail && !empName) {
-      empName = 'System User';
+    if (!empName) {
+      empName = user?.email ? user.email.split('@')[0] : 'System User';
     }
 
-    const { error } = await adminClient.from('audit_logs').insert([{
-      user_id: userId,
-      emp_name: empName || 'System User',
-      email: userEmail || null,
-      action: action || 'Action',
-      target: target || '',
-      ip_address: 'Logged via Web App'
-    }]);
+    const payload = {
+      user_id: user?.id || null,
+      emp_name: empName,
+      email: user?.email || 'system@internal',
+      action,
+      target,
+      details,
+      created_at: new Date().toISOString()
+    };
 
-    if (error) throw error;
+    const adminClient = getAdminClient();
+    const { data, error } = await adminClient.from('audit_logs').insert([payload]);
+    if (error) {
+      console.error('Audit Log Error:', error);
+      return { success: false, error: error.message };
+    }
     return { success: true };
   } catch (err) {
-    console.error('Audit Log Error:', err);
+    console.error('Failed to log audit action:', err);
     return { success: false, error: err.message };
   }
 }
 
-// Advanced Server Action to Fetch Paginated & Filtered Audit Logs with KPI Metrics
-export async function getAuditLogs({
-  page = 1,
-  pageSize = 50,
-  search = '',
-  dateFrom = '',
-  dateTo = '',
-  module = 'all',
-  actionType = 'all',
-  userId = 'all'
-} = {}) {
+export async function getAuditLogs({ page = 1, pageSize = 20, searchQuery = '', actionFilter = '', dateFrom = '', dateTo = '' }) {
   try {
     const adminClient = getAdminClient();
-
-    // Base query for filtered records
     let query = adminClient
       .from('audit_logs')
       .select('*', { count: 'exact' });
 
+    if (actionFilter) {
+      query = query.eq('action', actionFilter);
+    }
+    if (searchQuery) {
+      query = query.or(`emp_name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,action.ilike.%${searchQuery}%,target.ilike.%${searchQuery}%`);
+    }
     if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      query = query.gte('created_at', fromDate.toISOString());
+      query = query.gte('created_at', new Date(dateFrom).toISOString());
     }
-
     if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      query = query.lte('created_at', toDate.toISOString());
+      const endOfDay = new Date(dateTo);
+      endOfDay.setHours(23, 59, 59, 999);
+      query = query.lte('created_at', endOfDay.toISOString());
     }
 
-    if (userId && userId !== 'all') {
-      query = query.or(`user_id.eq.${userId},email.eq.${userId}`);
-    }
-
-    if (actionType && actionType !== 'all') {
-      query = query.ilike('action', `%${actionType}%`);
-    }
-
-    if (search && search.trim()) {
-      const s = search.trim();
-      query = query.or(`action.ilike.%${s}%,target.ilike.%${s}%,emp_name.ilike.%${s}%,email.ilike.%${s}%,ip_address.ilike.%${s}%`);
-    }
-
-    query = query.order('created_at', { ascending: false });
-
-    // Pagination
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
-    query = query.range(from, to);
 
-    const { data: rawLogs, count: totalCount, error } = await query;
+    query = query.order('created_at', { ascending: false }).range(from, to);
 
+    const { data, count, error } = await query;
     if (error) throw error;
-
-    // Fetch user roles map for any legacy resolution
-    const { data: userRoles } = await adminClient.from('user_roles').select('user_id, email, emp_name');
-    const roleMapByUser = {};
-    const roleMapByEmail = {};
-    (userRoles || []).forEach(r => {
-      if (r.user_id && r.emp_name) roleMapByUser[r.user_id] = r.emp_name;
-      if (r.email && r.emp_name) roleMapByEmail[r.email.toLowerCase()] = r.emp_name;
-    });
-
-    const formattedLogs = (rawLogs || []).map(log => {
-      let resolvedUser = log.emp_name;
-      if (!resolvedUser || resolvedUser === 'System User') {
-        resolvedUser = roleMapByUser[log.user_id] || 
-                       roleMapByEmail[(log.email || '').toLowerCase()] || 
-                       (log.email ? log.email.split('@')[0] : 'System User');
-      }
-
-      const mod = detectModule(log.action, log.target);
-
-      return {
-        id: log.id,
-        user_id: log.user_id,
-        user: resolvedUser,
-        email: log.email || '',
-        action: log.action || 'Unknown Action',
-        target: log.target || '',
-        module: mod,
-        ip: log.ip_address || 'Logged via Web App',
-        created_at: log.created_at,
-        time: new Date(log.created_at).toLocaleString()
-      };
-    });
-
-    // Client/Module post-filtering if specific module filter applied
-    let filteredLogs = formattedLogs;
-    if (module && module !== 'all') {
-      filteredLogs = formattedLogs.filter(l => l.module.toLowerCase() === module.toLowerCase());
-    }
-
-    // KPI Metrics calculation
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const { count: todayCount } = await adminClient
-      .from('audit_logs')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', startOfToday.toISOString());
-
-    const { count: totalAllCount } = await adminClient
-      .from('audit_logs')
-      .select('*', { count: 'exact', head: true });
-
-    const { count: deleteCount } = await adminClient
-      .from('audit_logs')
-      .select('*', { count: 'exact', head: true })
-      .ilike('action', '%delete%');
 
     return {
       success: true,
-      logs: filteredLogs,
-      totalCount: totalCount || 0,
+      logs: data || [],
+      totalCount: count || 0,
       page,
       pageSize,
-      stats: {
-        totalEvents: totalAllCount || totalCount || 0,
-        todayEvents: todayCount || 0,
-        deleteEvents: deleteCount || 0,
-        uniqueUsers: Object.keys(roleMapByUser).length || 0
-      }
+      totalPages: Math.ceil((count || 0) / pageSize)
     };
   } catch (err) {
-    console.error('getAuditLogs Error:', err);
-    return { success: false, error: err.message, logs: [], totalCount: 0, stats: {} };
+    console.error('Fetch Audit Logs Error:', err);
+    return { success: false, logs: [], totalCount: 0, error: err.message };
   }
 }
 
-// Fetch dynamic filter options (distinct users, distinct actions)
-export async function getAuditLogFilters() {
+export async function exportAuditLogsCsv() {
   try {
     const adminClient = getAdminClient();
-    const { data: userRoles } = await adminClient
-      .from('user_roles')
-      .select('user_id, email, emp_name')
+    const { data, error } = await adminClient
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    if (error) throw error;
+
+    const headers = ['Timestamp', 'Employee Name', 'Email', 'Action', 'Target', 'Details'];
+    const rows = (data || []).map(log => [
+      `"${new Date(log.created_at).toLocaleString('en-IN')}"`,
+      `"${log.emp_name || ''}"`,
+      `"${log.email || ''}"`,
+      `"${log.action || ''}"`,
+      `"${log.target || ''}"`,
+      `"${JSON.stringify(log.details || {}).replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    return { success: true, csv: csvContent };
+  } catch (err) {
+    console.error('Export CSV Error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteAuditLogs(logIds = []) {
+  try {
+    const adminClient = getAdminClient();
+    let query = adminClient.from('audit_logs').delete();
+    
+    if (logIds && logIds.length > 0) {
+      query = query.in('id', logIds);
+    } else {
+      return { success: false, error: 'No logs specified for deletion.' };
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+
+    await logAuditAction('Delete Audit Logs', `Deleted ${logIds.length} audit log entries.`);
+    return { success: true };
+  } catch (err) {
+    console.error('Delete Audit Logs Error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function purgeAuditLogsOlderThan(days = 30) {
+  try {
+    const adminClient = getAdminClient();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    const { error, count } = await adminClient
+      .from('audit_logs')
+      .delete({ count: 'exact' })
+      .lt('created_at', cutoffDate.toISOString());
+
+    if (error) throw error;
+
+    await logAuditAction('Purge Audit Logs', `Purged audit logs older than ${days} days.`);
+    return { success: true, count };
+  } catch (err) {
+    console.error('Purge Audit Logs Error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getAllUniqueUsers() {
+  try {
+    const adminClient = getAdminClient();
+    const { data: users, error } = await adminClient
+      .from('audit_logs')
+      .select('emp_name, email')
       .order('emp_name', { ascending: true });
 
-    const uniqueUsers = (userRoles || [])
-      .filter(u => u.emp_name || u.email)
-      .map(u => ({
-        id: u.user_id || u.email,
-        name: u.emp_name || u.email,
-        email: u.email
-      }));
+    if (error) throw error;
 
-    return {
-      success: true,
-      users: uniqueUsers
-    };
+    const uniqueMap = new Map();
+    (users || []).forEach(u => {
+      if (u.email && !uniqueMap.has(u.email)) {
+        uniqueMap.set(u.email, { emp_name: u.emp_name, email: u.email });
+      }
+    });
+
+    return { success: true, users: Array.from(uniqueMap.values()) };
   } catch (err) {
-    console.error('getAuditLogFilters Error:', err);
+    console.error('Get Unique Users Error:', err);
     return { success: false, users: [] };
   }
 }
 
+export async function getAuditLogFilters() {
+  return await getAllUniqueUsers();
+}
+
+// -------------------------------------------------------------
+// USER SESSIONS & FORCE LOGOUT ENGINE
+// -------------------------------------------------------------
 export async function logUserSession(deviceInfo) {
   try {
     const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Not authenticated' };
+    if (!user) return { success: false, error: 'Not authenticated', valid: false };
 
-    const { data: roleData } = await adminClient
-      .from('user_roles')
-      .select('emp_name')
+    const nowIso = new Date().toISOString();
+    const today = nowIso.split('T')[0];
+
+    // 1. Check if user's session was terminated by Admin
+    const { data: recentSessions } = await adminClient.from('user_sessions')
+      .select('id, is_active')
       .eq('user_id', user.id)
-      .maybeSingle();
-
-    let empName = roleData?.emp_name;
-    if (!empName && user.email) {
-      const { data: roleByEmail } = await adminClient
-        .from('user_roles')
-        .select('emp_name')
-        .ilike('email', user.email)
-        .maybeSingle();
-      empName = roleByEmail?.emp_name;
-    }
-    if (!empName) {
-      empName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'System User');
-    }
-
-    // Check if a session already exists for this user/device, and update it, else insert
-    const { data: existingRecords } = await adminClient.from('user_sessions')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('device', deviceInfo)
       .order('last_active', { ascending: false })
       .limit(1);
 
-    const existing = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
+    const existing = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
 
+    if (existing && existing.is_active === false) {
+      // Session was force-logged out! Do NOT reactivate.
+      return { success: false, valid: false, forceLogout: true };
+    }
+
+    // Resolve employee name
+    let empName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'System User');
+    try {
+      const { data: roleData } = await adminClient
+        .from('user_roles')
+        .select('emp_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (roleData?.emp_name && roleData.emp_name !== 'System User') {
+        empName = roleData.emp_name;
+      }
+    } catch (e) { /* ignore */ }
+
+    // 2. Upsert user session
     if (existing) {
       await adminClient.from('user_sessions').update({
-        last_active: new Date().toISOString(),
+        last_active: nowIso,
         is_active: true,
         emp_name: empName,
-        email: user.email
+        email: user.email,
+        device: deviceInfo || 'Web Browser'
       }).eq('id', existing.id);
     } else {
       await adminClient.from('user_sessions').insert([{
         user_id: user.id,
         emp_name: empName,
         email: user.email,
-        device: deviceInfo,
+        device: deviceInfo || 'Web Browser',
         ip_address: 'Logged via Web App',
         is_active: true,
-        last_active: new Date().toISOString()
+        last_active: nowIso
       }]);
     }
 
-    return { success: true };
+    // 3. Automatically sync user_daily_activity so attendance records active presence
+    try {
+      const { data: existingDaily } = await adminClient.from('user_daily_activity')
+        .select('active_seconds, idle_seconds')
+        .eq('email', user.email)
+        .eq('activity_date', today)
+        .maybeSingle();
+
+      const prevActive = existingDaily?.active_seconds || 0;
+      const prevIdle = existingDaily?.idle_seconds || 0;
+
+      await adminClient.from('user_daily_activity').upsert({
+        user_id: user.id,
+        email: user.email,
+        emp_name: empName,
+        activity_date: today,
+        active_seconds: prevActive + 60, // accumulate 1 min per heartbeat
+        idle_seconds: prevIdle,
+        status: 'working',
+        device: deviceInfo || 'Web Browser',
+        last_active: nowIso,
+        updated_at: nowIso
+      }, { onConflict: 'email,activity_date' });
+    } catch (dailyErr) { /* ignore */ }
+
+    return { success: true, valid: true };
   } catch (err) {
     console.error('Session Log Error:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, valid: true };
   }
 }
 
@@ -313,19 +299,18 @@ export async function checkSessionValidity(deviceInfo) {
     const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { valid: false };
+    if (!user) return { valid: false, forceLogout: true };
 
     const { data: session } = await adminClient
       .from('user_sessions')
       .select('is_active')
       .eq('user_id', user.id)
-      .eq('device', deviceInfo)
       .order('last_active', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (session && session.is_active === false) {
-      return { valid: false };
+      return { valid: false, forceLogout: true };
     }
     return { valid: true };
   } catch (err) {
@@ -336,8 +321,24 @@ export async function checkSessionValidity(deviceInfo) {
 export async function forceLogoutSession(sessionId) {
   try {
     const adminClient = getAdminClient();
+    // 1. Get the session info before marking inactive
+    const { data: sessionData } = await adminClient
+      .from('user_sessions')
+      .select('id, user_id, email, emp_name')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    // 2. Mark this session inactive
     await adminClient.from('user_sessions').update({ is_active: false }).eq('id', sessionId);
-    await logAuditAction('Force Logout', `Revoked active user session ID: ${sessionId}`);
+
+    // 3. Also mark all active sessions for this user_id / email as inactive
+    if (sessionData?.user_id) {
+      await adminClient.from('user_sessions').update({ is_active: false }).eq('user_id', sessionData.user_id);
+    } else if (sessionData?.email) {
+      await adminClient.from('user_sessions').update({ is_active: false }).eq('email', sessionData.email);
+    }
+
+    await logAuditAction('Force Logout', `Revoked active user session for: ${sessionData?.emp_name || sessionData?.email || sessionId}`);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -368,4 +369,3 @@ export async function forceLogoutAllOtherSessions(currentDevice) {
     return { success: false, error: err.message };
   }
 }
-
