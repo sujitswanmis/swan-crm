@@ -218,14 +218,21 @@ export default function ActiveSessionsConfig() {
 
   useEffect(() => {
     fetchSettings();
-    fetchSessions();
-    const timer = setInterval(() => fetchSessions(false), 20000);
-    return () => clearInterval(timer);
-  }, [fetchSettings, fetchSessions]);
+  }, [fetchSettings]);
 
   useEffect(() => {
-    fetchDailyReport(selectedReportDate);
-  }, [selectedReportDate, fetchDailyReport]);
+    if (activeTab === 'live') {
+      fetchSessions();
+      const timer = setInterval(() => fetchSessions(false), 20000);
+      return () => clearInterval(timer);
+    }
+  }, [activeTab, fetchSessions]);
+
+  useEffect(() => {
+    if (activeTab === 'report' || activeTab === 'breakdown') {
+      fetchDailyReport(selectedReportDate);
+    }
+  }, [selectedReportDate, activeTab, fetchDailyReport]);
 
   useEffect(() => {
     let filtered = allSessions;

@@ -511,109 +511,106 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
     const now = Date.now();
     const THREE_MINUTES_MS = 3 * 60 * 1000;
     const TARGET_WORK_SECONDS = 9 * 3600; // 9 Hours (540 Mins = 32,400s)
+    const dateStartIso = `${dateStr}T00:00:00.000Z`;
+    const dateEndIso = `${dateStr}T23:59:59.999Z`;
 
-    // 1. Fetch Approved & Active Team Members who have been granted access by Admin
-    let allTeamMembers = [];
-    try {
-      const { data: rolesData, error: rolesError } = await adminClient
+    // ⚡ HIGH PERFORMANCE: Fetch all database tables & local files concurrently in parallel
+    const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult] = await Promise.allSettled([
+      // 1. Approved team members
+      adminClient
         .from('user_roles')
         .select('user_id, email, emp_name, emp_department, emp_designation, emp_id, company, module_access, is_approved, role')
         .eq('is_approved', true)
         .neq('role', 'customer')
-        .order('emp_name', { ascending: true });
+        .order('emp_name', { ascending: true }),
+      
+      // 2. Local activity file
+      (async () => {
+        try {
+          await ensureConfigFile(ACTIVITY_FILE_PATH, {});
+          const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
+          return JSON.parse(content || '{}');
+        } catch {
+          return {};
+        }
+      })(),
 
-      if (rolesData) {
-        allTeamMembers = rolesData.filter(r => {
-          const status = (r.module_access && r.module_access.emp_status) || 'Active';
-          const hasNameOrEmail = (r.emp_name && r.emp_name.trim()) || (r.email && r.email.trim());
-          return hasNameOrEmail && status === 'Active';
-        });
-      }
-      if (rolesError) {
-        console.error('Error fetching accessed user_roles:', rolesError);
-      }
-    } catch (teamErr) {
-      console.error('Error fetching team members:', teamErr);
-    }
-
-    // 2. Read from local activity store for target date
-    await ensureConfigFile(ACTIVITY_FILE_PATH, {});
-    let activityData = {};
-    try {
-      const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
-      activityData = JSON.parse(content || '{}');
-    } catch {
-      activityData = {};
-    }
-
-    const fileDayRecords = activityData[dateStr] || {};
-
-    // 3. Fetch from Supabase table `user_daily_activity`
-    const dateStartIso = `${dateStr}T00:00:00.000Z`;
-    const dateEndIso = `${dateStr}T23:59:59.999Z`;
-
-    let dbMap = {};
-    try {
-      const { data: dbRecords } = await adminClient
+      // 3. Supabase user_daily_activity
+      adminClient
         .from('user_daily_activity')
-        .select('*')
-        .eq('activity_date', dateStr);
+        .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active')
+        .eq('activity_date', dateStr),
 
-      if (dbRecords) {
-        dbRecords.forEach(r => {
-          if (r.user_id) dbMap[r.user_id] = r;
-          if (r.email) dbMap[r.email.toLowerCase()] = r;
-        });
-      }
-    } catch (dbErr) { /* ignore */ }
-
-    // 4. Fetch audit_logs for the date to get earliest In-Time (first user log of the day)
-    let firstAuditMap = {};
-    let lastAuditMap = {};
-    try {
-      const { data: auditLogs } = await adminClient
+      // 4. Earliest & latest audit logs for the day (fast limited scan)
+      adminClient
         .from('audit_logs')
         .select('user_id, email, created_at')
         .gte('created_at', dateStartIso)
         .lte('created_at', dateEndIso)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(2000),
 
-      if (auditLogs) {
-        auditLogs.forEach(l => {
-          const emailLower = (l.email || '').toLowerCase();
-          const uid = l.user_id;
-          const time = l.created_at;
-
-          [emailLower, uid].filter(Boolean).forEach(k => {
-            if (!firstAuditMap[k] || new Date(time) < new Date(firstAuditMap[k])) {
-              firstAuditMap[k] = time;
-            }
-            if (!lastAuditMap[k] || new Date(time) > new Date(lastAuditMap[k])) {
-              lastAuditMap[k] = time;
-            }
-          });
-        });
-      }
-    } catch (auditErr) { /* ignore */ }
-
-    // 5. Fetch all sessions active on this date from `user_sessions`
-    let sessionMap = {};
-    try {
-      const { data: dateSessions } = await adminClient
+      // 5. User sessions active today
+      adminClient
         .from('user_sessions')
-        .select('*')
+        .select('id, user_id, email, is_active, created_at, last_active')
         .gte('last_active', dateStartIso)
-        .lte('last_active', dateEndIso);
+        .lte('last_active', dateEndIso)
+    ]);
 
-      if (dateSessions) {
-        dateSessions.forEach(s => {
-          const keyUserId = s.user_id;
-          const keyEmail = s.email ? s.email.toLowerCase() : null;
-          if (keyUserId) sessionMap[keyUserId] = s;
-          if (keyEmail) sessionMap[keyEmail] = s;
+    // Process 1: Team Members
+    let allTeamMembers = [];
+    if (rolesResult.status === 'fulfilled' && rolesResult.value?.data) {
+      allTeamMembers = rolesResult.value.data.filter(r => {
+        const status = (r.module_access && r.module_access.emp_status) || 'Active';
+        const hasNameOrEmail = (r.emp_name && r.emp_name.trim()) || (r.email && r.email.trim());
+        return hasNameOrEmail && status === 'Active';
+      });
+    }
+
+    // Process 2: Local activity records
+    const activityData = (activityFileResult.status === 'fulfilled' && activityFileResult.value) ? activityFileResult.value : {};
+    const fileDayRecords = activityData[dateStr] || {};
+
+    // Process 3: Supabase user_daily_activity map
+    const dbMap = {};
+    if (dbRecordsResult.status === 'fulfilled' && dbRecordsResult.value?.data) {
+      dbRecordsResult.value.data.forEach(r => {
+        if (r.user_id) dbMap[r.user_id] = r;
+        if (r.email) dbMap[r.email.toLowerCase()] = r;
+      });
+    }
+
+    // Process 4: Audit Logs earliest / latest map
+    const firstAuditMap = {};
+    const lastAuditMap = {};
+    if (auditLogsResult.status === 'fulfilled' && auditLogsResult.value?.data) {
+      auditLogsResult.value.data.forEach(l => {
+        const emailLower = (l.email || '').toLowerCase();
+        const uid = l.user_id;
+        const time = l.created_at;
+
+        [emailLower, uid].filter(Boolean).forEach(k => {
+          if (!firstAuditMap[k] || new Date(time) < new Date(firstAuditMap[k])) {
+            firstAuditMap[k] = time;
+          }
+          if (!lastAuditMap[k] || new Date(time) > new Date(lastAuditMap[k])) {
+            lastAuditMap[k] = time;
+          }
         });
-      }
-    } catch (sessErr) { /* ignore */ }
+      });
+    }
+
+    // Process 5: Sessions map
+    const sessionMap = {};
+    if (sessionsResult.status === 'fulfilled' && sessionsResult.value?.data) {
+      sessionsResult.value.data.forEach(s => {
+        const keyUserId = s.user_id;
+        const keyEmail = s.email ? s.email.toLowerCase() : null;
+        if (keyUserId) sessionMap[keyUserId] = s;
+        if (keyEmail) sessionMap[keyEmail] = s;
+      });
+    }
 
     // 6. Build comprehensive roster combining all authorized employees + activity + sessions + audit_logs
     const processedEmails = new Set();
