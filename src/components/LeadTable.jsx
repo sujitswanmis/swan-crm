@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings } from 'lucide-react';
+import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
+import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import {
   useReactTable,
   getCoreRowModel,
@@ -874,12 +876,17 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   // Phase 3: Column Filter UI State
   const [activeFilterColumn, setActiveFilterColumn] = useState(null);
   const [filterSearchText, setFilterSearchText] = useState('');
+  const [showColumnModal, setShowColumnModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterRules, setFilterRules] = useState({});
+  const [filterConditionType, setFilterConditionType] = useState('AND');
 
-  const activeFilterCount = (columnFilters?.length || 0) + (globalFilter ? 1 : 0);
+  const activeFilterCount = (columnFilters?.length || 0) + (globalFilter ? 1 : 0) + Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '').length;
 
   const handleClearAllFilters = () => {
     setColumnFilters([]);
     setGlobalFilter('');
+    setFilterRules({});
     setActiveFilterColumn(null);
     setFilterSearchText('');
     table.resetColumnFilters();
@@ -1009,18 +1016,57 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
-  // Filter raw data by stageFilter directly at data level (avoids contaminating user columnFilters)
+  // Filter raw data by stageFilter and Multi-Column Filter Rules (AND / OR)
   const stageFilteredData = useMemo(() => {
-    if (!stageFilter || stageFilter === 'all' || stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
-      return data;
+    let result = data;
+    if (stageFilter && stageFilter !== 'all' && stageFilter !== 'lead_dashboard' && stageFilter !== 'dashboard' && stageFilter !== 'hourly_work') {
+      const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';'; // '01' -> '1;', '03' -> '3;'
+      result = result.filter(lead => {
+        const st = lead.status || '';
+        if (prefix === '1;' && (!st || !/^[1-7];/.test(st))) return true;
+        return st.startsWith(prefix) || st === stageFilter;
+      });
     }
-    const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';'; // '01' -> '1;', '03' -> '3;'
-    return data.filter(lead => {
-      const st = lead.status || '';
-      if (prefix === '1;' && (!st || !/^[1-7];/.test(st))) return true;
-      return st.startsWith(prefix) || st === stageFilter;
-    });
-  }, [data, stageFilter]);
+
+    // Apply Advanced Multi-Column Rules (with AND / OR Logic matching Image 2)
+    const ruleKeys = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '');
+    if (ruleKeys.length > 0) {
+      result = result.filter(lead => {
+        const ruleMatches = ruleKeys.map(key => {
+          const rule = filterRules[key];
+          let cellVal = String(lead[key] !== undefined && lead[key] !== null ? lead[key] : '').toLowerCase().trim();
+          if (key === 'created_at' && lead[key]) {
+            cellVal = String(new Date(lead[key]).toLocaleString()).toLowerCase().trim();
+          }
+          if (key === 'assigned_to') {
+            const member = teamMembers.find(m => m.user_id === lead.assigned_to);
+            cellVal = member ? member.emp_name.toLowerCase().trim() : (lead.assigned_to ? 'unknown' : 'open lead (unassigned)');
+          }
+          const targetVal = String(rule.value || '').toLowerCase().trim();
+          
+          switch (rule.condition) {
+            case 'start_with':
+              return cellVal.startsWith(targetVal);
+            case 'equal':
+              return cellVal === targetVal;
+            case 'not_equal':
+              return cellVal !== targetVal;
+            case 'contains':
+            default:
+              return cellVal.includes(targetVal);
+          }
+        });
+
+        if (filterConditionType === 'OR') {
+          return ruleMatches.some(Boolean);
+        } else {
+          return ruleMatches.every(Boolean);
+        }
+      });
+    }
+
+    return result;
+  }, [data, stageFilter, filterRules, filterConditionType, teamMembers]);
 
   // Cleanly reset any active column filters when navigating between stage tabs
   useEffect(() => {
@@ -1420,132 +1466,147 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         {/* Right Side: Columns, Import/Export, Table/Tiles & Add Lead */}
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
           
+          {/* Settings ⚙️ Icon Button with ColumnSelectorModal (Image 1) */}
           <div style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setShowColumnMenu(!showColumnMenu)} 
-              style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}
-            >
-              👁️ Columns ▾
-            </button>
-            
-            {showColumnMenu && (
-              <div 
-                style={{ 
-                  position: 'absolute', 
-                  top: '100%', 
-                  right: 0, 
-                  marginTop: '0.5rem', 
-                  background: 'var(--bg-surface)', 
-                  border: '1px solid var(--border-light)', 
-                  borderRadius: '8px', 
-                  padding: '1rem', 
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', 
-                  zIndex: 50, 
-                  minWidth: '220px',
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Toggle Columns</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
-                        setColumnOrder(allColIds);
-                        if (typeof window !== 'undefined') localStorage.removeItem('leadTableColumnOrder');
-                      }}
-                      style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title="Reset Column Order"
-                    >
-                      Reset Order
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        const allVisible = {};
-                        table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
-                        setColumnVisibility(allVisible);
-                      }}
-                      style={{ fontSize: '0.7rem', color: 'var(--accent-color)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      Show All
-                    </button>
-                  </div>
-                </div>
-                {(() => {
-                  const filterableColumns = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
-                  return filterableColumns.map((column, index) => {
-                    const isFirst = index === 0;
-                    const isLast = index === filterableColumns.length - 1;
-                    return (
-                      <div key={column.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.25rem 0.1rem' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)', flex: 1, userSelect: 'none' }}>
-                          <input
-                            type="checkbox"
-                            checked={column.getIsVisible()}
-                            onChange={column.getToggleVisibilityHandler()}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {column.columnDef.header && typeof column.columnDef.header === 'string' 
-                            ? column.columnDef.header 
-                            : column.id}
-                        </label>
-                        
-                        {/* Reorder Arrows */}
-                        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-                          <button 
-                            type="button"
-                            disabled={isFirst} 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              moveColumn(column.id, -1);
-                            }}
-                            style={{ 
-                              border: 'none', 
-                              background: 'transparent', 
-                              cursor: isFirst ? 'default' : 'pointer', 
-                              opacity: isFirst ? 0.25 : 1, 
-                              fontSize: '0.75rem', 
-                              padding: '0.1rem 0.3rem',
-                              color: isFirst ? 'var(--text-secondary)' : 'var(--text-primary)',
-                              borderRadius: '3px'
-                            }}
-                            title="Move Up"
-                          >
-                            ▲
-                          </button>
-                          <button 
-                            type="button"
-                            disabled={isLast} 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              moveColumn(column.id, 1);
-                            }}
-                            style={{ 
-                              border: 'none', 
-                              background: 'transparent', 
-                              cursor: isLast ? 'default' : 'pointer', 
-                              opacity: isLast ? 0.25 : 1, 
-                              fontSize: '0.75rem', 
-                              padding: '0.1rem 0.3rem',
-                              color: isLast ? 'var(--text-secondary)' : 'var(--text-primary)',
-                              borderRadius: '3px'
-                            }}
-                            title="Move Down"
-                          >
-                            ▼
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
+            {(() => {
+              const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
+              const leadTableColumns = filterableCols.map(c => ({
+                key: c.id,
+                label: typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id
+              }));
+              const leadTableVisibleKeys = filterableCols.filter(c => c.getIsVisible()).map(c => c.id);
+
+              return (
+                <>
+                  <button 
+                    onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
+                    style={{ 
+                      padding: '0.6rem 0.75rem', 
+                      background: showColumnModal ? '#0284c7' : 'var(--bg-surface)', 
+                      color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
+                      border: '1px solid var(--border-light)', 
+                      borderRadius: '6px', 
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.4rem', 
+                      fontWeight: 500,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    title="Column Settings (Show/Hide & Push/Keep Reordering)"
+                  >
+                    <Settings size={18} />
+                  </button>
+
+                  <ColumnSelectorModal
+                    isOpen={showColumnModal}
+                    onClose={() => setShowColumnModal(false)}
+                    columns={leadTableColumns}
+                    visibleColumns={leadTableVisibleKeys}
+                    onApply={(newVisKeys, newOrderedCols) => {
+                      const newVis = {};
+                      table.getAllLeafColumns().forEach(col => {
+                        newVis[col.id] = newVisKeys.includes(col.id) || col.id === 'actions' || col.id === 'select';
+                      });
+                      setColumnVisibility(newVis);
+                      
+                      const newOrderIds = ['select', ...newOrderedCols.map(c => c.key), 'actions'];
+                      setColumnOrder(newOrderIds);
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('leadTableColumnVisibility', JSON.stringify(newVis));
+                        localStorage.setItem('leadTableColumnOrder', JSON.stringify(newOrderIds));
+                      }
+                    }}
+                    onReset={() => {
+                      const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
+                      setColumnOrder(allColIds);
+                      const allVisible = {};
+                      table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
+                      setColumnVisibility(allVisible);
+                      if (typeof window !== 'undefined') {
+                        localStorage.removeItem('leadTableColumnVisibility');
+                        localStorage.removeItem('leadTableColumnOrder');
+                      }
+                    }}
+                  />
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Filter 🌪️ Icon Button with MultiColumnFilterModal (Image 2) */}
+          <div style={{ position: 'relative' }}>
+            {(() => {
+              const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
+              const leadTableColumns = filterableCols.map(c => ({
+                key: c.id,
+                label: typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id
+              }));
+              const activeRuleCount = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '').length;
+
+              return (
+                <>
+                  <button 
+                    onClick={() => { setShowFilterModal(!showFilterModal); setShowColumnModal(false); }}
+                    style={{ 
+                      padding: '0.6rem 0.75rem', 
+                      background: showFilterModal ? '#0284c7' : (activeRuleCount > 0 ? '#eff6ff' : 'var(--bg-surface)'), 
+                      color: showFilterModal ? '#ffffff' : (activeRuleCount > 0 ? '#0284c7' : 'var(--text-primary)'),
+                      border: activeRuleCount > 0 ? '1px solid #0284c7' : '1px solid var(--border-light)', 
+                      borderRadius: '6px', 
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.4rem', 
+                      fontWeight: 500,
+                      position: 'relative',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    title="Advanced Multi-Column Filter (AND / OR conditions)"
+                  >
+                    <Filter size={18} />
+                    {activeRuleCount > 0 && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '-6px',
+                          right: '-6px',
+                          backgroundColor: '#0284c7',
+                          color: '#ffffff',
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          borderRadius: '50%',
+                          width: '18px',
+                          height: '18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                        }}
+                      >
+                        {activeRuleCount}
+                      </span>
+                    )}
+                  </button>
+
+                  <MultiColumnFilterModal
+                    isOpen={showFilterModal}
+                    onClose={() => setShowFilterModal(false)}
+                    columns={leadTableColumns}
+                    filterRules={filterRules}
+                    conditionType={filterConditionType}
+                    onApply={(newRules, newCond) => {
+                      setFilterRules(newRules);
+                      setFilterConditionType(newCond);
+                    }}
+                    onResetAll={() => {
+                      setFilterRules({});
+                    }}
+                    getUniqueValues={getUniqueValues}
+                  />
+                </>
+              );
+            })()}
           </div>
 
           {/* Independent Import & Export Buttons */}

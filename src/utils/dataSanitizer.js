@@ -163,8 +163,10 @@ const STATE_ALIAS_MAP = {
   'jk': 'Jammu and Kashmir',
   'j&k': 'Jammu and Kashmir',
   'j & k': 'Jammu and Kashmir',
+  'j k': 'Jammu and Kashmir',
   'jammu and kashmir': 'Jammu and Kashmir',
   'jammu & kashmir': 'Jammu and Kashmir',
+  'jammu kashmir': 'Jammu and Kashmir',
   'jammu': 'Jammu and Kashmir',
   'kashmir': 'Jammu and Kashmir',
 

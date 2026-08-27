@@ -870,6 +870,7 @@ export default function TeamManagement({ initialUsers = [] }) {
       can_self_reset_password: user.can_self_reset_password === true || existingAccess.can_self_reset_password === true,
       can_access_audit_logs: user.can_access_audit_logs === true || existingAccess.can_access_audit_logs === true,
       can_manage_settings: user.can_manage_settings === true || existingAccess.can_manage_settings === true,
+      can_manage_column_data: user.can_manage_column_data === true || existingAccess.can_manage_column_data === true,
       can_claim_unassigned: user.can_claim_unassigned === true || existingAccess.can_claim_unassigned === true,
       can_bulk_actions: user.can_bulk_actions === true || existingAccess.can_bulk_actions === true
     });
@@ -1075,6 +1076,7 @@ export default function TeamManagement({ initialUsers = [] }) {
       can_view_all_companies: updatedForm.can_view_all_companies === true,
       can_access_audit_logs: updatedForm.can_access_audit_logs === true,
       can_manage_settings: updatedForm.can_manage_settings === true,
+      can_manage_column_data: updatedForm.can_manage_column_data === true,
       can_claim_unassigned: updatedForm.can_claim_unassigned === true,
       can_bulk_actions: updatedForm.can_bulk_actions === true
     } : u));
@@ -2732,7 +2734,8 @@ export default function TeamManagement({ initialUsers = [] }) {
                         { key: 'can_view_all_companies', label: '🏢 Multi-Company Full Access', desc: 'Allows viewing leads and data across all company entities' },
                         { key: 'can_self_reset_password', label: '🔑 Self Password Reset', desc: 'Allows self password reset via Email OTP on login screen' },
                         { key: 'can_access_audit_logs', label: '📜 View Activity Audit Logs', desc: 'Allows viewing security audit logs and event history in Settings' },
-                        { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' }
+                        { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' },
+                        { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' }
                       ];
 
                       return powersList.map(p => (
