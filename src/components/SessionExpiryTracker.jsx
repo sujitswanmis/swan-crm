@@ -63,6 +63,19 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   // 1. Fetch Admin Session Settings & Current Break Status on mount
   const fetchSettingsAndStatus = useCallback(async () => {
     try {
+      // 1. Instant local restore
+      try {
+        if (typeof window !== 'undefined') {
+          const cachedBreak = localStorage.getItem('crm_active_break');
+          if (cachedBreak) {
+            const parsed = JSON.parse(cachedBreak);
+            setCurrentBreak(parsed);
+            const elapsed = Math.max(0, Math.floor((Date.now() - new Date(parsed.startTime).getTime()) / 1000));
+            setBreakElapsedSec(elapsed);
+          }
+        }
+      } catch (e) {}
+
       const res = await getSessionSecuritySettings();
       if (res?.success && res?.settings) {
         setSettings(res.settings);
@@ -70,16 +83,26 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
         setTimeLeftSeconds(fullTimeout);
       }
 
-      const statusRes = await getCurrentEmployeeStatus();
-      if (statusRes?.success && statusRes.currentBreak) {
-        setCurrentBreak(statusRes.currentBreak);
-        const elapsed = Math.max(0, Math.floor((Date.now() - new Date(statusRes.currentBreak.startTime).getTime()) / 1000));
-        setBreakElapsedSec(elapsed);
+      const statusRes = await getCurrentEmployeeStatus(userEmail);
+      if (statusRes?.success) {
+        if (statusRes.currentBreak) {
+          setCurrentBreak(statusRes.currentBreak);
+          const elapsed = Math.max(0, Math.floor((Date.now() - new Date(statusRes.currentBreak.startTime).getTime()) / 1000));
+          setBreakElapsedSec(elapsed);
+          try {
+            localStorage.setItem('crm_active_break', JSON.stringify(statusRes.currentBreak));
+          } catch (e) {}
+        } else {
+          try {
+            localStorage.removeItem('crm_active_break');
+          } catch (e) {}
+          setCurrentBreak(null);
+        }
       }
     } catch (e) {
       console.error('Failed to load session settings / break status:', e);
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     fetchSettingsAndStatus();
@@ -246,38 +269,59 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
   // 5. Break Handlers
   const handleStartBreak = async (breakTypeObj) => {
-    setActionLoading(true);
+    const nowIso = new Date().toISOString();
+    const localBreak = {
+      id: `brk_${Date.now()}`,
+      type: breakTypeObj.label || 'Break',
+      icon: breakTypeObj.icon || '☕',
+      startTime: nowIso,
+      startTimeFormatted: new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+    };
+
+    // Instant local state update (Zero lag / Never stuck)
+    setCurrentBreak(localBreak);
+    setBreakElapsedSec(0);
+    setShowBreakModal(false);
+    setIsDropdownOpen(false);
+
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('crm_active_break', JSON.stringify(localBreak));
+      }
+    } catch (e) {}
+
+    // Background server sync
     try {
       const res = await startEmployeeBreak({
         breakType: breakTypeObj.label,
-        breakIcon: breakTypeObj.icon
+        breakIcon: breakTypeObj.icon,
+        userEmail
       });
-      if (res?.success && res.currentBreak) {
+      if (res?.currentBreak) {
         setCurrentBreak(res.currentBreak);
-        setBreakElapsedSec(0);
-        setShowBreakModal(false);
-        setIsDropdownOpen(false);
       }
     } catch (err) {
-      console.error('Failed to start break:', err);
-    } finally {
-      setActionLoading(false);
+      console.error('Failed to sync start break with server:', err);
     }
   };
 
   const handleEndBreak = async () => {
-    setActionLoading(true);
+    // Instant local state resume
+    setCurrentBreak(null);
+    setBreakElapsedSec(0);
+    handleUserActivity();
+
     try {
-      const res = await endEmployeeBreak();
-      if (res?.success) {
-        setCurrentBreak(null);
-        setBreakElapsedSec(0);
-        handleUserActivity();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('crm_active_break');
       }
+    } catch (e) {}
+
+    // Background server sync
+    try {
+      await endEmployeeBreak({ userEmail });
     } catch (err) {
-      console.error('Failed to end break:', err);
-    } finally {
-      setActionLoading(false);
+      console.error('Failed to sync end break with server:', err);
     }
   };
 

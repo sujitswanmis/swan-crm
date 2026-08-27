@@ -337,11 +337,12 @@ export async function recordUserActivityHeartbeat({
 // -------------------------------------------------------------
 // 3. AGENT BREAK MANAGEMENT (START & END BREAKS)
 // -------------------------------------------------------------
-export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = '☕' }) {
+export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = '☕', userEmail = '' }) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Not authenticated' };
+    const email = user?.email || userEmail;
+    if (!email && !user) return { success: false, error: 'Not authenticated' };
 
     const today = new Date().toISOString().split('T')[0];
     const nowIso = new Date().toISOString();
@@ -356,11 +357,11 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
     }
 
     if (!activityData[today]) activityData[today] = {};
-    const userKey = user.id || user.email;
+    const userKey = user?.id || email;
     const existing = activityData[today][userKey] || {
-      userId: user.id,
-      email: user.email,
-      empName: user.email.split('@')[0],
+      userId: user?.id || null,
+      email: email,
+      empName: email ? email.split('@')[0] : 'Employee',
       activeSeconds: 0,
       idleSeconds: 0,
       firstSeen: nowIso,
@@ -397,11 +398,12 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
   }
 }
 
-export async function endEmployeeBreak() {
+export async function endEmployeeBreak({ userEmail = '' } = {}) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Not authenticated' };
+    const email = user?.email || userEmail;
+    if (!email && !user) return { success: false, error: 'Not authenticated' };
 
     const today = new Date().toISOString().split('T')[0];
     const nowIso = new Date().toISOString();
@@ -416,7 +418,7 @@ export async function endEmployeeBreak() {
     }
 
     if (!activityData[today]) activityData[today] = {};
-    const userKey = user.id || user.email;
+    const userKey = user?.id || email;
     const existing = activityData[today][userKey];
 
     if (!existing || !existing.currentBreak) {
@@ -457,11 +459,12 @@ export async function endEmployeeBreak() {
   }
 }
 
-export async function getCurrentEmployeeStatus() {
+export async function getCurrentEmployeeStatus(userEmail = '') {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Not authenticated' };
+    const email = user?.email || userEmail;
+    if (!email && !user) return { success: false, error: 'Not authenticated' };
 
     const today = new Date().toISOString().split('T')[0];
     await ensureConfigFile(ACTIVITY_FILE_PATH, {});
@@ -473,7 +476,7 @@ export async function getCurrentEmployeeStatus() {
       activityData = {};
     }
 
-    const userKey = user.id || user.email;
+    const userKey = user?.id || email;
     const existing = (activityData[today] && activityData[today][userKey]) || null;
 
     return {
