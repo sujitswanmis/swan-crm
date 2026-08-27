@@ -1,0 +1,57 @@
+{
+  "records": [
+    {
+      "id": "34476b83-5b9e-43c0-b598-ac38584773fd",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "user_id": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "emp_code": "",
+      "emp_name": "Sujit Gupta",
+      "email": "sujitswanmis@gmail.com",
+      "department": "",
+      "attendance_date": "2026-08-28",
+      "in_time": "2026-08-27T20:33:04.86+00:00",
+      "out_time": "2026-08-27T21:40:04.720Z",
+      "in_location": "Office Web Terminal",
+      "out_location": "Office Web Terminal",
+      "in_method": "WEB_PUNCH",
+      "out_method": "WEB_PUNCH",
+      "total_working_minutes": 67,
+      "status": "ABSENT",
+      "is_regularized": false,
+      "regularization_id": null,
+      "remarks": "Absent Marked: Total working time (1h 7m) is less than 4 Hours 30 Minutes on Mon-Sat (< 270 mins)",
+      "created_at": "2026-08-27T20:14:11.021+00:00",
+      "updated_at": "2026-08-27T21:40:04.720Z",
+      "short_leave_type": "NONE"
+    }
+  ],
+  "requests": [
+    {
+      "id": "req-1787866907877-02gmxv",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "user_id": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "emp_code": "",
+      "emp_name": "Sujit Gupta",
+      "email": "sujitswanmis@gmail.com",
+      "department": "",
+      "attendance_date": "2026-08-28",
+      "request_type": "BOTH",
+      "current_in_time": null,
+      "current_out_time": null,
+      "requested_in_time": "2026-08-28T03:33:00.000Z",
+      "requested_out_time": "2026-08-28T13:04:00.000Z",
+      "reason_type": "Field Work / Official Duty",
+      "reason_details": "extra working",
+      "assigned_hod_email": null,
+      "assigned_hod_name": "HOD / Manager",
+      "status": "PENDING",
+      "action_by_user_id": null,
+      "action_by_name": null,
+      "action_by_email": null,
+      "action_at": null,
+      "action_remarks": null,
+      "created_at": "2026-08-27T21:41:47.869Z",
+      "updated_at": "2026-08-27T21:41:47.869Z"
+    }
+  ]
+}

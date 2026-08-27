@@ -6,6 +6,21 @@ export const MODULES_CONFIG = [
   { id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General', icon: <PieChart size={20} />, viewOnly: true },
   { id: 'new_swan_ai', path: 'ai', label: 'New Swan AI', category: 'General', icon: <Bot size={20} /> },
   { id: 'callcenter', path: 'callcenter', label: 'Call Center', category: 'General', icon: <PhoneCall size={20} /> },
+  { 
+    id: 'attendance', 
+    path: 'attendance', 
+    label: 'Smart Attendance', 
+    category: 'General', 
+    icon: <Clock size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'my_attendance', label: 'Daily Punch Station' },
+      { id: 'monthly_logs', label: 'Monthly Attendance Log' },
+      { id: 'regularization', label: 'Missing Punch / Regularize' },
+      { id: 'hod_approvals', label: 'HOD Approvals' },
+      { id: 'team_report', label: 'Team Attendance Report' }
+    ]
+  },
 
   // Sales
   { id: 'registration', path: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
@@ -79,20 +94,6 @@ export const MODULES_CONFIG = [
     ]
   },
   { id: 'joining', path: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
-  { 
-    id: 'attendance', 
-    path: 'attendance', 
-    label: 'Smart Attendance', 
-    category: 'Human Resource', 
-    icon: <Clock size={20} />,
-    subItemsType: 'tabs',
-    subItems: [
-      { id: 'my_attendance', label: 'My Attendance & Punch' },
-      { id: 'regularization', label: 'Missing Attendance' },
-      { id: 'hod_approvals', label: 'HOD Approvals' },
-      { id: 'team_report', label: 'Team Attendance Report' }
-    ]
-  },
 
   // System
   { id: 'team', path: 'team', label: 'Team Management', category: 'System', icon: <Shield size={20} /> },

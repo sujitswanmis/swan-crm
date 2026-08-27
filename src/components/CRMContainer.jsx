@@ -256,21 +256,74 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
+  const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
+  const [attendanceSubTab, setAttendanceSubTab] = useState('my_attendance');
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const param = new URLSearchParams(window.location.search).get('setting');
+      const search = new URLSearchParams(window.location.search);
+      const param = search.get('setting');
       if (param) {
         setCurrentSettingSubTab(param);
       }
+      const attTab = search.get('tab') || search.get('subtab');
+      if (attTab && (pathname === '/attendance' || pathname === 'attendance')) {
+        setAttendanceSubTab(attTab);
+      }
     }
-  }, []);
+  }, [pathname]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [globalRolePermissions, setGlobalRolePermissions] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [impersonationInfo, setImpersonationInfo] = useState(null);
+  const [adminRestoreToken, setAdminRestoreToken] = useState(null);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = sessionStorage.getItem('crm_impersonator');
+        if (stored) {
+          setImpersonationInfo(JSON.parse(stored));
+        } else {
+          // Check cookie
+          const matchInfo = document.cookie.match(/crm_impersonator_info=([^;]+)/);
+          if (matchInfo) {
+            try {
+              setImpersonationInfo(JSON.parse(decodeURIComponent(matchInfo[1])));
+            } catch (e) {}
+          }
+        }
+
+        const matchRestore = document.cookie.match(/crm_admin_restore_token=([^;]+)/);
+        if (matchRestore) {
+          setAdminRestoreToken(decodeURIComponent(matchRestore[1]));
+        }
+      }
+    } catch (e) {
+      console.error('Error reading impersonator session:', e);
+    }
+  }, []);
+
+  const handleReturnToAdmin = () => {
+    try {
+      sessionStorage.removeItem('crm_impersonator');
+    } catch (e) {}
+    if (adminRestoreToken) {
+      window.location.href = `/auth/restore-admin?token=${encodeURIComponent(adminRestoreToken)}`;
+    } else {
+      window.location.href = '/auth/restore-admin';
+    }
+  };
+
+  const handleExitImpersonation = () => {
+    try {
+      sessionStorage.removeItem('crm_impersonator');
+    } catch (e) {}
+    window.location.href = '/auth/logout';
+  };
   const [syncLoadedCount, setSyncLoadedCount] = useState(0);
   const [syncTotalCount, setSyncTotalCount] = useState(0);
   const [visitedTabs, setVisitedTabs] = useState(() => new Set([activeTab]));
@@ -1126,6 +1179,21 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     }
   };
 
+  const handleAttendanceSubTabChange = (subTabId) => {
+    setAttendanceSubTab(subTabId);
+    if (activeTab !== 'attendance') {
+      React.startTransition(() => {
+        setActiveTab('attendance');
+      });
+    }
+    const newPath = `/attendance?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
   const handleStageChange = (stage, subtab = null) => {
     setLeadsFilterStage(stage);
     
@@ -1578,6 +1646,77 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
             </button>
           )}
 
+          {/* Smart Attendance (Positioned Above Sales) */}
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['attendance']?.view) && (
+            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setAttendanceMenuExpanded(true);
+                  } else {
+                    setAttendanceMenuExpanded(!attendanceMenuExpanded);
+                  }
+                  handleTabChange('attendance');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'attendance'}
+                title={isSidebarCollapsed ? "Smart Attendance" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {attendanceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <Clock size={20} style={{ flexShrink: 0 }} />
+                <span>Smart Attendance</span>
+              </button>
+              
+              <div className={`submenu-list ${attendanceMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('my_attendance')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'my_attendance'}
+                  >
+                    ⏱️ Daily Punch Station
+                  </button>
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('monthly_logs')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'monthly_logs'}
+                  >
+                    📅 Monthly Attendance Log
+                  </button>
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('regularization')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'regularization'}
+                  >
+                    📝 Missing Punch / Regularize
+                  </button>
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['attendance']?.is_manager) && (
+                    <>
+                      <button
+                        onClick={() => handleAttendanceSubTabChange('hod_approvals')}
+                        className="submenu-item"
+                        data-active={activeTab === 'attendance' && attendanceSubTab === 'hod_approvals'}
+                      >
+                        🛡️ HOD Approvals
+                      </button>
+                      <button
+                        onClick={() => handleAttendanceSubTabChange('team_report')}
+                        className="submenu-item"
+                        data-active={activeTab === 'attendance' && attendanceSubTab === 'team_report'}
+                      >
+                        👥 Team Attendance Report
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {['Sales', 'Purchase', 'Human Resource'].map(category => {
             const visibleModules = MODULES_CONFIG.filter(m => 
               m.category === category && 
@@ -1616,6 +1755,14 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                               } else {
                                 setRecruiterMenuExpanded(!recruiterMenuExpanded);
                               }
+                            } else if (module.id === 'attendance') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setAttendanceMenuExpanded(true);
+                              } else {
+                                setAttendanceMenuExpanded(!attendanceMenuExpanded);
+                              }
+                              handleTabChange('attendance');
                             } else {
                               handleTabChange(module.path || module.id); 
                             }
@@ -1633,6 +1780,11 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                           {module.id === 'recruiter' && (
                             <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                               {recruiterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
+                          {module.id === 'attendance' && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {attendanceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </span>
                           )}
                           {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
@@ -2164,6 +2316,78 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
       {/* Main Content Area */}
       <main className="main-content">
+        {/* Impersonation Floating Notification Banner */}
+        {impersonationInfo && (
+          <div style={{
+            background: 'linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%)',
+            color: '#ffffff',
+            padding: '0.45rem 1.25rem',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            zIndex: 45,
+            boxShadow: '0 2px 8px rgba(79, 70, 229, 0.3)',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '1rem' }}>🕶️</span>
+              <span>
+                <strong>Impersonation Mode:</strong> Currently logged in as <span style={{ textDecoration: 'underline' }}>{userName}</span> ({userRole})
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+              <button
+                type="button"
+                onClick={handleReturnToAdmin}
+                style={{
+                  backgroundColor: '#ffffff',
+                  color: '#4338ca',
+                  border: 'none',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>🔄</span>
+                Return to Admin Account
+              </button>
+              <button
+                type="button"
+                onClick={handleExitImpersonation}
+                style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.35)',
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <LogOut size={13} />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Header */}
         <header className="top-header" style={{ position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
           {isSyncing && (
@@ -3122,6 +3346,8 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     userName={userName} 
                     userEmail={userEmail} 
                     moduleAccess={moduleAccess}
+                    initialSubTab={attendanceSubTab}
+                    onSubTabChange={(tab) => handleAttendanceSubTabChange(tab)}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

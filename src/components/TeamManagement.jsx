@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, bulkImportEmployeesFast, cleanupDummyImportAccounts, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash, toggleSelfPasswordReset, sendAdminPasswordResetLink } from '@/app/actions/team';
-import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw, Send, Check, Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, bulkImportEmployeesFast, cleanupDummyImportAccounts, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash, toggleSelfPasswordReset, sendAdminPasswordResetLink, impersonateUserAdmin } from '@/app/actions/team';
+import { Eye, EyeOff, Search, ChevronDown, ChevronRight, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw, Send, Check, Loader2, CheckCircle2, AlertCircle, Info, LogIn, UserCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
@@ -222,6 +222,60 @@ export default function TeamManagement({ initialUsers = [] }) {
     successMsg: null,
     errorMsg: null
   });
+
+  const [impersonateModal, setImpersonateModal] = useState({
+    show: false,
+    user: null,
+    loading: false,
+    errorMsg: null,
+    successMsg: null
+  });
+
+  const handleOpenImpersonateModal = (user) => {
+    setImpersonateModal({
+      show: true,
+      user,
+      loading: false,
+      errorMsg: null,
+      successMsg: null
+    });
+  };
+
+  const handleConfirmImpersonate = async () => {
+    if (!impersonateModal.user) return;
+    setImpersonateModal(prev => ({ ...prev, loading: true, errorMsg: null, successMsg: null }));
+    try {
+      const res = await impersonateUserAdmin(impersonateModal.user.user_id);
+      if (!res.success) {
+        setImpersonateModal(prev => ({ ...prev, loading: false, errorMsg: res.error || 'Failed to generate session.' }));
+        return;
+      }
+
+      // Build target URL for new tab
+      const impersonateUrl = `/auth/impersonate?token=${encodeURIComponent(res.tokenHash)}&restore=${encodeURIComponent(res.adminRestoreToken || '')}&name=${encodeURIComponent(res.empName || '')}&role=${encodeURIComponent(res.role || '')}`;
+
+      // Open user session in a new window/tab
+      const newTab = window.open(impersonateUrl, '_blank');
+
+      if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+        // If popup was blocked, fallback to direct navigation
+        window.location.href = impersonateUrl;
+        return;
+      }
+
+      setImpersonateModal(prev => ({
+        ...prev,
+        loading: false,
+        successMsg: `Logged in as ${res.empName}! Opened in a new tab.`
+      }));
+
+      setTimeout(() => {
+        setImpersonateModal({ show: false, user: null, loading: false, errorMsg: null, successMsg: null });
+      }, 1800);
+    } catch (err) {
+      setImpersonateModal(prev => ({ ...prev, loading: false, errorMsg: err.message || 'An unexpected error occurred.' }));
+    }
+  };
 
   const handleConfirmMoveToTrash = async () => {
     if (!trashConfirmModal.userId) return;
@@ -1559,6 +1613,15 @@ export default function TeamManagement({ initialUsers = [] }) {
                   ) : (
                     <>
                       <HoverIconButton
+                        icon={LogIn}
+                        label="Login as User"
+                        bg="#f5f3ff"
+                        hoverBg="#ede9fe"
+                        color="#7c3aed"
+                        borderColor="#ddd6fe"
+                        onClick={() => handleOpenImpersonateModal(user)}
+                      />
+                      <HoverIconButton
                         icon={MessageSquare}
                         label="View Chat"
                         bg="#dcfce7"
@@ -1612,6 +1675,186 @@ export default function TeamManagement({ initialUsers = [] }) {
         </tbody>
       </table>
       </div>
+
+      {/* Impersonate User Modal */}
+      {impersonateModal.show && impersonateModal.user && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem',
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '2rem',
+            width: '90%',
+            maxWidth: '460px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            textAlign: 'center',
+            color: 'var(--text-primary)'
+          }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: '#ede9fe',
+              color: '#7c3aed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem auto'
+            }}>
+              <LogIn size={28} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-primary)' }}>
+              Login as Employee
+            </h3>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', marginBottom: '1.25rem' }}>
+              Switch directly into <strong>{impersonateModal.user.emp_name || impersonateModal.user.email}</strong>'s account and access their personalized workspace.
+            </p>
+
+            <div style={{
+              backgroundColor: 'var(--bg-primary)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              marginBottom: '1.25rem',
+              textAlign: 'left',
+              fontSize: '0.84rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Employee Name:</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{impersonateModal.user.emp_name || '-'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Emp ID:</span>
+                <span style={{ fontWeight: 600 }}>{impersonateModal.user.emp_id || '-'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Email:</span>
+                <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{impersonateModal.user.email || impersonateModal.user.emp_official_mail_id}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Role / Designation:</span>
+                <span style={{ 
+                  backgroundColor: '#e0e7ff', 
+                  color: '#4338ca', 
+                  padding: '0.15rem 0.5rem', 
+                  borderRadius: '4px', 
+                  fontSize: '0.75rem', 
+                  fontWeight: 700 
+                }}>
+                  {impersonateModal.user.role || 'agent'} {impersonateModal.user.emp_designation ? `• ${impersonateModal.user.emp_designation}` : ''}
+                </span>
+              </div>
+              {impersonateModal.user.emp_department && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Department:</span>
+                  <span>{impersonateModal.user.emp_department}</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{
+              backgroundColor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1e40af',
+              borderRadius: '8px',
+              padding: '0.65rem 0.85rem',
+              fontSize: '0.78rem',
+              lineHeight: 1.4,
+              textAlign: 'left',
+              display: 'flex',
+              gap: '0.5rem',
+              marginBottom: '1.25rem'
+            }}>
+              <Info size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                Opens the employee's logged-in view in a <strong>new tab</strong>. Your current admin dashboard will stay open, and you can switch back anytime.
+              </div>
+            </div>
+
+            {impersonateModal.successMsg && (
+              <div style={{
+                backgroundColor: '#dcfce7',
+                color: '#166534',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                fontSize: '0.85rem',
+                border: '1px solid #bbf7d0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
+              }}>
+                <Check size={16} />
+                <span>{impersonateModal.successMsg}</span>
+              </div>
+            )}
+
+            {impersonateModal.errorMsg && (
+              <div style={{
+                backgroundColor: '#fee2e2',
+                color: '#991b1b',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                fontSize: '0.85rem',
+                border: '1px solid #fecaca'
+              }}>
+                {impersonateModal.errorMsg}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setImpersonateModal({ show: false, user: null, loading: false, errorMsg: null, successMsg: null })}
+                disabled={impersonateModal.loading}
+                className="btn-secondary"
+                style={{ padding: '0.6rem 1.5rem', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImpersonate}
+                disabled={impersonateModal.loading || Boolean(impersonateModal.successMsg)}
+                className="btn-primary"
+                style={{
+                  backgroundColor: '#7c3aed',
+                  borderColor: '#7c3aed',
+                  color: '#fff',
+                  padding: '0.6rem 1.5rem',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontWeight: 600,
+                  cursor: impersonateModal.loading ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {impersonateModal.loading ? <RefreshCw size={16} className="animate-spin" /> : <LogIn size={16} />}
+                {impersonateModal.loading ? 'Opening New Tab...' : 'Login in New Tab'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Send Reset Email Centered Modal */}
       {sendResetEmailModal.show && sendResetEmailModal.user && (

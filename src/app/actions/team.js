@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/utils/supabase/server';
 import { sendAdminAccountEmailOtp } from './adminMessageConfig';
 import { logAuditAction } from './audit';
 
@@ -1153,5 +1154,116 @@ export async function verifyLoginOtp(email, otp) {
     message: 'OTP verified successfully!'
   };
 }
+
+/**
+ * Impersonate a user (Admin only)
+ * Generates a secure session token to log in as the target user.
+ */
+export async function impersonateUserAdmin(targetUserId) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Unauthorized. Please sign in.' };
+    }
+
+    const adminClient = getAdminClient();
+    // Verify caller is admin
+    const { data: callerRole } = await adminClient
+      .from('user_roles')
+      .select('role, emp_name, email')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const isAdmin = callerRole?.role === 'admin' || callerRole?.role === 'Admin';
+    if (!isAdmin) {
+      return { success: false, error: 'Permission denied. Only administrators can log in as other users.' };
+    }
+
+    // Retrieve target user
+    const { data: targetUser, error: targetError } = await adminClient
+      .from('user_roles')
+      .select('user_id, email, emp_official_mail_id, emp_name, role, emp_id, emp_department, emp_designation')
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    if (targetError || !targetUser) {
+      return { success: false, error: 'Target employee not found.' };
+    }
+
+    const targetEmail = targetUser.email || targetUser.emp_official_mail_id;
+    if (!targetEmail) {
+      return { success: false, error: 'Target employee does not have a registered email.' };
+    }
+
+    // Generate magic link / token hash
+    const linkRes = await adminClient.auth.admin.generateLink({
+      type: 'magiclink',
+      email: targetEmail
+    });
+
+    // Generate admin restore token so admin can seamlessly switch back
+    const adminEmail = callerRole?.email || user.email;
+    let adminRestoreToken = null;
+    if (adminEmail) {
+      const adminLinkRes = await adminClient.auth.admin.generateLink({
+        type: 'magiclink',
+        email: adminEmail
+      });
+      adminRestoreToken = adminLinkRes.data?.properties?.hashed_token || null;
+    }
+
+    // Log audit event
+    await logAuditAction(
+      'User Impersonation',
+      `Admin (${callerRole?.emp_name || user.email}) logged in as user: ${targetUser.emp_name || targetEmail} (Role: ${targetUser.role}, ID: ${targetUser.emp_id || targetUserId})`
+    );
+
+    return {
+      success: true,
+      tokenHash: linkRes.data.properties.hashed_token,
+      adminRestoreToken,
+      email: targetEmail,
+      empName: targetUser.emp_name || targetEmail,
+      empId: targetUser.emp_id || '',
+      empDesignation: targetUser.emp_designation || '',
+      empDepartment: targetUser.emp_department || '',
+      role: targetUser.role || 'agent',
+      targetUserId: targetUser.user_id
+    };
+  } catch (err) {
+    console.error('Error in impersonateUserAdmin:', err);
+    return { success: false, error: err.message || 'An unexpected error occurred during user impersonation.' };
+  }
+}
+
+/**
+ * Restore Admin session using a valid restore token
+ */
+export async function restoreAdminSession(restoreToken) {
+  try {
+    if (!restoreToken) {
+      return { success: false, error: 'No restore token provided.' };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.verifyOtp({
+      token_hash: restoreToken,
+      type: 'magiclink'
+    });
+
+    if (error || !data?.session) {
+      return { success: false, error: error?.message || 'Failed to restore admin session.' };
+    }
+
+    await logAuditAction('Restore Admin Session', 'Admin session successfully restored after impersonation');
+
+    return { success: true, message: 'Admin session restored successfully!' };
+  } catch (err) {
+    console.error('Error restoring admin session:', err);
+    return { success: false, error: err.message || 'An unexpected error occurred.' };
+  }
+}
+
 
 

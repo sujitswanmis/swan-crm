@@ -27,6 +27,21 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
   const [metrics, setMetrics] = useState({ employeeActivity: [], whatsappStats: { period: 0, total: 0 } });
   const [loading, setLoading] = useState(true);
 
+  const dateFilterLabel = (() => {
+    if (datePreset === 'today') return 'Today';
+    if (datePreset === 'yesterday') return 'Yesterday';
+    if (datePreset === 'this_week') return 'This Week';
+    if (datePreset === 'last_week') return 'Last Week';
+    if (datePreset === 'this_month') return 'This Month';
+    if (datePreset === 'last_month') return 'Last Month';
+    if (datePreset === 'all_time') return 'All Time';
+    if (startDate && endDate) {
+      if (startDate === endDate) return startDate;
+      return `${startDate} to ${endDate}`;
+    }
+    return 'Selected Period';
+  })();
+
   useEffect(() => {
     async function loadMetrics() {
       setLoading(true);
@@ -190,7 +205,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
           <p style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>{rescheduledCount}</p>
         </div>
         <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--chart-4, #8b5cf6)' }}>
-          <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>WhatsApp Sent ({dateFilter})</h3>
+          <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>WhatsApp Sent ({dateFilterLabel})</h3>
           <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', display: 'flex', alignItems: 'center' }}>
             {loading ? <Loader2 size={24} className="animate-spin" /> : metrics.whatsappStats.period}
           </div>
@@ -222,7 +237,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
             <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Activity size={18} style={{ color: 'var(--accent-color)' }} /> Employee Activity
             </h3>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{dateFilter}</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{dateFilterLabel}</span>
           </div>
           <div style={{ padding: '1rem', minHeight: '300px' }}>
             {loading ? (
@@ -231,7 +246,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
               </div>
             ) : metrics.employeeActivity.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                No activity recorded for {dateFilter.toLowerCase()}.
+                No activity recorded for {dateFilterLabel.toLowerCase()}.
               </div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
