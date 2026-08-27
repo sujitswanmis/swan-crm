@@ -5,6 +5,7 @@ import {
   ChevronLeft, ChevronRight, X, User, ArrowUpDown
 } from 'lucide-react';
 import { getAuditLogs, getAuditLogFilters } from '@/app/actions/audit';
+import DateRangePicker from '@/components/common/DateRangePicker';
 
 export default function AuditLogsConfig() {
   const [logs, setLogs] = useState([]);
@@ -329,60 +330,20 @@ export default function AuditLogsConfig() {
             )}
           </div>
 
-          {/* Quick Date Presets */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-primary)', padding: '0.3rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            {[
-              { id: 'all', label: 'All Time' },
-              { id: 'today', label: 'Today' },
-              { id: 'yesterday', label: 'Yesterday' },
-              { id: '7days', label: 'Last 7 Days' },
-              { id: '30days', label: 'Last 30 Days' }
-            ].map(pill => (
-              <button
-                key={pill.id}
-                onClick={() => handleQuickDate(pill.id)}
-                style={{
-                  padding: '0.35rem 0.75rem',
-                  fontSize: '0.75rem',
-                  fontWeight: dateRangeQuick === pill.id ? 600 : 400,
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  background: dateRangeQuick === pill.id ? 'var(--accent-color)' : 'transparent',
-                  color: dateRangeQuick === pill.id ? 'white' : 'var(--text-secondary)',
-                  transition: 'all 0.15s'
-                }}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Custom Date Pickers */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <Calendar size={16} color="var(--text-secondary)" />
-            <input 
-              type="date" 
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setDateRangeQuick('custom');
-                setCurrentPage(1);
-              }}
-              style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.8rem' }}
-            />
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>to</span>
-            <input 
-              type="date" 
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setDateRangeQuick('custom');
-                setCurrentPage(1);
-              }}
-              style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.8rem' }}
-            />
-          </div>
+          {/* Quick Date Presets & Custom Modal */}
+          <DateRangePicker
+            preset={dateRangeQuick}
+            startDate={dateFrom}
+            endDate={dateTo}
+            allowAllTime={true}
+            title="Filter Audit Logs by Date"
+            onChange={({ preset, startDate, endDate }) => {
+              setDateRangeQuick(preset);
+              setDateFrom(startDate);
+              setDateTo(endDate);
+              setCurrentPage(1);
+            }}
+          />
 
         </div>
 
@@ -538,15 +499,23 @@ export default function AuditLogsConfig() {
               </thead>
               <tbody>
                 {logs.map((log) => {
+                  const userName = log.user || log.emp_name || (log.email ? log.email.split('@')[0] : 'System User');
                   const actionStyle = getActionBadgeStyle(log.action);
-                  const moduleStyle = getModuleBadgeStyle(log.module);
-                  const initials = (log.user || 'U')
+                  const moduleName = log.module || 'Leads & Pipeline';
+                  const moduleStyle = getModuleBadgeStyle(moduleName);
+                  const initials = userName
                     .split(' ')
                     .filter(Boolean)
                     .slice(0, 2)
                     .map(p => p[0])
                     .join('')
                     .toUpperCase();
+                  const timeDisplay = log.time || (log.created_at ? new Date(log.created_at).toLocaleString('en-IN', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: true
+                  }) : '—');
+                  const ipDisplay = log.ip || log.ip_address || 'Web App';
 
                   return (
                     <tr 
@@ -571,10 +540,10 @@ export default function AuditLogsConfig() {
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {log.user}
+                              {userName}
                             </div>
                             <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {log.email}
+                              {log.email || '—'}
                             </div>
                           </div>
                         </div>
@@ -590,7 +559,7 @@ export default function AuditLogsConfig() {
                           fontWeight: 600,
                           ...moduleStyle
                         }}>
-                          {log.module}
+                          {moduleName}
                         </span>
                       </td>
 
@@ -604,7 +573,7 @@ export default function AuditLogsConfig() {
                           fontWeight: 600,
                           ...actionStyle
                         }}>
-                          {log.action}
+                          {log.action || 'Activity'}
                         </span>
                       </td>
 
@@ -620,12 +589,14 @@ export default function AuditLogsConfig() {
 
                       {/* IP / Source */}
                       <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                        <div>{log.ip}</div>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.75rem', fontWeight: 500 }}>
+                          🌐 {ipDisplay}
+                        </span>
                       </td>
 
                       {/* Timestamp */}
                       <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{log.time}</div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{timeDisplay}</div>
                       </td>
 
                       {/* Inspect Modal Button */}

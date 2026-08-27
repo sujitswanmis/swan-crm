@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck } from 'lucide-react';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -79,6 +79,20 @@ export const MODULES_CONFIG = [
     ]
   },
   { id: 'joining', path: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
+  { 
+    id: 'attendance', 
+    path: 'attendance', 
+    label: 'Smart Attendance', 
+    category: 'Human Resource', 
+    icon: <Clock size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'my_attendance', label: 'My Attendance & Punch' },
+      { id: 'regularization', label: 'Missing Attendance' },
+      { id: 'hod_approvals', label: 'HOD Approvals' },
+      { id: 'team_report', label: 'Team Attendance Report' }
+    ]
+  },
 
   // System
   { id: 'team', path: 'team', label: 'Team Management', category: 'System', icon: <Shield size={20} /> },

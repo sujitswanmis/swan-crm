@@ -1,42 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, Plus, Trash2, Edit3 } from 'lucide-react';
+import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, ChevronDown, Plus, Trash2, Edit3 } from 'lucide-react';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
 import { getSessionSecuritySettings, saveSessionSecuritySettings, getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
 import { createClient } from '@/utils/supabase/client';
-
-const EMOJI_OPTIONS = ['☕', '🍱', '🚻', '💧', '🛌', '👥', '🤲', '🚬', '📞', '🤝', '🏃', '🥪', '🍕', '🍎', '🧘', '🩺'];
-
-function parseDeviceInfo(userAgent) {
-  if (!userAgent || userAgent === 'Unknown Device') return { icon: '🖥️', label: 'Web Browser', raw: userAgent || '' };
-  
-  let os = 'Windows';
-  if (/windows/i.test(userAgent)) os = 'Windows';
-  else if (/macintosh|mac os x/i.test(userAgent)) os = 'macOS';
-  else if (/android/i.test(userAgent)) os = 'Android';
-  else if (/iphone|ipad|ipod/i.test(userAgent)) os = 'iOS';
-  else if (/linux/i.test(userAgent)) os = 'Linux';
-
-  let browser = 'Chrome';
-  if (/edg/i.test(userAgent)) browser = 'Edge';
-  else if (/chrome|crios/i.test(userAgent)) browser = 'Chrome';
-  else if (/firefox|fxios/i.test(userAgent)) browser = 'Firefox';
-  else if (/safari/i.test(userAgent) && !/chrome/i.test(userAgent)) browser = 'Safari';
-  else if (/opera|opr/i.test(userAgent)) browser = 'Opera';
-
-  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(userAgent);
-  const icon = isMobile ? '📱' : '🖥️';
-
-  return {
-    icon,
-    label: `${browser} (${os})`,
-    raw: userAgent
-  };
-}
+import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
 export default function ActiveSessionsConfig() {
-  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'live' | 'settings'
+  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'breakdown' | 'live' | 'inactivity' | 'breaks'
 
   // Sessions State
   const [allSessions, setAllSessions] = useState([]);
@@ -46,8 +18,14 @@ export default function ActiveSessionsConfig() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  // Daily 9-Hour Shift Report State
-  const [selectedReportDate, setSelectedReportDate] = useState(() => new Date().toISOString().split('T')[0]);
+  // Date Range Filter State
+  const [datePreset, setDatePreset] = useState('today');
+  const [startDate, setStartDate] = useState(() => computeDateRange('today').startDate);
+  const [endDate, setEndDate] = useState(() => computeDateRange('today').endDate);
+  const [customStartDate, setCustomStartDate] = useState(() => computeDateRange('today').startDate);
+  const [customEndDate, setCustomEndDate] = useState(() => computeDateRange('today').endDate);
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+
   const [dailyEmployees, setDailyEmployees] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportFilterStatus, setReportFilterStatus] = useState('all'); // 'all' | 'present' | 'completed' | 'absent'
@@ -90,13 +68,42 @@ export default function ActiveSessionsConfig() {
   const [breakdownSearchQuery, setBreakdownSearchQuery] = useState('');
   const [breakdownFilter, setBreakdownFilter] = useState('all'); // 'all' | 'with_breaks' | 'over_quota'
 
+  // Date Preset Handler
+  const handleDatePresetChange = (newPreset) => {
+    if (newPreset === 'custom') {
+      setShowCustomDateModal(true);
+      return;
+    }
+    setDatePreset(newPreset);
+    const { startDate: s, endDate: e } = computeDateRange(newPreset);
+    setStartDate(s);
+    setEndDate(e);
+    setCustomStartDate(s);
+    setCustomEndDate(e);
+  };
+
+  const handleApplyCustomDateRange = () => {
+    if (!customStartDate || !customEndDate) {
+      alert('Please select both Start Date and End Date');
+      return;
+    }
+    if (customStartDate > customEndDate) {
+      alert('Start Date cannot be after End Date');
+      return;
+    }
+    setDatePreset('custom');
+    setStartDate(customStartDate);
+    setEndDate(customEndDate);
+    setShowCustomDateModal(false);
+  };
+
   // 1. Fetch Admin Session Security Settings
   const fetchSettings = useCallback(async () => {
     try {
       const res = await getSessionSecuritySettings();
       if (res?.success && res?.settings) {
         setSettings(res.settings);
-        const standardPresets = [15, 30, 45, 60, 120];
+        const standardPresets = [5, 15, 30, 45, 60, 120];
         if (!standardPresets.includes(res.settings.inactivityTimeoutMinutes)) {
           setIsCustomTimeout(true);
           setCustomTimeoutInput(String(res.settings.inactivityTimeoutMinutes));
@@ -109,11 +116,11 @@ export default function ActiveSessionsConfig() {
     }
   }, []);
 
-  // 2. Fetch Daily 9-Hour Shift Report for Selected Date
-  const fetchDailyReport = useCallback(async (dateToFetch) => {
+  // 2. Fetch Daily / Period Shift Report
+  const fetchDailyReport = useCallback(async (startToFetch = startDate, endToFetch = endDate) => {
     setReportLoading(true);
     try {
-      const res = await getEmployeeDailyActivitySummary(dateToFetch);
+      const res = await getEmployeeDailyActivitySummary(startToFetch, endToFetch);
       if (res?.success && res?.employees) {
         setDailyEmployees(res.employees);
       } else {
@@ -124,7 +131,7 @@ export default function ActiveSessionsConfig() {
     } finally {
       setReportLoading(false);
     }
-  }, []);
+  }, [startDate, endDate]);
 
   // 3. Fetch Live User Sessions
   const fetchSessions = useCallback(async (isManualRefresh = false) => {
@@ -230,9 +237,9 @@ export default function ActiveSessionsConfig() {
 
   useEffect(() => {
     if (activeTab === 'report' || activeTab === 'breakdown') {
-      fetchDailyReport(selectedReportDate);
+      fetchDailyReport(startDate, endDate);
     }
-  }, [selectedReportDate, activeTab, fetchDailyReport]);
+  }, [startDate, endDate, activeTab, fetchDailyReport]);
 
   useEffect(() => {
     let filtered = allSessions;
@@ -251,16 +258,31 @@ export default function ActiveSessionsConfig() {
   }, [searchQuery, allSessions]);
 
   const handleForceLogout = async (sessionId) => {
-    await forceLogoutSession(sessionId);
-    fetchSessions(true);
+    if (!confirm('Are you sure you want to terminate this user session? The user will be instantly logged out.')) return;
+    try {
+      const res = await forceLogoutSession(sessionId);
+      if (res?.success) {
+        setAllSessions(prev => prev.filter(s => s.id !== sessionId));
+      } else {
+        alert(res?.error || 'Failed to logout session');
+      }
+    } catch (e) {
+      alert(e.message || 'Error executing force logout');
+    }
   };
 
-  const handleForceLogoutAll = async () => {
+  const handleForceLogoutAllOthers = async () => {
     if (!confirm('Are you sure you want to terminate all other active user sessions?')) return;
-    const currentDevice = typeof navigator !== 'undefined' ? navigator.userAgent : null;
-    await forceLogoutAllOtherSessions(currentDevice);
-    alert('All other devices have been logged out.');
-    fetchSessions(true);
+    try {
+      const res = await forceLogoutAllOtherSessions();
+      if (res?.success) {
+        setAllSessions(prev => prev.filter(s => s.current));
+      } else {
+        alert(res?.error || 'Failed to logout all other sessions');
+      }
+    } catch (e) {
+      alert(e.message || 'Error executing force logout');
+    }
   };
 
   // Break Types Editor Handlers in Tab 3
@@ -353,15 +375,18 @@ export default function ActiveSessionsConfig() {
     });
   }, [dailyEmployees, reportFilterStatus, reportSearchQuery]);
 
-  // 📥 Export to Excel / CSV Handler
+  // 📥 Export 9.0h Daily Report CSV Handler
   const handleExportCSV = () => {
     if (!filteredDailyEmployees || filteredDailyEmployees.length === 0) {
-      alert('No employee activity data available to export.');
+      alert('No employee shift activity records found to export for this date range.');
       return;
     }
 
+    const dateRangeLabel = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
+    const dateFileLabel = startDate === endDate ? startDate : `${startDate}_to_${endDate}`;
+
     const headers = [
-      'Date',
+      'Report Period',
       'Employee ID',
       'Employee Name',
       'Department',
@@ -373,13 +398,13 @@ export default function ActiveSessionsConfig() {
       'Active Screen Work Time',
       'Lunch / Break Time',
       'Total Breaks Count',
-      '9-Hour Target Met (540 Mins)',
+      'Target Met',
       'Completion %',
       'Shift Evaluation Status'
     ];
 
     const rows = filteredDailyEmployees.map(emp => [
-      `"${selectedReportDate}"`,
+      `"${dateRangeLabel}"`,
       `"${emp.empId || ''}"`,
       `"${emp.empName || ''}"`,
       `"${emp.department || ''}"`,
@@ -391,16 +416,16 @@ export default function ActiveSessionsConfig() {
       `"${emp.activeDurationFormatted || ''}"`,
       `"${emp.idleDurationFormatted || ''}"`,
       `"${emp.breakCount || 0} Breaks"`,
-      `"${emp.isTargetMet ? 'YES (9h Completed)' : 'NO'}"`,
+      `"${emp.isTargetMet ? 'YES (Target Completed)' : 'NO'}"`,
       `"${emp.workProgressPercent || 0}%"`,
-      `"${emp.isTargetMet ? 'Full Day (9h Met)' : (emp.liveStatus === 'working' ? 'In Progress' : (emp.hasActivityToday ? 'Shortfall (<9h)' : 'Not Logged In / Absent'))}"`
+      `"${emp.isTargetMet ? 'Full Shift (Target Met)' : (emp.liveStatus === 'working' ? 'In Progress' : (emp.hasActivityToday ? 'Shortfall' : 'Not Logged In / Absent'))}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Swan_CRM_9Hour_Work_Report_${selectedReportDate}.csv`);
+    link.setAttribute('download', `Swan_CRM_9Hour_Work_Report_${dateFileLabel}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -412,6 +437,9 @@ export default function ActiveSessionsConfig() {
       alert('No employee activity data available to export.');
       return;
     }
+
+    const dateRangeLabel = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
+    const dateFileLabel = startDate === endDate ? startDate : `${startDate}_to_${endDate}`;
 
     const breakRulesList = (settings.breakRules && settings.breakRules.length > 0)
       ? settings.breakRules.filter(b => b.enabled !== false)
@@ -431,7 +459,7 @@ export default function ActiveSessionsConfig() {
       'Email',
       'Department',
       'Designation',
-      'Date',
+      'Period',
       'Total Breaks Count',
       'Total Break Duration',
       'Policy Adherence',
@@ -476,7 +504,7 @@ export default function ActiveSessionsConfig() {
         `"${emp.email || ''}"`,
         `"${emp.department || 'Operations'}"`,
         `"${emp.designation || 'Staff'}"`,
-        `"${selectedReportDate}"`,
+        `"${dateRangeLabel}"`,
         breaks.length,
         `"${formatSec(totalBreakSec)}"`,
         breaks.length === 0 ? '"No Breaks Taken"' : '"Completed"',
@@ -489,7 +517,7 @@ export default function ActiveSessionsConfig() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Swan_CRM_Break_Breakdown_${selectedReportDate}.csv`);
+    link.setAttribute('download', `Swan_CRM_Break_Breakdown_${dateFileLabel}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -592,7 +620,7 @@ export default function ActiveSessionsConfig() {
         <button
           onClick={() => {
             fetchSessions(true);
-            fetchDailyReport(selectedReportDate);
+            fetchDailyReport(startDate, endDate);
           }}
           disabled={refreshing || loading || reportLoading}
           style={{
@@ -715,7 +743,7 @@ export default function ActiveSessionsConfig() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('settings')}
+          onClick={() => setActiveTab('inactivity')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -726,14 +754,40 @@ export default function ActiveSessionsConfig() {
             cursor: 'pointer',
             fontWeight: 600,
             fontSize: '0.9rem',
-            backgroundColor: activeTab === 'settings' ? 'var(--accent-color)' : 'var(--bg-surface)',
-            color: activeTab === 'settings' ? '#ffffff' : 'var(--text-secondary)',
-            boxShadow: activeTab === 'settings' ? '0 2px 5px rgba(67, 56, 202, 0.25)' : 'none',
+            backgroundColor: activeTab === 'inactivity' ? 'var(--accent-color)' : 'var(--bg-surface)',
+            color: activeTab === 'inactivity' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'inactivity' ? '0 2px 5px rgba(67, 56, 202, 0.25)' : 'none',
             transition: 'all 0.15s'
           }}
         >
           <Sliders size={16} />
-          <span>Inactivity & Shift Rules (Custom Breaks)</span>
+          <span>Inactivity Rules</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('breaks')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            backgroundColor: activeTab === 'breaks' ? '#ea580c' : 'var(--bg-surface)',
+            color: activeTab === 'breaks' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'breaks' ? '0 2px 5px rgba(234, 88, 12, 0.25)' : 'none',
+            transition: 'all 0.15s'
+          }}
+        >
+          <Coffee size={16} />
+          <span>Custom Break Rules</span>
+          <span style={{ fontSize: '0.72rem', padding: '0.1rem 0.45rem', borderRadius: '10px', backgroundColor: activeTab === 'breaks' ? 'rgba(255,255,255,0.25)' : '#fed7aa', color: activeTab === 'breaks' ? '#fff' : '#c2410c', fontWeight: 700 }}>
+            {(settings.breakRules || []).length} Rules
+          </span>
         </button>
       </div>
 
@@ -771,24 +825,19 @@ export default function ActiveSessionsConfig() {
             </div>
 
             {/* Date Selector & Export Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'rgba(255, 255, 255, 0.15)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.25)' }}>
-                <Calendar size={16} />
-                <input
-                  type="date"
-                  value={selectedReportDate}
-                  onChange={(e) => setSelectedReportDate(e.target.value)}
-                  style={{
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: '#ffffff',
-                    fontSize: '0.9rem',
-                    fontWeight: 600,
-                    outline: 'none',
-                    cursor: 'pointer'
-                  }}
-                />
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <DateRangePicker
+                variant="glass"
+                preset={datePreset}
+                startDate={startDate}
+                endDate={endDate}
+                title="Select Shift Report Period"
+                onChange={({ preset, startDate, endDate }) => {
+                  setDatePreset(preset);
+                  setStartDate(startDate);
+                  setEndDate(endDate);
+                }}
+              />
 
               <button
                 type="button"
@@ -797,7 +846,7 @@ export default function ActiveSessionsConfig() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.45rem',
-                  padding: '0.55rem 1rem',
+                  padding: '0.5rem 0.9rem',
                   backgroundColor: '#10b981',
                   color: '#ffffff',
                   border: 'none',
@@ -963,11 +1012,11 @@ export default function ActiveSessionsConfig() {
 
             {reportLoading ? (
               <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                ⏳ Loading daily work records for {selectedReportDate}...
+                ⏳ Loading shift work records for {startDate === endDate ? startDate : `${startDate} to ${endDate}`}...
               </div>
             ) : filteredDailyEmployees.length === 0 ? (
               <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
-                No employee matched the filter criteria for {selectedReportDate}.
+                No employee matched the filter criteria for {startDate === endDate ? startDate : `${startDate} to ${endDate}`}.
               </div>
             ) : (
               <div style={{ maxHeight: '520px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
@@ -1178,29 +1227,24 @@ export default function ActiveSessionsConfig() {
                 <span>📊 Employee Break Usage & Quota Breakdown</span>
               </h3>
               <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.35rem' }}>
-                Exact frequency count vs daily quota, time spent on each break type, and policy adherence for <b>{selectedReportDate}</b>.
+                Exact frequency count vs daily quota, time spent on each break type, and policy adherence for <b>{startDate === endDate ? startDate : `${startDate} to ${endDate}`}</b>.
               </div>
             </div>
 
             {/* Date Selector & Export Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'rgba(255, 255, 255, 0.15)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.25)' }}>
-                <Calendar size={16} />
-                <input
-                  type="date"
-                  value={selectedReportDate}
-                  onChange={(e) => setSelectedReportDate(e.target.value)}
-                  style={{
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: '#ffffff',
-                    fontSize: '0.9rem',
-                    fontWeight: 600,
-                    outline: 'none',
-                    cursor: 'pointer'
-                  }}
-                />
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <DateRangePicker
+                variant="glass"
+                preset={datePreset}
+                startDate={startDate}
+                endDate={endDate}
+                title="Select Break Breakdown Period"
+                onChange={({ preset, startDate, endDate }) => {
+                  setDatePreset(preset);
+                  setStartDate(startDate);
+                  setEndDate(endDate);
+                }}
+              />
 
               <button
                 type="button"
@@ -1209,7 +1253,7 @@ export default function ActiveSessionsConfig() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.45rem',
-                  padding: '0.55rem 1rem',
+                  padding: '0.5rem 0.9rem',
                   backgroundColor: '#ffffff',
                   color: '#c2410c',
                   border: 'none',
@@ -1649,7 +1693,7 @@ export default function ActiveSessionsConfig() {
                     <span>Break History: {selectedEmployeeBreaks.empName}</span>
                   </h3>
                   <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>
-                    Date: <b>{selectedReportDate}</b> • Total Breaks Taken: <b>{breaksList.length}</b>
+                    Period: <b>{startDate === endDate ? startDate : `${startDate} to ${endDate}`}</b> • Total Breaks Taken: <b>{breaksList.length}</b>
                   </div>
                 </div>
                 <button
@@ -1913,9 +1957,9 @@ export default function ActiveSessionsConfig() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: INACTIVITY TIMEOUT, SHIFT RULES & CUSTOM BREAK TYPES MANAGER */}
+      {/* TAB 4: INACTIVITY TIMEOUT, SHIFT RULES & AUTO-LOGOUT POLICY */}
       {/* ========================================================================= */}
-      {activeTab === 'settings' && (
+      {activeTab === 'inactivity' && (
         <div style={{
           background: 'var(--bg-primary)',
           padding: '1.5rem',
@@ -1929,12 +1973,12 @@ export default function ActiveSessionsConfig() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <Sliders size={20} color="var(--accent-color)" />
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                Inactivity Auto-Logout & Custom Break Policy Manager
+              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 700 }}>
+                Inactivity Auto-Logout & Shift Standard Policy
               </h3>
             </div>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Saved to Supabase & applies company-wide to all agents
+              Saved to Supabase & applies company-wide to all logged-in agents
             </span>
           </div>
 
@@ -1944,7 +1988,7 @@ export default function ActiveSessionsConfig() {
               Inactivity Auto-Logout Duration (Countdown Timer)
             </label>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              {[15, 30, 45, 60, 120].map((mins) => {
+              {[5, 15, 30, 45, 60, 120].map((mins) => {
                 const isSelected = !isCustomTimeout && settings.inactivityTimeoutMinutes === mins;
                 return (
                   <button
@@ -2018,7 +2062,51 @@ export default function ActiveSessionsConfig() {
             </div>
           </div>
 
-          {/* Section B: Office Shift Standard Configuration */}
+          {/* Section B: Away Threshold & Pre-Logout Warning */}
+          <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
+            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+              Away (Idle) Detection & Pre-Logout Warning Threshold
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+              <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>Idle / Away Mark Threshold</div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  Seconds of no mouse/keyboard activity before user is marked 🟡 Away.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <input
+                    type="number"
+                    min="10"
+                    max="600"
+                    value={settings.idleThresholdSeconds || 60}
+                    onChange={(e) => setSettings(prev => ({ ...prev, idleThresholdSeconds: Number(e.target.value) }))}
+                    style={{ width: '80px', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontWeight: 600 }}
+                  />
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Seconds</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>Pre-Logout Warning Popup</div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  Countdown warning modal appears before session auto-terminates.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <input
+                    type="number"
+                    min="10"
+                    max="300"
+                    value={settings.warningSeconds || 60}
+                    onChange={(e) => setSettings(prev => ({ ...prev, warningSeconds: Number(e.target.value) }))}
+                    style={{ width: '80px', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontWeight: 600 }}
+                  />
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Seconds</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section C: Office Shift Standard Configuration */}
           <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
             <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
               Office Working Hours & Lunch Standard
@@ -2047,235 +2135,7 @@ export default function ActiveSessionsConfig() {
             </div>
           </div>
 
-          {/* Section C: COMPANY BREAK TYPES & CUSTOM RULES POLICY (NEW EDITABLE MANAGER) */}
-          <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  ☕ Company Break Types & Policy Rules
-                </label>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Edit existing break names, time limits, or add new custom breaks for agents.
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowAddBreakModal(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  padding: '0.45rem 0.9rem',
-                  backgroundColor: '#ea580c',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.82rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(234, 88, 12, 0.25)'
-                }}
-              >
-                <Plus size={15} />
-                <span>Add Custom Break</span>
-              </button>
-            </div>
-
-            {/* Editable Break Types List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {(settings.breakRules || []).map((rule, idx) => (
-                <div
-                  key={rule.id || idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.75rem 1rem',
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '10px',
-                    flexWrap: 'wrap',
-                    gap: '0.75rem'
-                  }}
-                >
-                  {/* Icon & Name Input */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: '1 1 240px' }}>
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        type="button"
-                        onClick={() => setOpenEmojiPickerIdx(openEmojiPickerIdx === idx ? null : idx)}
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          fontSize: '1.4rem',
-                          borderRadius: '10px',
-                          border: openEmojiPickerIdx === idx ? '2px solid #ea580c' : '1px solid var(--border-light, #cbd5e1)',
-                          backgroundColor: 'var(--bg-primary, #ffffff)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                          fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
-                        }}
-                        title="Click to change icon"
-                      >
-                        {rule.icon || '☕'}
-                      </button>
-
-                      {openEmojiPickerIdx === idx && (
-                        <div 
-                          style={{
-                            position: 'absolute',
-                            top: 'calc(100% + 6px)',
-                            left: 0,
-                            zIndex: 10000,
-                            backgroundColor: '#ffffff',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '12px',
-                            padding: '0.6rem',
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(6, 1fr)',
-                            gap: '0.35rem',
-                            boxShadow: '0 12px 28px rgba(0,0,0,0.18)',
-                            width: '230px'
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {EMOJI_OPTIONS.map(em => (
-                            <button
-                              key={em}
-                              type="button"
-                              onClick={() => {
-                                handleUpdateBreakRule(idx, 'icon', em);
-                                setOpenEmojiPickerIdx(null);
-                              }}
-                              style={{
-                                fontSize: '1.3rem',
-                                padding: '0.35rem',
-                                borderRadius: '6px',
-                                border: rule.icon === em ? '2px solid #ea580c' : '1px solid transparent',
-                                backgroundColor: rule.icon === em ? '#fff7ed' : 'transparent',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif'
-                              }}
-                            >
-                              {em}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <input
-                      type="text"
-                      value={rule.label}
-                      onChange={(e) => handleUpdateBreakRule(idx, 'label', e.target.value)}
-                      placeholder="Break Label (e.g. Tea Break)"
-                      style={{
-                        flex: 1,
-                        padding: '0.55rem 0.75rem',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-light)',
-                        background: 'var(--bg-primary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.9rem',
-                        fontWeight: 600
-                      }}
-                    />
-                  </div>
-
-                  {/* Standard Duration Input & Max Daily Quota & Toggle & Delete */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-                    {/* Time Limit */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Limit:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="180"
-                        value={rule.defaultMins || 15}
-                        onChange={(e) => handleUpdateBreakRule(idx, 'defaultMins', Number(e.target.value))}
-                        style={{
-                          width: '58px',
-                          padding: '0.45rem 0.5rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-light)',
-                          background: 'var(--bg-primary)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          textAlign: 'center'
-                        }}
-                      />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>mins</span>
-                    </div>
-
-                    {/* Max Times Allowed Per Day */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Daily Quota:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={rule.maxPerDay !== undefined ? rule.maxPerDay : 2}
-                        onChange={(e) => handleUpdateBreakRule(idx, 'maxPerDay', Number(e.target.value))}
-                        style={{
-                          width: '52px',
-                          padding: '0.45rem 0.4rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-light)',
-                          background: 'var(--bg-primary)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          textAlign: 'center'
-                        }}
-                        title="Maximum times an agent can take this break per day (0 for unlimited)"
-                      />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {Number(rule.maxPerDay) === 0 ? 'times (∞)' : 'times/day'}
-                      </span>
-                    </div>
-
-                    {/* Enable / Disable Checkbox */}
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: rule.enabled !== false ? '#16a34a' : '#94a3b8', fontWeight: 600, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={rule.enabled !== false}
-                        onChange={(e) => handleUpdateBreakRule(idx, 'enabled', e.target.checked)}
-                        style={{ accentColor: '#16a34a', width: '16px', height: '16px' }}
-                      />
-                      <span>{rule.enabled !== false ? 'Active' : 'Disabled'}</span>
-                    </label>
-
-                    {/* Delete button */}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBreakRule(idx)}
-                      style={{
-                        padding: '0.4rem',
-                        backgroundColor: '#fee2e2',
-                        color: '#dc2626',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }}
-                      title="Delete this break type"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Section D: Toggles */}
+          {/* Section D: Security Toggles */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
               <div>
@@ -2326,7 +2186,277 @@ export default function ActiveSessionsConfig() {
               }}
             >
               {savingSettings ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={18} />}
-              {savingSettings ? 'Saving...' : 'Save Shift, Break & Inactivity Rules'}
+              {savingSettings ? 'Saving...' : 'Save Inactivity & Shift Rules'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: COMPANY BREAK TYPES & CUSTOM RULES POLICY MANAGER */}
+      {/* ========================================================================= */}
+      {activeTab === 'breaks' && (
+        <div style={{
+          background: 'var(--bg-primary)',
+          padding: '1.5rem',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Coffee size={22} color="#ea580c" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 700 }}>
+                  Company Break Types & Policy Rules Manager
+                </h3>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>
+                Configure allowed break types, time limits, daily frequency quotas, or add new custom breaks for agents.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAddBreakModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 1.1rem',
+                backgroundColor: '#ea580c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(234, 88, 12, 0.3)'
+              }}
+            >
+              <Plus size={16} />
+              <span>Add Custom Break</span>
+            </button>
+          </div>
+
+          {/* Editable Break Types List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {(settings.breakRules || []).map((rule, idx) => (
+              <div
+                key={rule.id || idx}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.85rem 1.1rem',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '10px',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem'
+                }}
+              >
+                {/* Icon & Name Input */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 260px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenEmojiPickerIdx(openEmojiPickerIdx === idx ? null : idx)}
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        fontSize: '1.4rem',
+                        borderRadius: '10px',
+                        border: openEmojiPickerIdx === idx ? '2px solid #ea580c' : '1px solid var(--border-light, #cbd5e1)',
+                        backgroundColor: 'var(--bg-primary, #ffffff)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                      }}
+                      title="Click to change icon"
+                    >
+                      {rule.icon || '☕'}
+                    </button>
+
+                    {openEmojiPickerIdx === idx && (
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          left: 0,
+                          zIndex: 10000,
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '12px',
+                          padding: '0.6rem',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(6, 1fr)',
+                          gap: '0.35rem',
+                          boxShadow: '0 12px 28px rgba(0,0,0,0.18)',
+                          width: '230px'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {EMOJI_OPTIONS.map(em => (
+                          <button
+                            key={em}
+                            type="button"
+                            onClick={() => {
+                              handleUpdateBreakRule(idx, 'icon', em);
+                              setOpenEmojiPickerIdx(null);
+                            }}
+                            style={{
+                              fontSize: '1.3rem',
+                              padding: '0.35rem',
+                              borderRadius: '6px',
+                              border: rule.icon === em ? '2px solid #ea580c' : '1px solid transparent',
+                              backgroundColor: rule.icon === em ? '#fff7ed' : 'transparent',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif'
+                            }}
+                          >
+                            {em}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    type="text"
+                    value={rule.label}
+                    onChange={(e) => handleUpdateBreakRule(idx, 'label', e.target.value)}
+                    placeholder="Break Label (e.g. Tea Break)"
+                    style={{
+                      flex: 1,
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      fontWeight: 600
+                    }}
+                  />
+                </div>
+
+                {/* Standard Duration Input & Max Daily Quota & Toggle & Delete */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                  {/* Time Limit */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Limit:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="180"
+                      value={rule.defaultMins || 15}
+                      onChange={(e) => handleUpdateBreakRule(idx, 'defaultMins', Number(e.target.value))}
+                      style={{
+                        width: '58px',
+                        padding: '0.45rem 0.5rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        textAlign: 'center'
+                      }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>mins</span>
+                  </div>
+
+                  {/* Max Times Allowed Per Day */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Daily Quota:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={rule.maxPerDay !== undefined ? rule.maxPerDay : 2}
+                      onChange={(e) => handleUpdateBreakRule(idx, 'maxPerDay', Number(e.target.value))}
+                      style={{
+                        width: '52px',
+                        padding: '0.45rem 0.4rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        textAlign: 'center'
+                      }}
+                      title="Maximum times an agent can take this break per day (0 for unlimited)"
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {Number(rule.maxPerDay) === 0 ? 'times (∞)' : 'times/day'}
+                    </span>
+                  </div>
+
+                  {/* Enable / Disable Checkbox */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: rule.enabled !== false ? '#16a34a' : '#94a3b8', fontWeight: 600, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={rule.enabled !== false}
+                      onChange={(e) => handleUpdateBreakRule(idx, 'enabled', e.target.checked)}
+                      style={{ accentColor: '#16a34a', width: '16px', height: '16px' }}
+                    />
+                    <span>{rule.enabled !== false ? 'Active' : 'Disabled'}</span>
+                  </label>
+
+                  {/* Delete button */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBreakRule(idx)}
+                    style={{
+                      padding: '0.4rem',
+                      backgroundColor: '#fee2e2',
+                      color: '#dc2626',
+                      border: '1px solid #fecaca',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }}
+                    title="Delete this break type"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Save Button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
+              style={{
+                padding: '0.75rem 2rem',
+                backgroundColor: '#ea580c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                cursor: savingSettings ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 4px 12px rgba(234, 88, 12, 0.25)'
+              }}
+            >
+              {savingSettings ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={18} />}
+              {savingSettings ? 'Saving...' : 'Save Custom Break Rules'}
             </button>
           </div>
         </div>

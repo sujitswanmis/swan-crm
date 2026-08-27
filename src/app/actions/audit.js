@@ -56,18 +56,35 @@ export async function logAuditAction(action, target, details = {}) {
   }
 }
 
-export async function getAuditLogs({ page = 1, pageSize = 20, searchQuery = '', actionFilter = '', dateFrom = '', dateTo = '' }) {
+export async function getAuditLogs({
+  page = 1,
+  pageSize = 50,
+  search = '',
+  searchQuery = '',
+  actionType = 'all',
+  actionFilter = '',
+  module = 'all',
+  userId = 'all',
+  dateFrom = '',
+  dateTo = ''
+}) {
   try {
     const adminClient = getAdminClient();
     let query = adminClient
       .from('audit_logs')
       .select('*', { count: 'exact' });
 
-    if (actionFilter) {
-      query = query.eq('action', actionFilter);
+    const effectiveSearch = search || searchQuery;
+    const effectiveAction = actionFilter || (actionType !== 'all' ? actionType : '');
+
+    if (effectiveAction) {
+      query = query.ilike('action', `%${effectiveAction}%`);
     }
-    if (searchQuery) {
-      query = query.or(`emp_name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,action.ilike.%${searchQuery}%,target.ilike.%${searchQuery}%`);
+    if (userId && userId !== 'all') {
+      query = query.or(`user_id.eq.${userId},email.eq.${userId}`);
+    }
+    if (effectiveSearch) {
+      query = query.or(`emp_name.ilike.%${effectiveSearch}%,email.ilike.%${effectiveSearch}%,action.ilike.%${effectiveSearch}%,target.ilike.%${effectiveSearch}%`);
     }
     if (dateFrom) {
       query = query.gte('created_at', new Date(dateFrom).toISOString());
@@ -86,13 +103,77 @@ export async function getAuditLogs({ page = 1, pageSize = 20, searchQuery = '', 
     const { data, count, error } = await query;
     if (error) throw error;
 
+    // Helper to derive clean module
+    const deriveModule = (action = '', target = '') => {
+      const a = (action + ' ' + target).toLowerCase();
+      if (a.includes('lead') || a.includes('stage') || a.includes('status') || a.includes('pipeline') || a.includes('claim')) return 'Leads & Pipeline';
+      if (a.includes('team') || a.includes('employee') || a.includes('user') || a.includes('role') || a.includes('permission')) return 'Team & Access';
+      if (a.includes('setting') || a.includes('profile') || a.includes('config') || a.includes('branch')) return 'CRM Settings';
+      if (a.includes('auth') || a.includes('login') || a.includes('logout') || a.includes('password') || a.includes('session')) return 'Authentication';
+      if (a.includes('report') || a.includes('export') || a.includes('import') || a.includes('download')) return 'Data & Reports';
+      if (a.includes('call') || a.includes('dial') || a.includes('ivr')) return 'Call Center';
+      if (a.includes('message') || a.includes('whatsapp') || a.includes('sms')) return 'Messaging';
+      return 'General Activity';
+    };
+
+    // Helper to clean raw stage/status strings
+    const cleanTargetText = (target = '') => {
+      if (!target) return '—';
+      return target
+        .replace(/(\d+;\d+>)([^>"]+)>([^>"]+)/g, '$2 → $3')
+        .replace(/(\d+;\d+>)([^>"]+)/g, '$2');
+    };
+
+    const formattedLogs = (data || []).map(l => {
+      const createdAt = new Date(l.created_at);
+      const timeFormatted = createdAt.toLocaleString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: true
+      });
+
+      const derivedMod = deriveModule(l.action, l.target);
+
+      return {
+        id: l.id,
+        user: l.emp_name || (l.email ? l.email.split('@')[0] : 'System User'),
+        emp_name: l.emp_name,
+        email: l.email || '—',
+        action: l.action || 'Activity',
+        module: derivedMod,
+        target: cleanTargetText(l.target),
+        rawTarget: l.target,
+        details: l.details || {},
+        ip: l.ip_address || l.details?.ip || 'Web App',
+        time: timeFormatted,
+        created_at: l.created_at
+      };
+    });
+
+    // Filter by module if requested
+    let finalLogs = formattedLogs;
+    if (module && module !== 'all') {
+      finalLogs = finalLogs.filter(l => l.module.toLowerCase() === module.toLowerCase());
+    }
+
+    // Calculate quick stats
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayCount = (data || []).filter(l => l.created_at && l.created_at.startsWith(todayStr)).length;
+    const deleteCount = (data || []).filter(l => (l.action || '').toLowerCase().includes('delete')).length;
+
     return {
       success: true,
-      logs: data || [],
+      logs: finalLogs,
       totalCount: count || 0,
       page,
       pageSize,
-      totalPages: Math.ceil((count || 0) / pageSize)
+      totalPages: Math.ceil((count || 0) / pageSize),
+      stats: {
+        totalEvents: count || 0,
+        todayEvents: todayCount,
+        deleteEvents: deleteCount,
+        uniqueUsers: 0
+      }
     };
   } catch (err) {
     console.error('Fetch Audit Logs Error:', err);
@@ -176,16 +257,20 @@ export async function getAllUniqueUsers() {
   try {
     const adminClient = getAdminClient();
     const { data: users, error } = await adminClient
-      .from('audit_logs')
-      .select('emp_name, email')
+      .from('user_roles')
+      .select('user_id, emp_name, email')
       .order('emp_name', { ascending: true });
 
     if (error) throw error;
 
     const uniqueMap = new Map();
     (users || []).forEach(u => {
-      if (u.email && !uniqueMap.has(u.email)) {
-        uniqueMap.set(u.email, { emp_name: u.emp_name, email: u.email });
+      if (u.email && !uniqueMap.has(u.email.toLowerCase())) {
+        uniqueMap.set(u.email.toLowerCase(), { 
+          id: u.user_id || u.email,
+          emp_name: u.emp_name || u.email.split('@')[0], 
+          email: u.email 
+        });
       }
     });
 

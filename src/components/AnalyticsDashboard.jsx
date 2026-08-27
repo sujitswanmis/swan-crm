@@ -6,7 +6,8 @@ import {
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
 import { getDashboardMetrics } from '@/app/actions/analytics';
-import { Calendar, Activity, Loader2 } from 'lucide-react';
+import { Activity, Loader2 } from 'lucide-react';
+import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
 const COLORS = [
   'var(--chart-1, #3b82f6)',
@@ -19,7 +20,9 @@ const COLORS = [
 ];
 
 export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
-  const [dateFilter, setDateFilter] = useState('Today');
+  const [datePreset, setDatePreset] = useState('today');
+  const [startDate, setStartDate] = useState(() => computeDateRange('today').startDate);
+  const [endDate, setEndDate] = useState(() => computeDateRange('today').endDate);
   const [selectedEmployee, setSelectedEmployee] = useState('All');
   const [metrics, setMetrics] = useState({ employeeActivity: [], whatsappStats: { period: 0, total: 0 } });
   const [loading, setLoading] = useState(true);
@@ -33,18 +36,19 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
         
       const leadIds = filteredLeads.map(l => l.id);
       if (leadIds.length > 0) {
-        // Calculate employee activity LOCALLY because we already have the notes!
+        // Calculate employee activity LOCALLY with start & end timestamp bounds
         let startTimestamp = null;
-        const now = new Date();
-        if (dateFilter === 'Today') startTimestamp = new Date(now.setHours(0,0,0,0)).getTime();
-        else if (dateFilter === 'Last 7 Days') startTimestamp = new Date(now.setDate(now.getDate() - 7)).getTime();
-        else if (dateFilter === 'This Month') startTimestamp = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        let endTimestamp = null;
+        if (startDate) startTimestamp = new Date(`${startDate}T00:00:00.000Z`).getTime();
+        if (endDate) endTimestamp = new Date(`${endDate}T23:59:59.999Z`).getTime();
 
         const employeeActivityMap = {};
         filteredLeads.forEach(lead => {
           (lead.lead_notes || []).forEach(note => {
             const noteTime = new Date(note.created_at).getTime();
-            if (!startTimestamp || noteTime >= startTimestamp) {
+            const afterStart = !startTimestamp || noteTime >= startTimestamp;
+            const beforeEnd = !endTimestamp || noteTime <= endTimestamp;
+            if (afterStart && beforeEnd) {
               let empIdOrEmail = note.created_by || 'System/Unknown';
               // If created by System or Agent, try to credit the assignee
               if (empIdOrEmail === 'System' || empIdOrEmail === 'Agent' || empIdOrEmail === 'System/Unknown') {
@@ -77,7 +81,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
           uniqueLeads: employeeActivityMap[emp].uniqueLeads.size
         })).sort((a, b) => b.uniqueLeads - a.uniqueLeads); // Sort by unique leads
 
-        const res = await getDashboardMetrics(leadIds, dateFilter);
+        const res = await getDashboardMetrics(leadIds, datePreset === 'today' ? 'Today' : (datePreset === 'this_week' || datePreset === 'last_week') ? 'Last 7 Days' : (datePreset === 'this_month' || datePreset === 'last_month') ? 'This Month' : 'All Time');
         if (res.success) {
           setMetrics({
             employeeActivity: localEmployeeActivity,
@@ -90,7 +94,7 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
       setLoading(false);
     }
     loadMetrics();
-  }, [leads, dateFilter, selectedEmployee, teamMembers]);
+  }, [leads, startDate, endDate, datePreset, selectedEmployee, teamMembers]);
 
   // STAGES logic
   // Helper to map DB status to Team Management Stage format
@@ -156,17 +160,18 @@ export default function AnalyticsDashboard({ leads, teamMembers = [] }) {
               <option key={m.user_id} value={m.user_id}>{m.emp_name}</option>
             ))}
           </select>
-          <Calendar size={18} style={{ color: 'var(--text-secondary)' }} />
-          <select 
-            value={dateFilter} 
-            onChange={(e) => setDateFilter(e.target.value)}
-            style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem', outline: 'none', cursor: 'pointer' }}
-          >
-            <option value="Today">Today</option>
-            <option value="Last 7 Days">Last 7 Days</option>
-            <option value="This Month">This Month</option>
-            <option value="All Time">All Time</option>
-          </select>
+          <DateRangePicker
+            preset={datePreset}
+            startDate={startDate}
+            endDate={endDate}
+            allowAllTime={true}
+            title="Select Performance Period"
+            onChange={({ preset, startDate, endDate }) => {
+              setDatePreset(preset);
+              setStartDate(startDate);
+              setEndDate(endDate);
+            }}
+          />
         </div>
       </div>
 

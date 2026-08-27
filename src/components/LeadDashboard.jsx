@@ -11,6 +11,7 @@ import {
   Search, ArrowUpDown, Timer, Activity, Eye, ExternalLink, FileText, Building2, User
 } from 'lucide-react';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
+import DateRangePicker from '@/components/common/DateRangePicker';
 
 const formatActionTimestamp = (ts) => {
   if (!ts) return '—';
@@ -1597,42 +1598,18 @@ export default function LeadDashboard({
             )}
 
             {/* Extended Calendar Date Range Selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Calendar size={16} style={{ color: 'var(--text-secondary)' }} />
-              <select
-                value={dateRangeFilter}
-                onChange={(e) => setDateRangeFilter(e.target.value)}
-                style={{ padding: '0.45rem 0.7rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.83rem', outline: 'none', fontWeight: 500 }}
-              >
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="this_week">This Week</option>
-                <option value="last_week">Last Week</option>
-                <option value="this_month">This Month</option>
-                <option value="last_month">Last Month</option>
-                <option value="custom">Custom Date Range</option>
-              </select>
-            </div>
-
-            {/* Custom Date Pickers */}
-            {dateRangeFilter === 'custom' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
-                />
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>to</span>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
-                />
-              </div>
-            )}
+            <DateRangePicker
+              preset={dateRangeFilter}
+              startDate={customStartDate}
+              endDate={customEndDate}
+              allowAllTime={true}
+              title="Select Analytics Date Range"
+              onChange={({ preset, startDate, endDate }) => {
+                setDateRangeFilter(preset);
+                setCustomStartDate(startDate);
+                setCustomEndDate(endDate);
+              }}
+            />
 
           </div>
         </div>

@@ -155,9 +155,9 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, [handleUserActivity]);
 
-  // 3. Main 1-Second Master Tick Loop
+  // 3. Main 1-Second Master Tick Loop & Visibility Change Checker
   useEffect(() => {
-    const timer = setInterval(() => {
+    const checkTimeout = () => {
       const now = Date.now();
       const idleThreshSec = settingsRef.current.idleThresholdSeconds || 60;
       const inactivityMaxSec = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
@@ -204,9 +204,22 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           handleAutoLogout();
         }
       }
-    }, 1000);
+    };
 
-    return () => clearInterval(timer);
+    const timer = setInterval(checkTimeout, 1000);
+
+    // Instant verification when returning from lockscreen or background tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkTimeout();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // 4. Periodic Heartbeat to Server (Every 30 Seconds)
@@ -311,13 +324,15 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   const handleAutoLogout = async () => {
     try {
       const supabase = createClient();
-      const { logAuditAction } = await import('@/app/actions/audit');
-      await logAuditAction('Session Auto-Logout', 'Session automatically logged out due to inactivity timeout');
+      try {
+        const { logAuditAction } = await import('@/app/actions/audit');
+        await logAuditAction('Session Auto-Logout', 'Session automatically logged out due to inactivity timeout');
+      } catch (e) {}
       await supabase.auth.signOut();
     } catch (err) {
       console.error('Auto logout error:', err);
     } finally {
-      window.location.href = '/login?reason=inactivity_timeout';
+      window.location.href = '/auth/logout?reason=inactivity_timeout';
     }
   };
 
@@ -639,12 +654,25 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
                 ? settings.breakRules.filter(b => b.enabled !== false)
                 : BREAK_TYPES
               ).map(b => {
-                const timesTaken = (todayBreaksList || []).filter(item => 
-                  item.type?.toLowerCase() === b.label?.toLowerCase() ||
-                  item.type?.toLowerCase() === b.id?.toLowerCase() ||
-                  item.type?.toLowerCase().includes(b.label?.toLowerCase()) ||
-                  b.label?.toLowerCase().includes(item.type?.toLowerCase())
-                ).length;
+                const timesTaken = (todayBreaksList || []).filter(item => {
+                  const isMatch = item.type?.toLowerCase() === b.label?.toLowerCase() ||
+                    item.type?.toLowerCase() === b.id?.toLowerCase() ||
+                    item.type?.toLowerCase().includes(b.label?.toLowerCase()) ||
+                    b.label?.toLowerCase().includes(item.type?.toLowerCase());
+                  if (!isMatch) return false;
+
+                  // Strict Daily Date Check: Ignore past days' breaks
+                  if (item.startTime) {
+                    try {
+                      const itemDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(item.startTime));
+                      const todayDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+                      if (itemDateStr !== todayDateStr) return false;
+                    } catch {
+                      if (new Date(item.startTime).toDateString() !== new Date().toDateString()) return false;
+                    }
+                  }
+                  return true;
+                }).length;
                 const maxLimit = b.maxPerDay !== undefined ? Number(b.maxPerDay) : 2;
                 const isQuotaReached = maxLimit > 0 && timesTaken >= maxLimit;
 

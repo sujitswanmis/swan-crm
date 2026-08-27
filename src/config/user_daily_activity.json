@@ -4,10 +4,10 @@
       "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
       "email": "sujitswanmis@gmail.com",
       "empName": "Sujit Gupta",
-      "activeSeconds": 9942,
-      "idleSeconds": 3880,
+      "activeSeconds": 11572,
+      "idleSeconds": 4155,
       "firstSeen": "2026-08-27T06:33:31.127Z",
-      "lastSeen": "2026-08-27T15:05:45.566Z",
+      "lastSeen": "2026-08-27T19:31:36.668Z",
       "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
       "ip": "Logged via Web App",
@@ -91,6 +91,22 @@
           "durationFormatted": "0m 05s"
         }
       ]
+    }
+  },
+  "2026-08-28": {
+    "7712ec30-c633-4e21-94ca-b12408a8dafa": {
+      "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "email": "sujitswanmis@gmail.com",
+      "empName": "Sujit Gupta",
+      "activeSeconds": 867,
+      "idleSeconds": 662,
+      "firstSeen": "2026-08-27T19:34:20.430Z",
+      "lastSeen": "2026-08-27T20:06:45.488Z",
+      "status": "working",
+      "currentBreak": null,
+      "breaks": [],
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+      "ip": "Logged via Web App"
     }
   }
 }

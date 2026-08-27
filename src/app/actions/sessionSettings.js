@@ -8,6 +8,19 @@ import path from 'path';
 const SETTINGS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'session_security_settings.json');
 const ACTIVITY_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'user_daily_activity.json');
 
+function getOfficeTodayDateStr() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  } catch {
+    return new Date(Date.now() + 5.5 * 3600000).toISOString().split('T')[0];
+  }
+}
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -19,10 +32,14 @@ const DEFAULT_BREAK_RULES = [
   { id: 'tea', label: 'Tea / Coffee Break', icon: '☕', defaultMins: 5, maxPerDay: 2, enabled: true },
   { id: 'lunch', label: 'Lunch Break', icon: '🍱', defaultMins: 30, maxPerDay: 1, enabled: true },
   { id: 'washroom', label: 'Washroom Break', icon: '🚻', defaultMins: 5, maxPerDay: 4, enabled: true },
-  { id: 'water', label: 'Drinking Water / Hydration', icon: '💧', defaultMins: 3, maxPerDay: 5, enabled: true },
+  { id: 'water', label: 'Drinking Water / Hydration', icon: '💧', defaultMins: 2, maxPerDay: 4, enabled: true },
   { id: 'rest', label: 'Rest / Short Break', icon: '🛌', defaultMins: 5, maxPerDay: 1, enabled: true },
-  { id: 'meeting', label: 'Team Discussion / Meeting', icon: '👥', defaultMins: 60, maxPerDay: 2, enabled: true },
-  { id: 'smoking', label: 'Smoking', icon: '🚬', defaultMins: 8, maxPerDay: 2, enabled: true }
+  { id: 'meeting', label: 'Team Discussion Meeting by HOD', icon: '👥', defaultMins: 60, maxPerDay: 2, enabled: true },
+  { id: 'custom_1787827530028', label: 'HOD to Emp Called', icon: '🏃', defaultMins: 10, maxPerDay: 8, enabled: true },
+  { id: 'custom_1787827566723', label: 'Emp to HOD Meet', icon: '🤝', defaultMins: 10, maxPerDay: 3, enabled: true },
+  { id: 'custom_1787827792172', label: 'Between Discuss', icon: '🚻', defaultMins: 5, maxPerDay: 4, enabled: true },
+  { id: 'custom_1787827858042', label: 'Breakfast', icon: '🥪', defaultMins: 5, maxPerDay: 1, enabled: true },
+  { id: 'custom_1787827866658', label: 'Snacks', icon: '☕', defaultMins: 5, maxPerDay: 2, enabled: true }
 ];
 
 // Default Settings including 9 Hours Working + 30 Mins Lunch
@@ -82,6 +99,15 @@ export async function getSessionSecuritySettings() {
         const breakRulesFromDb = Array.isArray(data.break_rules) && data.break_rules.length > 0 ? data.break_rules : null;
         const breakRulesFromFile = Array.isArray(fileConfig.breakRules) && fileConfig.breakRules.length > 0 ? fileConfig.breakRules : null;
 
+        let chosenBreakRules = DEFAULT_BREAK_RULES;
+        if (breakRulesFromFile && breakRulesFromDb) {
+          chosenBreakRules = breakRulesFromFile.length >= breakRulesFromDb.length ? breakRulesFromFile : breakRulesFromDb;
+        } else if (breakRulesFromFile) {
+          chosenBreakRules = breakRulesFromFile;
+        } else if (breakRulesFromDb) {
+          chosenBreakRules = breakRulesFromDb;
+        }
+
         return {
           success: true,
           source: 'supabase',
@@ -89,12 +115,12 @@ export async function getSessionSecuritySettings() {
             inactivityTimeoutMinutes: data.inactivity_timeout_minutes || fileConfig.inactivityTimeoutMinutes || 60,
             enableAutoLogout: data.enable_auto_logout !== false,
             showTimerInHeader: data.show_timer_in_header !== false,
-            warningSeconds: data.warning_seconds || 60,
-            idleThresholdSeconds: data.idle_threshold_seconds || 60,
+            warningSeconds: data.warning_seconds || fileConfig.warningSeconds || 60,
+            idleThresholdSeconds: data.idle_threshold_seconds || fileConfig.idleThresholdSeconds || 60,
             dailyWorkTargetHours: Number(data.daily_work_target_hours) || fileConfig.dailyWorkTargetHours || 9,
             dailyLunchBreakMinutes: Number(data.daily_lunch_break_minutes) || fileConfig.dailyLunchBreakMinutes || 30,
             totalShiftHours: 9.5,
-            breakRules: breakRulesFromDb || breakRulesFromFile || DEFAULT_BREAK_RULES,
+            breakRules: chosenBreakRules,
             updatedAt: data.updated_at || fileConfig.updatedAt || new Date().toISOString()
           }
         };
@@ -107,7 +133,11 @@ export async function getSessionSecuritySettings() {
     return {
       success: true,
       source: 'file',
-      settings: { ...DEFAULT_SESSION_SETTINGS, ...fileConfig, breakRules: Array.isArray(fileConfig.breakRules) ? fileConfig.breakRules : DEFAULT_BREAK_RULES }
+      settings: {
+        ...DEFAULT_SESSION_SETTINGS,
+        ...fileConfig,
+        breakRules: Array.isArray(fileConfig.breakRules) && fileConfig.breakRules.length > 0 ? fileConfig.breakRules : DEFAULT_BREAK_RULES
+      }
     };
   } catch (err) {
     console.error('Error fetching session settings:', err);
@@ -127,6 +157,9 @@ export async function saveSessionSecuritySettings(newSettings) {
 
     // Prepare updated config
     const current = (await getSessionSecuritySettings()).settings;
+    const incomingBreakRules = Array.isArray(newSettings.breakRules) && newSettings.breakRules.length > 0 ? newSettings.breakRules : null;
+    const existingBreakRules = Array.isArray(current.breakRules) && current.breakRules.length > 0 ? current.breakRules : null;
+
     const updated = {
       ...current,
       ...newSettings,
@@ -134,10 +167,11 @@ export async function saveSessionSecuritySettings(newSettings) {
       enableAutoLogout: newSettings.enableAutoLogout !== false,
       showTimerInHeader: newSettings.showTimerInHeader !== false,
       warningSeconds: Math.max(10, Number(newSettings.warningSeconds) || 60),
+      idleThresholdSeconds: Math.max(10, Number(newSettings.idleThresholdSeconds) || 60),
       dailyWorkTargetHours: Number(newSettings.dailyWorkTargetHours) || 9,
       dailyLunchBreakMinutes: Number(newSettings.dailyLunchBreakMinutes) || 30,
       totalShiftHours: (Number(newSettings.dailyWorkTargetHours) || 9) + ((Number(newSettings.dailyLunchBreakMinutes) || 30) / 60),
-      breakRules: Array.isArray(newSettings.breakRules) ? newSettings.breakRules : (current.breakRules || DEFAULT_BREAK_RULES),
+      breakRules: incomingBreakRules || existingBreakRules || DEFAULT_BREAK_RULES,
       updatedAt: new Date().toISOString(),
       updatedBy: user?.email || 'admin'
     };
@@ -203,7 +237,7 @@ export async function recordUserActivityHeartbeat({
     if (!user) return { success: false, error: 'Not authenticated', valid: false, forceLogout: true };
 
     const adminClient = getAdminClient();
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = getOfficeTodayDateStr(); // YYYY-MM-DD (IST Office Date)
     const nowIso = new Date().toISOString();
 
     // 1. Check if user's session was terminated by Admin
@@ -353,7 +387,7 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
     const email = user?.email || userEmail;
     if (!email && !user) return { success: false, error: 'Not authenticated' };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getOfficeTodayDateStr();
     const nowIso = new Date().toISOString();
 
     await ensureConfigFile(ACTIVITY_FILE_PATH, {});
@@ -414,7 +448,7 @@ export async function endEmployeeBreak({ userEmail = '' } = {}) {
     const email = user?.email || userEmail;
     if (!email && !user) return { success: false, error: 'Not authenticated' };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getOfficeTodayDateStr();
     const nowIso = new Date().toISOString();
 
     await ensureConfigFile(ACTIVITY_FILE_PATH, {});
@@ -475,7 +509,7 @@ export async function getCurrentEmployeeStatus(userEmail = '') {
     const email = user?.email || userEmail;
     if (!email && !user) return { success: false, error: 'Not authenticated' };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getOfficeTodayDateStr();
     await ensureConfigFile(ACTIVITY_FILE_PATH, {});
     let activityData = {};
     try {
@@ -502,17 +536,27 @@ export async function getCurrentEmployeeStatus(userEmail = '') {
 }
 
 // -------------------------------------------------------------
-// 4. GET DAILY ACTIVITY, 9-HOUR SHIFT & BREAK SUMMARY FOR ADMIN
+// 4. GET DAILY/PERIOD ACTIVITY, 9-HOUR SHIFT & BREAK SUMMARY FOR ADMIN
 // -------------------------------------------------------------
-export async function getEmployeeDailyActivitySummary(targetDate = null) {
+export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, endDate = null) {
   try {
-    const dateStr = targetDate || new Date().toISOString().split('T')[0];
+    const todayStr = getOfficeTodayDateStr();
+    const startDate = startDateOrTarget || todayStr;
+    const finalEndDate = endDate || startDate;
+    const isSingleDay = startDate === finalEndDate;
+
     const adminClient = getAdminClient();
     const now = Date.now();
     const THREE_MINUTES_MS = 3 * 60 * 1000;
-    const TARGET_WORK_SECONDS = 9 * 3600; // 9 Hours (540 Mins = 32,400s)
-    const dateStartIso = `${dateStr}T00:00:00.000Z`;
-    const dateEndIso = `${dateStr}T23:59:59.999Z`;
+    
+    // Calculate count of calendar days in range
+    const daysCount = isSingleDay 
+      ? 1 
+      : Math.max(1, Math.round((new Date(finalEndDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    
+    const TARGET_WORK_SECONDS = daysCount * 9 * 3600; // Scaled by number of days (9h per day)
+    const dateStartIso = `${startDate}T00:00:00.000Z`;
+    const dateEndIso = `${finalEndDate}T23:59:59.999Z`;
 
     // ⚡ HIGH PERFORMANCE: Fetch all database tables & local files concurrently in parallel
     const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult] = await Promise.allSettled([
@@ -536,21 +580,27 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
       })(),
 
       // 3. Supabase user_daily_activity
-      adminClient
-        .from('user_daily_activity')
-        .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active')
-        .eq('activity_date', dateStr),
+      isSingleDay
+        ? adminClient
+            .from('user_daily_activity')
+            .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active')
+            .eq('activity_date', startDate)
+        : adminClient
+            .from('user_daily_activity')
+            .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active, activity_date')
+            .gte('activity_date', startDate)
+            .lte('activity_date', finalEndDate),
 
-      // 4. Earliest & latest audit logs for the day (fast limited scan)
+      // 4. Earliest & latest audit logs for the period
       adminClient
         .from('audit_logs')
         .select('user_id, email, created_at')
         .gte('created_at', dateStartIso)
         .lte('created_at', dateEndIso)
         .order('created_at', { ascending: true })
-        .limit(2000),
+        .limit(5000),
 
-      // 5. User sessions active today
+      // 5. User sessions active during period
       adminClient
         .from('user_sessions')
         .select('id, user_id, email, is_active, created_at, last_active')
@@ -568,16 +618,71 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
       });
     }
 
-    // Process 2: Local activity records
+    // Process 2: Aggregate Local activity records across date range
     const activityData = (activityFileResult.status === 'fulfilled' && activityFileResult.value) ? activityFileResult.value : {};
-    const fileDayRecords = activityData[dateStr] || {};
+    const aggregatedFileRecords = {}; // keyed by userId or email
+    
+    Object.keys(activityData).forEach(dateKey => {
+      if (dateKey >= startDate && dateKey <= finalEndDate) {
+        const dayMap = activityData[dateKey] || {};
+        Object.keys(dayMap).forEach(k => {
+          const item = dayMap[k];
+          if (!aggregatedFileRecords[k]) {
+            aggregatedFileRecords[k] = {
+              userId: item.userId,
+              email: item.email,
+              empName: item.empName,
+              activeSeconds: 0,
+              idleSeconds: 0,
+              breaks: [],
+              firstSeen: item.firstSeen,
+              lastSeen: item.lastSeen,
+              status: item.status,
+              currentBreak: item.currentBreak,
+              daysActiveCount: 0
+            };
+          }
+          const rec = aggregatedFileRecords[k];
+          rec.activeSeconds += (item.activeSeconds || 0);
+          rec.idleSeconds += (item.idleSeconds || 0);
+          if (Array.isArray(item.breaks)) {
+            rec.breaks.push(...item.breaks);
+          }
+          if (item.firstSeen && (!rec.firstSeen || new Date(item.firstSeen) < new Date(rec.firstSeen))) {
+            rec.firstSeen = item.firstSeen;
+          }
+          if (item.lastSeen && (!rec.lastSeen || new Date(item.lastSeen) > new Date(rec.lastSeen))) {
+            rec.lastSeen = item.lastSeen;
+            rec.status = item.status;
+            rec.currentBreak = item.currentBreak;
+          }
+          if ((item.activeSeconds > 0 || (item.breaks && item.breaks.length > 0))) {
+            rec.daysActiveCount += 1;
+          }
+        });
+      }
+    });
 
-    // Process 3: Supabase user_daily_activity map
+    // Process 3: Supabase user_daily_activity map (accumulated)
     const dbMap = {};
     if (dbRecordsResult.status === 'fulfilled' && dbRecordsResult.value?.data) {
       dbRecordsResult.value.data.forEach(r => {
-        if (r.user_id) dbMap[r.user_id] = r;
-        if (r.email) dbMap[r.email.toLowerCase()] = r;
+        const k1 = r.user_id;
+        const k2 = r.email ? r.email.toLowerCase() : null;
+        [k1, k2].filter(Boolean).forEach(k => {
+          if (!dbMap[k]) {
+            dbMap[k] = { active_seconds: 0, idle_seconds: 0, created_at: r.created_at, last_active: r.last_active, status: r.status };
+          }
+          dbMap[k].active_seconds += (r.active_seconds || 0);
+          dbMap[k].idle_seconds += (r.idle_seconds || 0);
+          if (r.created_at && (!dbMap[k].created_at || new Date(r.created_at) < new Date(dbMap[k].created_at))) {
+            dbMap[k].created_at = r.created_at;
+          }
+          if (r.last_active && (!dbMap[k].last_active || new Date(r.last_active) > new Date(dbMap[k].last_active))) {
+            dbMap[k].last_active = r.last_active;
+            dbMap[k].status = r.status;
+          }
+        });
       });
     }
 
@@ -623,7 +728,7 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
       if (userId) processedEmails.add(userId);
 
       const d = (userId && dbMap[userId]) || dbMap[emailLower] || {};
-      const f = (userId && fileDayRecords[userId]) || fileDayRecords[emailLower] || fileDayRecords[emp.email] || {};
+      const f = (userId && aggregatedFileRecords[userId]) || aggregatedFileRecords[emailLower] || aggregatedFileRecords[emp.email] || {};
       const sess = (userId && sessionMap[userId]) || sessionMap[emailLower] || null;
       const auditFirst = (userId && firstAuditMap[userId]) || firstAuditMap[emailLower] || null;
       const auditLast = (userId && lastAuditMap[userId]) || lastAuditMap[emailLower] || null;
@@ -666,34 +771,34 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
         }
       }
 
-      // 🎯 OPTION 1: COMPLETE BREAKDOWN CALCULATION
-      // 1. Shift Span = Total time between first check-in and last active
-      // 2. Breaks Duration = Exact sum of registered breaks (tea, lunch, etc.)
-      // 3. Active Screen Time = Physical time actively clicking/typing/calling on screen
-      // 4. Idle / Away Time = Time away from screen or inactive without clicks
       const recordedBreakSec = breaksList.reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
-      const spanSeconds = (firstSeen && lastSeen && hasActivityToday)
-        ? Math.max(0, Math.floor((new Date(lastSeen).getTime() - new Date(firstSeen).getTime()) / 1000))
-        : 0;
-
+      
       let activeScreenSec = 0;
       let idleAwaySec = 0;
+      let spanSeconds = 0;
 
-      if (hasActivityToday && spanSeconds > 0) {
-        const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
-        
-        // Active Screen time cannot exceed total shift span
-        if (rawActive > 0) {
-          activeScreenSec = Math.min(rawActive, Math.max(0, spanSeconds - recordedBreakSec));
-        } else {
-          activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
+      if (isSingleDay) {
+        spanSeconds = (firstSeen && lastSeen && hasActivityToday)
+          ? Math.max(0, Math.floor((new Date(lastSeen).getTime() - new Date(firstSeen).getTime()) / 1000))
+          : 0;
+
+        if (hasActivityToday && spanSeconds > 0) {
+          const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
+          if (rawActive > 0) {
+            activeScreenSec = Math.min(rawActive, Math.max(0, spanSeconds - recordedBreakSec));
+          } else {
+            activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
+          }
+          idleAwaySec = Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec);
         }
-
-        // Idle / Away duration is remaining shift time not spent working or on breaks
-        idleAwaySec = Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec);
+      } else {
+        // Multi-day accumulation
+        activeScreenSec = activeSeconds;
+        idleAwaySec = idleSeconds;
+        spanSeconds = activeScreenSec + idleAwaySec + recordedBreakSec;
       }
 
-      // Calculate 9-Hour Work Target Progress
+      // Calculate Target Work Progress (Target is scaled by daysCount: e.g. 1 day = 9h, 7 days = 63h)
       const workProgressPercent = Math.min(100, Math.round((activeScreenSec / TARGET_WORK_SECONDS) * 100));
       const lunchTakenMinutes = Math.round(recordedBreakSec / 60);
       const isTargetMet = activeScreenSec >= TARGET_WORK_SECONDS || spanSeconds >= TARGET_WORK_SECONDS;
@@ -702,13 +807,13 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
       // Shift Evaluation Status
       let shiftStatus = 'absent';
       if (isTargetMet) {
-        shiftStatus = 'completed'; // 🟢 9 Hours Target Met
+        shiftStatus = 'completed'; // 🟢 Target Met
       } else if (liveStatus === 'working' || liveStatus === 'away' || liveStatus === 'on_break') {
         shiftStatus = 'in_progress'; // 🟢 In Progress
       } else if (hasActivityToday) {
         shiftStatus = isHalfDay ? 'half_day' : 'shortfall'; // 🟠 Half Day or 🔴 Shortfall
       } else {
-        shiftStatus = 'absent'; // 🔴 Not logged in today
+        shiftStatus = 'absent'; // 🔴 Not logged in
       }
 
       records.push({
@@ -734,35 +839,41 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
         workProgressPercent,
         lunchTakenMinutes,
         isTargetMet,
-        shiftSpanFormatted: formatDuration(spanSeconds),
+        daysCount,
+        daysActiveCount: f.daysActiveCount || (hasActivityToday ? 1 : 0),
         activeDurationFormatted: formatDuration(activeScreenSec),
         idleDurationFormatted: formatDuration(idleAwaySec),
-        breakDurationFormatted: formatDuration(recordedBreakSec),
         totalDurationFormatted: formatDuration(spanSeconds),
         firstSeenFormatted: firstSeen ? new Date(firstSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--',
         lastSeenFormatted: lastSeen ? new Date(lastSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'
       });
     });
 
-    // Also include any active session not in user_roles
-    Object.keys(sessionMap).forEach(k => {
-      const sess = sessionMap[k];
+    // 7. Include any other active sessions
+    Object.values(sessionMap).forEach(sess => {
       const emailLower = (sess.email || '').toLowerCase();
-      if (!processedEmails.has(emailLower) && !processedEmails.has(sess.user_id)) {
-        processedEmails.add(emailLower);
-        if (sess.user_id) processedEmails.add(sess.user_id);
+      const userId = sess.user_id;
 
-        const activeSeconds = 1800; // baseline 30 mins
+      if (!processedEmails.has(emailLower) && (!userId || !processedEmails.has(userId))) {
+        processedEmails.add(emailLower);
+        if (userId) processedEmails.add(userId);
+
+        const d = (userId && dbMap[userId]) || dbMap[emailLower] || {};
+        const f = (userId && aggregatedFileRecords[userId]) || aggregatedFileRecords[emailLower] || {};
+        const activeSeconds = Math.max(d.active_seconds || 0, f.activeSeconds || 0, 1800);
+
         records.push({
           userId: sess.user_id,
           empId: '',
-          email: sess.email,
-          empName: sess.emp_name || (sess.email ? sess.email.split('@')[0] : 'System User'),
-          department: '',
-          designation: '',
+          email: sess.email || '',
+          empName: sess.email ? sess.email.split('@')[0] : 'Logged In User',
+          department: 'General',
+          designation: 'Staff',
           company: '',
           activeSeconds,
           idleSeconds: 0,
+          breakSeconds: 0,
+          shiftSpanSeconds: activeSeconds,
           firstSeen: sess.created_at || sess.last_active,
           lastSeen: sess.last_active,
           liveStatus: sess.is_active ? 'working' : 'offline',
@@ -774,6 +885,8 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
           workProgressPercent: Math.min(100, Math.round((activeSeconds / TARGET_WORK_SECONDS) * 100)),
           lunchTakenMinutes: 0,
           isTargetMet: false,
+          daysCount,
+          daysActiveCount: 1,
           activeDurationFormatted: formatDuration(activeSeconds),
           idleDurationFormatted: '0m 00s',
           totalDurationFormatted: formatDuration(activeSeconds),
@@ -792,11 +905,14 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
 
     return {
       success: true,
-      date: dateStr,
+      date: isSingleDay ? startDate : `${startDate} to ${finalEndDate}`,
+      startDate,
+      endDate: finalEndDate,
+      daysCount,
       shiftTargetRules: {
-        workingHours: 9,
-        lunchMinutes: 30,
-        totalShiftHours: 9.5
+        workingHours: daysCount * 9,
+        lunchMinutes: daysCount * 30,
+        totalShiftHours: daysCount * 9.5
       },
       employees: records
     };

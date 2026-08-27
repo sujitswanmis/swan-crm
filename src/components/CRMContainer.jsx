@@ -34,6 +34,7 @@ import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
 import LocationManagementModule from './Location/LocationManagementModule';
 import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
 import EmailConfigModule from './EmailConfig/EmailConfigModule';
+import AttendanceModule from './Attendance/AttendanceModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 
@@ -145,6 +146,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
   if (tabId === 'mrp_against') return moduleAccess['mrp_against']?.view === true;
   if (tabId === 'recruiter') return moduleAccess['recruiter']?.view === true;
   if (tabId === 'joining') return moduleAccess['joining']?.view === true;
+  if (tabId === 'attendance') return moduleAccess['attendance']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'party') return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
@@ -572,7 +574,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         if (isMounted && validity && validity.valid === false) {
           alert("Your session has been terminated by the administrator.");
           await supabase.auth.signOut();
-          window.location.href = '/login?reason=force_logout';
+          window.location.href = '/auth/logout?reason=force_logout';
           return;
         }
 
@@ -581,7 +583,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         if (isMounted && logRes && logRes.valid === false) {
           alert("Your session has been terminated by the administrator.");
           await supabase.auth.signOut();
-          window.location.href = '/login?reason=force_logout';
+          window.location.href = '/auth/logout?reason=force_logout';
           return;
         }
       } catch (e) {
@@ -1163,7 +1165,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       console.error('Audit Log failed', e);
     }
     await supabase.auth.signOut();
-    window.location.href = '/login';
+    window.location.href = '/auth/logout';
   };
 
   // Comprehensive Follow-up categorization: All, Yesterday, Today, Tomorrow, Overdue, Upcoming
@@ -2198,6 +2200,7 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                     recruiterFilterStage ? `Recruiter - ${recruiterFilterStage}` : 'Recruiter'
                   )}
                   {activeTab === 'joining' && 'Joining Process'}
+                  {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
                   {activeTab === 'registration' && 'Client Registration'}
                   {activeTab === 'report' && 'Client Registered Report'}
                   {activeTab === 'aiadmin' && 'AI Admin'}
@@ -3106,6 +3109,22 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
 
               {/* Placeholders */}
               {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
+
+              {/* Smart Attendance & Regularization */}
+              <KeepAliveTab 
+                isActive={activeTab === 'attendance'} 
+                isVisited={isTabPermitted('attendance', moduleAccess, userRole) && visitedTabs.has('attendance')}
+              >
+                <ErrorBoundary>
+                  <AttendanceModule 
+                    userRole={userRole} 
+                    userId={userId} 
+                    userName={userName} 
+                    userEmail={userEmail} 
+                    moduleAccess={moduleAccess}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
 
               {/* Client Registration */}
               <KeepAliveTab 

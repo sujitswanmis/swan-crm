@@ -2,8 +2,8 @@
   "inactivityTimeoutMinutes": 60,
   "enableAutoLogout": true,
   "showTimerInHeader": true,
-  "warningSeconds": 60,
-  "idleThresholdSeconds": 60,
+  "warningSeconds": 45,
+  "idleThresholdSeconds": 30,
   "dailyWorkTargetHours": 9,
   "dailyLunchBreakMinutes": 30,
   "totalShiftHours": 9.5,
@@ -97,6 +97,6 @@
       "enabled": true
     }
   ],
-  "updatedAt": "2026-08-27T13:37:39.324Z",
+  "updatedAt": "2026-08-28T00:59:00.000Z",
   "updatedBy": "sujitswanmis@gmail.com"
 }

@@ -62,12 +62,19 @@ function LoginFormContent() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Handle URL reset params from email link
+  // Handle URL reset params and logout reason messages
   useEffect(() => {
     if (!searchParams) return;
     const urlMode = searchParams.get('mode');
     const urlEmail = searchParams.get('email');
     const urlCode = searchParams.get('code');
+    const urlReason = searchParams.get('reason');
+
+    if (urlReason === 'inactivity_timeout') {
+      setError('⚠️ You were automatically logged out due to inactivity timeout. Please sign in again.');
+    } else if (urlReason === 'force_logout') {
+      setError('🔒 Your session was terminated by the administrator. Please sign in again.');
+    }
 
     if (urlMode === 'reset' && urlEmail) {
       setMode('forgot');
