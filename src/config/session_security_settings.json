@@ -36,8 +36,8 @@
       "id": "water",
       "label": "Drinking Water / Hydration",
       "icon": "💧",
-      "defaultMins": 3,
-      "maxPerDay": 5,
+      "defaultMins": 2,
+      "maxPerDay": 4,
       "enabled": true
     },
     {
@@ -50,21 +50,53 @@
     },
     {
       "id": "meeting",
-      "label": "Team Discussion / Meeting",
+      "label": "Team Discussion Meeting by HOD",
       "icon": "👥",
       "defaultMins": 60,
       "maxPerDay": 2,
       "enabled": true
     },
     {
-      "id": "custom_1787817245987",
-      "label": "Smoking",
-      "icon": "🚬",
-      "defaultMins": 8,
+      "id": "custom_1787827530028",
+      "label": "HOD to Emp Called",
+      "icon": "🏃",
+      "defaultMins": 10,
       "maxPerDay": 8,
+      "enabled": true
+    },
+    {
+      "id": "custom_1787827566723",
+      "label": "Emp to HOD Meet",
+      "icon": "🤝",
+      "defaultMins": 10,
+      "maxPerDay": 3,
+      "enabled": true
+    },
+    {
+      "id": "custom_1787827792172",
+      "label": "Between Discuss",
+      "icon": "🚻",
+      "defaultMins": 5,
+      "maxPerDay": 4,
+      "enabled": true
+    },
+    {
+      "id": "custom_1787827858042",
+      "label": "Breakfast",
+      "icon": "🥪",
+      "defaultMins": 5,
+      "maxPerDay": 1,
+      "enabled": true
+    },
+    {
+      "id": "custom_1787827866658",
+      "label": "Snacks",
+      "icon": "☕",
+      "defaultMins": 5,
+      "maxPerDay": 2,
       "enabled": true
     }
   ],
-  "updatedAt": "2026-08-27T08:50:25.564Z",
+  "updatedAt": "2026-08-27T13:37:39.324Z",
   "updatedBy": "sujitswanmis@gmail.com"
 }

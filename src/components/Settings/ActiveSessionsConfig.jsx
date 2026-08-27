@@ -362,10 +362,10 @@ export default function ActiveSessionsConfig() {
       'Official Email',
       'Check-In Time (First Log)',
       'Last Active Time',
-      'Active Work Time',
+      'Total Shift Span (In to Last)',
+      'Active Screen Work Time',
       'Lunch / Break Time',
       'Total Breaks Count',
-      'Total Shift Time',
       '9-Hour Target Met (540 Mins)',
       'Completion %',
       'Shift Evaluation Status'
@@ -380,10 +380,10 @@ export default function ActiveSessionsConfig() {
       `"${emp.email || ''}"`,
       `"${emp.firstSeenFormatted || ''}"`,
       `"${emp.lastSeenFormatted || ''}"`,
+      `"${emp.shiftSpanFormatted || emp.totalDurationFormatted || ''}"`,
       `"${emp.activeDurationFormatted || ''}"`,
       `"${emp.idleDurationFormatted || ''}"`,
       `"${emp.breakCount || 0} Breaks"`,
-      `"${emp.totalDurationFormatted || ''}"`,
       `"${emp.isTargetMet ? 'YES (9h Completed)' : 'NO'}"`,
       `"${emp.workProgressPercent || 0}%"`,
       `"${emp.isTargetMet ? 'Full Day (9h Met)' : (emp.liveStatus === 'working' ? 'In Progress' : (emp.hasActivityToday ? 'Shortfall (<9h)' : 'Not Logged In / Absent'))}"`
@@ -568,7 +568,7 @@ export default function ActiveSessionsConfig() {
   const targetCompletedCount = dailyEmployees.filter(e => e.isTargetMet).length;
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ padding: '1.5rem', width: '100%', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxSizing: 'border-box' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -808,51 +808,64 @@ export default function ActiveSessionsConfig() {
           </div>
 
           {/* Daily KPIs Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Total Company Roster</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
-                {totalRosterCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Employees</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Company Roster</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
+                {totalRosterCount} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Employees</span>
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 500 }}>Present / Active Today</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#16a34a', marginTop: '0.2rem' }}>
-                {presentCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>({Math.round((presentCount / (totalRosterCount || 1)) * 100)}%)</span>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>Present / Active Today</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#16a34a', marginTop: '0.35rem' }}>
+                {presentCount} <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#16a34a' }}>({Math.round((presentCount / (totalRosterCount || 1)) * 100)}%)</span>
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 500 }}>9-Hour Goal Completed</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#4338ca', marginTop: '0.2rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 600 }}>9-Hour Goal Completed</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#4338ca', marginTop: '0.35rem' }}>
                 {targetCompletedCount}
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 500 }}>Not Logged In / Absent</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#dc2626', marginTop: '0.2rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 600 }}>Not Logged In / Absent</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#dc2626', marginTop: '0.35rem' }}>
                 {absentCount}
               </div>
             </div>
           </div>
 
-          {/* Search & Status Filter Pills */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          {/* Search & Status Filter Toolbar */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            padding: '0.85rem 1.25rem',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-light)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}>
+            {/* Status Filter Pills */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 type="button"
                 onClick={() => setReportFilterStatus('all')}
                 style={{
-                  padding: '0.4rem 0.85rem',
+                  padding: '0.45rem 0.9rem',
                   borderRadius: '20px',
                   border: '1px solid var(--border-light)',
-                  backgroundColor: reportFilterStatus === 'all' ? 'var(--accent-color)' : 'var(--bg-surface)',
+                  backgroundColor: reportFilterStatus === 'all' ? 'var(--accent-color)' : 'var(--bg-primary)',
                   color: reportFilterStatus === 'all' ? '#ffffff' : 'var(--text-primary)',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 All ({totalRosterCount})
@@ -862,14 +875,15 @@ export default function ActiveSessionsConfig() {
                 type="button"
                 onClick={() => setReportFilterStatus('present')}
                 style={{
-                  padding: '0.4rem 0.85rem',
+                  padding: '0.45rem 0.9rem',
                   borderRadius: '20px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: reportFilterStatus === 'present' ? '#16a34a' : 'var(--bg-surface)',
-                  color: reportFilterStatus === 'present' ? '#ffffff' : '#16a34a',
+                  border: '1px solid #bbf7d0',
+                  backgroundColor: reportFilterStatus === 'present' ? '#16a34a' : 'rgba(22, 163, 74, 0.08)',
+                  color: reportFilterStatus === 'present' ? '#ffffff' : '#15803d',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 Present Today ({presentCount})
@@ -879,14 +893,15 @@ export default function ActiveSessionsConfig() {
                 type="button"
                 onClick={() => setReportFilterStatus('completed')}
                 style={{
-                  padding: '0.4rem 0.85rem',
+                  padding: '0.45rem 0.9rem',
                   borderRadius: '20px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: reportFilterStatus === 'completed' ? '#4338ca' : 'var(--bg-surface)',
+                  border: '1px solid #c7d2fe',
+                  backgroundColor: reportFilterStatus === 'completed' ? '#4338ca' : 'rgba(67, 56, 202, 0.08)',
                   color: reportFilterStatus === 'completed' ? '#ffffff' : '#4338ca',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 9h Met ({targetCompletedCount})
@@ -896,14 +911,15 @@ export default function ActiveSessionsConfig() {
                 type="button"
                 onClick={() => setReportFilterStatus('absent')}
                 style={{
-                  padding: '0.4rem 0.85rem',
+                  padding: '0.45rem 0.9rem',
                   borderRadius: '20px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: reportFilterStatus === 'absent' ? '#dc2626' : 'var(--bg-surface)',
-                  color: reportFilterStatus === 'absent' ? '#ffffff' : '#dc2626',
+                  border: '1px solid #fecaca',
+                  backgroundColor: reportFilterStatus === 'absent' ? '#dc2626' : 'rgba(220, 38, 38, 0.08)',
+                  color: reportFilterStatus === 'absent' ? '#ffffff' : '#b91c1c',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 Not Logged In ({absentCount})
@@ -911,7 +927,16 @@ export default function ActiveSessionsConfig() {
             </div>
 
             {/* Quick Search */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-light)', minWidth: '240px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'var(--bg-primary)',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              width: '320px'
+            }}>
               <Search size={15} color="var(--text-secondary)" />
               <input
                 type="text"
@@ -943,10 +968,11 @@ export default function ActiveSessionsConfig() {
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Details</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Check-In (First Log) & Last Seen</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Active Work (Goal: 9h)</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Lunch & Breaks</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, minWidth: '170px' }}>9h Goal Progress</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Check-In & Last Seen (Total Shift)</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>🖥️ Active Screen Work</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>🟡 Away / Idle Time</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>☕ Lunch & Breaks</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, minWidth: '160px' }}>9h Goal Progress</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Shift Status</th>
                     </tr>
                   </thead>
@@ -980,24 +1006,41 @@ export default function ActiveSessionsConfig() {
                             </div>
                           </td>
 
-                          {/* Check-In & Last Seen */}
+                          {/* Check-In & Last Seen + Total Shift Span */}
                           <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                             {emp.hasActivityToday ? (
-                              <>
-                                <div>In: <b style={{ color: '#16a34a', fontWeight: 700 }}>{emp.firstSeenFormatted}</b></div>
-                                <div>Last: <b style={{ color: 'var(--text-primary)' }}>{emp.lastSeenFormatted}</b></div>
-                              </>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                  <span>In: <b style={{ color: '#16a34a', fontWeight: 700 }}>{emp.firstSeenFormatted}</b></span>
+                                  <span>•</span>
+                                  <span>Last: <b style={{ color: 'var(--text-primary)' }}>{emp.lastSeenFormatted}</b></span>
+                                </div>
+                                <div style={{ marginTop: '0.2rem' }}>
+                                  <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: '6px', fontWeight: 600, border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <span>⏱️ Shift Span:</span>
+                                    <b>{emp.shiftSpanFormatted || emp.totalDurationFormatted}</b>
+                                  </span>
+                                </div>
+                              </div>
                             ) : (
                               <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not Logged In</span>
                             )}
                           </td>
 
-                          {/* Active Work Time */}
+                          {/* Active Screen Work Time */}
                           <td style={{ padding: '0.75rem 1rem' }}>
-                            <div style={{ color: isComplete ? '#15803d' : (emp.hasActivityToday ? '#4338ca' : '#94a3b8'), fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem' }}>
+                            <div style={{ color: isComplete ? '#15803d' : (emp.hasActivityToday ? '#4338ca' : '#94a3b8'), fontWeight: 800, fontFamily: 'monospace', fontSize: '0.95rem' }}>
                               {emp.activeDurationFormatted}
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>of 9h 00m (540m)</div>
+                            <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600, marginTop: '0.1rem' }}>Active on Screen</div>
+                          </td>
+
+                          {/* Idle / Away Time */}
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <div style={{ color: '#64748b', fontWeight: 600, fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                              {emp.idleDurationFormatted || '0m 00s'}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.1rem' }}>Screen Inactive</div>
                           </td>
 
                           {/* Lunch / Breaks Timeline Button */}
@@ -1009,8 +1052,8 @@ export default function ActiveSessionsConfig() {
                               </div>
                             ) : (
                               <div>
-                                <div style={{ color: emp.lunchTakenMinutes > 30 ? '#d97706' : (emp.hasActivityToday ? '#64748b' : '#94a3b8'), fontWeight: 600, fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                                  {emp.idleDurationFormatted}
+                                <div style={{ color: emp.lunchTakenMinutes > 30 ? '#d97706' : (emp.hasActivityToday ? '#0f172a' : '#94a3b8'), fontWeight: 700, fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                                  {emp.breakDurationFormatted || (emp.breaks?.length > 0 ? emp.idleDurationFormatted : '0m 00s')}
                                 </div>
                                 {hasBreaks ? (
                                   <button
@@ -1019,24 +1062,24 @@ export default function ActiveSessionsConfig() {
                                     style={{
                                       marginTop: '0.2rem',
                                       padding: '0.15rem 0.45rem',
-                                      backgroundColor: '#f1f5f9',
-                                      border: '1px solid #cbd5e1',
+                                      backgroundColor: '#fff7ed',
+                                      border: '1px solid #fed7aa',
                                       borderRadius: '6px',
                                       fontSize: '0.72rem',
-                                      fontWeight: 600,
-                                      color: '#334155',
+                                      fontWeight: 700,
+                                      color: '#c2410c',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: '0.25rem'
                                     }}
                                   >
-                                    <Coffee size={11} color="#d97706" />
+                                    <Coffee size={11} color="#ea580c" />
                                     <span>{emp.breakCount} Breaks (View)</span>
                                   </button>
                                 ) : (
-                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                    {emp.hasActivityToday ? (emp.lunchTakenMinutes > 30 ? `(+${emp.lunchTakenMinutes - 30}m excess)` : '(within 30m lunch)') : '--'}
+                                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.1rem' }}>
+                                    No Breaks
                                   </div>
                                 )}
                               </div>
@@ -1177,99 +1220,83 @@ export default function ActiveSessionsConfig() {
           </div>
 
           {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Total Company Breaks</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#ea580c', marginTop: '0.2rem' }}>
-                {totalCompanyBreaksCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Events</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Company Breaks</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ea580c', marginTop: '0.35rem' }}>
+                {totalCompanyBreaksCount} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Events</span>
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Total Break Time Taken</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Break Time Taken</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
                 {Math.floor(totalCompanyBreakDurationSec / 3600) > 0 ? `${Math.floor(totalCompanyBreakDurationSec / 3600)}h ` : ''}
                 {Math.floor((totalCompanyBreakDurationSec % 3600) / 60)}m
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 500 }}>Employees Who Took Breaks</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#16a34a', marginTop: '0.2rem' }}>
-                {employeesWithBreaksCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>/ {totalRosterCount}</span>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>Employees Who Took Breaks</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#16a34a', marginTop: '0.35rem' }}>
+                {employeesWithBreaksCount} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {totalRosterCount}</span>
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: '0.8rem', color: totalCompanyViolationsCount > 0 ? '#dc2626' : '#16a34a', fontWeight: 500 }}>Over-Quota / Violations</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: totalCompanyViolationsCount > 0 ? '#dc2626' : '#16a34a', marginTop: '0.2rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: '0.8rem', color: totalCompanyViolationsCount > 0 ? '#dc2626' : '#16a34a', fontWeight: 600 }}>Over-Quota / Violations</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: totalCompanyViolationsCount > 0 ? '#dc2626' : '#16a34a', marginTop: '0.35rem' }}>
                 {totalCompanyViolationsCount === 0 ? '0 (100% Compliant)' : `${totalCompanyViolationsCount} Flags`}
               </div>
             </div>
           </div>
 
-          {/* Search and Filters Bar */}
+          {/* Search and Filters Toolbar */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             flexWrap: 'wrap',
             gap: '1rem',
-            padding: '1rem',
+            padding: '0.85rem 1.25rem',
             backgroundColor: 'var(--bg-surface)',
-            borderRadius: '10px',
-            border: '1px solid var(--border-light)'
+            borderRadius: '12px',
+            border: '1px solid var(--border-light)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 260px' }}>
-              <Search size={16} color="var(--text-secondary)" />
-              <input
-                type="text"
-                placeholder="Search by Employee Name, Email, Dept..."
-                value={breakdownSearchQuery}
-                onChange={(e) => setBreakdownSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.45rem 0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
-
             {/* Filter Chips */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setBreakdownFilter('all')}
                 style={{
-                  padding: '0.4rem 0.8rem',
-                  borderRadius: '6px',
-                  border: breakdownFilter === 'all' ? '1px solid #ea580c' : '1px solid var(--border-light)',
-                  backgroundColor: breakdownFilter === 'all' ? '#fff7ed' : 'transparent',
-                  color: breakdownFilter === 'all' ? '#ea580c' : 'var(--text-secondary)',
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: breakdownFilter === 'all' ? '#ea580c' : 'var(--bg-primary)',
+                  color: breakdownFilter === 'all' ? '#ffffff' : 'var(--text-primary)',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
-                All Employees ({dailyEmployees.length})
+                All Employees ({totalRosterCount})
               </button>
 
               <button
                 type="button"
-                onClick={() => setBreakdownFilter('with_breaks')}
+                onClick={() => setBreakdownFilter('took_breaks')}
                 style={{
-                  padding: '0.4rem 0.8rem',
-                  borderRadius: '6px',
-                  border: breakdownFilter === 'with_breaks' ? '1px solid #ea580c' : '1px solid var(--border-light)',
-                  backgroundColor: breakdownFilter === 'with_breaks' ? '#fff7ed' : 'transparent',
-                  color: breakdownFilter === 'with_breaks' ? '#ea580c' : 'var(--text-secondary)',
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '20px',
+                  border: '1px solid #fed7aa',
+                  backgroundColor: breakdownFilter === 'took_breaks' ? '#ea580c' : 'rgba(234, 88, 12, 0.08)',
+                  color: breakdownFilter === 'took_breaks' ? '#ffffff' : '#c2410c',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 Took Breaks ({employeesWithBreaksCount})
@@ -1277,20 +1304,42 @@ export default function ActiveSessionsConfig() {
 
               <button
                 type="button"
-                onClick={() => setBreakdownFilter('over_quota')}
+                onClick={() => setBreakdownFilter('violations')}
                 style={{
-                  padding: '0.4rem 0.8rem',
-                  borderRadius: '6px',
-                  border: breakdownFilter === 'over_quota' ? '1px solid #dc2626' : '1px solid var(--border-light)',
-                  backgroundColor: breakdownFilter === 'over_quota' ? '#fee2e2' : 'transparent',
-                  color: breakdownFilter === 'over_quota' ? '#dc2626' : 'var(--text-secondary)',
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '20px',
+                  border: '1px solid #fecaca',
+                  backgroundColor: breakdownFilter === 'violations' ? '#dc2626' : 'rgba(220, 38, 38, 0.08)',
+                  color: breakdownFilter === 'violations' ? '#ffffff' : '#b91c1c',
                   fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
                 }}
               >
                 ⚠️ Over Quota ({totalCompanyViolationsCount})
               </button>
+            </div>
+
+            {/* Quick Search */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'var(--bg-primary)',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              width: '320px'
+            }}>
+              <Search size={15} color="var(--text-secondary)" />
+              <input
+                type="text"
+                placeholder="Search name, email, department..."
+                value={breakdownSearchQuery}
+                onChange={(e) => setBreakdownSearchQuery(e.target.value)}
+                style={{ border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', width: '100%', fontSize: '0.85rem' }}
+              />
             </div>
           </div>
 

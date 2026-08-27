@@ -19,7 +19,7 @@ export default function TargetPerformance() {
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+    <div style={{ padding: '1.5rem', width: '100%', maxWidth: '1440px', margin: '0 auto', boxSizing: 'border-box' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h2 style={{ color: 'var(--text-primary)', marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Target size={24} color="var(--accent-color)" />

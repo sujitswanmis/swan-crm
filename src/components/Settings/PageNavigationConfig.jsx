@@ -125,7 +125,7 @@ export default function PageNavigationConfig() {
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+    <div style={{ padding: '1.5rem', width: '100%', maxWidth: '1440px', margin: '0 auto', boxSizing: 'border-box' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Page Navigation Settings</h2>
         <p style={{ color: 'var(--text-secondary)' }}>Configure how table pagination behaves across the CRM permanently.</p>

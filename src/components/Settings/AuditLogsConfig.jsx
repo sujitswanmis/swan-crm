@@ -475,11 +475,15 @@ export default function AuditLogsConfig() {
               }}
             >
               <option value="all">All Employees</option>
-              {userOptions.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
+              {userOptions.map((u, index) => {
+                const val = u.email || u.id || u.emp_name || String(index);
+                const label = u.emp_name || u.name || u.email || `User ${index + 1}`;
+                return (
+                  <option key={val} value={val}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
           </div>
 

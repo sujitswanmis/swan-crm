@@ -139,7 +139,7 @@ export default function CRMConfig() {
   ];
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '900px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: '1.5rem', width: '100%', maxWidth: '1440px', margin: '0 auto', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
       
       {/* Header */}
       <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

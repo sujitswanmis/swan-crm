@@ -265,6 +265,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
 const LeadStatusCell = React.memo(({ info }) => {
   const status = info.getValue() || 'New';
   const lead = info.row.original;
+  const teamMembers = info.table.options.meta?.teamMembers || [];
   const [isInteracting, setIsInteracting] = useState(false);
   
   const updateStatus = async (newStatus) => {

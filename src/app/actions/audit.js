@@ -278,7 +278,7 @@ export async function logUserSession(deviceInfo) {
         email: user.email,
         emp_name: empName,
         activity_date: today,
-        active_seconds: prevActive + 60, // accumulate 1 min per heartbeat
+        active_seconds: prevActive, // Managed accurately by dedicated activity heartbeat
         idle_seconds: prevIdle,
         status: 'working',
         device: deviceInfo || 'Web Browser',

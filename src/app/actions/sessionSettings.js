@@ -262,8 +262,16 @@ export async function recordUserActivityHeartbeat({
       ip: 'Logged via Web App'
     };
 
-    existing.activeSeconds += Math.max(0, Math.round(activeSecondsIncrement));
-    existing.idleSeconds += Math.max(0, Math.round(idleSecondsIncrement));
+    const firstSeenTime = new Date(existing.firstSeen || nowIso).getTime();
+    const nowTime = new Date(nowIso).getTime();
+    const totalDaySpanSec = Math.max(0, Math.floor((nowTime - firstSeenTime) / 1000));
+    const breakSec = (existing.breaks || []).reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
+    const maxAllowedActive = Math.max(0, totalDaySpanSec - breakSec);
+
+    // Apply incremental progress strictly capped by physical wall-clock elapsed time
+    const newActive = (existing.activeSeconds || 0) + Math.max(0, Math.round(activeSecondsIncrement));
+    existing.activeSeconds = Math.min(newActive, maxAllowedActive);
+    existing.idleSeconds = Math.min((existing.idleSeconds || 0) + Math.max(0, Math.round(idleSecondsIncrement)), totalDaySpanSec);
     existing.lastSeen = nowIso;
     if (existing.currentBreak) {
       existing.status = 'on_break';
@@ -661,19 +669,38 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
         }
       }
 
-      // Calculate working span since first log of the day
-      if (firstSeen && lastSeen && hasActivityToday) {
-        const spanSeconds = Math.max(60, Math.floor((new Date(lastSeen).getTime() - new Date(firstSeen).getTime()) / 1000));
-        if (activeSeconds < spanSeconds) {
-          activeSeconds = Math.min(spanSeconds, 3600 * 9);
+      // 🎯 OPTION 1: COMPLETE BREAKDOWN CALCULATION
+      // 1. Shift Span = Total time between first check-in and last active
+      // 2. Breaks Duration = Exact sum of registered breaks (tea, lunch, etc.)
+      // 3. Active Screen Time = Physical time actively clicking/typing/calling on screen
+      // 4. Idle / Away Time = Time away from screen or inactive without clicks
+      const recordedBreakSec = breaksList.reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
+      const spanSeconds = (firstSeen && lastSeen && hasActivityToday)
+        ? Math.max(0, Math.floor((new Date(lastSeen).getTime() - new Date(firstSeen).getTime()) / 1000))
+        : 0;
+
+      let activeScreenSec = 0;
+      let idleAwaySec = 0;
+
+      if (hasActivityToday && spanSeconds > 0) {
+        const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
+        
+        // Active Screen time cannot exceed total shift span
+        if (rawActive > 0) {
+          activeScreenSec = Math.min(rawActive, Math.max(0, spanSeconds - recordedBreakSec));
+        } else {
+          activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
         }
+
+        // Idle / Away duration is remaining shift time not spent working or on breaks
+        idleAwaySec = Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec);
       }
 
       // Calculate 9-Hour Work Target Progress
-      const workProgressPercent = Math.min(100, Math.round((activeSeconds / TARGET_WORK_SECONDS) * 100));
-      const lunchTakenMinutes = Math.round(idleSeconds / 60);
-      const isTargetMet = activeSeconds >= TARGET_WORK_SECONDS;
-      const isHalfDay = activeSeconds >= (TARGET_WORK_SECONDS / 2) && activeSeconds < TARGET_WORK_SECONDS;
+      const workProgressPercent = Math.min(100, Math.round((activeScreenSec / TARGET_WORK_SECONDS) * 100));
+      const lunchTakenMinutes = Math.round(recordedBreakSec / 60);
+      const isTargetMet = activeScreenSec >= TARGET_WORK_SECONDS || spanSeconds >= TARGET_WORK_SECONDS;
+      const isHalfDay = activeScreenSec >= (TARGET_WORK_SECONDS / 2) && activeScreenSec < TARGET_WORK_SECONDS;
 
       // Shift Evaluation Status
       let shiftStatus = 'absent';
@@ -695,8 +722,10 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
         department: emp.emp_department || '',
         designation: emp.emp_designation || '',
         company: emp.company || '',
-        activeSeconds,
-        idleSeconds,
+        activeSeconds: activeScreenSec,
+        idleSeconds: idleAwaySec,
+        breakSeconds: recordedBreakSec,
+        shiftSpanSeconds: spanSeconds,
         firstSeen,
         lastSeen,
         liveStatus,
@@ -708,9 +737,11 @@ export async function getEmployeeDailyActivitySummary(targetDate = null) {
         workProgressPercent,
         lunchTakenMinutes,
         isTargetMet,
-        activeDurationFormatted: formatDuration(activeSeconds),
-        idleDurationFormatted: formatDuration(idleSeconds),
-        totalDurationFormatted: formatDuration(activeSeconds + idleSeconds),
+        shiftSpanFormatted: formatDuration(spanSeconds),
+        activeDurationFormatted: formatDuration(activeScreenSec),
+        idleDurationFormatted: formatDuration(idleAwaySec),
+        breakDurationFormatted: formatDuration(recordedBreakSec),
+        totalDurationFormatted: formatDuration(spanSeconds),
         firstSeenFormatted: firstSeen ? new Date(firstSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--',
         lastSeenFormatted: lastSeen ? new Date(lastSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'
       });

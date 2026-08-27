@@ -254,6 +254,17 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
+  const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
+  const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const param = new URLSearchParams(window.location.search).get('setting');
+      if (param) {
+        setCurrentSettingSubTab(param);
+      }
+    }
+  }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [globalRolePermissions, setGlobalRolePermissions] = useState(null);
@@ -375,7 +386,18 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     setRecruiterMenuExpanded(activeTab === 'recruiter');
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
+    setSettingsMenuExpanded(activeTab === 'settings');
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleSubTabChange = (e) => {
+      if (e.detail) {
+        setCurrentSettingSubTab(e.detail);
+      }
+    };
+    window.addEventListener('setting_subtab_change', handleSubTabChange);
+    return () => window.removeEventListener('setting_subtab_change', handleSubTabChange);
+  }, []);
 
   const toggleCategory = (categoryName) => {
     if (isSidebarCollapsed) {
@@ -1080,6 +1102,22 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     
     // Update URL instantly using native History API with a clean slate
     window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleSettingSubTabChange = (subTabId) => {
+    setCurrentSettingSubTab(subTabId);
+    if (activeTab !== 'settings') {
+      React.startTransition(() => {
+        setActiveTab('settings');
+      });
+    }
+    const newPath = `/settings?setting=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: subTabId }));
     
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
@@ -1991,18 +2029,129 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
                       </button>
                     )}
 
-                    {/* Settings */}
+                    {/* Settings Accordion with Sub-Menu */}
                     {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
-                      <button 
-                        onClick={() => handleTabChange('settings')}
-                        className="nav-item" 
-                        data-active={activeTab === 'settings'}
-                        title={isSidebarCollapsed ? "Settings" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <Settings size={20} style={{ flexShrink: 0 }} />
-                        <span>Settings</span>
-                      </button>
+                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setSettingsMenuExpanded(true);
+                            } else {
+                              setSettingsMenuExpanded(!settingsMenuExpanded);
+                            }
+                            if (activeTab !== 'settings') {
+                              handleTabChange('settings');
+                            }
+                          }}
+                          className="nav-item" 
+                          data-active={activeTab === 'settings'}
+                          title={isSidebarCollapsed ? "Settings" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                        >
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                            {settingsMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
+                          <Settings size={20} style={{ flexShrink: 0 }} />
+                          <span>Settings</span>
+                        </button>
+                        
+                        <div className={`submenu-list ${settingsMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            <button
+                              onClick={() => handleSettingSubTabChange('business')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'business'}
+                            >
+                              Business Profile
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('crm')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'crm'}
+                            >
+                              CRM & Lead Config
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('fields')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'fields'}
+                            >
+                              Custom Fields
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('notifications')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'notifications'}
+                            >
+                              Notifications & Alerts
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('roles')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'roles'}
+                            >
+                              Roles & Permissions
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('automation')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'automation'}
+                            >
+                              Automation & API
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('sessions')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'sessions'}
+                            >
+                              Monitor Sessions
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('audit')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'audit'}
+                            >
+                              Activity Audit Logs
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('data')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'data'}
+                            >
+                              Data Management
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('targets')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'targets'}
+                            >
+                              Targets & Performance
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('media')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'media'}
+                            >
+                              File & Media Settings
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('navigation')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'navigation'}
+                            >
+                              Page Navigation
+                            </button>
+                            <button
+                              onClick={() => handleSettingSubTabChange('departments')}
+                              className="submenu-item"
+                              data-active={activeTab === 'settings' && currentSettingSubTab === 'departments'}
+                            >
+                              Manage Departments
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

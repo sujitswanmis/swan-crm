@@ -36,20 +36,32 @@ const SETTINGS_TABS = [
 export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
 
-  const [activeTab, setActiveTab] = useState(() => {
+  const [activeTab, setActiveTab] = useState('business');
+
+  // Sync with URL param after mount (prevents SSR hydration mismatch)
+  React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('setting');
-      if (param && visibleTabs.some(t => t.id === param)) return param;
+      if (param && visibleTabs.some(t => t.id === param)) {
+        setActiveTab(param);
+        return;
+      }
     }
-    return visibleTabs[0]?.id || 'business';
-  });
-
-  // Ensure active tab stays valid if permissions change
-  React.useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
       setActiveTab(visibleTabs[0].id);
     }
-  }, [visibleTabs, activeTab]);
+  }, [visibleTabs]);
+
+  // Listen for external setting subtab changes (from main sidebar)
+  React.useEffect(() => {
+    const handleSubTabEvent = (e) => {
+      if (e.detail && visibleTabs.some(t => t.id === e.detail)) {
+        setActiveTab(e.detail);
+      }
+    };
+    window.addEventListener('setting_subtab_change', handleSubTabEvent);
+    return () => window.removeEventListener('setting_subtab_change', handleSubTabEvent);
+  }, [visibleTabs]);
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
@@ -66,6 +78,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
     const params = new URLSearchParams(window.location.search);
     params.set('setting', tabId);
     window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
+    window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: tabId }));
   };
 
   if (visibleTabs.length === 0) {
@@ -78,64 +91,23 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', gap: '1.5rem', padding: '1rem' }}>
-      
-      {/* Settings Sidebar */}
-      <div className="card" style={{ width: '280px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-light)', background: 'var(--th-filtered-bg)' }}>
-          <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Settings Menu</h2>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Manage your enterprise configuration</p>
-        </div>
-        
-        <div style={{ padding: '0.75rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          {visibleTabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                padding: '0.75rem 1rem', width: '100%', textAlign: 'left',
-                border: 'none', borderRadius: '8px', cursor: 'pointer',
-                background: activeTab === tab.id ? 'var(--accent-color)' : 'transparent',
-                color: activeTab === tab.id ? 'white' : 'var(--text-primary)',
-                fontWeight: activeTab === tab.id ? 600 : 400,
-                transition: 'all 0.2s',
-              }}
-              onMouseOver={(e) => {
-                if (activeTab !== tab.id) e.currentTarget.style.background = 'var(--th-filtered-bg)';
-              }}
-              onMouseOut={(e) => {
-                if (activeTab !== tab.id) e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <div style={{ color: activeTab === tab.id ? 'white' : 'var(--accent-color)' }}>
-                {tab.icon}
-              </div>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      {/* Settings Content Area (Full Width) */}
+      <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
+        {activeTab === 'business' && <BusinessProfile />}
+        {activeTab === 'crm' && <CRMConfig />}
+        {activeTab === 'fields' && <CustomFields />}
+        {activeTab === 'notifications' && <NotificationsConfig />}
+        {activeTab === 'roles' && <RolesPermissions />}
+        {activeTab === 'automation' && <AutomationAPI />}
+        {activeTab === 'sessions' && <ActiveSessionsConfig />}
+        {activeTab === 'audit' && <AuditLogsConfig />}
+        {activeTab === 'data' && <DataManagement />}
+        {activeTab === 'targets' && <TargetPerformance />}
+        {activeTab === 'media' && <FileMedia />}
+        {activeTab === 'navigation' && <PageNavigationConfig />}
+        {activeTab === 'departments' && <ManageDepartments />}
       </div>
-
-      {/* Settings Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-          {activeTab === 'business' && <BusinessProfile />}
-          {activeTab === 'crm' && <CRMConfig />}
-          {activeTab === 'fields' && <CustomFields />}
-          {activeTab === 'notifications' && <NotificationsConfig />}
-          {activeTab === 'roles' && <RolesPermissions />}
-          {activeTab === 'automation' && <AutomationAPI />}
-          {activeTab === 'sessions' && <ActiveSessionsConfig />}
-          {activeTab === 'audit' && <AuditLogsConfig />}
-          {activeTab === 'data' && <DataManagement />}
-          {activeTab === 'targets' && <TargetPerformance />}
-          {activeTab === 'media' && <FileMedia />}
-          {activeTab === 'navigation' && <PageNavigationConfig />}
-          {activeTab === 'departments' && <ManageDepartments />}
-        </div>
-      </div>
-
     </div>
   );
 }
