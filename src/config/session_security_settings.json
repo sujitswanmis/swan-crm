@@ -13,6 +13,7 @@
       "label": "Tea / Coffee Break",
       "icon": "☕",
       "defaultMins": 5,
+      "maxPerDay": 2,
       "enabled": true
     },
     {
@@ -20,6 +21,7 @@
       "label": "Lunch Break",
       "icon": "🍱",
       "defaultMins": 30,
+      "maxPerDay": 1,
       "enabled": true
     },
     {
@@ -27,6 +29,7 @@
       "label": "Washroom Break",
       "icon": "🚻",
       "defaultMins": 5,
+      "maxPerDay": 4,
       "enabled": true
     },
     {
@@ -34,6 +37,7 @@
       "label": "Drinking Water / Hydration",
       "icon": "💧",
       "defaultMins": 3,
+      "maxPerDay": 5,
       "enabled": true
     },
     {
@@ -41,6 +45,7 @@
       "label": "Rest / Short Break",
       "icon": "🛌",
       "defaultMins": 5,
+      "maxPerDay": 1,
       "enabled": true
     },
     {
@@ -48,6 +53,7 @@
       "label": "Team Discussion / Meeting",
       "icon": "👥",
       "defaultMins": 60,
+      "maxPerDay": 2,
       "enabled": true
     },
     {
@@ -55,9 +61,10 @@
       "label": "Smoking",
       "icon": "🚬",
       "defaultMins": 8,
+      "maxPerDay": 8,
       "enabled": true
     }
   ],
-  "updatedAt": "2026-08-27T07:54:30.348Z",
+  "updatedAt": "2026-08-27T08:50:25.564Z",
   "updatedBy": "sujitswanmis@gmail.com"
 }

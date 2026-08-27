@@ -16,12 +16,13 @@ const getAdminClient = () => {
 };
 
 const DEFAULT_BREAK_RULES = [
-  { id: 'tea', label: 'Tea / Coffee Break', icon: '☕', defaultMins: 15, enabled: true },
-  { id: 'lunch', label: 'Lunch Break', icon: '🍱', defaultMins: 30, enabled: true },
-  { id: 'washroom', label: 'Washroom Break', icon: '🚻', defaultMins: 10, enabled: true },
-  { id: 'water', label: 'Drinking Water / Hydration', icon: '💧', defaultMins: 5, enabled: true },
-  { id: 'rest', label: 'Rest / Short Break', icon: '🛌', defaultMins: 15, enabled: true },
-  { id: 'meeting', label: 'Team Discussion / Meeting', icon: '👥', defaultMins: 30, enabled: true }
+  { id: 'tea', label: 'Tea / Coffee Break', icon: '☕', defaultMins: 5, maxPerDay: 2, enabled: true },
+  { id: 'lunch', label: 'Lunch Break', icon: '🍱', defaultMins: 30, maxPerDay: 1, enabled: true },
+  { id: 'washroom', label: 'Washroom Break', icon: '🚻', defaultMins: 5, maxPerDay: 4, enabled: true },
+  { id: 'water', label: 'Drinking Water / Hydration', icon: '💧', defaultMins: 3, maxPerDay: 5, enabled: true },
+  { id: 'rest', label: 'Rest / Short Break', icon: '🛌', defaultMins: 5, maxPerDay: 1, enabled: true },
+  { id: 'meeting', label: 'Team Discussion / Meeting', icon: '👥', defaultMins: 60, maxPerDay: 2, enabled: true },
+  { id: 'smoking', label: 'Smoking', icon: '🚬', defaultMins: 8, maxPerDay: 2, enabled: true }
 ];
 
 // Default Settings including 9 Hours Working + 30 Mins Lunch

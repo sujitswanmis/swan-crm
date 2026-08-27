@@ -29,6 +29,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [todayActiveSec, setTodayActiveSec] = useState(0);
   const [todayIdleSec, setTodayIdleSec] = useState(0);
+  const [todayBreaksList, setTodayBreaksList] = useState([]);
 
   // Break State
   const [currentBreak, setCurrentBreak] = useState(null); // { id, type, icon, startTime }
@@ -85,6 +86,9 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
       const statusRes = await getCurrentEmployeeStatus(userEmail);
       if (statusRes?.success) {
+        if (Array.isArray(statusRes.breaks)) {
+          setTodayBreaksList(statusRes.breaks);
+        }
         if (statusRes.currentBreak) {
           setCurrentBreak(statusRes.currentBreak);
           const elapsed = Math.max(0, Math.floor((Date.now() - new Date(statusRes.currentBreak.startTime).getTime()) / 1000));
@@ -122,21 +126,10 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
   // 2. User Activity Reset Handler
   const handleUserActivity = useCallback(() => {
-    // If user is actively on break, do not override break status by mouse movement
-    if (currentBreakRef.current) return;
-
-    const now = Date.now();
-    lastActivityTimestamp.current = now;
-
-    if (!isCurrentlyActive.current) {
-      isCurrentlyActive.current = true;
-      setIsAway(false);
-    }
-
+    lastActivityTimestamp.current = Date.now();
+    isCurrentlyActive.current = true;
+    setIsAway(false);
     setShowWarningModal(false);
-
-    const fullDuration = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
-    setTimeLeftSeconds(fullDuration);
   }, []);
 
   // Event Listeners for Activity Reset
@@ -162,94 +155,80 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, [handleUserActivity]);
 
-  // 3. Main 1-Second Ticking Engine
+  // 3. Main 1-Second Master Tick Loop
   useEffect(() => {
     const timer = setInterval(() => {
-      if (isLoggingOut.current) return;
+      const now = Date.now();
+      const idleThreshSec = settingsRef.current.idleThresholdSeconds || 60;
+      const inactivityMaxSec = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
+      const warningSec = settingsRef.current.warningSeconds || 60;
+      const timeSinceLastActivitySec = Math.floor((now - lastActivityTimestamp.current) / 1000);
 
-      // If user is currently ON BREAK
+      // A. If employee is currently on a designated break
       if (currentBreakRef.current) {
         setBreakElapsedSec(prev => prev + 1);
         idleAccumulator.current += 1;
-        setTodayIdleSec(prev => prev + 1);
+        setIsAway(false);
+        setShowWarningModal(false);
         return;
       }
 
-      const now = Date.now();
-      const idleDiffSec = Math.floor((now - lastActivityTimestamp.current) / 1000);
-      const idleThreshold = settingsRef.current.idleThresholdSeconds || 60;
-      const fullDuration = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
-      const warningThreshold = settingsRef.current.warningSeconds || 60;
-      const enableAutoLogout = settingsRef.current.enableAutoLogout !== false;
-
-      // Check if inactive for > idleThreshold
-      if (idleDiffSec >= idleThreshold) {
+      // B. Determine Active vs Idle (Away)
+      if (timeSinceLastActivitySec >= idleThreshSec) {
         if (isCurrentlyActive.current) {
           isCurrentlyActive.current = false;
           setIsAway(true);
         }
         idleAccumulator.current += 1;
-        setTodayIdleSec(prev => prev + 1);
       } else {
         if (!isCurrentlyActive.current) {
           isCurrentlyActive.current = true;
           setIsAway(false);
         }
         activeAccumulator.current += 1;
-        setTodayActiveSec(prev => prev + 1);
       }
 
-      // Calculate remaining countdown
-      const remaining = Math.max(0, fullDuration - idleDiffSec);
-      setTimeLeftSeconds(remaining);
+      // C. Inactivity Timeout Countdown (Session Expiry)
+      if (settingsRef.current.enableAutoLogout) {
+        const remaining = Math.max(0, inactivityMaxSec - timeSinceLastActivitySec);
+        setTimeLeftSeconds(remaining);
 
-      // Warning Modal (< 60s)
-      if (enableAutoLogout && remaining <= warningThreshold && remaining > 0) {
-        setShowWarningModal(true);
-      } else if (remaining > warningThreshold) {
-        setShowWarningModal(false);
-      }
+        if (remaining <= warningSec && remaining > 0) {
+          setShowWarningModal(true);
+        } else if (remaining > warningSec) {
+          setShowWarningModal(false);
+        }
 
-      // Auto-Logout Trigger
-      if (enableAutoLogout && remaining <= 0 && !isLoggingOut.current) {
-        isLoggingOut.current = true;
-        handleAutoLogout();
+        if (remaining <= 0 && !isLoggingOut.current) {
+          isLoggingOut.current = true;
+          handleAutoLogout();
+        }
       }
     }, 1000);
 
     return () => clearInterval(timer);
   }, []);
 
-  // 4. Periodic Server Heartbeat (Every 30 seconds)
+  // 4. Periodic Heartbeat to Server (Every 30 Seconds)
   useEffect(() => {
     const sendHeartbeat = async () => {
-      const activeToSend = activeAccumulator.current;
-      const idleToSend = idleAccumulator.current;
+      if (isLoggingOut.current) return;
+      const activeInc = activeAccumulator.current;
+      const idleInc = idleAccumulator.current;
       activeAccumulator.current = 0;
       idleAccumulator.current = 0;
 
-      let currentStatus = 'working';
-      if (currentBreakRef.current) {
-        currentStatus = 'on_break';
-      } else if (!isCurrentlyActive.current) {
-        currentStatus = 'away';
-      }
-
-      const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
+      if (activeInc === 0 && idleInc === 0) return;
 
       try {
         const res = await recordUserActivityHeartbeat({
-          activeSecondsIncrement: activeToSend,
-          idleSecondsIncrement: idleToSend,
-          status: currentStatus,
-          device
+          activeSecondsIncrement: activeInc,
+          idleSecondsIncrement: idleInc,
+          status: currentBreakRef.current ? 'on_break' : isCurrentlyActive.current ? 'working' : 'away',
+          device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser'
         });
 
-        if (res && (res.forceLogout === true || res.valid === false)) {
-          isLoggingOut.current = true;
-          alert('Your session has been terminated by the administrator.');
-          const supabase = createClient();
-          await supabase.auth.signOut();
+        if (res && res.valid === false) {
           window.location.href = '/login?reason=force_logout';
           return;
         }
@@ -257,6 +236,9 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
         if (res?.success && res.todaySummary) {
           setTodayActiveSec(res.todaySummary.activeSeconds);
           setTodayIdleSec(res.todaySummary.idleSeconds);
+          if (Array.isArray(res.todaySummary.breaks)) {
+            setTodayBreaksList(res.todaySummary.breaks);
+          }
         }
       } catch (err) {
         console.error('Failed to sync activity heartbeat:', err);
@@ -656,43 +638,74 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
               {((Array.isArray(settings.breakRules) && settings.breakRules.length > 0)
                 ? settings.breakRules.filter(b => b.enabled !== false)
                 : BREAK_TYPES
-              ).map(b => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => handleStartBreak(b)}
-                  disabled={actionLoading}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.75rem 1rem',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    backgroundColor: '#f8fafc',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    textAlign: 'left'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#fff7ed';
-                    e.currentTarget.style.borderColor = '#fdba74';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f8fafc';
-                    e.currentTarget.style.borderColor = '#e2e8f0';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '1.4rem' }}>{b.icon || '☕'}</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{b.label}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Standard: ~{b.defaultMins} mins</div>
+              ).map(b => {
+                const timesTaken = (todayBreaksList || []).filter(item => 
+                  item.type?.toLowerCase() === b.label?.toLowerCase() ||
+                  item.type?.toLowerCase() === b.id?.toLowerCase() ||
+                  item.type?.toLowerCase().includes(b.label?.toLowerCase()) ||
+                  b.label?.toLowerCase().includes(item.type?.toLowerCase())
+                ).length;
+                const maxLimit = b.maxPerDay !== undefined ? Number(b.maxPerDay) : 2;
+                const isQuotaReached = maxLimit > 0 && timesTaken >= maxLimit;
+
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      if (isQuotaReached) {
+                        if (!confirm(`⚠️ You have already taken this break ${timesTaken}/${maxLimit} times today. Taking extra breaks will be flagged. Do you still want to proceed?`)) {
+                          return;
+                        }
+                      }
+                      handleStartBreak(b);
+                    }}
+                    disabled={actionLoading}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '10px',
+                      border: isQuotaReached ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                      backgroundColor: isQuotaReached ? '#fff5f5' : '#f8fafc',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isQuotaReached ? '#fee2e2' : '#fff7ed';
+                      e.currentTarget.style.borderColor = isQuotaReached ? '#f87171' : '#fdba74';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isQuotaReached ? '#fff5f5' : '#f8fafc';
+                      e.currentTarget.style.borderColor = isQuotaReached ? '#fecaca' : '#e2e8f0';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <span style={{ fontSize: '1.4rem' }}>{b.icon || '☕'}</span>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span>{b.label}</span>
+                          {isQuotaReached ? (
+                            <span style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: '#fee2e2', color: '#dc2626', fontWeight: 700, border: '1px solid #fca5a5' }}>
+                              Quota Reached ({timesTaken}/{maxLimit})
+                            </span>
+                          ) : maxLimit > 0 ? (
+                            <span style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: '#dcfce7', color: '#166534', fontWeight: 700, border: '1px solid #bbf7d0' }}>
+                              {timesTaken}/{maxLimit} used
+                            </span>
+                          ) : null}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.1rem' }}>
+                          Limit: <b>{b.defaultMins} mins</b> {maxLimit > 0 ? `• Max: ${maxLimit} times/day` : '• Unlimited per day'}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <ChevronRight size={16} color="#94a3b8" />
-                </button>
-              ))}
+                    <ChevronRight size={16} color={isQuotaReached ? '#dc2626' : '#94a3b8'} />
+                  </button>
+                );
+              })}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
