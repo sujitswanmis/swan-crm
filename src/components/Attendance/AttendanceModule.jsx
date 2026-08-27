@@ -90,6 +90,9 @@ export default function AttendanceModule({
   const [punchMessage, setPunchMessage] = useState(null);
   const [punchError, setPunchError] = useState(null);
 
+  // Punch Confirm Modal state (prevents accidental punch)
+  const [punchConfirm, setPunchConfirm] = useState(null); // null | 'IN' | 'OUT'
+
   // Helper to update todayRecord state + persist to localStorage
   const updateTodayRecord = (record) => {
     setTodayRecord(record);
@@ -484,8 +487,21 @@ export default function AttendanceModule({
     }
   }, [activeTab, teamReportView, hodStatusFilter, teamMasterDate, teamMasterDepartment, matrixYear, matrixMonth]);
 
-  // Handle Punch In (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
-  const handlePunchIn = async () => {
+  // Handle Punch In click — show confirm popup first
+  const handlePunchIn = () => {
+    if (todayRecord?.in_time) return; // already punched in
+    setPunchConfirm('IN');
+  };
+
+  // Handle Punch Out click — show confirm popup first
+  const handlePunchOut = () => {
+    if (!todayRecord?.in_time || todayRecord?.out_time) return; // not punched in or already out
+    setPunchConfirm('OUT');
+  };
+
+  // Confirmed Punch In (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
+  const handleConfirmedPunchIn = async () => {
+    setPunchConfirm(null);
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('in');
 
@@ -552,8 +568,9 @@ export default function AttendanceModule({
     }
   };
 
-  // Handle Punch Out (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
-  const handlePunchOut = async () => {
+  // Confirmed Punch Out (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
+  const handleConfirmedPunchOut = async () => {
+    setPunchConfirm(null);
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('out');
 
@@ -1020,7 +1037,136 @@ export default function AttendanceModule({
 
   return (
     <div style={{ padding: '1.25rem', maxWidth: '1440px', margin: '0 auto', width: '100%', color: 'var(--text-primary)' }}>
-      
+
+      {/* ===================== Punch Confirm Modal ===================== */}
+      {punchConfirm && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.45)',
+          backdropFilter: 'blur(4px)',
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--bg-primary, #ffffff)',
+            borderRadius: '20px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+            padding: '2rem 2.25rem 1.75rem',
+            width: '100%',
+            maxWidth: '380px',
+            textAlign: 'center',
+            animation: 'fadeInScale 0.18s ease'
+          }}>
+            {/* Icon */}
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              margin: '0 auto 1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: punchConfirm === 'IN'
+                ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                : 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+              boxShadow: punchConfirm === 'IN'
+                ? '0 8px 24px rgba(22,163,74,0.35)'
+                : '0 8px 24px rgba(220,38,38,0.35)'
+            }}>
+              {punchConfirm === 'IN'
+                ? <CheckCircle2 size={30} color="#fff" />
+                : <XCircle size={30} color="#fff" />
+              }
+            </div>
+
+            {/* Title */}
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.4rem', color: 'var(--text-primary)' }}>
+              {punchConfirm === 'IN' ? 'Confirm Punch In' : 'Confirm Punch Out'}
+            </h2>
+
+            {/* Time display */}
+            <p style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0.2rem 0', color: punchConfirm === 'IN' ? '#16a34a' : '#dc2626' }}>
+              {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+            </p>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1.5rem' }}>
+              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+            </p>
+
+            {/* Confirmation message */}
+            <div style={{
+              background: punchConfirm === 'IN' ? '#f0fdf4' : '#fef2f2',
+              border: `1px solid ${punchConfirm === 'IN' ? '#bbf7d0' : '#fecaca'}`,
+              borderRadius: '10px',
+              padding: '0.65rem 0.9rem',
+              marginBottom: '1.5rem',
+              fontSize: '0.84rem',
+              color: punchConfirm === 'IN' ? '#166534' : '#991b1b',
+              textAlign: 'left'
+            }}>
+              {punchConfirm === 'IN'
+                ? '⚠️ Ek din mein sirf 1 baar Punch In allowed hai. Kya aap confirm karte hain?'
+                : '⚠️ Ek din mein sirf 1 baar Punch Out allowed hai. Kya aap confirm karte hain?'
+              }
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setPunchConfirm(null)}
+                style={{
+                  flex: 1,
+                  padding: '0.7rem',
+                  borderRadius: '10px',
+                  border: '1.5px solid var(--border-light)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕ Cancel
+              </button>
+              <button
+                type="button"
+                onClick={punchConfirm === 'IN' ? handleConfirmedPunchIn : handleConfirmedPunchOut}
+                style={{
+                  flex: 1,
+                  padding: '0.7rem',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: punchConfirm === 'IN'
+                    ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                    : 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  boxShadow: punchConfirm === 'IN'
+                    ? '0 4px 12px rgba(22,163,74,0.35)'
+                    : '0 4px 12px rgba(220,38,38,0.35)'
+                }}
+              >
+                {punchConfirm === 'IN' ? '✓ Punch In Confirm' : '✓ Punch Out Confirm'}
+              </button>
+            </div>
+          </div>
+
+          {/* CSS animation */}
+          <style>{`
+            @keyframes fadeInScale {
+              from { opacity: 0; transform: scale(0.92); }
+              to { opacity: 1; transform: scale(1); }
+            }
+          `}</style>
+        </div>
+      )}
+
       {/* Top Header & Sub-Navigation */}
       <div style={{
         display: 'flex',
