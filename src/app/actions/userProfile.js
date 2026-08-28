@@ -31,7 +31,7 @@ async function ensureAvatarBucket(adminClient) {
 }
 
 /**
- * Uploads user profile photo to user metadata and auth instantly without hanging
+ * Uploads user profile photo to Supabase Storage and updates user metadata for all devices
  */
 export async function uploadUserAvatar(formData) {
   try {
@@ -54,13 +54,45 @@ export async function uploadUserAvatar(formData) {
       return { success: false, error: 'User ID is required' };
     }
 
-    const finalAvatarUrl = typeof base64Data === 'string' && base64Data.startsWith('data:') ? base64Data : null;
-
-    if (!finalAvatarUrl) {
+    if (!base64Data || typeof base64Data !== 'string') {
       return { success: false, error: 'No valid image data provided' };
     }
 
-    // 1. Instantly update user_metadata in Supabase Auth (takes ~150ms)
+    // 1. Convert base64 data to JPEG buffer and upload to public Supabase Storage
+    let publicUrl = null;
+    try {
+      const matches = base64Data.match(/^data:image\/([A-Za-z-+]+);base64,(.+)$/);
+      let buffer;
+      let ext = 'jpg';
+      if (matches && matches[2]) {
+        ext = matches[1] === 'png' ? 'png' : 'jpg';
+        buffer = Buffer.from(matches[2], 'base64');
+      } else {
+        const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+        buffer = Buffer.from(cleanBase64, 'base64');
+      }
+
+      const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
+      const { data: uploadData, error: uploadErr } = await adminClient.storage
+        .from(AVATAR_BUCKET)
+        .upload(filePath, buffer, {
+          contentType: `image/${ext}`,
+          upsert: true
+        });
+
+      if (!uploadErr) {
+        const { data: pubData } = adminClient.storage.from(AVATAR_BUCKET).getPublicUrl(filePath);
+        publicUrl = pubData?.publicUrl;
+      } else {
+        console.warn('Storage upload notice:', uploadErr.message);
+      }
+    } catch (storageErr) {
+      console.warn('Storage exception notice:', storageErr.message);
+    }
+
+    const finalAvatarUrl = publicUrl || base64Data;
+
+    // 2. Instantly update user_metadata in Supabase Auth (So all devices see the new avatar URL!)
     try {
       const { data: userData } = await adminClient.auth.admin.getUserById(userId);
       const currentMeta = userData?.user?.user_metadata || {};
@@ -73,14 +105,6 @@ export async function uploadUserAvatar(formData) {
     } catch (metaErr) {
       console.warn('Error updating user_metadata in auth:', metaErr);
     }
-
-    // 2. Also update user_roles table if column exists
-    try {
-      await adminClient
-        .from('user_roles')
-        .update({ avatar_url: finalAvatarUrl })
-        .eq('user_id', userId);
-    } catch (dbErr) {}
 
     return {
       success: true,

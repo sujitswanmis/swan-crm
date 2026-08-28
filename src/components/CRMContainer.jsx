@@ -525,6 +525,16 @@ export default function CRMContainer({
       const savedAvatar = localStorage.getItem(userKey) || localStorage.getItem('crm_user_avatar');
       if (savedAvatar) setUserAvatar(savedAvatar);
     }
+
+    // Sync latest avatar from Supabase Auth across all devices
+    supabase.auth.getUser().then(({ data }) => {
+      const liveAvatar = data?.user?.user_metadata?.avatar_url;
+      if (liveAvatar) {
+        setUserAvatar(liveAvatar);
+        if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, liveAvatar);
+        localStorage.setItem('crm_user_avatar', liveAvatar);
+      }
+    }).catch(() => {});
   }, [initialAvatar, userId]);
 
   useEffect(() => {
@@ -619,44 +629,34 @@ export default function CRMContainer({
         throw new Error("Failed to process image file");
       }
 
-      // 2. Instant Local State & Persistent Storage
+      // 2. Instant Local State & Preview
       setUserAvatar(base64Data);
       const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
       localStorage.setItem(userKey, base64Data);
       localStorage.setItem('crm_user_avatar', base64Data);
 
-      // 3. Save to Supabase Auth User Metadata (Direct client auth update with 1s race)
-      const clientUpdatePromise = (async () => {
-        try {
-          await supabase.auth.updateUser({
-            data: { avatar_url: base64Data }
-          });
-        } catch (authErr) {
-          console.warn('Client auth avatar update notice:', authErr);
+      // 3. Upload to Supabase Storage and save public URL across all devices
+      let targetUserId = userId;
+      if (!targetUserId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUserId = user?.id;
+      }
+
+      const formData = new FormData();
+      formData.append('base64', base64Data);
+      if (targetUserId) formData.append('userId', targetUserId);
+
+      const res = await uploadUserAvatar(formData);
+      if (res?.success && res?.avatarUrl) {
+        setUserAvatar(res.avatarUrl);
+        if (targetUserId) {
+          localStorage.setItem(`crm_user_avatar_${targetUserId}`, res.avatarUrl);
         }
-        // Non-blocking server action sync
-        try {
-          let targetUserId = userId;
-          if (!targetUserId) {
-            const { data: { user } } = await supabase.auth.getUser();
-            targetUserId = user?.id;
-          }
-          const formData = new FormData();
-          formData.append('base64', base64Data);
-          if (targetUserId) formData.append('userId', targetUserId);
-          uploadUserAvatar(formData).catch(() => {});
-        } catch (e) {}
-      })();
-
-      // Guarantee spinner finishes in under 600ms
-      await Promise.race([
-        clientUpdatePromise,
-        new Promise(resolve => setTimeout(resolve, 600))
-      ]);
-
+        localStorage.setItem('crm_user_avatar', res.avatarUrl);
+      }
     } catch (err) {
       console.error('Photo upload exception:', err);
-      setUserAvatar(prevAvatar);
+      if (!userAvatar) setUserAvatar(prevAvatar);
       alert('Photo upload failed. Please try again.');
     } finally {
       setIsUploadingAvatar(false);
