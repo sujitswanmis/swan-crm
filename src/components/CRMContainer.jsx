@@ -169,13 +169,29 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
   return moduleAccess[tabId]?.view === true;
 }
 
-export default function CRMContainer({ initialLeads, userRole, canImportExport, canRead = true, canWrite = true, moduleAccess: initialModuleAccess = {}, userId, userCompany, userName, initialAvatar = null }) {
+export default function CRMContainer({ 
+  initialLeads, 
+  userRole, 
+  canImportExport, 
+  canRead = true, 
+  canWrite = true, 
+  moduleAccess: initialModuleAccess = {}, 
+  userId, 
+  userEmail: initialUserEmail = '',
+  userCompany, 
+  userName, 
+  initialAvatar = null,
+  isImpersonating = false,
+  impersonatorAdmin = null,
+  impersonatedUser = null
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const supabase = createClient();
   
   const [moduleAccess, setModuleAccess] = useState(initialModuleAccess);
+  const [userEmail, setUserEmail] = useState(initialUserEmail);
 
   useEffect(() => {
     setModuleAccess(initialModuleAccess);
@@ -284,6 +300,19 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
+        const search = new URLSearchParams(window.location.search);
+        const viewAs = search.get('view_as') || search.get('impersonate');
+        if (viewAs || isImpersonating) {
+          setImpersonationInfo({
+            impersonated: true,
+            name: userName,
+            role: userRole,
+            impersonatorAdmin: impersonatorAdmin || 'Admin',
+            isTabIsolated: true
+          });
+          return;
+        }
+
         const stored = sessionStorage.getItem('crm_impersonator');
         if (stored) {
           setImpersonationInfo(JSON.parse(stored));
@@ -305,12 +334,20 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
     } catch (e) {
       console.error('Error reading impersonator session:', e);
     }
-  }, []);
+  }, [isImpersonating, userName, userRole, impersonatorAdmin]);
 
   const handleReturnToAdmin = () => {
     try {
       sessionStorage.removeItem('crm_impersonator');
     } catch (e) {}
+    if (impersonationInfo?.isTabIsolated || isImpersonating) {
+      if (window.opener) {
+        window.close();
+        return;
+      }
+      window.location.href = '/';
+      return;
+    }
     if (adminRestoreToken) {
       window.location.href = `/auth/restore-admin?token=${encodeURIComponent(adminRestoreToken)}`;
     } else {
@@ -393,7 +430,6 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
       .catch(() => {});
   }, []);
 
-  const [userEmail, setUserEmail] = useState('');
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
   const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
   const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');

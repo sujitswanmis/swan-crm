@@ -7,6 +7,7 @@ import {
   ChevronRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
   Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles
 } from 'lucide-react';
+import DateRangePicker from '@/components/common/DateRangePicker';
 import {
   getTodayAttendance,
   punchIn,
@@ -286,10 +287,23 @@ export default function AttendanceModule({
   // HOD Approvals State
   const [hodRequests, setHodRequests] = useState([]);
   const [hodPendingCount, setHodPendingCount] = useState(0);
-  const [hodCounts, setHodCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
   const [loadingHodRequests, setLoadingHodRequests] = useState(false);
   const [hodStatusFilter, setHodStatusFilter] = useState('PENDING'); // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
   const [hodSearchQuery, setHodSearchQuery] = useState('');
+
+  // Dynamic 0ms in-memory counts for HOD tabs
+  const hodCounts = useMemo(() => {
+    const all = (hodRequests || []).length;
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    for (const r of (hodRequests || [])) {
+      if (r.status === 'PENDING') pending++;
+      else if (r.status === 'APPROVED') approved++;
+      else if (r.status === 'REJECTED') rejected++;
+    }
+    return { all, pending, approved, rejected };
+  }, [hodRequests]);
   const [actionModal, setActionModal] = useState(null); // { type: 'APPROVE' | 'REJECT', request: obj }
   const [actionRemarks, setActionRemarks] = useState('');
   const [processingAction, setProcessingAction] = useState(false);
@@ -298,9 +312,11 @@ export default function AttendanceModule({
   const [bulkActionModal, setBulkActionModal] = useState(null); // { type: 'APPROVE' | 'REJECT', count: number }
   const [bulkRemarks, setBulkRemarks] = useState('');
 
-  // Team Master Attendance State
+  // Team Master Attendance State (with Quick Date Presets)
   const [teamReportView, setTeamReportView] = useState('DAILY'); // 'DAILY' | 'MONTHLY_MATRIX'
-  const [teamMasterDate, setTeamMasterDate] = useState(getTodayDateString());
+  const [teamDatePreset, setTeamDatePreset] = useState('today');
+  const [teamStartDate, setTeamStartDate] = useState(getTodayDateString());
+  const [teamEndDate, setTeamEndDate] = useState(getTodayDateString());
   const [teamMasterDepartment, setTeamMasterDepartment] = useState('All');
   const [teamMasterData, setTeamMasterData] = useState({ records: [], summary: {} });
   const [loadingTeamMaster, setLoadingTeamMaster] = useState(false);
@@ -402,20 +418,21 @@ export default function AttendanceModule({
     }
   };
 
-  // 6. Load HOD Requests (if manager/admin)
-  const fetchHodRequests = async () => {
+  // 6. Load HOD Requests (if manager/admin) - Instant 0ms Memory Caching
+  const fetchHodRequests = async (showLoading = false) => {
     if (!isHodOrManager) return;
-    setLoadingHodRequests(true);
+    if (showLoading || hodRequests.length === 0) {
+      setLoadingHodRequests(true);
+    }
     try {
       const res = await getHodPendingRequests({
         hodEmail: userEmail,
         userRole,
-        statusFilter: hodStatusFilter
+        statusFilter: 'ALL'
       });
       if (res.success) {
-        setHodRequests(res.requests || []);
+        setHodRequests(res.allRequests || res.requests || []);
         setHodPendingCount(res.pendingCount || 0);
-        if (res.counts) setHodCounts(res.counts);
       }
     } catch (e) {
       console.error(e);
@@ -424,19 +441,22 @@ export default function AttendanceModule({
     }
   };
 
-  // 7. Load Team Master Attendance
+  // 7. Load Team Master Attendance (Single Date or Range via Quick Date Presets)
   const fetchTeamMaster = async () => {
     if (!isHodOrManager) return;
     setLoadingTeamMaster(true);
     try {
       const res = await getTeamAttendanceMaster({
-        date: teamMasterDate,
+        date: teamStartDate,
+        startDate: teamStartDate,
+        endDate: teamEndDate,
         department: teamMasterDepartment
       });
       if (res.success) {
         setTeamMasterData({
           records: res.records || [],
-          summary: res.summary || {}
+          summary: res.summary || {},
+          isRange: res.isRange
         });
       }
     } catch (e) {
@@ -487,7 +507,7 @@ export default function AttendanceModule({
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, hodStatusFilter, teamMasterDate, teamMasterDepartment, matrixYear, matrixMonth]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth]);
 
   // Handle Punch In click — show confirm popup first
   const handlePunchIn = () => {
@@ -845,9 +865,14 @@ export default function AttendanceModule({
     }
   };
 
-  // Filter HOD Requests
+  // Filter HOD Requests (Instant 0ms in-memory filtering by Status Tab and Search Query)
   const filteredHodRequests = useMemo(() => {
-    return hodRequests.filter(r => {
+    return (hodRequests || []).filter(r => {
+      // 1. Status Tab Filter
+      if (hodStatusFilter && hodStatusFilter !== 'ALL' && r.status !== hodStatusFilter) {
+        return false;
+      }
+      // 2. Search Query Filter
       if (!hodSearchQuery) return true;
       const q = hodSearchQuery.toLowerCase();
       return (
@@ -855,10 +880,12 @@ export default function AttendanceModule({
         r.email?.toLowerCase().includes(q) ||
         r.department?.toLowerCase().includes(q) ||
         r.reason_type?.toLowerCase().includes(q) ||
-        r.attendance_date?.includes(q)
+        r.attendance_date?.includes(q) ||
+        r.action_by_name?.toLowerCase().includes(q) ||
+        r.action_remarks?.toLowerCase().includes(q)
       );
     });
-  }, [hodRequests, hodSearchQuery]);
+  }, [hodRequests, hodStatusFilter, hodSearchQuery]);
 
   // Filter Team Master Records (Daily)
   const filteredTeamRecords = useMemo(() => {
@@ -875,6 +902,45 @@ export default function AttendanceModule({
     });
   }, [teamMasterData.records, teamSearchQuery]);
 
+  // Dynamic KPI Summary for Team Attendance based on search and filters
+  const teamFilteredSummary = useMemo(() => {
+    const list = filteredTeamRecords || [];
+    let present = 0;
+    let late = 0;
+    let halfDay = 0;
+    let absent = 0;
+    let regularized = 0;
+    let weekOff = 0;
+
+    list.forEach(r => {
+      const rem = (r.remarks || '').toLowerCase();
+      if (r.is_regularized || r.status === 'REGULARIZED') {
+        regularized += 1;
+      } else if (r.status === 'WEEK_OFF' || r.status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
+        weekOff += 1;
+      } else if (r.status === 'PRESENT') {
+        present += 1;
+      } else if (r.status === 'LATE') {
+        late += 1;
+      } else if (r.status === 'HALF_DAY') {
+        halfDay += 1;
+      } else if (r.status === 'ABSENT' || r.status === 'MISSED_PUNCH') {
+        absent += 1;
+      }
+    });
+
+    return {
+      totalRecords: list.length,
+      totalEmployees: new Set(list.map(r => r.email)).size,
+      totalPresent: present,
+      totalLate: late,
+      totalHalfDay: halfDay,
+      totalAbsent: absent,
+      totalRegularized: regularized,
+      totalWeekOff: weekOff
+    };
+  }, [filteredTeamRecords]);
+
   // Filter Monthly Matrix Records
   const filteredMatrixRows = useMemo(() => {
     return (monthlyMatrixData.rows || []).filter(r => {
@@ -889,42 +955,59 @@ export default function AttendanceModule({
     });
   }, [monthlyMatrixData.rows, teamSearchQuery]);
 
-  // Export Daily Team Attendance to CSV
+  // Export Daily / Range Team Attendance to CSV (Filter & Search aware)
   const handleExportCSV = () => {
-    if (!teamMasterData.records || teamMasterData.records.length === 0) return;
-    const headers = ['Emp ID', 'Employee Name', 'Email', 'Department', 'Date', 'In Time', 'Out Time', 'Duration', 'Status', 'Regularized', 'Remarks'];
-    const rows = teamMasterData.records.map(r => [
-      `"${r.emp_code || ''}"`,
-      `"${r.emp_name || ''}"`,
-      `"${r.email || ''}"`,
-      `"${r.department || ''}"`,
-      `"${r.attendance_date || ''}"`,
-      `"${r.in_time ? new Date(r.in_time).toLocaleTimeString() : ''}"`,
-      `"${r.out_time ? new Date(r.out_time).toLocaleTimeString() : ''}"`,
-      `"${formatMinutesToHours(r.total_working_minutes)}"`,
-      `"${r.status || 'ABSENT'}"`,
-      `"${r.is_regularized ? 'Yes' : 'No'}"`,
-      `"${r.remarks || ''}"`
-    ]);
+    const recordsToExport = filteredTeamRecords || [];
+    if (recordsToExport.length === 0) return;
+    const isRange = teamStartDate !== teamEndDate;
+    const headers = isRange 
+      ? ['Emp ID', 'Employee Name', 'Email', 'Department', 'Date', 'In Time', 'Out Time', 'Duration', 'Status', 'Regularized', 'Remarks']
+      : ['Emp ID', 'Employee Name', 'Email', 'Department', 'In Time', 'Out Time', 'Duration', 'Status', 'Regularized', 'Remarks'];
+
+    const rows = recordsToExport.map(r => {
+      const base = [
+        `"${r.emp_code || ''}"`,
+        `"${r.emp_name || ''}"`,
+        `"${r.email || ''}"`,
+        `"${r.department || ''}"`
+      ];
+      if (isRange) {
+        base.push(`"${r.attendance_date || ''}"`);
+      }
+      base.push(
+        `"${r.in_time ? new Date(r.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}"`,
+        `"${r.out_time ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}"`,
+        `"${formatMinutesToHours(r.total_working_minutes)}"`,
+        `"${r.status || 'ABSENT'}"`,
+        `"${r.is_regularized ? 'Yes' : 'No'}"`,
+        `"${(r.remarks || '').replace(/"/g, '""')}"`
+      );
+      return base;
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Daily_Attendance_Report_${teamMasterDate}.csv`);
+    const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+    const fileName = isRange 
+      ? `Team_Attendance_Report_${teamStartDate}_to_${teamEndDate}${searchSuffix}.csv`
+      : `Team_Attendance_Report_${teamStartDate}${searchSuffix}.csv`;
+    link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Export Monthly Master Attendance Matrix to CSV / Excel
+  // Export Monthly Master Attendance Matrix to CSV / Excel (Filter & Search aware)
   const handleExportMonthlyMatrixCSV = () => {
-    if (!monthlyMatrixData.rows || monthlyMatrixData.rows.length === 0) return;
+    const rowsToExport = filteredMatrixRows || [];
+    if (rowsToExport.length === 0) return;
     
     const datesHeaders = (monthlyMatrixData.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort})"`);
     const headers = ['Emp ID', 'Employee Name', 'Email', 'Department', ...datesHeaders, 'Total Present', 'Total Absent', 'Total Half Days', 'Total Short Leaves', 'Total Payable Days', 'Total Hours Logged'];
 
-    const rows = monthlyMatrixData.rows.map(r => {
+    const rows = rowsToExport.map(r => {
       const dayCodes = (r.days || []).map(d => `"${d.code}"`);
       return [
         `"${r.emp_id || ''}"`,
@@ -945,19 +1028,35 @@ export default function AttendanceModule({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
+    const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
-    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}.csv`);
+    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${searchSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   // Helper formatting for status badges
-  const renderStatusBadge = (status, isRegularized = false) => {
+  const renderStatusBadge = (status, isRegularized = false, remarks = '') => {
     if (isRegularized || status === 'REGULARIZED') {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#e0e7ff', color: '#3730a3' }}>
           <ShieldCheck size={12} /> Regularized
+        </span>
+      );
+    }
+    const rem = (remarks || '').toLowerCase();
+    if (status === 'WEEK_OFF' || status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#f3e8ff', color: '#6b21a8' }}>
+          <Calendar size={12} /> Week Off
+        </span>
+      );
+    }
+    if (status === 'MISSED_PUNCH' || rem.includes('missed punch')) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#fee2e2', color: '#991b1b' }}>
+          <AlertCircle size={12} /> Missed Punch
         </span>
       );
     }
@@ -996,8 +1095,41 @@ export default function AttendanceModule({
     );
   };
 
-  // Helper to render Short Leave badges
-  const renderShortLeaveBadge = (type, isGrace = false) => {
+  // Helper to render Short Leave badges with automatic fallback detection
+  const renderShortLeaveBadge = (rOrType, isGraceParam = false) => {
+    let type = typeof rOrType === 'string' ? rOrType : rOrType?.short_leave_type;
+    let isGrace = typeof rOrType === 'object' ? rOrType?.is_grace_applied : isGraceParam;
+    const r = typeof rOrType === 'object' ? rOrType : null;
+    const remarks = (r?.remarks || '').toLowerCase();
+
+    // 1. Fallback from remarks if type is missing
+    if (!type || type === 'NONE') {
+      if (remarks.includes('20-min') || remarks.includes('20m sl') || remarks.includes('20 min')) {
+        type = remarks.includes('evening') ? '20_MIN_OUT' : '20_MIN_IN';
+      } else if (remarks.includes('2-hour') || remarks.includes('2h sl') || remarks.includes('2 hour')) {
+        type = remarks.includes('evening') ? '2_HR_OUT' : '2_HR_IN';
+      } else if (remarks.includes('grace')) {
+        isGrace = true;
+      }
+    }
+
+    // 2. Dynamic evaluation from in_time if still missing
+    if ((!type || type === 'NONE') && !isGrace && r?.in_time && (r?.status === 'PRESENT' || r?.status === 'LATE')) {
+      const inDate = new Date(r.in_time);
+      const hours = inDate.getHours();
+      const mins = inDate.getMinutes();
+      const secs = inDate.getSeconds();
+      const totalSecs = hours * 3600 + mins * 60 + secs;
+
+      if (totalSecs > 9 * 3600 && totalSecs <= (9 * 3600 + 5 * 60 + 59)) {
+        isGrace = true;
+      } else if (totalSecs > (9 * 3600 + 5 * 60 + 59) && totalSecs <= (9 * 3600 + 20 * 60 + 59)) {
+        type = '20_MIN_IN';
+      } else if (totalSecs > (9 * 3600 + 20 * 60 + 59) && totalSecs <= (11 * 3600 + 59)) {
+        type = '2_HR_IN';
+      }
+    }
+
     if (isGrace) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.18rem 0.5rem', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontSize: '0.72rem', fontWeight: 600 }}>
@@ -1207,7 +1339,7 @@ export default function AttendanceModule({
           {/* Tab 1: Daily Punch Station */}
           <button
             type="button"
-            onClick={() => setActiveTab('my_attendance')}
+            onClick={() => handleTabSelect('my_attendance')}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1230,7 +1362,7 @@ export default function AttendanceModule({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('monthly_logs');
+              handleTabSelect('monthly_logs');
               fetchHistory();
             }}
             style={{
@@ -1254,7 +1386,7 @@ export default function AttendanceModule({
           {/* Tab 3: Regularization / Missing Punch */}
           <button
             type="button"
-            onClick={() => setActiveTab('regularization')}
+            onClick={() => handleTabSelect('regularization')}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1281,7 +1413,7 @@ export default function AttendanceModule({
           {isHodOrManager && (
             <button
               type="button"
-              onClick={() => setActiveTab('hod_approvals')}
+              onClick={() => handleTabSelect('hod_approvals')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1309,7 +1441,7 @@ export default function AttendanceModule({
           {isHodOrManager && (
             <button
               type="button"
-              onClick={() => setActiveTab('team_report')}
+              onClick={() => handleTabSelect('team_report')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1447,7 +1579,7 @@ export default function AttendanceModule({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Today's Punch Status</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  {renderShortLeaveBadge(todayRecord?.short_leave_type, todayRecord?.is_grace_applied)}
+                  {renderShortLeaveBadge(todayRecord)}
                   {renderStatusBadge(todayRecord?.status || (todayRecord?.in_time ? 'WORKING' : 'NOT PUNCHED'), todayRecord?.is_regularized)}
                 </div>
               </div>
@@ -1827,8 +1959,8 @@ export default function AttendanceModule({
                           </td>
                           <td style={{ padding: '0.75rem 1rem' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                              {renderStatusBadge(r.status, r.is_regularized)}
-                              {renderShortLeaveBadge(r.short_leave_type, r.is_grace_applied)}
+                              {renderStatusBadge(r.status, r.is_regularized, r.remarks)}
+                              {renderShortLeaveBadge(r)}
                             </div>
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '240px' }}>
@@ -2046,7 +2178,10 @@ export default function AttendanceModule({
                 {/* 1. Pending Pill */}
                 <button
                   type="button"
-                  onClick={() => setHodStatusFilter('PENDING')}
+                  onClick={() => {
+                    setHodStatusFilter('PENDING');
+                    setSelectedHodRequests(new Set());
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2079,7 +2214,10 @@ export default function AttendanceModule({
                 {/* 2. Approved Pill */}
                 <button
                   type="button"
-                  onClick={() => setHodStatusFilter('APPROVED')}
+                  onClick={() => {
+                    setHodStatusFilter('APPROVED');
+                    setSelectedHodRequests(new Set());
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2112,7 +2250,10 @@ export default function AttendanceModule({
                 {/* 3. Rejected Pill */}
                 <button
                   type="button"
-                  onClick={() => setHodStatusFilter('REJECTED')}
+                  onClick={() => {
+                    setHodStatusFilter('REJECTED');
+                    setSelectedHodRequests(new Set());
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2145,7 +2286,10 @@ export default function AttendanceModule({
                 {/* 4. All Requests Pill */}
                 <button
                   type="button"
-                  onClick={() => setHodStatusFilter('ALL')}
+                  onClick={() => {
+                    setHodStatusFilter('ALL');
+                    setSelectedHodRequests(new Set());
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2200,7 +2344,7 @@ export default function AttendanceModule({
               {/* Refresh Button */}
               <button
                 type="button"
-                onClick={fetchHodRequests}
+                onClick={() => fetchHodRequests(true)}
                 style={{
                   padding: '0.45rem 0.85rem',
                   borderRadius: '8px',
@@ -2590,19 +2734,17 @@ export default function AttendanceModule({
                 </div>
 
                 {teamReportView === 'DAILY' ? (
-                  /* Single Date picker for Daily View */
-                  <input
-                    type="date"
-                    value={teamMasterDate}
-                    onChange={(e) => setTeamMasterDate(e.target.value)}
-                    style={{
-                      padding: '0.45rem 0.75rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.82rem',
-                      outline: 'none'
+                  /* Quick Date Presets DateRangePicker */
+                  <DateRangePicker
+                    preset={teamDatePreset}
+                    startDate={teamStartDate}
+                    endDate={teamEndDate}
+                    allowAllTime={true}
+                    title="Select Attendance Date Range"
+                    onChange={({ preset, startDate, endDate }) => {
+                      setTeamDatePreset(preset);
+                      setTeamStartDate(startDate);
+                      setTeamEndDate(endDate);
                     }}
                   />
                 ) : (
@@ -2720,14 +2862,14 @@ export default function AttendanceModule({
                     cursor: 'pointer'
                   }}
                 >
-                  <Download size={14} /> {teamReportView === 'DAILY' ? 'Export Daily CSV' : 'Export Monthly Excel / CSV'}
+                  <Download size={14} /> {teamReportView === 'DAILY' ? (teamStartDate !== teamEndDate ? 'Export Range CSV' : 'Export Daily CSV') : 'Export Monthly Excel / CSV'}
                 </button>
               </div>
             </div>
           </div>
 
           {/* ========================================================================= */}
-          {/* VIEW 1: DAILY VIEW */}
+          {/* VIEW 1: DAILY / RANGE VIEW */}
           {/* ========================================================================= */}
           {teamReportView === 'DAILY' && (
             <>
@@ -2738,28 +2880,36 @@ export default function AttendanceModule({
                 gap: '0.75rem'
               }}>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>TOTAL EMPLOYEES</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{teamMasterData.summary?.totalEmployees || 0}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>
+                    {teamStartDate !== teamEndDate ? 'TOTAL RECORDS' : 'TOTAL EMPLOYEES'}
+                  </span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {teamStartDate !== teamEndDate ? teamFilteredSummary.totalRecords : teamFilteredSummary.totalEmployees}
+                  </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>PRESENT</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#16a34a' }}>{teamMasterData.summary?.totalPresent || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#16a34a' }}>{teamFilteredSummary.totalPresent}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>LATE IN</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#d97706' }}>{teamMasterData.summary?.totalLate || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#d97706' }}>{teamFilteredSummary.totalLate}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>HALF DAY</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ea580c' }}>{teamMasterData.summary?.totalHalfDay || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ea580c' }}>{teamFilteredSummary.totalHalfDay}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>ABSENT</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{teamMasterData.summary?.totalAbsent || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{teamFilteredSummary.totalAbsent}</span>
+                </div>
+                <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>WEEK OFF</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#9333ea' }}>{teamFilteredSummary.totalWeekOff}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>REGULARIZED</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#4f46e5' }}>{teamMasterData.summary?.totalRegularized || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#4f46e5' }}>{teamFilteredSummary.totalRegularized}</span>
                 </div>
               </div>
 
@@ -2771,6 +2921,9 @@ export default function AttendanceModule({
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Emp ID</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name</th>
+                        {teamStartDate !== teamEndDate && (
+                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date</th>
+                        )}
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Department</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Punch In</th>
@@ -2783,32 +2936,40 @@ export default function AttendanceModule({
                     <tbody>
                       {filteredTeamRecords.length === 0 ? (
                         <tr>
-                          <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            No records found for date {teamMasterDate}.
+                          <td colSpan={teamStartDate !== teamEndDate ? 10 : 9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            No records found for {teamStartDate === teamEndDate ? teamStartDate : `${teamStartDate} to ${teamEndDate}`}.
                           </td>
                         </tr>
                       ) : (
                         filteredTeamRecords.map((r, idx) => (
-                          <tr key={r.id || idx} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
+                          <tr key={r.id || `${r.email}_${r.attendance_date}_${idx}`} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
                             <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', fontSize: '0.82rem' }}>
                               {r.emp_code || '—'}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{r.emp_name}</td>
+                            {teamStartDate !== teamEndDate && (
+                              <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
+                                {r.attendance_date}
+                              </td>
+                            )}
                             <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.email}</td>
                             <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.department || 'General'}</td>
                             <td style={{ padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400 }}>
                               {r.in_time ? new Date(r.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400 }}>
-                              {r.out_time ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : (r.in_time ? 'Working...' : '—')}
+                              {r.out_time 
+                                ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) 
+                                : (r.attendance_date === getTodayDateString() ? (r.in_time ? 'Working...' : '—') : (r.in_time ? 'Missed Out' : '—'))
+                              }
                             </td>
                             <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)' }}>
                               {formatMinutesToHours(r.total_working_minutes)}
                             </td>
                             <td style={{ padding: '0.75rem 1rem' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                                {renderStatusBadge(r.status, r.is_regularized)}
-                                {renderShortLeaveBadge(r.short_leave_type, r.is_grace_applied)}
+                                {renderStatusBadge(r.status, r.is_regularized, r.remarks)}
+                                {renderShortLeaveBadge(r)}
                               </div>
                             </td>
                             <td style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -2857,37 +3018,54 @@ export default function AttendanceModule({
                 </div>
               </div>
 
-              {/* Legend Bar */}
+              {/* Legend Bar & Sunday Policy Explanation */}
               <div style={{
                 display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.75rem 1rem',
+                flexDirection: 'column',
+                gap: '0.6rem',
+                padding: '0.85rem 1.15rem',
                 background: 'var(--bg-surface)',
-                borderRadius: '10px',
+                borderRadius: '12px',
                 border: '1px solid var(--border-light)',
                 fontSize: '0.75rem'
               }}>
-                <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Status Key:</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#dcfce7', color: '#166534', fontWeight: 700 }}>P</span> Present
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>A</span> Absent (&lt; 4:30h)
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#ffedd5', color: '#9a3412', fontWeight: 700 }}>HD</span> Half Day
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>SL</span> Short Leave
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>R</span> Regularized
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>WO</span> Week Off
-                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Status Key:</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#dcfce7', color: '#166534', fontWeight: 700 }}>P</span> Present
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>A</span> Absent (&lt; 4:30h / Sunday Disallowed)
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#ffedd5', color: '#9a3412', fontWeight: 700 }}>HD</span> Half Day
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>SL</span> Short Leave
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>R</span> Regularized
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>WO</span> Paid Week Off
+                  </span>
+                </div>
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  alignItems: 'center', 
+                  gap: '1rem', 
+                  paddingTop: '0.4rem', 
+                  borderTop: '1px dashed var(--border-light)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.72rem'
+                }}>
+                  <span style={{ fontWeight: 700, color: 'var(--accent-color)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '0.95rem' }}>policy</span> Sunday Rules Active:
+                  </span>
+                  <span>• <strong>Rule 1</strong>: Week me min. 3 days present hona mandatory hai, varna Sunday Absent count hoga.</span>
+                  <span>• <strong>Rule 2 (Sandwich)</strong>: Saturday &amp; Monday dono din absent/leave hone par Sunday Absent count hoga.</span>
+                </div>
               </div>
 
               {/* Monthly Master Matrix Grid Table */}

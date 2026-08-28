@@ -245,14 +245,11 @@ export default function TeamManagement({ initialUsers = [] }) {
     if (!impersonateModal.user) return;
     setImpersonateModal(prev => ({ ...prev, loading: true, errorMsg: null, successMsg: null }));
     try {
-      const res = await impersonateUserAdmin(impersonateModal.user.user_id);
-      if (!res.success) {
-        setImpersonateModal(prev => ({ ...prev, loading: false, errorMsg: res.error || 'Failed to generate session.' }));
-        return;
-      }
+      const targetUserId = impersonateModal.user.user_id;
+      const targetName = impersonateModal.user.emp_name || impersonateModal.user.email || 'Employee';
 
-      // Build target URL for new tab (using secure Supabase token hash)
-      const impersonateUrl = `/auth/impersonate?token=${encodeURIComponent(res.tokenHash)}&restore=${encodeURIComponent(res.adminRestoreToken || '')}&name=${encodeURIComponent(res.empName || '')}&role=${encodeURIComponent(res.role || '')}`;
+      // Tab-Isolated View URL (Zero Cookie Mutation -> Admin Tab Remains 100% Admin!)
+      const impersonateUrl = `/?view_as=${encodeURIComponent(targetUserId)}`;
 
       // Open user session in a new window/tab
       const newTab = window.open(impersonateUrl, '_blank');
@@ -266,12 +263,12 @@ export default function TeamManagement({ initialUsers = [] }) {
       setImpersonateModal(prev => ({
         ...prev,
         loading: false,
-        successMsg: `Logged in as ${res.empName}! Opened in a new tab.`
+        successMsg: `Logged in as ${targetName}! Opened in a new tab.`
       }));
 
       setTimeout(() => {
         setImpersonateModal({ show: false, user: null, loading: false, errorMsg: null, successMsg: null });
-      }, 1800);
+      }, 1500);
     } catch (err) {
       setImpersonateModal(prev => ({ ...prev, loading: false, errorMsg: err.message || 'An unexpected error occurred.' }));
     }

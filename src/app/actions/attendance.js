@@ -263,17 +263,36 @@ export async function punchIn({
     }
   } catch {}
 
+  // Resolve emp_code and department from user_roles if not provided
+  let resolvedEmpCode = empCode || '';
+  let resolvedDepartment = department || '';
+  let resolvedEmpName = empName || email.split('@')[0];
+
+  try {
+    const { data: userRole } = await adminClient
+      .from('user_roles')
+      .select('emp_id, emp_name, emp_department')
+      .ilike('email', normalizedEmail)
+      .maybeSingle();
+
+    if (userRole) {
+      if (!resolvedEmpCode) resolvedEmpCode = userRole.emp_id || '';
+      if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
+      if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
+    }
+  } catch {}
+
   const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today);
-  const evaluation = evaluateMorningInPunch(now, monthlyUsage, empName || email.split('@')[0]);
+  const evaluation = evaluateMorningInPunch(now, monthlyUsage, resolvedEmpName);
 
   let resultRecord = {
     id: ensureUuid(existingLocal?.id),
     tenant_id: tenantId,
     user_id: userId && isValidUuid(userId) ? userId : null,
-    emp_code: empCode || '',
-    emp_name: empName || email.split('@')[0],
+    emp_code: resolvedEmpCode,
+    emp_name: resolvedEmpName,
     email: normalizedEmail,
-    department: department || '',
+    department: resolvedDepartment,
     attendance_date: today,
     in_time: nowIso,
     out_time: null,
@@ -429,6 +448,26 @@ export async function punchOut({
     updated_at: nowIso
   };
 
+  let resolvedOutEmpCode = existing.emp_code || '';
+  let resolvedOutDept = existing.department || '';
+  let resolvedOutEmpName = existing.emp_name || empName || '';
+
+  if (!resolvedOutEmpCode || !resolvedOutDept || resolvedOutDept === 'General') {
+    try {
+      const { data: userRole } = await adminClient
+        .from('user_roles')
+        .select('emp_id, emp_name, emp_department')
+        .ilike('email', normalizedEmail)
+        .maybeSingle();
+
+      if (userRole) {
+        if (!resolvedOutEmpCode) resolvedOutEmpCode = userRole.emp_id || '';
+        if (!resolvedOutDept || resolvedOutDept === 'General') resolvedOutDept = userRole.emp_department || 'General';
+        if (!resolvedOutEmpName) resolvedOutEmpName = userRole.emp_name || '';
+      }
+    } catch {}
+  }
+
   // Try updating/upserting in Supabase
   try {
     const dbPayload = cleanAttendanceRecordForDb({
@@ -436,10 +475,10 @@ export async function punchOut({
       id: ensureUuid(existing.id),
       tenant_id: existing.tenant_id || tenantId,
       user_id: existing.user_id || userId || null,
-      emp_code: existing.emp_code || '',
-      emp_name: existing.emp_name || empName || '',
+      emp_code: resolvedOutEmpCode,
+      emp_name: resolvedOutEmpName,
       email: normalizedEmail,
-      department: existing.department || '',
+      department: resolvedOutDept,
       attendance_date: today,
       in_time: existing.in_time,
       out_time: nowIso,
@@ -576,6 +615,33 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
 
   const shortLeaveUsage = calculateMonthlyShortLeaveUsage(records, targetYear, targetMonth);
 
+  // Evaluate Sundays in the month with Sunday rules (Min 3 working days & Sandwich rule)
+  const recordsMapByDate = new Map(records.map(r => [r.attendance_date, r]));
+  const todayStr = getTodayDateString();
+  let totalPaidSundays = 0;
+  let totalDisallowedSundays = 0;
+  let totalSundaysInMonth = 0;
+
+  for (let day = 1; day <= lastDay; day++) {
+    const dStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dt = new Date(`${dStr}T00:00:00`);
+    if (dt.getDay() === 0) {
+      totalSundaysInMonth++;
+      const sunEval = evaluateSundayEligibility({
+        sundayDateStr: dStr,
+        recordsMapByDate,
+        todayStr
+      });
+      if (sunEval.isPaid && sunEval.code !== 'WO-P') {
+        totalPaidSundays++;
+      } else if (!sunEval.isPaid) {
+        totalDisallowedSundays++;
+      }
+    }
+  }
+
+  const totalPayableDays = totalPresent + (totalHalfDay * 0.5) + totalPaidSundays;
+
   return {
     success: true,
     records,
@@ -588,6 +654,10 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
       totalAbsent,
       totalMissedPunches,
       totalRegularized,
+      totalPaidSundays,
+      totalDisallowedSundays,
+      totalSundaysInMonth,
+      totalPayableDays,
       totalHoursFormatted: formatMinutesToHours(totalMinutesWorked),
       totalMinutesWorked,
       totalLoggedDays: records.length,
@@ -1185,12 +1255,18 @@ export async function bulkRejectRegularizationRequests({
  */
 export async function getTeamAttendanceMaster({
   date = getTodayDateString(),
+  startDate = '',
+  endDate = '',
   department = '',
   tenantId = DEFAULT_TENANT_ID
 }) {
   const adminClient = getAdminClient();
   let dbRecords = [];
   let allUsers = [];
+
+  const isRange = Boolean((startDate && endDate) && (startDate !== endDate));
+  const effectiveStart = startDate || date;
+  const effectiveEnd = endDate || date;
 
   try {
     const { data: usersData } = await adminClient
@@ -1202,8 +1278,13 @@ export async function getTeamAttendanceMaster({
   try {
     let query = adminClient
       .from('attendance_records')
-      .select('*')
-      .eq('attendance_date', date);
+      .select('*');
+
+    if (isRange) {
+      query = query.gte('attendance_date', effectiveStart).lte('attendance_date', effectiveEnd);
+    } else {
+      query = query.eq('attendance_date', effectiveStart);
+    }
 
     if (department && department !== 'All') {
       query = query.eq('department', department);
@@ -1217,62 +1298,87 @@ export async function getTeamAttendanceMaster({
 
   const local = await getFallbackData();
   const localDayRecs = local.records.filter(r => {
-    if (r.attendance_date !== date) return false;
+    if (isRange) {
+      if (r.attendance_date < effectiveStart || r.attendance_date > effectiveEnd) return false;
+    } else {
+      if (r.attendance_date !== effectiveStart) return false;
+    }
     if (department && department !== 'All' && r.department !== department) return false;
     return true;
   });
 
   const dayMap = new Map();
-  dbRecords.forEach(r => dayMap.set((r.email || '').toLowerCase(), r));
+  dbRecords.forEach(r => dayMap.set(`${(r.email || '').toLowerCase()}_${r.attendance_date}`, r));
   localDayRecs.forEach(lr => {
-    const existing = dayMap.get((lr.email || '').toLowerCase());
+    const key = `${(lr.email || '').toLowerCase()}_${lr.attendance_date}`;
+    const existing = dayMap.get(key);
     if (!existing || (lr.out_time && !existing.out_time)) {
-      dayMap.set((lr.email || '').toLowerCase(), lr);
+      dayMap.set(key, lr);
     }
   });
   dbRecords = Array.from(dayMap.values());
 
   const userMapByEmail = new Map((allUsers || []).map(u => [u.email?.toLowerCase(), u]));
+  const localMap = new Map((local.records || []).map(lr => [`${(lr.email || '').toLowerCase()}_${lr.attendance_date}`, lr]));
 
   const enrichedDbRecords = dbRecords.map(r => {
     const user = userMapByEmail.get(r.email?.toLowerCase());
+    const localRec = localMap.get(`${(r.email || '').toLowerCase()}_${r.attendance_date}`);
     return {
       ...r,
-      emp_code: r.emp_code || user?.emp_code || '',
+      short_leave_type: r.short_leave_type || localRec?.short_leave_type || 'NONE',
+      is_grace_applied: r.is_grace_applied ?? localRec?.is_grace_applied ?? false,
+      remarks: r.remarks || localRec?.remarks || null,
+      emp_code: r.emp_code || user?.emp_code || user?.emp_id || '',
       emp_name: r.emp_name || user?.emp_name || r.email?.split('@')[0],
-      department: r.department || user?.department || 'General'
+      department: r.department || user?.department || user?.emp_department || 'General'
     };
   });
 
-  const punchedEmails = new Set(enrichedDbRecords.map(r => r.email?.toLowerCase()));
-  const absentUsers = (allUsers || [])
-    .filter(u => u.emp_status !== 'InActive' && u.emp_status !== 'Terminated' && !punchedEmails.has(u.email?.toLowerCase()))
-    .map(u => ({
-      id: `absent-${u.email}`,
-      email: u.email,
-      emp_name: u.emp_name || u.email.split('@')[0],
-      emp_code: u.emp_code || '',
-      department: u.department || 'General',
-      attendance_date: date,
-      in_time: null,
-      out_time: null,
-      total_working_minutes: 0,
-      status: 'ABSENT',
-      is_regularized: false
-    }));
+  let combinedRecords = [];
+  let absentCount = 0;
 
-  const combinedRecords = [...enrichedDbRecords, ...absentUsers];
+  if (!isRange) {
+    // Single Day view: include absent employees who didn't punch
+    const punchedEmails = new Set(enrichedDbRecords.map(r => r.email?.toLowerCase()));
+    const absentUsers = (allUsers || [])
+      .filter(u => u.emp_status !== 'InActive' && u.emp_status !== 'Terminated' && !punchedEmails.has(u.email?.toLowerCase()))
+      .map(u => ({
+        id: `absent-${u.email}`,
+        email: u.email,
+        emp_name: u.emp_name || u.email.split('@')[0],
+        emp_code: u.emp_code || '',
+        department: u.department || 'General',
+        attendance_date: effectiveStart,
+        in_time: null,
+        out_time: null,
+        total_working_minutes: 0,
+        status: 'ABSENT',
+        is_regularized: false
+      }));
+
+    absentCount = absentUsers.length;
+    combinedRecords = [...enrichedDbRecords, ...absentUsers];
+  } else {
+    // Range view: show all records in that range sorted by date desc
+    combinedRecords = enrichedDbRecords.sort((a, b) => b.attendance_date.localeCompare(a.attendance_date));
+    absentCount = enrichedDbRecords.filter(r => r.status === 'ABSENT').length;
+  }
 
   return {
     success: true,
-    date,
+    date: effectiveStart,
+    startDate: effectiveStart,
+    endDate: effectiveEnd,
+    isRange,
     records: combinedRecords,
     summary: {
       totalEmployees: allUsers.length > 0 ? allUsers.length : combinedRecords.length,
+      totalRecords: combinedRecords.length,
       totalPresent: enrichedDbRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE' || r.status === 'REGULARIZED').length,
       totalHalfDay: enrichedDbRecords.filter(r => r.status === 'HALF_DAY').length,
       totalLate: enrichedDbRecords.filter(r => r.status === 'LATE').length,
-      totalAbsent: absentUsers.length,
+      totalAbsent: absentCount,
       totalRegularized: enrichedDbRecords.filter(r => r.is_regularized).length
     }
   };
@@ -1299,6 +1405,117 @@ export async function resetTodayPunchForTesting(email) {
   } catch {}
 
   return { success: true, message: "Today's punch reset successfully for testing!" };
+}
+
+/**
+ * Evaluate Sunday Policy:
+ * Rule 1: Minimum 3 days Present mandatory in that week (Monday to Saturday); otherwise Sunday is Absent (Unpaid).
+ * Rule 2: Sandwich Leave Rule: If employee is Absent/On Leave on BOTH Saturday (day before) AND Monday (day after), Sunday is Absent.
+ */
+function evaluateSundayEligibility({
+  sundayDateStr,
+  recordsMapByDate,
+  todayStr
+}) {
+  const sunday = new Date(`${sundayDateStr}T00:00:00`);
+  
+  // 1. If employee actually punched / worked on Sunday
+  const sunRec = recordsMapByDate.get(sundayDateStr);
+  if (sunRec && (sunRec.status === 'PRESENT' || (sunRec.total_working_minutes || 0) > 0 || (sunRec.in_time && sunRec.out_time))) {
+    return {
+      isPaid: true,
+      code: 'WO-P',
+      status: 'PRESENT',
+      label: 'Sunday Work (Present)',
+      reason: null,
+      record: sunRec
+    };
+  }
+
+  // If Sunday is in the future
+  if (sundayDateStr > todayStr) {
+    return {
+      isPaid: true,
+      code: 'WO',
+      status: 'WEEK_OFF',
+      label: 'Week Off (Upcoming)',
+      reason: null,
+      record: null
+    };
+  }
+
+  // 2. Rule 1: Check working days in Monday to Saturday of that week
+  // Mon-Sat: Monday (Sunday - 6 days) to Saturday (Sunday - 1 day)
+  let weeklyPresentDays = 0;
+  let totalDaysEvaluated = 0;
+
+  for (let offset = 6; offset >= 1; offset--) {
+    const dayDate = new Date(sunday);
+    dayDate.setDate(sunday.getDate() - offset);
+    const dayDateStr = dayDate.toISOString().split('T')[0];
+
+    // Only evaluate days in the current month / up to today
+    if (dayDate.getMonth() === sunday.getMonth() && dayDateStr <= todayStr) {
+      totalDaysEvaluated++;
+      const dayRec = recordsMapByDate.get(dayDateStr);
+      if (dayRec) {
+        if (dayRec.status === 'PRESENT' || dayRec.status === 'LATE' || dayRec.status === 'REGULARIZED' || dayRec.is_regularized) {
+          weeklyPresentDays += 1;
+        } else if (dayRec.status === 'HALF_DAY') {
+          weeklyPresentDays += 0.5;
+        }
+      }
+    }
+  }
+
+  // If full week in month (6 days), required min is 3 days. If partial start of month, min is Math.min(3, totalDaysEvaluated)
+  const requiredMinDays = Math.min(3, totalDaysEvaluated);
+  if (totalDaysEvaluated > 0 && weeklyPresentDays < requiredMinDays) {
+    return {
+      isPaid: false,
+      code: 'A',
+      status: 'ABSENT',
+      label: `Absent (Min ${requiredMinDays} working days not met: only ${weeklyPresentDays} days present in week)`,
+      reason: `Min ${requiredMinDays} days present rule: Only ${weeklyPresentDays} days present in week`,
+      record: sunRec || null
+    };
+  }
+
+  // 3. Rule 2: Sandwich Rule (Both Saturday AND Monday Absent/Leave)
+  const satDate = new Date(sunday);
+  satDate.setDate(sunday.getDate() - 1);
+  const satDateStr = satDate.toISOString().split('T')[0];
+
+  const monDate = new Date(sunday);
+  monDate.setDate(sunday.getDate() + 1);
+  const monDateStr = monDate.toISOString().split('T')[0];
+
+  const satRec = recordsMapByDate.get(satDateStr);
+  const monRec = recordsMapByDate.get(monDateStr);
+
+  const isSatAbsent = satDateStr <= todayStr && (!satRec || satRec.status === 'ABSENT' || satRec.status === 'ON_LEAVE' || (!satRec.in_time && !satRec.out_time));
+  const isMonAbsent = monDateStr <= todayStr && (!monRec || monRec.status === 'ABSENT' || monRec.status === 'ON_LEAVE' || (!monRec.in_time && !monRec.out_time));
+
+  if (isSatAbsent && isMonAbsent) {
+    return {
+      isPaid: false,
+      code: 'A',
+      status: 'ABSENT',
+      label: 'Absent (Sandwich Rule: Sat & Mon Absent)',
+      reason: 'Sandwich Rule: Absent on both Saturday and Monday',
+      record: sunRec || null
+    };
+  }
+
+  // 4. Default: Eligible for Paid Sunday Week Off
+  return {
+    isPaid: true,
+    code: 'WO',
+    status: 'WEEK_OFF',
+    label: 'Paid Week Off (Sunday)',
+    reason: null,
+    record: sunRec || null
+  };
 }
 
 /**
@@ -1393,7 +1610,7 @@ export async function getTeamMonthlyMatrix({
 
   const todayStr = getTodayDateString();
 
-  // Process matrix rows
+  // Process matrix rows with Sunday Rules (Min 3 working days & Sandwich Leave Rule)
   const matrixRows = targetUsers.map(user => {
     const userEmail = user.email?.toLowerCase();
     const userRecords = allRecords.filter(r => r.email?.toLowerCase() === userEmail);
@@ -1403,7 +1620,8 @@ export async function getTeamMonthlyMatrix({
     let totalHalfDays = 0;
     let totalAbsent = 0;
     let totalShortLeaves = 0;
-    let totalSundays = 0;
+    let totalPaidSundays = 0;
+    let totalDisallowedSundays = 0;
     let totalMinutesWorked = 0;
 
     const days = monthDates.map(mDate => {
@@ -1411,21 +1629,30 @@ export async function getTeamMonthlyMatrix({
       const isPastOrToday = mDate.dateStr <= todayStr;
 
       if (mDate.isSunday) {
-        totalSundays++;
-        if (rec) {
-          totalMinutesWorked += (rec.total_working_minutes || 0);
-          return {
-            code: 'WO-P',
-            status: 'PRESENT',
-            label: 'Sunday Work',
-            record: rec
-          };
+        const sunEval = evaluateSundayEligibility({
+          sundayDateStr: mDate.dateStr,
+          recordsMapByDate,
+          todayStr
+        });
+
+        if (sunEval.isPaid) {
+          if (sunEval.code === 'WO-P') {
+            totalPresent++;
+            totalMinutesWorked += (sunEval.record?.total_working_minutes || 0);
+          } else {
+            totalPaidSundays++;
+          }
+        } else {
+          totalAbsent++;
+          totalDisallowedSundays++;
         }
+
         return {
-          code: 'WO',
-          status: 'WEEK_OFF',
-          label: 'Week Off (Sunday)',
-          record: null
+          code: sunEval.code,
+          status: sunEval.status,
+          label: sunEval.label,
+          reason: sunEval.reason,
+          record: sunEval.record
         };
       }
 
@@ -1473,7 +1700,7 @@ export async function getTeamMonthlyMatrix({
           return {
             code: 'A',
             status: 'ABSENT',
-            label: 'Absent',
+            label: rec.remarks || 'Absent',
             record: rec
           };
         }
@@ -1498,7 +1725,7 @@ export async function getTeamMonthlyMatrix({
       }
     });
 
-    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalSundays;
+    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays;
 
     return {
       emp_id: user.emp_code || '',
@@ -1511,7 +1738,8 @@ export async function getTeamMonthlyMatrix({
         totalHalfDays,
         totalAbsent,
         totalShortLeaves,
-        totalSundays,
+        totalSundays: totalPaidSundays,
+        totalDisallowedSundays,
         totalPayableDays,
         totalMinutesWorked,
         totalHoursFormatted: formatMinutesToHours(totalMinutesWorked)

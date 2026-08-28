@@ -5,9 +5,11 @@ import { redirect } from 'next/navigation';
 // Next.js config to ensure this page stays dynamic (always fetches latest data)
 export const dynamic = 'force-dynamic';
 
-export default async function Home({ params }) {
+export default async function Home({ params, searchParams }) {
   const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   const route = resolvedParams?.route;
+  const viewAsUserId = resolvedSearchParams?.view_as || resolvedSearchParams?.impersonate;
 
   const supabase = await createClient();
   
@@ -31,20 +33,42 @@ export default async function Home({ params }) {
     .eq('user_id', user.id)
     .single();
 
-  const userRole = roleData?.role || 'agent';
+  const callerRole = roleData?.role || 'agent';
+  const isAdmin = callerRole === 'admin' || callerRole === 'Admin';
 
-  if (userRole === 'customer') {
-    const { redirect } = require('next/navigation');
+  if (callerRole === 'customer') {
     redirect('/chat');
   }
 
-  const canImportExport = userRole === 'admin' || userRole === 'Admin' || roleData?.can_import_export;
-  const canRead = userRole === 'admin' || userRole === 'Admin' || roleData?.can_read !== false;
-  const canWrite = userRole === 'admin' || userRole === 'Admin' || roleData?.can_write !== false;
-  const moduleAccess = roleData?.module_access || {};
-  const isApproved = roleData?.is_approved;
-  const userCompany = roleData?.company || '';
-  const userName = roleData?.emp_name || user.email?.split('@')[0] || 'User';
+  let effectiveRoleData = roleData;
+  let isImpersonating = false;
+  let impersonatorAdmin = null;
+
+  // If Admin requested to view as another user (Tab-Isolated Preview)
+  if (viewAsUserId && isAdmin) {
+    const { data: targetRoleData } = await adminClient
+      .from('user_roles')
+      .select('*')
+      .eq('user_id', viewAsUserId)
+      .maybeSingle();
+
+    if (targetRoleData) {
+      effectiveRoleData = targetRoleData;
+      isImpersonating = true;
+      impersonatorAdmin = roleData?.emp_name || user.email;
+    }
+  }
+
+  const userRole = effectiveRoleData?.role || 'agent';
+  const canImportExport = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
+  const canRead = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
+  const canWrite = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
+  const moduleAccess = effectiveRoleData?.module_access || {};
+  const isApproved = effectiveRoleData?.is_approved;
+  const userCompany = effectiveRoleData?.company || '';
+  const userName = effectiveRoleData?.emp_name || effectiveRoleData?.email?.split('@')[0] || 'User';
+  const effectiveUserId = effectiveRoleData?.user_id || user.id;
+  const effectiveUserEmail = effectiveRoleData?.email || effectiveRoleData?.emp_official_mail_id || user.email;
 
   // 2.5. Check Approval Status
   if (!isApproved && userRole !== 'admin' && userRole !== 'Admin') {
@@ -65,7 +89,6 @@ export default async function Home({ params }) {
 
   // 3. Leads are now fetched on the client side for instant page load
   let allLeads = [];
-
   const userAvatar = user?.user_metadata?.avatar_url || null;
 
   return (
@@ -77,10 +100,14 @@ export default async function Home({ params }) {
         canRead={canRead}
         canWrite={canWrite}
         moduleAccess={moduleAccess}
-        userId={user.id}
+        userId={effectiveUserId}
+        userEmail={effectiveUserEmail}
         userCompany={userCompany}
         userName={userName}
         initialAvatar={userAvatar}
+        isImpersonating={isImpersonating}
+        impersonatorAdmin={impersonatorAdmin}
+        impersonatedUser={isImpersonating ? effectiveRoleData : null}
       />
     </main>
   );
