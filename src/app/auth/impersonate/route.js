@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { consumeImpersonateToken } from "@/lib/impersonateStore";
-import { getAdminClient } from "@/utils/supabase/adminClient";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+
+const getAdminClient = () => {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+};
 
 export async function GET(request) {
   const requestUrl = new URL(request.url);
