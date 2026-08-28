@@ -861,8 +861,11 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         if (error) throw error;
 
         const statusChanged = payload.status && payload.status !== initialData.status;
+        const cleanOldStatus = (!initialData.status || initialData.status === 'None' || initialData.status.toLowerCase() === 'new' || initialData.status.toLowerCase() === 'pending') 
+          ? '01 - New Stage' 
+          : initialData.status;
         const noteText = statusChanged 
-          ? `Status changed from ${initialData.status || 'New'} to ${payload.status}`
+          ? `Status changed from ${cleanOldStatus} to ${payload.status}`
           : 'Client Profile was updated.';
 
         await supabase.from('lead_notes').insert([{

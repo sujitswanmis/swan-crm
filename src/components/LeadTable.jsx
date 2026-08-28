@@ -102,8 +102,8 @@ const processLeads = (rawLeads, teamMembers = []) => {
       const latestChange = statusEntries[0];
       // 1. If latest note specifies what the previous status was (oldStatus)
       if (latestChange.oldStatus) {
-        if (latestChange.oldStatus === 'None' || latestChange.oldStatus.toLowerCase() === 'new' || latestChange.oldStatus === '') {
-          lastStatus = 'Pending New';
+        if (latestChange.oldStatus === 'None' || latestChange.oldStatus.toLowerCase() === 'new' || latestChange.oldStatus === '' || latestChange.oldStatus.toLowerCase() === 'null') {
+          lastStatus = '01 - New Stage';
         } else {
           lastStatus = latestChange.oldStatus;
         }
@@ -111,12 +111,17 @@ const processLeads = (rawLeads, teamMembers = []) => {
       // 2. Otherwise check if there is a 2nd status change event in history
       else if (statusEntries.length >= 2) {
         const prevChange = statusEntries[1];
-        lastStatus = prevChange.newStatus || prevChange.oldStatus || 'Pending New';
+        lastStatus = prevChange.newStatus || prevChange.oldStatus || '01 - New Stage';
       } else {
-        lastStatus = 'Pending New';
+        lastStatus = '01 - New Stage';
       }
     } else {
-      lastStatus = 'Pending New';
+      const currentSt = lead.status || '';
+      if (!currentSt || currentSt === 'New' || currentSt.startsWith('1;') || currentSt === '01 - New Stage') {
+        lastStatus = 'Pending New';
+      } else {
+        lastStatus = '01 - New Stage';
+      }
     }
 
     const manualNotes = notes.filter(n => !n.note_text || (!n.note_text.includes('Status changed to:') && !n.note_text.includes('Status updated to:') && !n.note_text.includes('Status changed from ')));
@@ -289,7 +294,10 @@ const LeadStatusCell = React.memo(({ info }) => {
       return '01 - New Stage';
     };
 
-    const oldStatus = status;
+    const cleanOldStatus = (!status || status === 'None' || status === 'null' || status.toLowerCase() === 'new' || status.toLowerCase() === 'pending') 
+      ? '01 - New Stage' 
+      : status;
+    const oldStatus = cleanOldStatus;
     let updates = { status: newStatus };
     let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
 
@@ -1285,7 +1293,10 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       return '01 - New Stage';
     };
 
-    const oldStatus = lead.status || 'New';
+    const cleanOldStatus = (!lead.status || lead.status === 'None' || lead.status === 'null' || lead.status.toLowerCase() === 'new' || lead.status.toLowerCase() === 'pending') 
+      ? '01 - New Stage' 
+      : lead.status;
+    const oldStatus = cleanOldStatus;
     let updates = { status: newStatus };
     let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
 
