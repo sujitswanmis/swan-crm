@@ -157,35 +157,41 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
   // 3. Main 1-Second Master Tick Loop & Visibility Change Checker
   useEffect(() => {
+    let lastTickTime = Date.now();
+
     const checkTimeout = () => {
       const now = Date.now();
+      const elapsedSec = Math.max(1, Math.min(120, Math.round((now - lastTickTime) / 1000)));
+      lastTickTime = now;
+
       const idleThreshSec = settingsRef.current.idleThresholdSeconds || 60;
       const inactivityMaxSec = (settingsRef.current.inactivityTimeoutMinutes || 60) * 60;
       const warningSec = settingsRef.current.warningSeconds || 60;
       const timeSinceLastActivitySec = Math.floor((now - lastActivityTimestamp.current) / 1000);
+      const isTabHidden = typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden');
 
       // A. If employee is currently on a designated break
       if (currentBreakRef.current) {
-        setBreakElapsedSec(prev => prev + 1);
-        idleAccumulator.current += 1;
+        setBreakElapsedSec(prev => prev + elapsedSec);
+        idleAccumulator.current += elapsedSec;
         setIsAway(false);
         setShowWarningModal(false);
         return;
       }
 
       // B. Determine Active vs Idle (Away)
-      if (timeSinceLastActivitySec >= idleThreshSec) {
+      if (timeSinceLastActivitySec >= idleThreshSec || isTabHidden) {
         if (isCurrentlyActive.current) {
           isCurrentlyActive.current = false;
           setIsAway(true);
         }
-        idleAccumulator.current += 1;
+        idleAccumulator.current += elapsedSec;
       } else {
         if (!isCurrentlyActive.current) {
           isCurrentlyActive.current = true;
           setIsAway(false);
         }
-        activeAccumulator.current += 1;
+        activeAccumulator.current += elapsedSec;
       }
 
       // C. Inactivity Timeout Countdown (Session Expiry)
@@ -210,9 +216,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
 
     // Instant verification when returning from lockscreen or background tab
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkTimeout();
-      }
+      checkTimeout();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -222,7 +226,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, []);
 
-  // 4. Periodic Heartbeat to Server (Every 30 Seconds)
+  // 4. Periodic Heartbeat to Server (Every 20 Seconds)
   useEffect(() => {
     const sendHeartbeat = async () => {
       if (isLoggingOut.current) return;
@@ -258,7 +262,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       }
     };
 
-    const interval = setInterval(sendHeartbeat, 30000);
+    const interval = setInterval(sendHeartbeat, 20000);
     return () => clearInterval(interval);
   }, []);
 

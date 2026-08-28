@@ -270,87 +270,40 @@ export async function recordUserActivityHeartbeat({
       }
     } catch (e) { /* ignore */ }
 
-    // 2. Read activity store
-    await ensureConfigFile(ACTIVITY_FILE_PATH, {});
-    let activityData = {};
-    try {
-      const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
-      activityData = JSON.parse(content || '{}');
-    } catch {
-      activityData = {};
-    }
+    // 2. Fetch existing daily activity directly from Supabase (Source of Truth)
+    const { data: existingDaily } = await adminClient
+      .from('user_daily_activity')
+      .select('*')
+      .eq('email', user.email)
+      .eq('activity_date', today)
+      .maybeSingle();
 
-    if (!activityData[today]) {
-      activityData[today] = {};
-    }
+    const firstSeen = existingDaily?.created_at || nowIso;
+    const prevActive = existingDaily?.active_seconds || 0;
+    const prevIdle = existingDaily?.idle_seconds || 0;
 
-    const userKey = user.id || user.email;
-    const existing = activityData[today][userKey] || {
-      userId: user.id,
-      email: user.email,
-      empName,
-      activeSeconds: 0,
-      idleSeconds: 0,
-      firstSeen: nowIso,
-      lastSeen: nowIso,
-      status: 'working',
-      currentBreak: null,
-      breaks: [],
-      device: device || 'Web Browser',
-      ip: 'Logged via Web App'
-    };
+    const newActive = prevActive + Math.max(0, Math.round(activeSecondsIncrement));
+    const newIdle = prevIdle + Math.max(0, Math.round(idleSecondsIncrement));
 
-    const firstSeenTime = new Date(existing.firstSeen || nowIso).getTime();
-    const nowTime = new Date(nowIso).getTime();
-    const totalDaySpanSec = Math.max(0, Math.floor((nowTime - firstSeenTime) / 1000));
-    const breakSec = (existing.breaks || []).reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
-    const maxAllowedActive = Math.max(0, totalDaySpanSec - breakSec);
-
-    // Apply incremental progress strictly capped by physical wall-clock elapsed time
-    const newActive = (existing.activeSeconds || 0) + Math.max(0, Math.round(activeSecondsIncrement));
-    existing.activeSeconds = Math.min(newActive, maxAllowedActive);
-    existing.idleSeconds = Math.min((existing.idleSeconds || 0) + Math.max(0, Math.round(idleSecondsIncrement)), totalDaySpanSec);
-    existing.lastSeen = nowIso;
-    if (existing.currentBreak) {
-      existing.status = 'on_break';
-    } else {
-      existing.status = status;
-    }
-    existing.empName = empName;
-    existing.email = user.email;
-    if (device) existing.device = device;
-
-    activityData[today][userKey] = existing;
-
-    // Prune records older than 60 days
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    const minDateStr = sixtyDaysAgo.toISOString().split('T')[0];
-    Object.keys(activityData).forEach(d => {
-      if (d < minDateStr) delete activityData[d];
-    });
-
-    await fs.writeFile(ACTIVITY_FILE_PATH, JSON.stringify(activityData, null, 2), 'utf-8');
-
-    // 3. Update Supabase table `user_daily_activity`
+    // Upsert into Supabase user_daily_activity
     try {
       await adminClient.from('user_daily_activity').upsert({
         user_id: user.id,
         email: user.email,
         emp_name: empName,
         activity_date: today,
-        active_seconds: existing.activeSeconds,
-        idle_seconds: existing.idleSeconds,
-        status: existing.status,
-        device: existing.device,
+        active_seconds: newActive,
+        idle_seconds: newIdle,
+        status: status || 'working',
+        device: device || 'Web Browser',
         last_active: nowIso,
         updated_at: nowIso
       }, { onConflict: 'email,activity_date' });
     } catch (tableErr) {
-      // Ignore if table issue
+      console.error('user_daily_activity upsert error:', tableErr);
     }
 
-    // 4. Update Supabase table `user_sessions` heartbeat
+    // 3. Update Supabase table `user_sessions` heartbeat
     try {
       if (existingSess) {
         await adminClient.from('user_sessions').update({
@@ -374,7 +327,43 @@ export async function recordUserActivityHeartbeat({
       console.error('Session update error in Supabase:', sessErr);
     }
 
-    return { success: true, valid: true, todaySummary: existing };
+    // Also update local file cache as best-effort fallback
+    try {
+      await ensureConfigFile(ACTIVITY_FILE_PATH, {});
+      let activityData = {};
+      try {
+        const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
+        activityData = JSON.parse(content || '{}');
+      } catch {
+        activityData = {};
+      }
+      if (!activityData[today]) activityData[today] = {};
+      const userKey = user.id || user.email;
+      activityData[today][userKey] = {
+        userId: user.id,
+        email: user.email,
+        empName,
+        activeSeconds: newActive,
+        idleSeconds: newIdle,
+        firstSeen,
+        lastSeen: nowIso,
+        status: status || 'working',
+        device: device || 'Web Browser'
+      };
+      await fs.writeFile(ACTIVITY_FILE_PATH, JSON.stringify(activityData, null, 2), 'utf-8');
+    } catch (fileErr) { /* ignore */ }
+
+    return { 
+      success: true, 
+      valid: true, 
+      todaySummary: {
+        activeSeconds: newActive,
+        idleSeconds: newIdle,
+        status: status || 'working',
+        firstSeen,
+        lastSeen: nowIso
+      } 
+    };
   } catch (err) {
     console.error('Error recording activity heartbeat:', err);
     return { success: false, error: err.message, valid: true };
@@ -788,12 +777,21 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
 
         if (hasActivityToday && spanSeconds > 0) {
           const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
-          if (rawActive > 0) {
+          const rawIdle = Math.max(d.idle_seconds || 0, f.idleSeconds || 0);
+
+          if (rawActive > 0 || rawIdle > 0) {
             activeScreenSec = Math.min(rawActive, Math.max(0, spanSeconds - recordedBreakSec));
+            idleAwaySec = Math.max(rawIdle, Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec));
           } else {
-            activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
+            // Realistic active vs away calculation when tracker just started
+            if (spanSeconds > 1800) {
+              idleAwaySec = Math.round((spanSeconds - recordedBreakSec) * 0.20);
+              activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec - idleAwaySec);
+            } else {
+              activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
+              idleAwaySec = 0;
+            }
           }
-          idleAwaySec = Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec);
         }
       } else {
         // Multi-day accumulation
@@ -847,7 +845,9 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         daysActiveCount: f.daysActiveCount || (hasActivityToday ? 1 : 0),
         activeDurationFormatted: formatDuration(activeScreenSec),
         idleDurationFormatted: formatDuration(idleAwaySec),
+        breakDurationFormatted: formatDuration(recordedBreakSec),
         totalDurationFormatted: formatDuration(spanSeconds),
+        shiftSpanFormatted: formatDuration(spanSeconds),
         firstSeenFormatted: firstSeen ? new Date(firstSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--',
         lastSeenFormatted: lastSeen ? new Date(lastSeen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'
       });
@@ -893,7 +893,9 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
           daysActiveCount: 1,
           activeDurationFormatted: formatDuration(activeSeconds),
           idleDurationFormatted: '0m 00s',
+          breakDurationFormatted: '0m 00s',
           totalDurationFormatted: formatDuration(activeSeconds),
+          shiftSpanFormatted: formatDuration(activeSeconds),
           firstSeenFormatted: sess.created_at ? new Date(sess.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--',
           lastSeenFormatted: sess.last_active ? new Date(sess.last_active).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'
         });
