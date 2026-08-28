@@ -9,6 +9,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
+import { enqueueOfflineAction } from '@/utils/offlineSync';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -857,63 +858,93 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
       if (isEditMode && initialData) {
         // UPDATE MODE
-        const { error } = await supabase.from('leads').update(payload).eq('id', initialData.id);
-        if (error) throw error;
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
+          alert('⚡ Offline Mode: Client updates saved to device storage! They will sync to cloud when connected.');
+          if (onRegistrationSuccess) onRegistrationSuccess();
+          if (onClose) onClose();
+        } else {
+          try {
+            const { error } = await supabase.from('leads').update(payload).eq('id', initialData.id);
+            if (error) throw error;
 
-        const statusChanged = payload.status && payload.status !== initialData.status;
-        const cleanOldStatus = (!initialData.status || initialData.status === 'None' || initialData.status.toLowerCase() === 'new' || initialData.status.toLowerCase() === 'pending') 
-          ? '01 - New Stage' 
-          : initialData.status;
-        const noteText = statusChanged 
-          ? `Status changed from ${cleanOldStatus} to ${payload.status}`
-          : 'Client Profile was updated.';
+            const statusChanged = payload.status && payload.status !== initialData.status;
+            const cleanOldStatus = (!initialData.status || initialData.status === 'None' || initialData.status.toLowerCase() === 'new' || initialData.status.toLowerCase() === 'pending') 
+              ? '01 - New Stage' 
+              : initialData.status;
+            const noteText = statusChanged 
+              ? `Status changed from ${cleanOldStatus} to ${payload.status}`
+              : 'Client Profile was updated.';
 
-        await supabase.from('lead_notes').insert([{
-          lead_id: initialData.id,
-          note_text: noteText,
-          created_by: actor
-        }]);
-        
-        try {
-          await logAuditAction('Update Lead', `Updated Lead ID: ${initialData.id} (${payload.company || payload.name || 'Unknown'})`);
-        } catch(e) { console.error('Audit Log failed', e); }
-        
-        alert('Client Updated Successfully!');
-        if (onRegistrationSuccess) onRegistrationSuccess();
-        if (onClose) onClose();
+            await supabase.from('lead_notes').insert([{
+              lead_id: initialData.id,
+              note_text: noteText,
+              created_by: actor
+            }]);
+            
+            try {
+              await logAuditAction('Update Lead', `Updated Lead ID: ${initialData.id} (${payload.company || payload.name || 'Unknown'})`);
+            } catch(e) { console.error('Audit Log failed', e); }
+            
+            alert('Client Updated Successfully!');
+            if (onRegistrationSuccess) onRegistrationSuccess();
+            if (onClose) onClose();
+          } catch (netErr) {
+            console.warn('Network update failed, fallback to offline queue:', netErr);
+            await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
+            alert('⚡ Network issue: Client updates saved to device! They will sync to cloud automatically.');
+            if (onRegistrationSuccess) onRegistrationSuccess();
+            if (onClose) onClose();
+          }
+        }
       } else {
         // INSERT MODE
         payload.created_by = actor;
-        const { data, error } = await supabase.from('leads').insert([payload]).select();
-        
-        if (error) throw error;
-        
-        // Log initial history
-        if (data && data.length > 0) {
-          const newLead = data[0];
-          // Get the total count of leads to calculate the stable 15-digit Lead ID
-          const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
-          const d = new Date(newLead.created_at || new Date());
-          const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-          const seq = String(count).padStart(7, '0');
-          const newFormattedId = dateStr + seq;
-          
-          // Save the persistent ID back to the database
-          await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', newLead.id);
-          
-          await supabase.from('lead_notes').insert([{
-            lead_id: newLead.id,
-            note_text: 'Client Registration Form Submitted',
-            created_by: actor
-          }]);
-          
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          // Device is offline - queue directly to IndexedDB
+          await enqueueOfflineAction('create', 'lead', payload);
+          alert('⚡ Offline Mode: Client saved safely to device disk! It will automatically sync to cloud once internet is connected.');
+          if (onRegistrationSuccess) onRegistrationSuccess();
+        } else {
           try {
-            await logAuditAction('Create Lead', `Created New Lead: ${payload.company || payload.name || 'Unknown'}`);
-          } catch(e) { console.error('Audit Log failed', e); }
+            const { data, error } = await supabase.from('leads').insert([payload]).select();
+            
+            if (error) throw error;
+            
+            // Log initial history
+            if (data && data.length > 0) {
+              const newLead = data[0];
+              // Get the total count of leads to calculate the stable 15-digit Lead ID
+              const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+              const d = new Date(newLead.created_at || new Date());
+              const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+              const seq = String(count).padStart(7, '0');
+              const newFormattedId = dateStr + seq;
+              
+              // Save the persistent ID back to the database
+              await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', newLead.id);
+              
+              await supabase.from('lead_notes').insert([{
+                lead_id: newLead.id,
+                note_text: 'Client Registration Form Submitted',
+                created_by: actor
+              }]);
+              
+              try {
+                await logAuditAction('Create Lead', `Created New Lead: ${payload.company || payload.name || 'Unknown'}`);
+              } catch(e) { console.error('Audit Log failed', e); }
+            }
+            
+            alert('Client Registered Successfully!');
+            if (onRegistrationSuccess) onRegistrationSuccess();
+          } catch (netErr) {
+            console.warn('Network insert failed, fallback to offline queue:', netErr);
+            await enqueueOfflineAction('create', 'lead', payload);
+            alert('⚡ Network issue detected: Client saved safely to device storage! It will sync to cloud automatically.');
+            if (onRegistrationSuccess) onRegistrationSuccess();
+          }
         }
-        
-        alert('Client Registered Successfully!');
-        if (onRegistrationSuccess) onRegistrationSuccess();
         
         // Reset form (keeping defaults)
         setFormData(prev => ({

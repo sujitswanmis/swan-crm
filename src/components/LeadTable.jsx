@@ -1784,6 +1784,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
 
                     {/* Meta Row: ID -> Date -> Business Type -> Priority */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem' }}>
+                      {lead.is_offline_pending && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Saved on device, waiting for internet to sync">
+                          ⏳ Pending Sync
+                        </span>
+                      )}
                       {lead.lead_ref_id && (
                         <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
                           ID: {lead.lead_ref_id}

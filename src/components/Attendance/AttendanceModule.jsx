@@ -5,7 +5,7 @@ import {
   Clock, Calendar, CheckCircle2, XCircle, AlertCircle, RefreshCw, Send,
   UserCheck, ShieldCheck, FileSpreadsheet, Filter, Search, ChevronLeft,
   ChevronRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
-  Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles
+  Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen
 } from 'lucide-react';
 import DateRangePicker from '@/components/common/DateRangePicker';
 import {
@@ -31,6 +31,8 @@ import {
   calculateMonthlyShortLeaveUsage,
   SHIFT_RULES
 } from '@/utils/attendanceUtils';
+import { getCurrentGPSLocation } from '@/utils/geoAttendance';
+import { enqueueOfflineAction } from '@/utils/offlineSync';
 
 const REASON_CATEGORIES = [
   'Forgot to Punch In / Out',
@@ -561,12 +563,20 @@ export default function AttendanceModule({
 
     // 2. Parallel Background Database Persistence
     try {
+      let punchLocation = 'Office Web Terminal';
+      try {
+        const gps = await getCurrentGPSLocation();
+        if (gps.success) {
+          punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+        }
+      } catch (e) {}
+
       const res = await punchIn({
         email: userEmail,
         userId,
         empName: userName,
-        location: 'Office Web Terminal',
-        method: 'WEB_PUNCH'
+        location: punchLocation,
+        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH'
       });
       if (res.success) {
         setPunchMessage(res.message);
@@ -583,8 +593,19 @@ export default function AttendanceModule({
         }
       }
     } catch (err) {
-      setPunchError(err.message);
-      fetchTodayAttendance();
+      console.warn('Network punch-in failed, queueing offline:', err);
+      await enqueueOfflineAction('create', 'attendance', {
+        email: userEmail,
+        userId,
+        empName: userName,
+        attendance_date: getTodayDateString(),
+        in_time: inDate.toISOString(),
+        in_location: punchLocation,
+        in_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        status: evaluation.status,
+        remarks: evaluation.remarks
+      });
+      setPunchMessage('⚡ Offline Punch Saved to Device! Will sync to server when online.');
     } finally {
       setPunchingIn(false);
     }
@@ -619,14 +640,22 @@ export default function AttendanceModule({
     setPunchMessage(null);
     setPunchingOut(true);
 
+    let punchLocation = 'Office Web Terminal';
+    try {
+      const gps = await getCurrentGPSLocation();
+      if (gps.success) {
+        punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+      }
+    } catch (e) {}
+
     // 2. Parallel Background Database Persistence
     try {
       const res = await punchOut({
         email: userEmail,
         userId,
         empName: userName,
-        location: 'Office Web Terminal',
-        method: 'WEB_PUNCH'
+        location: punchLocation,
+        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH'
       });
       if (res.success) {
         setPunchMessage(res.message);
@@ -643,8 +672,20 @@ export default function AttendanceModule({
         }
       }
     } catch (err) {
-      setPunchError(err.message);
-      fetchTodayAttendance();
+      console.warn('Network punch-out failed, queueing offline:', err);
+      await enqueueOfflineAction('create', 'attendance', {
+        email: userEmail,
+        userId,
+        empName: userName,
+        attendance_date: getTodayDateString(),
+        out_time: outDate.toISOString(),
+        out_location: punchLocation,
+        out_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        total_working_minutes: evaluation.total_working_minutes,
+        status: evaluation.status,
+        remarks: evaluation.remarks
+      });
+      setPunchMessage('⚡ Offline Punch-Out Saved to Device! Will sync to server when online.');
     } finally {
       setPunchingOut(false);
     }
@@ -1460,6 +1501,28 @@ export default function AttendanceModule({
               <Users size={15} /> Team Attendance Report
             </button>
           )}
+
+          {/* Tab 6: Shift Rules & Attendance Policy */}
+          <button
+            type="button"
+            onClick={() => handleTabSelect('shift_rules')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.84rem',
+              fontWeight: activeTab === 'shift_rules' ? 600 : 500,
+              backgroundColor: activeTab === 'shift_rules' ? 'var(--accent-color)' : 'transparent',
+              color: activeTab === 'shift_rules' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <BookOpen size={15} /> Shift Rules & Policy
+          </button>
         </div>
       </div>
 
@@ -3227,6 +3290,213 @@ export default function AttendanceModule({
               </div>
             </>
           )}
+
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* TAB 6: SHIFT RULES & ATTENDANCE POLICY */}
+      {/* ========================================================================================= */}
+      {activeTab === 'shift_rules' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Header Banner */}
+          <div className="card" style={{
+            padding: '1.5rem',
+            background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(37, 99, 235, 0.08) 100%)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: 'var(--accent-color)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+              }}>
+                <BookOpen size={26} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Official Shift Policy & Attendance Rules
+                </h2>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                  SuPuja Creations Enterprise Attendance Guidelines, Grace Periods, Short Leave Quotas & Penalties
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem', borderRadius: '20px', background: 'rgba(22, 163, 74, 0.15)', color: '#16a34a', fontWeight: 700, border: '1px solid rgba(22, 163, 74, 0.3)' }}>
+                ✅ Active Policy v2.4
+              </span>
+            </div>
+          </div>
+
+          {/* Grid Layout: Shift Timings & Grace Period */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+            
+            {/* Card 1: Shift Hours */}
+            <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                <Clock style={{ color: 'var(--accent-color)' }} size={20} />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Regular Shift Timings</h3>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Shift Start Time</span>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#16a34a' }}>09:00 AM</div>
+                  </div>
+                  <ArrowRight size={18} style={{ color: 'var(--text-secondary)' }} />
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Shift End Time</span>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#2563eb' }}>06:30 PM</div>
+                  </div>
+                </div>
+
+                <div style={{ padding: '0.75rem 1rem', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', border: '1px solid rgba(22, 163, 74, 0.25)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#16a34a', fontWeight: 700, fontSize: '0.85rem' }}>
+                    <Sparkles size={15} /> 5-Minute Morning Grace Period
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
+                    Punching in between <strong>09:00:00 AM and 09:05:59 AM</strong> is marked as <strong>Present (0 deduction)</strong>. No short leave is consumed.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Monthly Short Leave Quota */}
+            <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <Calendar style={{ color: '#d97706' }} size={20} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Monthly Short Leaves</h3>
+                </div>
+                <span style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>
+                  Total: 4 / Month
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* 20-Min Short Leave */}
+                <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      20-Minute Short Leave
+                    </span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', background: 'rgba(37,99,235,0.1)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                      Quota: 2 Allowed
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                    • Morning Window: <strong>09:06 AM – 09:20 AM</strong><br />
+                    • Evening Window: <strong>06:10 PM – 06:30 PM</strong>
+                  </div>
+                </div>
+
+                {/* 2-Hour Short Leave */}
+                <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      2-Hour Short Leave
+                    </span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7e22ce', background: 'rgba(126,34,206,0.1)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                      Quota: 2 Allowed
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                    • Morning Window: <strong>09:21 AM – 11:00 AM</strong><br />
+                    • Evening Window: <strong>04:30 PM – 06:30 PM</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Rules Matrix & Penalties Table */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+              <AlertTriangle style={{ color: '#ea580c' }} size={20} />
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Attendance Status & Penalty Evaluation Matrix</h3>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Condition / Scenario</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Time Window</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Resulting Status</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Payable Credit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>On-Time Arrival / Grace Period</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:00:00 – 09:05:59 AM</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#16a34a', fontWeight: 700 }}>✅ Present</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>20-Min Short Leave Morning</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:06:00 – 09:20:00 AM</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#2563eb', fontWeight: 700 }}>🔵 Short Leave (20M)</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>2-Hour Short Leave Morning</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:20:01 – 11:00:00 AM</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#7e22ce', fontWeight: 700 }}>🟣 Short Leave (2H)</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(234, 88, 12, 0.04)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Late Arrival after 11:00 AM</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>After 11:00:00 AM</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#ea580c', fontWeight: 700 }}>⚠️ Half Day</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#ea580c' }}>0.5 Day</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(234, 88, 12, 0.04)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Early Departure before 04:30 PM</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Before 04:30:00 PM</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#ea580c', fontWeight: 700 }}>⚠️ Half Day</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#ea580c' }}>0.5 Day</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(239, 68, 68, 0.04)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Total Working Hours &lt; 4h 30m</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Under 270 Total Minutes</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#dc2626', fontWeight: 700 }}>❌ Absent</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#dc2626' }}>0.0 Day</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Policy Notes / Guidelines */}
+          <div className="card" style={{ padding: '1.25rem 1.5rem', background: 'rgba(37, 99, 235, 0.05)', border: '1px solid rgba(37, 99, 235, 0.2)', borderRadius: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--accent-color)', fontWeight: 700, fontSize: '0.92rem' }}>
+              <Info size={18} /> Important Policy Notes
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <li><strong>Max 1 Short Leave Per Day</strong>: An employee can avail only 1 short leave per calendar day (either morning arrival or evening early departure).</li>
+              <li><strong>Quota Exhaustion</strong>: Once all 4 monthly short leaves are consumed, any arrival after 09:05:59 AM will automatically trigger a <strong>Half Day</strong> deduction.</li>
+              <li><strong>Missing Punch Regularization</strong>: If you forgot to punch in/out due to official client visit or technical glitch, submit a regularization request under the <strong>Missing Punch / Regularize</strong> tab for HOD approval.</li>
+              <li><strong>Offline Punching</strong>: In case of no internet, punch your attendance as usual. Your GPS pin and timestamp will be saved locally and auto-synced to cloud.</li>
+            </ul>
+          </div>
 
         </div>
       )}

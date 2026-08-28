@@ -37,6 +37,8 @@ import EmailConfigModule from './EmailConfig/EmailConfigModule';
 import AttendanceModule from './Attendance/AttendanceModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
+import OfflineSyncCenter from './OfflineSyncCenter';
+import { saveLeadsLocally, getLocalLeads } from '@/utils/offlineSync';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -914,7 +916,9 @@ export default function CRMContainer({
               unique.push({ ...lead, lead_notes: [] });
             }
           }
-          setRawLeads(unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+          const finalLeads = unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          setRawLeads(finalLeads);
+          saveLeadsLocally(finalLeads);
         }
 
         // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
@@ -951,10 +955,12 @@ export default function CRMContainer({
             }
 
             setRawLeads(prev => {
-              return prev.map(lead => ({
+              const withNotes = prev.map(lead => ({
                 ...lead,
                 lead_notes: notesMap[lead.id] || lead.lead_notes || []
               })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              saveLeadsLocally(withNotes);
+              return withNotes;
             });
           }
         } catch (notesErr) {
@@ -962,7 +968,13 @@ export default function CRMContainer({
         }
 
       } catch (err) {
-        console.error("Lead sync failed:", err);
+        console.error("Lead sync failed, falling back to local IndexedDB storage:", err);
+        try {
+          const localCache = await getLocalLeads();
+          if (localCache && localCache.length > 0) {
+            setRawLeads(localCache);
+          }
+        } catch (e) {}
       } finally {
         setLoadingLeads(false);
         setIsSyncing(false);
@@ -1004,8 +1016,18 @@ export default function CRMContainer({
       })
       .subscribe();
 
+    // Reactive listener for local offline actions (instant 0ms front-end table update)
+    const handleOfflineQueueChanged = async () => {
+      const cached = await getLocalLeads();
+      if (cached && cached.length > 0) {
+        setRawLeads(cached.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      }
+    };
+    window.addEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
     };
   }, [hasLeadsAccess]);
 
@@ -3063,6 +3085,9 @@ export default function CRMContainer({
                 </div>
               )}
             </div>
+
+            {/* Global Offline Mode Status & Sync Center Pill */}
+            <OfflineSyncCenter onSyncComplete={() => fetchLeads()} />
 
             {/* Live Session Inactivity Expiry Countdown & Mouse Tracker (Desktop) */}
             <div className="desktop-only">
