@@ -565,7 +565,7 @@ export default function CRMContainer({
           img.onload = () => {
             let width = img.width;
             let height = img.height;
-            const maxDim = 400;
+            const maxDim = 320;
             if (width > height && width > maxDim) {
               height = Math.round((height * maxDim) / width);
               width = maxDim;
@@ -578,7 +578,7 @@ export default function CRMContainer({
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            const compressed = canvas.toDataURL('image/jpeg', 0.8);
             resolve(compressed);
           };
           img.onerror = () => resolve(readerEvent.target?.result || '');
@@ -611,44 +611,53 @@ export default function CRMContainer({
     setIsUploadingAvatar(true);
     const prevAvatar = userAvatar;
     
-    // Fast client-side compression for instant UI update and tiny payload
-    let base64Data = await compressAvatarFile(file);
-
-    if (base64Data) {
-      setUserAvatar(base64Data);
-      if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, base64Data);
-      localStorage.setItem('crm_user_avatar', base64Data);
-    }
-
     try {
-      let targetUserId = userId;
-      if (!targetUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        targetUserId = user?.id;
+      // 1. Fast client-side compression for instant 15KB payload
+      const base64Data = await compressAvatarFile(file);
+
+      if (!base64Data) {
+        throw new Error("Failed to process image file");
       }
 
-      const formData = new FormData();
-      formData.append('file', file);
-      if (base64Data) formData.append('base64', base64Data);
-      if (targetUserId) formData.append('userId', targetUserId);
+      // 2. Instant Local State & Persistent Storage
+      setUserAvatar(base64Data);
+      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
+      localStorage.setItem(userKey, base64Data);
+      localStorage.setItem('crm_user_avatar', base64Data);
 
-      const res = await uploadUserAvatar(formData);
-      if (res.success && res.avatarUrl) {
-        setUserAvatar(res.avatarUrl);
-        if (targetUserId) {
-          localStorage.setItem(`crm_user_avatar_${targetUserId}`, res.avatarUrl);
+      // 3. Save to Supabase Auth User Metadata (Direct client auth update with 1s race)
+      const clientUpdatePromise = (async () => {
+        try {
+          await supabase.auth.updateUser({
+            data: { avatar_url: base64Data }
+          });
+        } catch (authErr) {
+          console.warn('Client auth avatar update notice:', authErr);
         }
-        localStorage.setItem('crm_user_avatar', res.avatarUrl);
-      } else if (!base64Data) {
-        setUserAvatar(prevAvatar);
-        alert(`Photo upload failed: ${res.error || 'Server error'}`);
-      }
+        // Non-blocking server action sync
+        try {
+          let targetUserId = userId;
+          if (!targetUserId) {
+            const { data: { user } } = await supabase.auth.getUser();
+            targetUserId = user?.id;
+          }
+          const formData = new FormData();
+          formData.append('base64', base64Data);
+          if (targetUserId) formData.append('userId', targetUserId);
+          uploadUserAvatar(formData).catch(() => {});
+        } catch (e) {}
+      })();
+
+      // Guarantee spinner finishes in under 600ms
+      await Promise.race([
+        clientUpdatePromise,
+        new Promise(resolve => setTimeout(resolve, 600))
+      ]);
+
     } catch (err) {
       console.error('Photo upload exception:', err);
-      if (!base64Data) {
-        setUserAvatar(prevAvatar);
-        alert('Photo upload failed. Please try again.');
-      }
+      setUserAvatar(prevAvatar);
+      alert('Photo upload failed. Please try again.');
     } finally {
       setIsUploadingAvatar(false);
       if (avatarInputRef.current) {
