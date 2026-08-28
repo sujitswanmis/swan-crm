@@ -35,7 +35,17 @@ export async function updateSession(request) {
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/auth');
   const isApiRoute = pathname.startsWith('/api');
 
-  const isPublicPage = pathname === '/chat' || pathname === '/';
+  const isPublicPage = 
+    pathname === '/chat' || 
+    pathname === '/' || 
+    pathname === '/manifest.json' || 
+    pathname === '/sw.js' || 
+    pathname.startsWith('/icon') ||
+    pathname.startsWith('/apple-icon') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.ico') ||
+    pathname.endsWith('.json') ||
+    pathname.endsWith('.webmanifest');
 
   // Protect all web routes (except auth pages, public pages and api endpoints)
   if (!user && !isAuthPage && !isApiRoute && !isPublicPage) {
