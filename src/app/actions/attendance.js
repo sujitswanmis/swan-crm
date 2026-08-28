@@ -13,6 +13,74 @@ import {
 } from '@/utils/attendanceUtils';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(id) {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+}
+
+function ensureUuid(id) {
+  if (isValidUuid(id)) return id;
+  return crypto.randomUUID();
+}
+
+function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
+  return {
+    id: ensureUuid(rec.id),
+    tenant_id: rec.tenant_id || tenantId,
+    user_id: rec.user_id && isValidUuid(rec.user_id) ? rec.user_id : null,
+    emp_code: rec.emp_code || '',
+    emp_name: rec.emp_name || '',
+    email: (rec.email || '').trim().toLowerCase(),
+    department: rec.department || '',
+    attendance_date: rec.attendance_date,
+    in_time: rec.in_time || null,
+    out_time: rec.out_time || null,
+    in_location: rec.in_location || 'Office Web Terminal',
+    out_location: rec.out_location || null,
+    in_method: rec.in_method || 'WEB_PUNCH',
+    out_method: rec.out_method || null,
+    total_working_minutes: rec.total_working_minutes || 0,
+    status: rec.status || 'PRESENT',
+    is_regularized: !!rec.is_regularized,
+    regularization_id: rec.regularization_id && isValidUuid(rec.regularization_id) ? rec.regularization_id : null,
+    remarks: rec.remarks || null,
+    created_at: rec.created_at || new Date().toISOString(),
+    updated_at: rec.updated_at || new Date().toISOString()
+  };
+}
+
+function cleanRequestForDb(req, tenantId = DEFAULT_TENANT_ID) {
+  return {
+    id: ensureUuid(req.id),
+    tenant_id: req.tenant_id || tenantId,
+    user_id: req.user_id && isValidUuid(req.user_id) ? req.user_id : null,
+    emp_code: req.emp_code || '',
+    emp_name: req.emp_name || '',
+    email: (req.email || '').trim().toLowerCase(),
+    department: req.department || '',
+    attendance_date: req.attendance_date,
+    request_type: req.request_type,
+    current_in_time: req.current_in_time || null,
+    current_out_time: req.current_out_time || null,
+    requested_in_time: req.requested_in_time || null,
+    requested_out_time: req.requested_out_time || null,
+    reason_type: req.reason_type,
+    reason_details: req.reason_details,
+    assigned_hod_email: req.assigned_hod_email || null,
+    assigned_hod_name: req.assigned_hod_name || 'HOD / Manager',
+    status: req.status || 'PENDING',
+    action_by_user_id: req.action_by_user_id && isValidUuid(req.action_by_user_id) ? req.action_by_user_id : null,
+    action_by_name: req.action_by_name || null,
+    action_by_email: req.action_by_email || null,
+    action_at: req.action_at || null,
+    action_remarks: req.action_remarks || null,
+    created_at: req.created_at || new Date().toISOString(),
+    updated_at: req.updated_at || new Date().toISOString()
+  };
+}
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -199,9 +267,9 @@ export async function punchIn({
   const evaluation = evaluateMorningInPunch(now, monthlyUsage, empName || email.split('@')[0]);
 
   let resultRecord = {
-    id: existingLocal?.id || `att-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    id: ensureUuid(existingLocal?.id),
     tenant_id: tenantId,
-    user_id: userId || null,
+    user_id: userId && isValidUuid(userId) ? userId : null,
     emp_code: empCode || '',
     emp_name: empName || email.split('@')[0],
     email: normalizedEmail,
@@ -224,35 +292,20 @@ export async function punchIn({
     updated_at: nowIso
   };
 
-  // Try inserting/saving to Supabase via upsert
+  // Try inserting/saving to Supabase via upsert with clean DB schema
   try {
-    const { data: upsertedDb } = await adminClient
+    const dbPayload = cleanAttendanceRecordForDb(resultRecord, tenantId);
+    const { data: upsertedDb, error: dbErr } = await adminClient
       .from('attendance_records')
-      .upsert({
-        ...resultRecord,
-        tenant_id: tenantId,
-        user_id: userId || null,
-        emp_code: empCode || '',
-        emp_name: empName || email.split('@')[0],
-        email: normalizedEmail,
-        department: department || '',
-        attendance_date: today,
-        in_time: nowIso,
-        in_location: location,
-        in_method: method,
-        status: evaluation.status,
-        short_leave_type: evaluation.short_leave_type,
-        is_grace_applied: evaluation.is_grace_applied,
-        shift_name: 'Regular Shift',
-        remarks: evaluation.remarks,
-        is_regularized: false,
-        updated_at: nowIso
-      }, { onConflict: 'email,attendance_date' })
+      .upsert(dbPayload, { onConflict: 'email,attendance_date' })
       .select()
       .maybeSingle();
-    if (upsertedDb) resultRecord = upsertedDb;
+    if (upsertedDb) {
+      resultRecord = { ...resultRecord, ...upsertedDb };
+    }
+    if (dbErr) console.error('Supabase punchIn upsert error:', dbErr);
   } catch (dbErr) {
-    // If Supabase table is not yet migrated, we continue with local JSON persistence
+    console.error('Supabase punchIn exception:', dbErr);
   }
 
   // Update local fallback storage
@@ -378,34 +431,39 @@ export async function punchOut({
 
   // Try updating/upserting in Supabase
   try {
-    const { data: updatedDb } = await adminClient
+    const dbPayload = cleanAttendanceRecordForDb({
+      ...updatedRecord,
+      id: ensureUuid(existing.id),
+      tenant_id: existing.tenant_id || tenantId,
+      user_id: existing.user_id || userId || null,
+      emp_code: existing.emp_code || '',
+      emp_name: existing.emp_name || empName || '',
+      email: normalizedEmail,
+      department: existing.department || '',
+      attendance_date: today,
+      in_time: existing.in_time,
+      out_time: nowIso,
+      in_location: existing.in_location || location,
+      out_location: location,
+      in_method: existing.in_method || method,
+      out_method: method,
+      total_working_minutes: evaluation.total_working_minutes,
+      status: evaluation.status,
+      remarks: evaluation.remarks,
+      updated_at: nowIso
+    }, tenantId);
+
+    const { data: updatedDb, error: dbErr } = await adminClient
       .from('attendance_records')
-      .upsert({
-        ...updatedRecord,
-        tenant_id: existing.tenant_id || tenantId,
-        user_id: existing.user_id || userId || null,
-        emp_code: existing.emp_code || '',
-        emp_name: existing.emp_name || empName || '',
-        email: normalizedEmail,
-        department: existing.department || '',
-        attendance_date: today,
-        in_time: existing.in_time,
-        out_time: nowIso,
-        in_location: existing.in_location || location,
-        out_location: location,
-        in_method: existing.in_method || method,
-        out_method: method,
-        total_working_minutes: evaluation.total_working_minutes,
-        status: evaluation.status,
-        short_leave_type: evaluation.short_leave_type,
-        remarks: evaluation.remarks,
-        updated_at: nowIso
-      }, { onConflict: 'email,attendance_date' })
+      .upsert(dbPayload, { onConflict: 'email,attendance_date' })
       .select()
       .maybeSingle();
 
-    if (updatedDb) updatedRecord = updatedDb;
-  } catch {}
+    if (updatedDb) updatedRecord = { ...updatedRecord, ...updatedDb };
+    if (dbErr) console.error('Supabase punchOut upsert error:', dbErr);
+  } catch (dbErr) {
+    console.error('Supabase punchOut exception:', dbErr);
+  }
 
   // Update local storage
   const existingIdx = local.records.findIndex(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
@@ -490,7 +548,8 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
       if (lr.out_time && !existing.out_time) {
         recordsMap.set(lr.attendance_date, lr);
         // Sync to Supabase
-        adminClient.from('attendance_records').upsert(lr, { onConflict: 'email,attendance_date' }).then(()=>{}).catch(()=>{});
+        const cleanPayload = cleanAttendanceRecordForDb(lr, tenantId);
+        adminClient.from('attendance_records').upsert(cleanPayload, { onConflict: 'email,attendance_date' }).then(()=>{}).catch(()=>{});
       }
     }
   });
@@ -588,12 +647,12 @@ export async function applyMissingAttendance({
   }
 
   const newRequest = {
-    id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    id: ensureUuid(),
     tenant_id: tenantId,
-    user_id: userId || null,
+    user_id: userId && isValidUuid(userId) ? userId : null,
     emp_code: empCode || '',
     emp_name: empName || email.split('@')[0],
-    email: email,
+    email: email.trim().toLowerCase(),
     department: department || '',
     attendance_date: attendanceDate,
     request_type: requestType,
@@ -616,13 +675,17 @@ export async function applyMissingAttendance({
   };
 
   try {
-    const { data: dbReq } = await adminClient
+    const dbPayload = cleanRequestForDb(newRequest, tenantId);
+    const { data: dbReq, error: dbErr } = await adminClient
       .from('attendance_regularization_requests')
-      .insert([newRequest])
+      .insert([dbPayload])
       .select()
       .single();
     if (dbReq) newRequest.id = dbReq.id;
-  } catch {}
+    if (dbErr) console.error('Supabase applyMissingAttendance insert error:', dbErr);
+  } catch (err) {
+    console.error('Supabase applyMissingAttendance insert exception:', err);
+  }
 
   local.requests.unshift(newRequest);
   await saveFallbackData(local);
@@ -765,12 +828,25 @@ export async function approveRegularizationRequest({
   const nowIso = new Date().toISOString();
 
   const local = await getFallbackData();
-  const reqIdx = local.requests.findIndex(r => r.id === requestId);
-  if (reqIdx < 0) {
+  let reqIdx = local.requests.findIndex(r => r.id === requestId);
+  let request = reqIdx >= 0 ? local.requests[reqIdx] : null;
+
+  // If not found in local, fetch from DB
+  if (!request) {
+    try {
+      const { data: dbReq } = await adminClient
+        .from('attendance_regularization_requests')
+        .select('*')
+        .eq('id', requestId)
+        .maybeSingle();
+      if (dbReq) request = dbReq;
+    } catch {}
+  }
+
+  if (!request) {
     return { success: false, error: 'Regularization request not found.' };
   }
 
-  const request = local.requests[reqIdx];
   if (request.status !== 'PENDING') {
     return {
       success: false,
@@ -785,10 +861,15 @@ export async function approveRegularizationRequest({
   request.action_at = nowIso;
   request.action_remarks = actionRemarks || 'Approved by HOD';
   request.updated_at = nowIso;
-  local.requests[reqIdx] = request;
+  
+  if (reqIdx >= 0) {
+    local.requests[reqIdx] = request;
+  } else {
+    local.requests.unshift(request);
+  }
 
   // CRITICAL: Update attendance record for that date in local + Supabase
-  let attIdx = local.records.findIndex(r => r.email === request.email && r.attendance_date === request.attendance_date);
+  let attIdx = local.records.findIndex(r => (r.email || '').toLowerCase() === (request.email || '').toLowerCase() && r.attendance_date === request.attendance_date);
   const finalInTime = request.requested_in_time || (attIdx >= 0 ? local.records[attIdx].in_time : null);
   const finalOutTime = request.requested_out_time || (attIdx >= 0 ? local.records[attIdx].out_time : null);
   const totalMinutes = calculateMinutesBetween(finalInTime, finalOutTime);
@@ -808,16 +889,60 @@ export async function approveRegularizationRequest({
       total_working_minutes: totalMinutes,
       status: finalStatus,
       is_regularized: true,
-      regularization_id: requestId,
+      regularization_id: isValidUuid(requestId) ? requestId : null,
       remarks: `Regularized & Approved by HOD: ${request.reason_details}`,
       updated_at: nowIso
     };
     updatedAtt = local.records[attIdx];
   } else {
     updatedAtt = {
-      id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      id: ensureUuid(),
       tenant_id: tenantId,
-      user_id: request.user_id || null,
+      user_id: request.user_id && isValidUuid(request.user_id) ? request.user_id : null,
+      emp_code: request.emp_code || '',
+      emp_name: request.emp_name,
+      email: (request.email || '').trim().toLowerCase(),
+      department: request.department || '',
+      attendance_date: request.attendance_date,
+      in_time: finalInTime,
+      out_time: finalOutTime,
+      in_location: 'Regularized',
+      out_location: 'Regularized',
+      in_method: 'REGULARIZED',
+      out_method: 'REGULARIZED',
+      total_working_minutes: totalMinutes,
+      status: finalStatus,
+      is_regularized: true,
+      regularization_id: isValidUuid(requestId) ? requestId : null,
+      remarks: `Regularized by HOD: ${request.reason_details}`,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    local.records.unshift(updatedAtt);
+  }
+
+  await saveFallbackData(local);
+
+  // Update Supabase database
+  try {
+    const { error: reqErr } = await adminClient
+      .from('attendance_regularization_requests')
+      .update({
+        status: 'APPROVED',
+        action_by_name: actionByName || 'HOD Approver',
+        action_by_email: actionByEmail || '',
+        action_at: nowIso,
+        action_remarks: actionRemarks || 'Approved by HOD',
+        updated_at: nowIso
+      })
+      .eq('id', ensureUuid(requestId));
+
+    if (reqErr) console.error('Supabase approve request error:', reqErr);
+
+    const dbAttPayload = cleanAttendanceRecordForDb({
+      id: updatedAtt?.id,
+      tenant_id: tenantId,
+      user_id: request.user_id,
       emp_code: request.emp_code || '',
       emp_name: request.emp_name,
       email: request.email,
@@ -832,50 +957,19 @@ export async function approveRegularizationRequest({
       total_working_minutes: totalMinutes,
       status: finalStatus,
       is_regularized: true,
-      regularization_id: requestId,
+      regularization_id: isValidUuid(requestId) ? requestId : null,
       remarks: `Regularized by HOD: ${request.reason_details}`,
-      created_at: nowIso,
       updated_at: nowIso
-    };
-    local.records.unshift(updatedAtt);
-  }
+    }, tenantId);
 
-  await saveFallbackData(local);
-
-  // Try updating Supabase database if tables exist
-  try {
-    await adminClient
-      .from('attendance_regularization_requests')
-      .update({
-        status: 'APPROVED',
-        action_by_name: actionByName || 'HOD Approver',
-        action_by_email: actionByEmail || '',
-        action_at: nowIso,
-        action_remarks: actionRemarks || 'Approved by HOD',
-        updated_at: nowIso
-      })
-      .eq('id', requestId);
-
-    await adminClient
+    const { error: attErr } = await adminClient
       .from('attendance_records')
-      .upsert({
-        tenant_id: tenantId,
-        user_id: request.user_id || null,
-        emp_code: request.emp_code || '',
-        emp_name: request.emp_name,
-        email: request.email,
-        department: request.department || '',
-        attendance_date: request.attendance_date,
-        in_time: finalInTime,
-        out_time: finalOutTime,
-        total_working_minutes: totalMinutes,
-        status: finalStatus,
-        is_regularized: true,
-        regularization_id: requestId,
-        remarks: `Regularized by HOD: ${request.reason_details}`,
-        updated_at: nowIso
-      }, { onConflict: 'email,attendance_date' });
-  } catch {}
+      .upsert(dbAttPayload, { onConflict: 'email,attendance_date' });
+
+    if (attErr) console.error('Supabase approve attendance upsert error:', attErr);
+  } catch (dbErr) {
+    console.error('Supabase approve exception:', dbErr);
+  }
 
   try {
     await logAuditAction({
@@ -909,10 +1003,22 @@ export async function rejectRegularizationRequest({
   const nowIso = new Date().toISOString();
 
   const local = await getFallbackData();
-  const reqIdx = local.requests.findIndex(r => r.id === requestId);
-  if (reqIdx < 0) return { success: false, error: 'Request not found.' };
+  let reqIdx = local.requests.findIndex(r => r.id === requestId);
+  let request = reqIdx >= 0 ? local.requests[reqIdx] : null;
 
-  const request = local.requests[reqIdx];
+  if (!request) {
+    try {
+      const { data: dbReq } = await adminClient
+        .from('attendance_regularization_requests')
+        .select('*')
+        .eq('id', requestId)
+        .maybeSingle();
+      if (dbReq) request = dbReq;
+    } catch {}
+  }
+
+  if (!request) return { success: false, error: 'Request not found.' };
+
   if (request.status !== 'PENDING') {
     return {
       success: false,
@@ -926,7 +1032,12 @@ export async function rejectRegularizationRequest({
   request.action_at = nowIso;
   request.action_remarks = actionRemarks;
   request.updated_at = nowIso;
-  local.requests[reqIdx] = request;
+
+  if (reqIdx >= 0) {
+    local.requests[reqIdx] = request;
+  } else {
+    local.requests.unshift(request);
+  }
 
   await saveFallbackData(local);
 
@@ -941,8 +1052,10 @@ export async function rejectRegularizationRequest({
         action_remarks: actionRemarks,
         updated_at: nowIso
       })
-      .eq('id', requestId);
-  } catch {}
+      .eq('id', ensureUuid(requestId));
+  } catch (err) {
+    console.error('Supabase reject request error:', err);
+  }
 
   try {
     await logAuditAction({
