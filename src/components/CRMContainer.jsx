@@ -2449,8 +2449,8 @@ export default function CRMContainer({
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}>
-                <h1 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.25rem', minWidth: 0 }}>
+                <h1 style={{ fontSize: '1.02rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px', margin: 0 }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
@@ -2499,7 +2499,8 @@ export default function CRMContainer({
                   color: (userRole === 'admin' || userRole === 'Admin') ? '#854d0e' : '#0369a1', 
                   textTransform: 'uppercase', 
                   fontWeight: 'bold',
-                  letterSpacing: '0.02em'
+                  letterSpacing: '0.02em',
+                  flexShrink: 0
                 }}>
                   {userRole}
                 </span>
@@ -2507,7 +2508,7 @@ export default function CRMContainer({
             )}
 
             {activeTab !== 'ai' && (
-              <div style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
+              <div className="desktop-only" style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
             )}
 
             {/* Intelligent Global Spotlight Search Trigger */}
@@ -2522,11 +2523,12 @@ export default function CRMContainer({
                 backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-light)',
                 borderRadius: '8px',
-                padding: '0.35rem 0.75rem',
+                padding: '0.35rem 0.6rem',
                 cursor: 'pointer',
                 color: 'var(--text-secondary)',
                 transition: 'all 0.15s',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                flexShrink: 0
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.borderColor = 'var(--accent-color)';
@@ -2542,7 +2544,7 @@ export default function CRMContainer({
               <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
                 Search CRM...
               </span>
-              <kbd style={{
+              <kbd className="desktop-only" style={{
                 fontSize: '0.68rem',
                 padding: '0.1rem 0.35rem',
                 borderRadius: '4px',
@@ -2556,7 +2558,7 @@ export default function CRMContainer({
               </kbd>
             </button>
             {isSyncing && (
-              <span style={{ 
+              <span className="desktop-only skeleton-glow" style={{ 
                 fontSize: '0.75rem', 
                 color: 'var(--accent-color)', 
                 display: 'flex', 
@@ -2566,7 +2568,7 @@ export default function CRMContainer({
                 padding: '0.2rem 0.6rem',
                 borderRadius: '20px',
                 fontWeight: '500'
-              }} className="skeleton-glow">
+              }}>
                 <svg className="animate-spin" style={{ width: '12px', height: '12px' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}></circle>
                   <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style={{ opacity: 0.75 }}></path>
@@ -2575,7 +2577,7 @@ export default function CRMContainer({
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative', flexShrink: 0 }}>
             {/* Admin Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin') && (
               <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.25rem' }}>
@@ -2598,7 +2600,7 @@ export default function CRMContainer({
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('toggle-softphone'));
               }}
-              className="header-icon-btn"
+              className="header-icon-btn desktop-only"
               style={{
                 width: '38px',
                 height: '38px',
@@ -3017,15 +3019,17 @@ export default function CRMContainer({
               )}
             </div>
 
-            {/* Live Session Inactivity Expiry Countdown & Mouse Tracker */}
-            <SessionExpiryTracker 
-              userEmail={userEmail} 
-              userName={userName} 
-              userRole={userRole} 
-            />
+            {/* Live Session Inactivity Expiry Countdown & Mouse Tracker (Desktop) */}
+            <div className="desktop-only">
+              <SessionExpiryTracker 
+                userEmail={userEmail} 
+                userName={userName} 
+                userRole={userRole} 
+              />
+            </div>
 
-            {/* Theme Switcher Button (Square Button Box) */}
-            <div style={{ position: 'relative' }} ref={themeMenuRef}>
+            {/* Theme Switcher Button (Desktop) */}
+            <div className="desktop-only" style={{ position: 'relative' }} ref={themeMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
@@ -3296,6 +3300,22 @@ export default function CRMContainer({
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{userCompany}</span>
                       </div>
                     )}
+
+                    {/* Mobile Quick Theme Switcher */}
+                    <div className="mobile-only" style={{ padding: '0.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Theme</span>
+                        <select
+                          value={currentTheme}
+                          onChange={(e) => setCurrentTheme(e.target.value)}
+                          style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none' }}
+                        >
+                          {THEMES.map(t => (
+                            <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
                     <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
                       <button 
