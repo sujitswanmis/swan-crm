@@ -650,22 +650,35 @@ export async function applyMissingAttendance({
 export async function getMyRegularizationRequests(userEmail, tenantId = DEFAULT_TENANT_ID) {
   if (!userEmail) return { success: false, requests: [] };
   const adminClient = getAdminClient();
+  const normalizedEmail = userEmail.trim().toLowerCase();
+
+  // Always load local fallback
+  const local = await getFallbackData();
+  const localReqs = local.requests.filter(r => r.email && r.email.trim().toLowerCase() === normalizedEmail);
+  const localMap = {};
+  for (const r of localReqs) localMap[r.id] = r;
 
   try {
     const { data, error } = await adminClient
       .from('attendance_regularization_requests')
       .select('*')
-      .eq('email', userEmail)
+      .ilike('email', normalizedEmail)
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return { success: true, requests: data };
+    if (!error && data) {
+      // Merge: DB records take priority; add local-only records (newly submitted, not yet synced)
+      const dbMap = {};
+      for (const r of data) dbMap[r.id] = r;
+      // Add local records not yet in DB (e.g., insert failed silently)
+      for (const r of localReqs) {
+        if (!dbMap[r.id]) dbMap[r.id] = r;
+      }
+      const merged = Object.values(dbMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return { success: true, requests: merged };
     }
   } catch {}
 
-  const local = await getFallbackData();
-  const userReqs = local.requests.filter(r => r.email === userEmail);
-  return { success: true, requests: userReqs };
+  return { success: true, requests: localReqs };
 }
 
 /**
@@ -680,6 +693,19 @@ export async function getHodPendingRequests({
 }) {
   const adminClient = getAdminClient();
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
+
+  // Always load local fallback
+  const local = await getFallbackData();
+  const localFiltered = local.requests.filter(r => {
+    if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
+    if (departmentFilter && departmentFilter !== 'All' && r.department !== departmentFilter) return false;
+    if (!isAdmin && hodEmail) {
+      return r.assigned_hod_email === hodEmail || (r.assigned_hod_name && r.assigned_hod_name.includes(hodEmail.split('@')[0]));
+    }
+    return true;
+  });
+  const localMap = {};
+  for (const r of localFiltered) localMap[r.id] = r;
 
   let requests = [];
 
@@ -703,20 +729,18 @@ export async function getHodPendingRequests({
 
     const { data, error } = await query;
     if (!error && data) {
-      requests = data;
-    }
-  } catch {}
-
-  if (requests.length === 0) {
-    const local = await getFallbackData();
-    requests = local.requests.filter(r => {
-      if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
-      if (departmentFilter && departmentFilter !== 'All' && r.department !== departmentFilter) return false;
-      if (!isAdmin && hodEmail) {
-        return r.assigned_hod_email === hodEmail || (r.assigned_hod_name && r.assigned_hod_name.includes(hodEmail.split('@')[0]));
+      // Merge: DB takes priority; add local-only records (newly submitted, not yet synced to DB)
+      const dbMap = {};
+      for (const r of data) dbMap[r.id] = r;
+      for (const r of localFiltered) {
+        if (!dbMap[r.id]) dbMap[r.id] = r; // local-only (DB insert may have failed silently)
       }
-      return true;
-    });
+      requests = Object.values(dbMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } else {
+      requests = localFiltered;
+    }
+  } catch {
+    requests = localFiltered;
   }
 
   return {
