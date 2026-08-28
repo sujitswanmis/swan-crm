@@ -288,6 +288,45 @@ export async function getAuditLogFilters() {
 // -------------------------------------------------------------
 // USER SESSIONS & FORCE LOGOUT ENGINE
 // -------------------------------------------------------------
+export async function activateUserSession(userId, deviceInfo) {
+  try {
+    const adminClient = getAdminClient();
+    const nowIso = new Date().toISOString();
+
+    const { data: recentSessions } = await adminClient.from('user_sessions')
+      .select('id, user_id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (recentSessions && recentSessions.length > 0) {
+      await adminClient.from('user_sessions').update({
+        is_active: true,
+        last_active: nowIso,
+        device: deviceInfo || 'Web Browser'
+      }).eq('user_id', userId);
+    } else {
+      const { data: roleData } = await adminClient.from('user_roles')
+        .select('emp_name, email')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      await adminClient.from('user_sessions').insert([{
+        user_id: userId,
+        emp_name: roleData?.emp_name || 'Employee',
+        email: roleData?.email || '',
+        device: deviceInfo || 'Web Browser',
+        ip_address: 'Logged via Web App',
+        is_active: true,
+        last_active: nowIso
+      }]);
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('activateUserSession error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function logUserSession(deviceInfo) {
   try {
     const adminClient = getAdminClient();

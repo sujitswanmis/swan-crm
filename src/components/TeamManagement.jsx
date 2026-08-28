@@ -251,8 +251,10 @@ export default function TeamManagement({ initialUsers = [] }) {
         return;
       }
 
-      // Build target URL for new tab
-      const impersonateUrl = `/auth/impersonate?token=${encodeURIComponent(res.tokenHash)}&restore=${encodeURIComponent(res.adminRestoreToken || '')}&name=${encodeURIComponent(res.empName || '')}&role=${encodeURIComponent(res.role || '')}`;
+      // Build target URL for new tab (using secure one-time key)
+      const impersonateUrl = res.key 
+        ? `/auth/impersonate?key=${encodeURIComponent(res.key)}`
+        : `/auth/impersonate?token=${encodeURIComponent(res.tokenHash)}&restore=${encodeURIComponent(res.adminRestoreToken || '')}&name=${encodeURIComponent(res.empName || '')}&role=${encodeURIComponent(res.role || '')}`;
 
       // Open user session in a new window/tab
       const newTab = window.open(impersonateUrl, '_blank');

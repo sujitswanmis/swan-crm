@@ -623,17 +623,25 @@ export default function CRMContainer({ initialLeads, userRole, canImportExport, 
         const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown Device';
         
         // 1. Check if admin terminated this session FIRST
-        const validity = await checkSessionValidity(device);
-        if (isMounted && validity && validity.valid === false) {
-          alert("Your session has been terminated by the administrator.");
-          await supabase.auth.signOut();
-          window.location.href = '/auth/logout?reason=force_logout';
-          return;
+        // When in impersonation mode, the admin is actively viewing the employee view
+        const isImpersonating = typeof window !== 'undefined' && !!(
+          sessionStorage.getItem('crm_impersonator') || 
+          document.cookie.includes('crm_impersonator_info')
+        );
+
+        if (!isImpersonating) {
+          const validity = await checkSessionValidity(device);
+          if (isMounted && validity && validity.valid === false) {
+            alert("Your session has been terminated by the administrator.");
+            await supabase.auth.signOut();
+            window.location.href = '/auth/logout?reason=force_logout';
+            return;
+          }
         }
 
         // 2. Send heartbeat only if session is active
         const logRes = await logUserSession(device);
-        if (isMounted && logRes && logRes.valid === false) {
+        if (!isImpersonating && isMounted && logRes && logRes.valid === false) {
           alert("Your session has been terminated by the administrator.");
           await supabase.auth.signOut();
           window.location.href = '/auth/logout?reason=force_logout';

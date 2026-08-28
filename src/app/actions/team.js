@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
 import { sendAdminAccountEmailOtp } from './adminMessageConfig';
 import { logAuditAction } from './audit';
+import { saveImpersonateToken } from '@/lib/impersonateStore';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -1213,6 +1214,23 @@ export async function impersonateUserAdmin(targetUserId) {
       adminRestoreToken = adminLinkRes.data?.properties?.hashed_token || null;
     }
 
+    // Activate target user session in user_sessions to clear any stale termination
+    try {
+      await adminClient.from('user_sessions')
+        .update({ is_active: true, last_active: new Date().toISOString() })
+        .eq('user_id', targetUserId);
+    } catch (sessionErr) {
+      console.error('Failed to pre-activate user session:', sessionErr);
+    }
+
+    // Save temporary one-time impersonation key (expires in 5 min, single use)
+    const oneTimeKey = saveImpersonateToken({
+      tokenHash: linkRes.data.properties.hashed_token,
+      adminRestoreToken,
+      name: targetUser.emp_name || targetEmail,
+      role: targetUser.role || 'agent'
+    });
+
     // Log audit event
     await logAuditAction(
       'User Impersonation',
@@ -1221,6 +1239,7 @@ export async function impersonateUserAdmin(targetUserId) {
 
     return {
       success: true,
+      key: oneTimeKey,
       tokenHash: linkRes.data.properties.hashed_token,
       adminRestoreToken,
       email: targetEmail,
