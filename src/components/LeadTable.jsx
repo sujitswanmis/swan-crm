@@ -2327,6 +2327,9 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
              const processed = processLeads([updatedRawLead], teamMembers)[0];
              setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
              setSelectedLead(processed);
+             if (onLeadsChange) {
+               onLeadsChange(processed);
+             }
           }}
         />
       )}

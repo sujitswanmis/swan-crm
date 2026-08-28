@@ -240,16 +240,20 @@ export async function recordUserActivityHeartbeat({
     const today = getOfficeTodayDateStr(); // YYYY-MM-DD (IST Office Date)
     const nowIso = new Date().toISOString();
 
-    // 1. Check if user's session was terminated by Admin
+    // 1. Check if user's session was terminated by Admin recently
     const { data: recentSessions } = await adminClient.from('user_sessions')
-      .select('id, is_active')
+      .select('id, is_active, last_active')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
       .limit(1);
 
     const existingSess = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
     if (existingSess && existingSess.is_active === false) {
-      return { success: false, error: 'Session terminated by admin', valid: false, forceLogout: true };
+      const lastActiveMs = existingSess.last_active ? new Date(existingSess.last_active).getTime() : 0;
+      const diffSec = Math.floor((Date.now() - lastActiveMs) / 1000);
+      if (diffSec <= 90) {
+        return { success: false, error: 'Session terminated by admin', valid: false, forceLogout: true };
+      }
     }
 
     // Resolve employee name

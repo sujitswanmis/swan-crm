@@ -12,46 +12,70 @@ const getAdminClient = () => {
 
 export async function logAuditAction(action, target, details = {}) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let actionStr = action;
+    let targetStr = target;
+    let detailsInfo = details;
 
-    let empName = user?.user_metadata?.full_name || user?.user_metadata?.emp_name;
-    if (!empName && user?.id) {
-      const adminClient = getAdminClient();
-      const { data: roleData } = await adminClient
-        .from('user_roles')
-        .select('emp_name')
-        .eq('user_id', user.id)
-        .maybeSingle();
+    // Handle single object parameter e.g. logAuditAction({ action, target, ... })
+    if (typeof action === 'object' && action !== null) {
+      actionStr = action.action || 'Action';
+      targetStr = action.target || action.details || '';
+      detailsInfo = action.details || '';
+    }
 
-      if (roleData?.emp_name) {
-        empName = roleData.emp_name;
+    let empName = 'System User';
+    let userEmail = 'system@internal';
+    let userId = null;
+
+    try {
+      const supabase = await createClient();
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user || null;
+      if (user) {
+        userId = user.id;
+        userEmail = user.email || 'system@internal';
+        empName = user.user_metadata?.full_name || user.user_metadata?.emp_name;
+        if (!empName) {
+          const adminClient = getAdminClient();
+          const { data: roleData } = await adminClient
+            .from('user_roles')
+            .select('emp_name')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (roleData?.emp_name) {
+            empName = roleData.emp_name;
+          }
+        }
+        if (!empName) {
+          empName = user.email ? user.email.split('@')[0] : 'System User';
+        }
       }
+    } catch (authErr) {
+      // Fallback gracefully
     }
 
-    if (!empName) {
-      empName = user?.email ? user.email.split('@')[0] : 'System User';
-    }
+    const ipAddressVal = typeof detailsInfo === 'string' && detailsInfo ? detailsInfo : (detailsInfo?.ip || 'Web App');
 
     const payload = {
-      user_id: user?.id || null,
+      user_id: userId,
       emp_name: empName,
-      email: user?.email || 'system@internal',
-      action,
-      target,
-      details,
+      email: userEmail,
+      action: String(actionStr || 'Action'),
+      target: String(targetStr || ''),
+      ip_address: String(ipAddressVal || 'Web App'),
       created_at: new Date().toISOString()
     };
 
     const adminClient = getAdminClient();
-    const { data, error } = await adminClient.from('audit_logs').insert([payload]);
+    const { error } = await adminClient.from('audit_logs').insert([payload]);
     if (error) {
-      console.error('Audit Log Error:', error);
+      console.warn('Audit Log Insert Warning:', error.message);
       return { success: false, error: error.message };
     }
     return { success: true };
   } catch (err) {
-    console.error('Failed to log audit action:', err);
+    console.warn('Failed to log audit action:', err.message);
     return { success: false, error: err.message };
   }
 }
@@ -337,9 +361,9 @@ export async function logUserSession(deviceInfo) {
     const nowIso = new Date().toISOString();
     const today = nowIso.split('T')[0];
 
-    // 1. Check if user's session was terminated by Admin
+    // 1. Check if user's session was terminated by Admin recently
     const { data: recentSessions } = await adminClient.from('user_sessions')
-      .select('id, is_active')
+      .select('id, is_active, last_active')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
       .limit(1);
@@ -347,8 +371,12 @@ export async function logUserSession(deviceInfo) {
     const existing = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
 
     if (existing && existing.is_active === false) {
-      // Session was force-logged out! Do NOT reactivate.
-      return { success: false, valid: false, forceLogout: true };
+      const lastActiveMs = existing.last_active ? new Date(existing.last_active).getTime() : 0;
+      const diffSec = Math.floor((Date.now() - lastActiveMs) / 1000);
+      // Only enforce termination if admin actively revoked it within the last 90 seconds
+      if (diffSec <= 90) {
+        return { success: false, valid: false, forceLogout: true };
+      }
     }
 
     // Resolve employee name
@@ -427,14 +455,18 @@ export async function checkSessionValidity(deviceInfo) {
 
     const { data: session } = await adminClient
       .from('user_sessions')
-      .select('is_active')
+      .select('is_active, last_active')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (session && session.is_active === false) {
-      return { valid: false, forceLogout: true };
+      const lastActiveMs = session.last_active ? new Date(session.last_active).getTime() : 0;
+      const diffSec = Math.floor((Date.now() - lastActiveMs) / 1000);
+      if (diffSec <= 90) {
+        return { valid: false, forceLogout: true };
+      }
     }
     return { valid: true };
   } catch (err) {

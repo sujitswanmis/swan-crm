@@ -114,11 +114,12 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       created_at: new Date().toISOString()
     };
 
-    setNotes(prev => [createdNote, ...prev.filter(n => n.id !== createdNote.id)]);
+    const updatedNotes = [createdNote, ...notes.filter(n => n.id !== createdNote.id)];
+    setNotes(updatedNotes);
     if (onLeadUpdate) {
       onLeadUpdate({
         ...lead,
-        lead_notes: [createdNote, ...(lead.lead_notes || [])]
+        lead_notes: updatedNotes
       });
     }
     setNewNote('');
