@@ -19,6 +19,7 @@ import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
+import { enqueueOfflineAction } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import Papa from 'papaparse';
 
@@ -125,7 +126,7 @@ const processLeads = (rawLeads, teamMembers = []) => {
     }
 
     const manualNotes = notes.filter(n => !n.note_text || (!n.note_text.includes('Status changed to:') && !n.note_text.includes('Status updated to:') && !n.note_text.includes('Status changed from ')));
-    let latestRemark = '';
+    let latestRemark = lead.remarks || '';
     let latestEmpName = '';
     
     const trueRemarks = manualNotes.filter(n => !n.note_text.startsWith('Follow-up scheduled for: ') && !n.note_text.startsWith('Lead assigned to: ') && n.note_text !== 'Client Registration Form Submitted' && n.note_text !== 'Profile updated' && n.note_text !== 'Client Profile was updated.');
@@ -133,7 +134,11 @@ const processLeads = (rawLeads, teamMembers = []) => {
       latestRemark = trueRemarks[0].note_text;
       latestEmpName = normalizeEmployeeName(trueRemarks[0].created_by || 'Agent', teamMembers);
     } else if (manualNotes.length > 0) {
+      latestRemark = manualNotes[0].note_text || latestRemark;
       latestEmpName = normalizeEmployeeName(manualNotes[0].created_by || 'Agent', teamMembers);
+    } else if (notes.length > 0) {
+      latestRemark = notes[0].note_text || latestRemark;
+      latestEmpName = normalizeEmployeeName(notes[0].created_by || 'Agent', teamMembers);
     }
 
     let duration = 0;
@@ -142,9 +147,15 @@ const processLeads = (rawLeads, teamMembers = []) => {
       duration = Math.round(diffMs / 60000);
     }
 
-    let lastTimestamp = lead.created_at;
-    if (notes.length > 0) {
+    let lastTimestamp = lead.created_at || new Date().toISOString();
+    if (notes.length > 0 && notes[0].created_at) {
       lastTimestamp = notes[0].created_at;
+    }
+    if (lead.updated_at && (!lastTimestamp || new Date(lead.updated_at) > new Date(lastTimestamp))) {
+      lastTimestamp = lead.updated_at;
+    }
+    if (lead.last_timestamp && (!lastTimestamp || new Date(lead.last_timestamp) > new Date(lastTimestamp))) {
+      lastTimestamp = lead.last_timestamp;
     }
 
     const stateName = normalizeStateName(lead.state_name || lead.state || '');
@@ -187,28 +198,9 @@ const LeadAssigneeCell = React.memo(({ info }) => {
   const updateAssignee = async (newAssignee) => {
     const supabase = createClient();
     const valToSet = newAssignee === '' ? null : newAssignee;
-    const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
-    if (updateError) {
-      alert("Error updating assignee: " + updateError.message);
-      return;
-    }
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
-    
+    const actor = info.table.options.meta?.userName || 'System';
     const newAssigneeName = newAssignee === '' ? 'Open Lead (Unassigned)' : teamMembers.find(m => m.user_id === newAssignee)?.emp_name || 'Unknown';
     const noteText = `Lead assigned to: ${newAssigneeName}`;
-    const { error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]);
-    if (noteError) {
-      console.error("Error creating assignee note:", noteError.message);
-    }
-
-    try {
-      await logAuditAction('Assign Lead', `Assigned lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to ${newAssigneeName}`);
-    } catch (e) {
-      console.error('Audit Log failed', e);
-    }
-
     const newNote = {
       id: Date.now(),
       lead_id: lead.id,
@@ -216,14 +208,51 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       created_by: actor,
       created_at: new Date().toISOString()
     };
-    const updatedRawLead = {
-      ...lead,
-      assigned_to: valToSet,
-      lead_notes: [...(lead.lead_notes || []), newNote]
-    };
-    const processed = processLeads([updatedRawLead], teamMembers)[0];
-    if (info.table.options.meta?.updateLeadInState) {
-      info.table.options.meta.updateLeadInState(processed);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
+      const updatedRawLead = {
+        ...lead,
+        assigned_to: valToSet,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+      return;
+    }
+
+    try {
+      const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
+      if (updateError) throw updateError;
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      const actualActor = info.table.options.meta?.userName || user?.email?.split('@')[0] || actor;
+      
+      await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actualActor }]);
+      try {
+        await logAuditAction('Assign Lead', `Assigned lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to ${newAssigneeName}`);
+      } catch (e) {}
+
+      const updatedRawLead = {
+        ...lead,
+        assigned_to: valToSet,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+    } catch (netErr) {
+      console.warn('Network updateAssignee failed, fallback to offline:', netErr);
+      await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
+      const updatedRawLead = {
+        ...lead,
+        assigned_to: valToSet,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
     }
   };
 
@@ -309,52 +338,85 @@ const LeadStatusCell = React.memo(({ info }) => {
         noteText += ` (Auto-released to Pool)`;
       }
     }
+    const nowIso = new Date().toISOString();
+    const newNote = {
+      id: `local_note_${Date.now()}`,
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: info.table.options.meta?.userName || 'System',
+      created_at: nowIso
+    };
 
-    const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
-    if (updateError) {
-      alert("Error updating status: " + updateError.message);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
       return;
-    }
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
-    const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
-    if (noteError) {
-      console.error("Error creating status note:", noteError.message);
     }
 
     try {
-      await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
-    } catch (e) {
-      console.error('Audit Log failed', e);
-    }
-    
-    const newNote = insertedNote || {
-      id: Date.now(),
-      lead_id: lead.id,
-      note_text: noteText,
-      created_by: actor,
-      created_at: new Date().toISOString()
-    };
-    const updatedRawLead = {
-      ...lead,
-      ...updates,
-      lead_notes: [newNote, ...(lead.lead_notes || [])]
-    };
-    const processed = processLeads([updatedRawLead], teamMembers)[0];
-    if (info.table.options.meta?.updateLeadInState) {
-      info.table.options.meta.updateLeadInState(processed);
-    }
-    
-    // Trigger WhatsApp automation (non-blocking)
-    triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
-      if (!res.success) {
-        console.error("WhatsApp Automation Error:", res.error);
-        alert("WhatsApp Auto-Send Failed: " + res.error);
-      } else if (res.message && res.message.includes('Successfully sent')) {
-        alert("✅ " + res.message);
+      const { error: updateError } = await supabase.from('leads').update({ ...updates, updated_at: nowIso }).eq('id', lead.id);
+      if (updateError) throw updateError;
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
+      const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
+      if (noteError) {
+        console.error("Error creating status note:", noteError.message);
       }
-    }).catch(err => console.error("WhatsApp Automation Error:", err));
+
+      try {
+        await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
+      } catch (e) {
+        console.error('Audit Log failed', e);
+      }
+      
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText,
+        lead_notes: [insertedNote || newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
+      
+      // Trigger WhatsApp automation (non-blocking)
+      triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
+        if (!res.success) {
+          console.warn("WhatsApp automation not triggered:", res.message || res.error);
+        }
+      }).catch(err => {
+        console.error("WhatsApp trigger error:", err);
+      });
+    } catch (netErr) {
+      console.warn('Network stage update failed, fallback to offline:', netErr);
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
+    }
   };
 
   const cleanClass = status.toLowerCase().replace(/\s+/g, '');
@@ -1308,53 +1370,80 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         noteText += ` (Auto-released to Pool)`;
       }
     }
-
-    const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
-    if (updateError) {
-      alert("Error updating status: " + updateError.message);
-      return;
-    }
     
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = userName || user?.email?.split('@')[0] || 'System';
-    const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
-    if (noteError) {
-      console.error("Error creating status note:", noteError.message);
+    const nowIso = new Date().toISOString();
+    const newNote = {
+      id: `local_note_${Date.now()}`,
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: userName || 'System',
+      created_at: nowIso
+    };
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      updateLeadInState(processed);
+      return;
     }
 
     try {
-      await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
-    } catch (e) {
-      console.error('Audit Log failed', e);
-    }
-    
-    const newNote = insertedNote || {
-      id: Date.now(),
-      lead_id: lead.id,
-      note_text: noteText,
-      created_by: actor,
-      created_at: new Date().toISOString()
-    };
-    const updatedRawLead = {
-      ...lead,
-      ...updates,
-      lead_notes: [newNote, ...(lead.lead_notes || [])]
-    };
-    const processed = processLeads([updatedRawLead], teamMembers)[0];
-    setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
-    if (onLeadsChange) {
-      onLeadsChange(processed);
-    }
-    
-    // Trigger WhatsApp automation (non-blocking)
-    triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
-      if (!res.success) {
-        console.error("WhatsApp Automation Error:", res.error);
-        alert("WhatsApp Auto-Send Failed: " + res.error);
-      } else if (res.message && res.message.includes('Successfully sent')) {
-        alert("✅ " + res.message);
+      const { error: updateError } = await supabase.from('leads').update({ ...updates, updated_at: nowIso }).eq('id', lead.id);
+      if (updateError) throw updateError;
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = userName || user?.email?.split('@')[0] || 'System';
+      const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
+      if (noteError) {
+        console.error("Error creating status note:", noteError.message);
       }
-    }).catch(err => console.error("WhatsApp Automation Error:", err));
+
+      try {
+        await logAuditAction('Stage Changed', `Changed status/stage of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}"`);
+      } catch (e) {
+        console.error('Audit Log failed', e);
+      }
+      
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText,
+        lead_notes: [insertedNote || newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      updateLeadInState(processed);
+      
+      // Trigger WhatsApp automation (non-blocking)
+      triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
+        if (!res.success) {
+          console.warn("WhatsApp automation not triggered:", res.message || res.error);
+        }
+      }).catch(err => {
+        console.error("WhatsApp trigger error:", err);
+      });
+    } catch (netErr) {
+      console.warn('Network direct status change failed, fallback to offline:', netErr);
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      const updatedRawLead = {
+        ...lead,
+        ...updates,
+        is_offline_pending: true,
+        lead_notes: [newNote, ...(lead.lead_notes || [])]
+      };
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      updateLeadInState(processed);
+    }
   };
 
   if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {

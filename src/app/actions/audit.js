@@ -451,7 +451,7 @@ export async function checkSessionValidity(deviceInfo) {
     const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { valid: false, forceLogout: true };
+    if (!user) return { valid: true }; // Do not force logout on network blips or offline sessions
 
     const { data: session } = await adminClient
       .from('user_sessions')

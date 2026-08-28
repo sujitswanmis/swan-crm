@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
+import { enqueueOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send } from 'lucide-react';
 
@@ -92,99 +93,121 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
     e.preventDefault();
     if (!newNote.trim()) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = normalizeEmployeeName(userName || user?.email?.split('@')[0] || 'Agent');
-
-    const { data: inserted, error } = await supabase
-      .from('lead_notes')
-      .insert([{ lead_id: lead.id, note_text: newNote, created_by: actor }])
-      .select()
-      .single();
-
-    if (error) {
-      alert("Error adding note: " + error.message);
-      return;
-    }
-
-    const createdNote = inserted || {
-      id: Date.now(),
+    const actor = normalizeEmployeeName(userName || 'Agent');
+    const createdNote = {
+      id: `local_note_${Date.now()}`,
       lead_id: lead.id,
       note_text: newNote,
       created_by: actor,
       created_at: new Date().toISOString()
     };
 
-    const updatedNotes = [createdNote, ...notes.filter(n => n.id !== createdNote.id)];
+    const updatedNotes = [createdNote, ...notes];
     setNotes(updatedNotes);
     if (onLeadUpdate) {
       onLeadUpdate({
         ...lead,
-        lead_notes: updatedNotes
+        lead_notes: updatedNotes,
+        is_offline_pending: true
       });
     }
+    const noteContent = newNote;
     setNewNote('');
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      return;
+    }
+
+    try {
+      const { data: inserted, error } = await supabase
+        .from('lead_notes')
+        .insert([{ lead_id: lead.id, note_text: noteContent, created_by: actor }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (inserted) {
+        setNotes((current) => current.map(n => n.id === createdNote.id ? inserted : n));
+      }
+    } catch (netErr) {
+      console.warn('Network addNote failed, fallback to offline queue:', netErr);
+      await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+    }
   };
 
   const handleFollowUpChange = async (e) => {
     const newDate = e.target.value;
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = userName || user?.email?.split('@')[0] || 'System';
+    const actor = userName || 'System';
 
     if (!newDate) {
       setFollowUpDate('');
-      const { error: updateError } = await supabase.from('leads').update({ follow_up_date: null }).eq('id', lead.id);
-      if (updateError) {
-        alert("Error clearing follow-up date: " + updateError.message);
+      const noteText = 'Follow-up date cleared';
+      const newNote = {
+        id: Date.now(),
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor,
+        created_at: new Date().toISOString()
+      };
+
+      if (onLeadUpdate) {
+        onLeadUpdate({ ...lead, follow_up_date: null, is_offline_pending: true });
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
         return;
       }
 
-      if (onLeadUpdate) {
-        onLeadUpdate({ ...lead, follow_up_date: null });
-      }
+      try {
+        const { error: updateError } = await supabase.from('leads').update({ follow_up_date: null }).eq('id', lead.id);
+        if (updateError) throw updateError;
 
-      // Log history
-      const { error: noteError } = await supabase.from('lead_notes').insert([{
-        lead_id: lead.id,
-        note_text: 'Follow-up date cleared',
-        created_by: actor
-      }]);
-      if (noteError) {
-        console.error("Error inserting follow-up note:", noteError.message);
+        await supabase.from('lead_notes').insert([{
+          lead_id: lead.id,
+          note_text: noteText,
+          created_by: actor
+        }]);
+      } catch (netErr) {
+        console.warn('Network update failed, fallback to offline:', netErr);
+        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
       }
       return;
     }
     
     setFollowUpDate(newDate);
     const isoDateStr = new Date(newDate).toISOString();
-
-    // Update lead
-    const { error: updateError } = await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
-    if (updateError) {
-      alert("Error updating follow-up date: " + updateError.message);
-      return;
-    }
-
-    if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, follow_up_date: isoDateStr });
-    }
-
     const pad = (n) => String(n).padStart(2, '0');
     const d = new Date(newDate);
     const formattedDate = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const noteText = `Follow-up scheduled for: ${formattedDate}`;
 
-    // Log history
-    const { error: noteError } = await supabase.from('lead_notes').insert([{
-      lead_id: lead.id,
-      note_text: `Follow-up scheduled for: ${formattedDate}`,
-      created_by: actor
-    }]);
-    if (noteError) {
-      console.error("Error inserting follow-up note:", noteError.message);
+    if (onLeadUpdate) {
+      onLeadUpdate({ ...lead, follow_up_date: isoDateStr, is_offline_pending: true });
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+      return;
     }
 
     try {
-      logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
-    } catch(e) { console.error('Audit Log failed', e); }
+      const { error: updateError } = await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
+      if (updateError) throw updateError;
+
+      await supabase.from('lead_notes').insert([{
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor
+      }]);
+      try {
+        logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
+      } catch(e) {}
+    } catch (netErr) {
+      console.warn('Network update failed, fallback to offline:', netErr);
+      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+    }
   };
 
   const handleEditChange = (e) => {
@@ -193,34 +216,37 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
 
   const handleSaveEdit = async () => {
     const cleanForm = normalizeLeadRecord({ ...editForm });
-    const { error: updateError } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
-    if (updateError) {
-      alert("Error saving changes: " + updateError.message);
-      return;
+    const actor = normalizeEmployeeName(userName || 'System');
+
+    if (onLeadUpdate) {
+      onLeadUpdate({ ...lead, ...cleanForm, is_offline_pending: true });
     }
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    const actor = normalizeEmployeeName(userName || user?.email?.split('@')[0] || 'System');
-    
-    // Log history
-    const { error: noteError } = await supabase.from('lead_notes').insert([{
-      lead_id: lead.id,
-      note_text: `Profile updated`,
-      created_by: actor
-    }]);
-    if (noteError) {
-      console.error("Error inserting update profile note:", noteError.message);
+    setIsEditing(false);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
+      alert('⚡ Offline Mode: Profile changes saved to device! They will sync to cloud when connected.');
+      return;
     }
 
     try {
-      logAuditAction('Update Lead', `Updated profile of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}"`);
-    } catch(e) { console.error('Audit Log failed', e); }
-
-    if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, ...cleanForm });
+      const { error: updateError } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
+      if (updateError) throw updateError;
+      
+      await supabase.from('lead_notes').insert([{
+        lead_id: lead.id,
+        note_text: `Profile updated`,
+        created_by: actor
+      }]);
+      try {
+        logAuditAction('Update Lead', `Updated profile of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}"`);
+      } catch(e) {}
+      alert('Lead profile updated successfully!');
+    } catch (netErr) {
+      console.warn('Network update failed, fallback to offline:', netErr);
+      await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
+      alert('⚡ Network issue: Profile changes saved to device! They will sync to cloud automatically.');
     }
-    
-    setIsEditing(false);
   };
 
   if (!isOpen || !lead) return null;

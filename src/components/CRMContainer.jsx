@@ -695,6 +695,11 @@ export default function CRMContainer({
   useEffect(() => {
     let isMounted = true;
     async function trackSession() {
+      // 0. If device is offline, skip online session verification to prevent false logouts
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
+
       try {
         const { logUserSession, checkSessionValidity } = await import('@/app/actions/audit');
         const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown Device';
@@ -706,9 +711,9 @@ export default function CRMContainer({
           document.cookie.includes('crm_impersonator_info')
         );
 
-        if (!isImpersonating) {
+        if (!isImpersonating && typeof navigator !== 'undefined' && navigator.onLine) {
           const validity = await checkSessionValidity(device);
-          if (isMounted && validity && validity.valid === false) {
+          if (isMounted && validity && validity.valid === false && validity.forceLogout === true) {
             alert("Your session has been terminated by the administrator.");
             await supabase.auth.signOut();
             window.location.href = '/auth/logout?reason=force_logout';
@@ -717,15 +722,17 @@ export default function CRMContainer({
         }
 
         // 2. Send heartbeat only if session is active
-        const logRes = await logUserSession(device);
-        if (!isImpersonating && isMounted && logRes && logRes.valid === false) {
-          alert("Your session has been terminated by the administrator.");
-          await supabase.auth.signOut();
-          window.location.href = '/auth/logout?reason=force_logout';
-          return;
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          const logRes = await logUserSession(device);
+          if (!isImpersonating && isMounted && logRes && logRes.valid === false && logRes.forceLogout === true) {
+            alert("Your session has been terminated by the administrator.");
+            await supabase.auth.signOut();
+            window.location.href = '/auth/logout?reason=force_logout';
+            return;
+          }
         }
       } catch (e) {
-        console.error('Session tracking error:', e);
+        console.warn('Session tracking non-blocking network error:', e);
       }
     }
     

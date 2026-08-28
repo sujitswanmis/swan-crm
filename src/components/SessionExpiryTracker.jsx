@@ -226,16 +226,22 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, []);
 
-  // 4. Periodic Heartbeat to Server (Every 20 Seconds)
+  // 4. Periodic Heartbeat to Server (Every 20 Seconds with Offline Retention)
   useEffect(() => {
     const sendHeartbeat = async () => {
       if (isLoggingOut.current) return;
       const activeInc = activeAccumulator.current;
       const idleInc = idleAccumulator.current;
-      activeAccumulator.current = 0;
-      idleAccumulator.current = 0;
 
       if (activeInc === 0 && idleInc === 0) return;
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        // Keep accumulating in memory while offline
+        return;
+      }
+
+      activeAccumulator.current = 0;
+      idleAccumulator.current = 0;
 
       try {
         const res = await recordUserActivityHeartbeat({
@@ -258,7 +264,10 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           }
         }
       } catch (err) {
-        console.error('Failed to sync activity heartbeat:', err);
+        console.warn('Activity heartbeat network error, restoring seconds:', err);
+        // Restore seconds to accumulator so zero tracking is lost
+        activeAccumulator.current += activeInc;
+        idleAccumulator.current += idleInc;
       }
     };
 

@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X } from 'lucide-react';
-import { getPendingQueue, getSyncHistory, syncPendingQueue } from '@/utils/offlineSync';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X, ShieldAlert, Zap } from 'lucide-react';
+import { getPendingQueue, getSyncHistory, syncPendingQueue, getDailyOfflineUsage, incrementDailyOfflineSeconds, MAX_OFFLINE_SECONDS_PER_DAY } from '@/utils/offlineSync';
 import { createClient } from '@/utils/supabase/client';
 
 export default function OfflineSyncCenter({ onSyncComplete }) {
@@ -13,6 +13,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const [offlineUsage, setOfflineUsage] = useState(() => getDailyOfflineUsage());
 
   const supabase = createClient();
 
@@ -23,6 +24,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       setPendingItems(queue);
       const history = await getSyncHistory();
       setSyncedHistory(history);
+      setOfflineUsage(getDailyOfflineUsage());
     } catch (e) {
       console.warn('Load queue state notice:', e);
     }
@@ -45,19 +47,32 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     }
   }, [isSyncing, supabase, onSyncComplete, loadQueueState]);
 
+  // Track offline time every 5 seconds when offline
+  useEffect(() => {
+    const offlineTicker = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        incrementDailyOfflineSeconds(5);
+        setOfflineUsage(getDailyOfflineUsage());
+      }
+    }, 5000);
+    return () => clearInterval(offlineTicker);
+  }, []);
+
   useEffect(() => {
     setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
     loadQueueState();
 
     const handleOnline = () => {
       setIsOnline(true);
+      setOfflineUsage(getDailyOfflineUsage());
       setToastMessage('🌐 Internet reconnected! Syncing offline changes...');
       triggerSync();
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setToastMessage('⚡ Offline mode active. All changes will be saved to device disk.');
+      setOfflineUsage(getDailyOfflineUsage());
+      setToastMessage('⚡ Offline mode active (5h max daily quota). All changes saved to disk.');
     };
 
     const handleQueueChanged = () => {
@@ -231,6 +246,53 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
 
             {/* Modal Content */}
             <div style={{ padding: '20px', maxHeight: '360px', overflowY: 'auto' }}>
+              
+              {/* Daily Offline Quota (Max 5 Hours) */}
+              <div style={{
+                padding: '14px',
+                borderRadius: '12px',
+                marginBottom: '16px',
+                background: offlineUsage.isExceeded ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.08)',
+                border: offlineUsage.isExceeded ? '1px solid #ef4444' : '1px solid rgba(37, 99, 235, 0.25)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {offlineUsage.isExceeded ? (
+                      <ShieldAlert style={{ width: '16px', height: '16px', color: '#ef4444' }} />
+                    ) : (
+                      <Zap style={{ width: '16px', height: '16px', color: '#38bdf8' }} />
+                    )}
+                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: offlineUsage.isExceeded ? '#f87171' : '#e2e8f0' }}>
+                      Daily Offline Quota (5h Max)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: offlineUsage.isExceeded ? '#ef4444' : '#38bdf8' }}>
+                    {offlineUsage.formattedUsed} / 5h 0m
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' }}>
+                  <div style={{
+                    width: `${offlineUsage.percentUsed}%`,
+                    height: '100%',
+                    backgroundColor: offlineUsage.isExceeded ? '#ef4444' : offlineUsage.percentUsed > 80 ? '#f59e0b' : '#38bdf8',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
+                  <span>{offlineUsage.isExceeded ? '🛑 Quota exhausted' : `⏳ Remaining today: ${offlineUsage.formattedRemaining}`}</span>
+                  <span>Resets daily at 00:00</span>
+                </div>
+
+                {offlineUsage.isExceeded && (
+                  <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(239, 68, 68, 0.2)', borderRadius: '6px', fontSize: '11px', color: '#fca5a5', lineHeight: 1.4 }}>
+                    ⚠️ <strong>Internet Connection Required</strong>: Aapka 5 ghante ka offline work quota pura ho chuka hai. Naye records add/update karne ke liye kripya Internet connect karein.
+                  </div>
+                )}
+              </div>
+
               {/* Pending Queue Section */}
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>

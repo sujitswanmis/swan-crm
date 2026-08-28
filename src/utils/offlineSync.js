@@ -2,6 +2,8 @@
 // SuPuja Creations CRM - Robust IndexedDB Offline Storage & Auto-Sync Engine
 // ============================================================================
 
+export const MAX_OFFLINE_SECONDS_PER_DAY = 5 * 60 * 60; // Maximum 5 Hours Offline Limit Per Day (18,000 Seconds)
+
 const DB_NAME = 'supuja_crm_offline_db';
 const DB_VERSION = 1;
 const STORES = {
@@ -9,6 +11,80 @@ const STORES = {
   SYNC_QUEUE: 'sync_queue',
   SYNC_HISTORY: 'sync_history'
 };
+
+function getTodayQuotaKey() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `supuja_offline_sec_${year}-${month}-${day}`;
+}
+
+/**
+ * Returns current day's cumulative offline usage and remaining quota
+ */
+export function getDailyOfflineUsage() {
+  if (typeof window === 'undefined') {
+    return { secondsUsed: 0, secondsRemaining: MAX_OFFLINE_SECONDS_PER_DAY, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: '5h 0m' };
+  }
+  try {
+    const key = getTodayQuotaKey();
+    const raw = localStorage.getItem(key);
+    const secondsUsed = raw ? parseInt(raw, 10) || 0 : 0;
+    const secondsRemaining = Math.max(0, MAX_OFFLINE_SECONDS_PER_DAY - secondsUsed);
+    const isExceeded = secondsUsed >= MAX_OFFLINE_SECONDS_PER_DAY;
+    const percentUsed = Math.min(100, Math.round((secondsUsed / MAX_OFFLINE_SECONDS_PER_DAY) * 100));
+
+    const usedHours = Math.floor(secondsUsed / 3600);
+    const usedMins = Math.floor((secondsUsed % 3600) / 60);
+    const remHours = Math.floor(secondsRemaining / 3600);
+    const remMins = Math.floor((secondsRemaining % 3600) / 60);
+
+    return {
+      secondsUsed,
+      secondsRemaining,
+      isExceeded,
+      percentUsed,
+      formattedUsed: usedHours > 0 ? `${usedHours}h ${usedMins}m` : `${usedMins}m`,
+      formattedRemaining: remHours > 0 ? `${remHours}h ${remMins}m` : `${remMins}m`
+    };
+  } catch (e) {
+    return { secondsUsed: 0, secondsRemaining: MAX_OFFLINE_SECONDS_PER_DAY, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: '5h 0m' };
+  }
+}
+
+/**
+ * Increments cumulative offline seconds for today
+ */
+export function incrementDailyOfflineSeconds(incSec = 1) {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const key = getTodayQuotaKey();
+    const current = parseInt(localStorage.getItem(key) || '0', 10) || 0;
+    const updated = current + incSec;
+    localStorage.setItem(key, String(updated));
+    return updated;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * Validates if an offline update is permitted under 5-hour daily cap
+ */
+export function canPerformOfflineAction() {
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    return { allowed: true };
+  }
+  const usage = getDailyOfflineUsage();
+  if (usage.isExceeded) {
+    return {
+      allowed: false,
+      reason: `🛑 Daily Offline Limit Exceeded (5 Hours Max Reached)!\n\nAap aaj ke din ka maximum 5 ghante ka offline work quota pura kar chuke hain.\n\nData security aur company policy ke mutabiq, naye records add karne ya update karne ke liye kripya abhee Internet connect karein.`
+    };
+  }
+  return { allowed: true, usage };
+}
 
 /**
  * Initializes and returns a reference to the browser's IndexedDB
@@ -101,6 +177,15 @@ export async function getLocalLeads() {
  * Queue an offline action (create / update / delete) to disk
  */
 export async function enqueueOfflineAction(actionType, entityType, payload) {
+  // Enforce Maximum 5-Hour Daily Offline Quota
+  const offlineCheck = canPerformOfflineAction();
+  if (!offlineCheck.allowed) {
+    if (typeof window !== 'undefined') {
+      alert(offlineCheck.reason);
+    }
+    return null;
+  }
+
   try {
     const db = await openOfflineDB();
     if (!db) return null;
@@ -129,19 +214,37 @@ export async function enqueueOfflineAction(actionType, entityType, payload) {
           const getReq = cacheStore.get(payload.id);
           getReq.onsuccess = () => {
             const existing = getReq.result || {};
+            const nowIso = payload.updated_at || new Date().toISOString();
+            const existingNotes = Array.isArray(existing.lead_notes) ? [...existing.lead_notes] : [];
+            if (payload.noteText || payload.remarks) {
+              const noteText = payload.noteText || payload.remarks;
+              existingNotes.unshift({
+                id: `local_note_${Date.now()}`,
+                lead_id: payload.id,
+                note_text: noteText,
+                created_by: payload.actor || payload.userName || 'System',
+                created_at: nowIso
+              });
+            }
             cacheStore.put({
               ...existing,
               ...payload,
+              lead_notes: existingNotes,
               is_offline_pending: true,
-              updated_at: new Date().toISOString()
+              updated_at: nowIso,
+              last_timestamp: nowIso,
+              latest_remark: payload.latest_remark || payload.noteText || payload.remarks || existing.latest_remark || ''
             });
           };
         } else {
+          const nowIso = payload.created_at || new Date().toISOString();
           cacheStore.put({
             ...payload,
             id: payload.id || queueItem.queueId,
             is_offline_pending: true,
-            created_at: payload.created_at || new Date().toISOString()
+            created_at: nowIso,
+            updated_at: nowIso,
+            last_timestamp: nowIso
           });
         }
       } catch (e) {}
@@ -327,6 +430,20 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
           await removeQueueItem(item.queueId, { ...item, title: `Punch-In: ${payload.empName}` });
           successCount++;
         }
+      } else if (item.entityType === 'lead_note') {
+        const payload = item.payload;
+        if (payload.lead_id && !String(payload.lead_id).startsWith('queue_')) {
+          const { error } = await supabaseClient
+            .from('lead_notes')
+            .insert([{
+              lead_id: payload.lead_id,
+              note_text: payload.note_text,
+              created_by: payload.created_by
+            }]);
+          if (error) throw error;
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Note: ${payload.note_text?.slice(0, 20)}` });
+        successCount++;
       }
     } catch (itemErr) {
       console.warn('Sync failed for item:', item.queueId, itemErr);
