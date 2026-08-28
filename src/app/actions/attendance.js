@@ -755,22 +755,19 @@ export async function getHodPendingRequests({
   tenantId = DEFAULT_TENANT_ID
 }) {
   const adminClient = getAdminClient();
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isAdmin = userRole === 'admin' || userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'super_admin' || userRole === 'management';
 
   // Always load local fallback
   const local = await getFallbackData();
   const localFiltered = local.requests.filter(r => {
-    if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
     if (departmentFilter && departmentFilter !== 'All' && r.department !== departmentFilter) return false;
     if (!isAdmin && hodEmail) {
-      return r.assigned_hod_email === hodEmail || (r.assigned_hod_name && r.assigned_hod_name.includes(hodEmail.split('@')[0]));
+      return r.assigned_hod_email === hodEmail || (r.assigned_hod_name && r.assigned_hod_name.toLowerCase().includes(hodEmail.split('@')[0].toLowerCase()));
     }
     return true;
   });
-  const localMap = {};
-  for (const r of localFiltered) localMap[r.id] = r;
 
-  let requests = [];
+  let allRequests = [];
 
   try {
     let query = adminClient
@@ -780,10 +777,6 @@ export async function getHodPendingRequests({
 
     if (!isAdmin && hodEmail) {
       query = query.or(`assigned_hod_email.eq."${hodEmail}",assigned_hod_name.ilike."%${hodEmail.split('@')[0]}%"`);
-    }
-
-    if (statusFilter && statusFilter !== 'ALL') {
-      query = query.eq('status', statusFilter);
     }
 
     if (departmentFilter && departmentFilter !== 'All') {
@@ -798,18 +791,37 @@ export async function getHodPendingRequests({
       for (const r of localFiltered) {
         if (!dbMap[r.id]) dbMap[r.id] = r; // local-only (DB insert may have failed silently)
       }
-      requests = Object.values(dbMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      allRequests = Object.values(dbMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     } else {
-      requests = localFiltered;
+      allRequests = localFiltered;
     }
   } catch {
-    requests = localFiltered;
+    allRequests = localFiltered;
   }
+
+  const counts = {
+    all: allRequests.length,
+    pending: allRequests.filter(r => r.status === 'PENDING').length,
+    approved: allRequests.filter(r => r.status === 'APPROVED').length,
+    rejected: allRequests.filter(r => r.status === 'REJECTED').length
+  };
+
+  const filtered = allRequests.filter(r => {
+    if (statusFilter && statusFilter !== 'ALL') {
+      return r.status === statusFilter;
+    }
+    return true;
+  });
 
   return {
     success: true,
-    requests,
-    pendingCount: requests.filter(r => r.status === 'PENDING').length
+    requests: filtered,
+    allRequests,
+    counts,
+    pendingCount: counts.pending,
+    approvedCount: counts.approved,
+    rejectedCount: counts.rejected,
+    totalCount: counts.all
   };
 }
 

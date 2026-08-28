@@ -286,6 +286,7 @@ export default function AttendanceModule({
   // HOD Approvals State
   const [hodRequests, setHodRequests] = useState([]);
   const [hodPendingCount, setHodPendingCount] = useState(0);
+  const [hodCounts, setHodCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
   const [loadingHodRequests, setLoadingHodRequests] = useState(false);
   const [hodStatusFilter, setHodStatusFilter] = useState('PENDING'); // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
   const [hodSearchQuery, setHodSearchQuery] = useState('');
@@ -414,6 +415,7 @@ export default function AttendanceModule({
       if (res.success) {
         setHodRequests(res.requests || []);
         setHodPendingCount(res.pendingCount || 0);
+        if (res.counts) setHodCounts(res.counts);
       }
     } catch (e) {
       console.error(e);
@@ -2038,13 +2040,148 @@ export default function AttendanceModule({
               </p>
             </div>
 
-            {/* Status Tabs / Filters */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{ position: 'relative' }}>
+            {/* Interactive Status Tabs / Filter Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', gap: '0.25rem', flexWrap: 'wrap' }}>
+                {/* 1. Pending Pill */}
+                <button
+                  type="button"
+                  onClick={() => setHodStatusFilter('PENDING')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '7px',
+                    border: 'none',
+                    background: hodStatusFilter === 'PENDING' ? '#fef3c7' : 'transparent',
+                    color: hodStatusFilter === 'PENDING' ? '#92400e' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <Clock size={14} />
+                  <span>Pending Approval</span>
+                  <span style={{
+                    background: hodStatusFilter === 'PENDING' ? '#f59e0b' : 'var(--border-light)',
+                    color: hodStatusFilter === 'PENDING' ? '#ffffff' : 'var(--text-secondary)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}>
+                    {hodCounts.pending}
+                  </span>
+                </button>
+
+                {/* 2. Approved Pill */}
+                <button
+                  type="button"
+                  onClick={() => setHodStatusFilter('APPROVED')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '7px',
+                    border: 'none',
+                    background: hodStatusFilter === 'APPROVED' ? '#dcfce7' : 'transparent',
+                    color: hodStatusFilter === 'APPROVED' ? '#166534' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Approved History</span>
+                  <span style={{
+                    background: hodStatusFilter === 'APPROVED' ? '#16a34a' : 'var(--border-light)',
+                    color: hodStatusFilter === 'APPROVED' ? '#ffffff' : 'var(--text-secondary)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}>
+                    {hodCounts.approved}
+                  </span>
+                </button>
+
+                {/* 3. Rejected Pill */}
+                <button
+                  type="button"
+                  onClick={() => setHodStatusFilter('REJECTED')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '7px',
+                    border: 'none',
+                    background: hodStatusFilter === 'REJECTED' ? '#fee2e2' : 'transparent',
+                    color: hodStatusFilter === 'REJECTED' ? '#991b1b' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <XCircle size={14} />
+                  <span>Rejected</span>
+                  <span style={{
+                    background: hodStatusFilter === 'REJECTED' ? '#dc2626' : 'var(--border-light)',
+                    color: hodStatusFilter === 'REJECTED' ? '#ffffff' : 'var(--text-secondary)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}>
+                    {hodCounts.rejected}
+                  </span>
+                </button>
+
+                {/* 4. All Requests Pill */}
+                <button
+                  type="button"
+                  onClick={() => setHodStatusFilter('ALL')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '7px',
+                    border: 'none',
+                    background: hodStatusFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                    color: hodStatusFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <FileSpreadsheet size={14} />
+                  <span>All Requests</span>
+                  <span style={{
+                    background: hodStatusFilter === 'ALL' ? 'rgba(255,255,255,0.3)' : 'var(--border-light)',
+                    color: hodStatusFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}>
+                    {hodCounts.all}
+                  </span>
+                </button>
+              </div>
+
+              {/* Search Box */}
+              <div style={{ position: 'relative', marginLeft: 'auto' }}>
                 <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
-                  placeholder="Search employee or date..."
+                  placeholder="Search employee, date, reason..."
                   value={hodSearchQuery}
                   onChange={(e) => setHodSearchQuery(e.target.value)}
                   style={{
@@ -2055,36 +2192,17 @@ export default function AttendanceModule({
                     color: 'var(--text-primary)',
                     fontSize: '0.82rem',
                     outline: 'none',
-                    width: '220px'
+                    width: '240px'
                   }}
                 />
               </div>
 
-              <select
-                value={hodStatusFilter}
-                onChange={(e) => setHodStatusFilter(e.target.value)}
-                style={{
-                  padding: '0.45rem 0.75rem',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-light)',
-                  background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  outline: 'none'
-                }}
-              >
-                <option value="PENDING">Pending Approval ({hodPendingCount})</option>
-                <option value="APPROVED">Approved History</option>
-                <option value="REJECTED">Rejected</option>
-                <option value="ALL">All Requests</option>
-              </select>
-
+              {/* Refresh Button */}
               <button
                 type="button"
                 onClick={fetchHodRequests}
                 style={{
-                  padding: '0.45rem 0.75rem',
+                  padding: '0.45rem 0.85rem',
                   borderRadius: '8px',
                   border: '1px solid var(--border-light)',
                   background: 'var(--bg-primary)',
@@ -2092,8 +2210,9 @@ export default function AttendanceModule({
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.3rem',
-                  fontSize: '0.82rem'
+                  gap: '0.35rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 600
                 }}
               >
                 <RefreshCw size={14} className={loadingHodRequests ? 'animate-spin' : ''} /> Refresh
@@ -2205,14 +2324,14 @@ export default function AttendanceModule({
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Proposed In / Out Times</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Explanation</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>HOD Action</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>HOD Action / Decision</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredHodRequests.length === 0 ? (
                     <tr>
                       <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        No regularization requests matching current filter.
+                        No regularization requests found in <strong>{hodStatusFilter === 'ALL' ? 'All Requests' : hodStatusFilter}</strong>.
                       </td>
                     </tr>
                   ) : (
@@ -2264,17 +2383,17 @@ export default function AttendanceModule({
                           </td>
                           <td style={{ padding: '0.75rem 1rem' }}>
                             {r.status === 'PENDING' && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>
                                 <Clock size={12} /> Pending Review
                               </span>
                             )}
                             {r.status === 'APPROVED' && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: '#dcfce7', color: '#166534' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, background: '#dcfce7', color: '#166534' }}>
                                 <CheckCircle2 size={12} /> Approved
                               </span>
                             )}
                             {r.status === 'REJECTED' && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: '#fee2e2', color: '#991b1b' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, background: '#fee2e2', color: '#991b1b' }}>
                                 <XCircle size={12} /> Rejected
                               </span>
                             )}
@@ -2290,14 +2409,15 @@ export default function AttendanceModule({
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '0.25rem',
-                                    padding: '0.35rem 0.65rem',
+                                    padding: '0.35rem 0.75rem',
                                     borderRadius: '6px',
                                     border: 'none',
                                     background: '#16a34a',
                                     color: '#ffffff',
                                     fontSize: '0.78rem',
-                                    fontWeight: 600,
-                                    cursor: processingAction ? 'not-allowed' : 'pointer'
+                                    fontWeight: 700,
+                                    cursor: processingAction ? 'not-allowed' : 'pointer',
+                                    boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)'
                                   }}
                                   title="Instant 1-Click Approve & Update Attendance"
                                 >
@@ -2311,24 +2431,48 @@ export default function AttendanceModule({
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '0.25rem',
-                                    padding: '0.35rem 0.65rem',
+                                    padding: '0.35rem 0.75rem',
                                     borderRadius: '6px',
-                                    border: '1px solid var(--border-light)',
-                                    background: 'var(--bg-primary)',
+                                    border: '1px solid #fecaca',
+                                    background: '#fef2f2',
                                     color: '#dc2626',
                                     fontSize: '0.78rem',
-                                    fontWeight: 600,
+                                    fontWeight: 700,
                                     cursor: processingAction ? 'not-allowed' : 'pointer'
                                   }}
-                                  title="Reject request with remark"
+                                  title="Reject request with reason"
                                 >
                                   <X size={14} /> Reject
                                 </button>
                               </div>
+                            ) : r.status === 'APPROVED' ? (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534' }}>
+                                  ✓ Approved by {r.action_by_name || 'HOD'}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  {new Date(r.action_at || r.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </div>
+                                {r.action_remarks && (
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                    "{r.action_remarks}"
+                                  </div>
+                                )}
+                              </div>
                             ) : (
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                {r.action_by_name || 'HOD'} on {new Date(r.action_at || r.updated_at).toLocaleDateString()}
-                              </span>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#991b1b' }}>
+                                  ✕ Rejected by {r.action_by_name || 'HOD'}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  {new Date(r.action_at || r.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </div>
+                                {r.action_remarks && (
+                                  <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
+                                    Reason: "{r.action_remarks}"
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>
