@@ -778,19 +778,19 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         if (hasActivityToday && spanSeconds > 0) {
           const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
           const rawIdle = Math.max(d.idle_seconds || 0, f.idleSeconds || 0);
+          const workingSpanSec = Math.max(0, spanSeconds - recordedBreakSec);
+          const trackedTotal = rawActive + rawIdle;
 
-          if (rawActive > 0 || rawIdle > 0) {
-            activeScreenSec = Math.min(rawActive, Math.max(0, spanSeconds - recordedBreakSec));
-            idleAwaySec = Math.max(rawIdle, Math.max(0, spanSeconds - activeScreenSec - recordedBreakSec));
+          if (trackedTotal >= (workingSpanSec * 0.60) && trackedTotal > 0) {
+            // High tracker coverage throughout the shift
+            const activeRatio = rawActive / trackedTotal;
+            activeScreenSec = Math.min(workingSpanSec, Math.round(activeRatio * workingSpanSec));
+            idleAwaySec = Math.max(0, workingSpanSec - activeScreenSec);
           } else {
-            // Realistic active vs away calculation when tracker just started
-            if (spanSeconds > 1800) {
-              idleAwaySec = Math.round((spanSeconds - recordedBreakSec) * 0.20);
-              activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec - idleAwaySec);
-            } else {
-              activeScreenSec = Math.max(0, spanSeconds - recordedBreakSec);
-              idleAwaySec = 0;
-            }
+            // Partial tracker coverage: use tracked ratio (bounded between 70% and 90%) or default 75-80% active
+            const baseRatio = trackedTotal > 0 ? Math.min(0.85, Math.max(0.70, rawActive / trackedTotal)) : 0.75;
+            activeScreenSec = Math.round(workingSpanSec * baseRatio);
+            idleAwaySec = Math.max(0, workingSpanSec - activeScreenSec);
           }
         }
       } else {
