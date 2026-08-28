@@ -20,17 +20,15 @@ export default function PWAInstallPrompt() {
     setIsStandalone(isStandaloneMode);
 
     // 2. Register Service Worker for PWA
-    if ('serviceWorker' in navigator && process.env.NODE_ENV !== 'development') {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((registration) => {
-            console.log('Swan CRM PWA ServiceWorker registered with scope:', registration.scope);
-          })
-          .catch((err) => {
-            console.warn('Swan CRM PWA ServiceWorker registration failed:', err);
-          });
-      });
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('SuPuja Creations PWA ServiceWorker active:', registration.scope);
+        })
+        .catch((err) => {
+          console.warn('SuPuja Creations ServiceWorker notice:', err);
+        });
     }
 
     // 3. Capture beforeinstallprompt event for Android & Desktop Chrome

@@ -1,21 +1,25 @@
-﻿// SuPuja / Swan CRM Progressive Web App Service Worker
-const CACHE_NAME = 'swan-crm-pwa-v1';
+// SuPuja Creations Progressive Web App Service Worker
+const CACHE_NAME = 'supuja-creations-pwa-v2';
 const PRECACHE_ASSETS = [
-  '/',
   '/manifest.json',
   '/icon-192x192.png',
   '/icon-512x512.png',
-  '/supuja-logo.png',
+  '/icon-maskable.png',
+  '/apple-icon.png',
   '/favicon.ico'
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
-        console.warn('SW Precache non-fatal warning:', err);
-      });
+    caches.open(CACHE_NAME).then(async (cache) => {
+      for (const asset of PRECACHE_ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (e) {
+          console.warn('SW Precache item notice:', asset, e.message);
+        }
+      }
     })
   );
 });

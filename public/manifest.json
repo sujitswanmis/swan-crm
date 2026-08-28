@@ -1,14 +1,14 @@
 {
-  "id": "/",
+  "id": "supuja-crm-pwa",
   "name": "SuPuja Creations",
-  "short_name": "SuPuja Creations",
+  "short_name": "SuPuja CRM",
   "description": "Enterprise CRM & Business Operations by SuPuja Creations",
-  "start_url": "/",
+  "start_url": "/login",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
   "background_color": "#0f172a",
-  "theme_color": "#2563eb",
+  "theme_color": "#0f172a",
   "orientation": "any",
   "prefer_related_applications": false,
   "icons": [
@@ -16,19 +16,19 @@
       "src": "/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/supuja-logo.png",
+      "src": "/icon-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ],
   "categories": ["business", "productivity"]
