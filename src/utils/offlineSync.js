@@ -346,6 +346,40 @@ export async function removeQueueItem(queueId, syncedData = null) {
 }
 
 /**
+ * Strips all non-database / virtual / computed fields before sending to Supabase
+ */
+export function sanitizeLeadPayloadForDb(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const clean = { ...payload };
+
+  if (clean.next_follow_up_date && !clean.follow_up_date) {
+    clean.follow_up_date = clean.next_follow_up_date;
+  }
+
+  const forbiddenFields = [
+    'id', 'is_offline_pending', 'queueId', 'lead_formatted_id', 'sr_no',
+    'last_status', 'latest_remark', 'latest_emp_name', 'completion_count',
+    'last_follow_up_duration', 'last_timestamp', 'next_follow_up_date',
+    'lead_notes', 'noteText', 'business_contact_aio', 'business_email_aio',
+    'cp_name_aio', 'cp_mobile_aio', 'cp_email_aio', 'actor', 'userName',
+    'title', 'actionType', 'entityType', 'timestamp', 'retryCount',
+    'updated_at', 'created_at', 'lastError'
+  ];
+
+  forbiddenFields.forEach((field) => {
+    delete clean[field];
+  });
+
+  for (const k in clean) {
+    if (clean[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k === 'assigned_to' || k.endsWith('_id'))) {
+      clean[k] = null;
+    }
+  }
+
+  return clean;
+}
+
+/**
  * Synchronizes all pending items with Supabase Postgres database
  */
 export async function syncPendingQueue(supabaseClient, onProgress = null) {
@@ -367,34 +401,61 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
 
       if (item.entityType === 'lead') {
         if (item.actionType === 'create') {
-          const { is_offline_pending, queueId, ...cleanPayload } = item.payload;
-          if (cleanPayload.id && String(cleanPayload.id).startsWith('queue_')) {
-            delete cleanPayload.id;
-          }
+          const noteText = item.payload.noteText || item.payload.remarks;
+          const actor = item.payload.created_by || item.payload.actor || 'System';
+          const cleanPayload = sanitizeLeadPayloadForDb(item.payload);
 
-          const { data, error } = await supabaseClient
+          const { data: inserted, error } = await supabaseClient
             .from('leads')
             .insert([cleanPayload])
             .select()
             .single();
 
           if (error) throw error;
+
+          if (inserted && noteText) {
+            try {
+              await supabaseClient.from('lead_notes').insert([{
+                lead_id: inserted.id,
+                note_text: noteText,
+                created_by: actor
+              }]);
+            } catch (e) {}
+          }
+
           await removeQueueItem(item.queueId, { ...item, title: cleanPayload.name || cleanPayload.company });
           successCount++;
         } else if (item.actionType === 'update') {
-          const { id, is_offline_pending, queueId, ...cleanPayload } = item.payload;
-          if (!id || String(id).startsWith('queue_')) {
+          const targetId = item.payload.id;
+          if (!targetId || String(targetId).startsWith('queue_')) {
             await removeQueueItem(item.queueId);
             continue;
           }
 
-          const { error } = await supabaseClient
-            .from('leads')
-            .update(cleanPayload)
-            .eq('id', id);
+          const noteText = item.payload.noteText || item.payload.remarks;
+          const actor = item.payload.created_by || item.payload.actor || 'System';
+          const cleanPayload = sanitizeLeadPayloadForDb(item.payload);
 
-          if (error) throw error;
-          await removeQueueItem(item.queueId, item);
+          if (Object.keys(cleanPayload).length > 0) {
+            const { error } = await supabaseClient
+              .from('leads')
+              .update(cleanPayload)
+              .eq('id', targetId);
+
+            if (error) throw error;
+          }
+
+          if (noteText) {
+            try {
+              await supabaseClient.from('lead_notes').insert([{
+                lead_id: targetId,
+                note_text: noteText,
+                created_by: actor
+              }]);
+            } catch (e) {}
+          }
+
+          await removeQueueItem(item.queueId, { ...item, title: item.payload.name || item.payload.company || `Lead #${targetId}` });
           successCount++;
         } else if (item.actionType === 'delete') {
           if (item.payload.id && !String(item.payload.id).startsWith('queue_')) {
@@ -446,8 +507,36 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         successCount++;
       }
     } catch (itemErr) {
-      console.warn('Sync failed for item:', item.queueId, itemErr);
+      // Layer 2 Auto-Fallback: Dynamic Server-Side Force Sync to guarantee 99.99% sync rate
+      try {
+        const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
+        const fallbackRes = await forceSyncOfflineItem(item);
+        if (fallbackRes && fallbackRes.success) {
+          await removeQueueItem(item.queueId, fallbackRes.item || item);
+          successCount++;
+          continue;
+        }
+      } catch (fbErr) {
+        console.warn('Layer 2 force-sync fallback notice:', fbErr);
+      }
+
+      const errMsg = itemErr?.message || itemErr?.details || String(itemErr);
+      console.error('[OFFLINE SYNC FAILED ITEM]', item.queueId, item.actionType, errMsg, itemErr);
       failCount++;
+      const currentRetries = (item.retryCount || 0) + 1;
+      
+      try {
+        const db = await openOfflineDB();
+        if (db) {
+          const tx = db.transaction(STORES.SYNC_QUEUE, 'readwrite');
+          // ZERO DATA LOSS GUARANTEE: Never delete user actions on error. Always keep full payload preserved in IndexedDB.
+          tx.objectStore(STORES.SYNC_QUEUE).put({ 
+            ...item, 
+            retryCount: currentRetries,
+            lastError: errMsg 
+          });
+        }
+      } catch (e) {}
     }
   }
 

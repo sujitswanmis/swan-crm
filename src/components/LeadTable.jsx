@@ -366,7 +366,7 @@ const LeadStatusCell = React.memo(({ info }) => {
     }
 
     try {
-      const { error: updateError } = await supabase.from('leads').update({ ...updates, updated_at: nowIso }).eq('id', lead.id);
+      const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
       if (updateError) throw updateError;
       
       const { data: { user } } = await supabase.auth.getUser();
@@ -1397,7 +1397,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     }
 
     try {
-      const { error: updateError } = await supabase.from('leads').update({ ...updates, updated_at: nowIso }).eq('id', lead.id);
+      const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
       if (updateError) throw updateError;
       
       const { data: { user } } = await supabase.auth.getUser();

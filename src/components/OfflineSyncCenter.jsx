@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X, ShieldAlert, Zap } from 'lucide-react';
-import { getPendingQueue, getSyncHistory, syncPendingQueue, getDailyOfflineUsage, incrementDailyOfflineSeconds, MAX_OFFLINE_SECONDS_PER_DAY } from '@/utils/offlineSync';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X, ShieldAlert, Zap, Copy, Check } from 'lucide-react';
+import { getPendingQueue, getSyncHistory, syncPendingQueue, removeQueueItem, getDailyOfflineUsage, incrementDailyOfflineSeconds, MAX_OFFLINE_SECONDS_PER_DAY } from '@/utils/offlineSync';
 import { createClient } from '@/utils/supabase/client';
 
 export default function OfflineSyncCenter({ onSyncComplete }) {
@@ -335,28 +335,134 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                         key={item.queueId}
                         style={{
                           padding: '10px 14px',
-                          background: 'rgba(245, 158, 11, 0.08)',
-                          border: '1px solid rgba(245, 158, 11, 0.25)',
+                          background: item.lastError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.08)',
+                          border: item.lastError ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(245, 158, 11, 0.25)',
                           borderRadius: '10px',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between'
+                          justifyContent: 'space-between',
+                          gap: '10px'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <Clock style={{ width: '16px', height: '16px', color: '#fbbf24', flexShrink: 0 }} />
-                          <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                          <Clock style={{ width: '16px', height: '16px', color: item.lastError ? '#ef4444' : '#fbbf24', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9' }}>
                               {item.title || `${item.actionType.toUpperCase()} ${item.entityType}`}
                             </div>
                             <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                               Saved {new Date(item.timestamp).toLocaleTimeString()} on device
                             </div>
+                            {item.lastError && (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '4px', background: 'rgba(239, 68, 68, 0.15)', padding: '4px 8px', borderRadius: '6px' }}>
+                                <div style={{ fontSize: '11px', color: '#fca5a5', wordBreak: 'break-word' }}>
+                                  ⚠️ Error: {item.lastError}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const report = JSON.stringify({
+                                      queueId: item.queueId,
+                                      actionType: item.actionType,
+                                      entityType: item.entityType,
+                                      timestamp: item.timestamp,
+                                      title: item.title,
+                                      error: item.lastError,
+                                      payload: item.payload
+                                    }, null, 2);
+                                    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                                      navigator.clipboard.writeText(report);
+                                      setToastMessage('📋 Error log copied! Paste it in chat.');
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                                    color: '#fff',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    fontSize: '10px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    cursor: 'pointer',
+                                    flexShrink: 0
+                                  }}
+                                  title="Copy full error details to paste in chat"
+                                >
+                                  <Copy style={{ width: '10px', height: '10px' }} />
+                                  Copy Error
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 'bold' }}>
-                          PENDING
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '12px', background: item.lastError ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: item.lastError ? '#f87171' : '#fbbf24', fontWeight: 'bold' }}>
+                            {item.lastError ? 'FAILED' : 'PENDING'}
+                          </span>
+                          {item.lastError && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerSync();
+                                }}
+                                style={{
+                                  background: 'rgba(56, 189, 248, 0.2)',
+                                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                                  color: '#38bdf8',
+                                  borderRadius: '6px',
+                                  padding: '3px 8px',
+                                  fontSize: '10px',
+                                  fontWeight: '600',
+                                  cursor: 'pointer'
+                                }}
+                                title="Retry syncing this item"
+                              >
+                                Retry
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
+                                    const res = await forceSyncOfflineItem(item);
+                                    if (res && res.success) {
+                                      await removeQueueItem(item.queueId, res.item || item);
+                                      setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
+                                      await loadQueueState();
+                                      if (onSyncComplete) onSyncComplete();
+                                    } else {
+                                      alert('Force sync issue: ' + (res?.error || 'Unknown error'));
+                                    }
+                                  } catch (err) {
+                                    alert('Force sync error: ' + err.message);
+                                  }
+                                }}
+                                style={{
+                                  background: 'rgba(234, 179, 8, 0.2)',
+                                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                                  color: '#facc15',
+                                  borderRadius: '6px',
+                                  padding: '3px 8px',
+                                  fontSize: '10px',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Forcefully write this update to database with server privileges"
+                              >
+                                ⚡ Force Sync
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -397,9 +503,45 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
 
             {/* Modal Footer */}
             <div style={{ padding: '12px 20px', background: '#0f172a', borderTop: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11px', color: '#64748b' }}>
-                Storage: Browser IndexedDB (Zero Data Loss)
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  Storage: Browser IndexedDB (Zero Data Loss)
+                </span>
+                {pendingItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const diag = {
+                        timestamp: new Date().toISOString(),
+                        isOnline: typeof navigator !== 'undefined' ? navigator.onLine : false,
+                        pendingCount: pendingItems.length,
+                        pendingItems: pendingItems,
+                        history: syncedHistory.slice(0, 5)
+                      };
+                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                        navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+                        setToastMessage('📋 Diagnostic report copied! Paste it in chat.');
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: '#94a3b8',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Copy full sync diagnostic report for developer support"
+                  >
+                    <Copy style={{ width: '11px', height: '11px' }} />
+                    Copy Log
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setShowModal(false)}
                 style={{
