@@ -90,16 +90,18 @@ export async function uploadUserAvatar(formData) {
       console.warn('Storage exception notice:', storageErr.message);
     }
 
-    const finalAvatarUrl = publicUrl || base64Data;
+    if (!publicUrl) {
+      return { success: false, error: 'Failed to upload photo to cloud storage' };
+    }
 
-    // 2. Instantly update user_metadata in Supabase Auth (So all devices see the new avatar URL!)
+    // 2. Instantly update user_metadata in Supabase Auth with the short CDN URL
     try {
       const { data: userData } = await adminClient.auth.admin.getUserById(userId);
       const currentMeta = userData?.user?.user_metadata || {};
       await adminClient.auth.admin.updateUserById(userId, {
         user_metadata: {
           ...currentMeta,
-          avatar_url: finalAvatarUrl
+          avatar_url: publicUrl
         }
       });
     } catch (metaErr) {
@@ -108,7 +110,7 @@ export async function uploadUserAvatar(formData) {
 
     return {
       success: true,
-      avatarUrl: finalAvatarUrl
+      avatarUrl: publicUrl
     };
   } catch (err) {
     console.error('Unhandled error in uploadUserAvatar:', err);
