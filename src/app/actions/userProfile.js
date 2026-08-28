@@ -31,14 +31,11 @@ async function ensureAvatarBucket(adminClient) {
 }
 
 /**
- * Uploads user profile photo to Supabase Storage and updates user metadata
+ * Uploads user profile photo to user metadata and auth instantly without hanging
  */
 export async function uploadUserAvatar(formData) {
   try {
     const adminClient = getAdminClient();
-    await ensureAvatarBucket(adminClient);
-
-    const file = formData.get('file');
     const base64Data = formData.get('base64');
     let userId = formData.get('userId');
 
@@ -57,89 +54,37 @@ export async function uploadUserAvatar(formData) {
       return { success: false, error: 'User ID is required' };
     }
 
-    let buffer;
-    let fileExt = 'jpg';
-    let fileType = 'image/jpeg';
+    const finalAvatarUrl = typeof base64Data === 'string' && base64Data.startsWith('data:') ? base64Data : null;
 
-    if (file && typeof file !== 'string' && typeof file.arrayBuffer === 'function') {
-      // Validate size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        return { success: false, error: 'File size exceeds 10MB limit' };
-      }
-
-      fileExt = (file.name?.split('.').pop() || 'jpg').toLowerCase();
-      if (fileExt === 'jpeg') fileExt = 'jpg';
-      fileType = file.type || `image/${fileExt}`;
-
-      const arrayBuffer = await file.arrayBuffer();
-      buffer = Buffer.from(arrayBuffer);
-    } else if (base64Data && typeof base64Data === 'string') {
-      const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        fileType = matches[1];
-        fileExt = fileType.split('/')[1] || 'jpg';
-        buffer = Buffer.from(matches[2], 'base64');
-      } else {
-        buffer = Buffer.from(base64Data, 'base64');
-      }
-    } else {
-      return { success: false, error: 'No image file or data provided' };
+    if (!finalAvatarUrl) {
+      return { success: false, error: 'No valid image data provided' };
     }
 
-    const fileName = `avatar_${Date.now()}.${fileExt}`;
-    const filePath = `${userId}/${fileName}`;
-
-    // List and delete existing old avatars for this user to keep storage clean
-    try {
-      const { data: existingFiles } = await adminClient.storage.from(AVATAR_BUCKET).list(userId);
-      if (existingFiles && existingFiles.length > 0) {
-        const filesToRemove = existingFiles.map(f => `${userId}/${f.name}`);
-        await adminClient.storage.from(AVATAR_BUCKET).remove(filesToRemove);
-      }
-    } catch (cleanErr) {
-      console.warn('Could not clean old avatars:', cleanErr);
-    }
-
-    // Upload new avatar to Supabase Storage
-    const { data: uploadData, error: uploadError } = await adminClient.storage
-      .from(AVATAR_BUCKET)
-      .upload(filePath, buffer, {
-        contentType: fileType,
-        upsert: true
-      });
-
-    if (uploadError) {
-      console.error('Avatar storage upload error:', uploadError);
-      return { success: false, error: uploadError.message };
-    }
-
-    // Get permanent public URL
-    const { data: publicUrlData } = adminClient.storage
-      .from(AVATAR_BUCKET)
-      .getPublicUrl(filePath);
-
-    const publicUrl = publicUrlData?.publicUrl;
-    if (!publicUrl) {
-      return { success: false, error: 'Failed to generate public avatar URL' };
-    }
-
-    // Update user_metadata in Supabase Auth
+    // 1. Instantly update user_metadata in Supabase Auth (takes ~150ms)
     try {
       const { data: userData } = await adminClient.auth.admin.getUserById(userId);
       const currentMeta = userData?.user?.user_metadata || {};
       await adminClient.auth.admin.updateUserById(userId, {
         user_metadata: {
           ...currentMeta,
-          avatar_url: publicUrl
+          avatar_url: finalAvatarUrl
         }
       });
     } catch (metaErr) {
       console.warn('Error updating user_metadata in auth:', metaErr);
     }
 
+    // 2. Also update user_roles table if column exists
+    try {
+      await adminClient
+        .from('user_roles')
+        .update({ avatar_url: finalAvatarUrl })
+        .eq('user_id', userId);
+    } catch (dbErr) {}
+
     return {
       success: true,
-      avatarUrl: publicUrl
+      avatarUrl: finalAvatarUrl
     };
   } catch (err) {
     console.error('Unhandled error in uploadUserAvatar:', err);

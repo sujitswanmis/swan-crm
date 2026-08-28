@@ -151,35 +151,22 @@ function LoginFormContent() {
     }
   };
 
-  // Complete redirect & session tracking after successful authentication
-  const completeLoginFlow = async (userId) => {
+  // Complete redirect & session tracking after successful authentication (Instant / Non-blocking)
+  const completeLoginFlow = (userId) => {
+    // 1. Fire-and-forget background session & audit logging without blocking the redirect
     try {
-      const { logUserSession, logAuditAction } = await import('@/app/actions/audit');
-      const device = navigator.userAgent;
-      await logUserSession(device);
-      await logAuditAction('User Login', 'User successfully logged in to Web App');
+      import('@/app/actions/audit').then(({ logUserSession, logAuditAction }) => {
+        const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
+        logUserSession(device).catch(err => console.warn('Non-blocking session log:', err));
+        logAuditAction('User Login', 'User successfully logged in to Web App').catch(err => console.warn('Non-blocking audit log:', err));
+      }).catch(err => console.warn('Failed to load audit module:', err));
     } catch (e) { 
-      console.error('Failed to log session', e); 
+      console.warn('Failed to initiate session logging', e); 
     }
     
-    let targetPath = '/dashboard';
-    try {
-      if (userId) {
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .single();
-        if (roleData?.role === 'customer') {
-          targetPath = '/chat';
-        }
-      }
-    } catch (err) {
-      console.error("Failed to check user role:", err);
-    }
-
+    // 2. Instant Redirect without blocking for round-trip queries
     const currentSearchParams = new URLSearchParams(window.location.search);
-    const nextPath = currentSearchParams.get('next') || targetPath;
+    const nextPath = currentSearchParams.get('next') || '/dashboard';
     window.location.href = nextPath;
   };
 

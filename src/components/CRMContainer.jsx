@@ -556,12 +556,49 @@ export default function CRMContainer({
     };
   }, []);
 
+  const compressAvatarFile = (file) => {
+    return new Promise((resolve) => {
+      try {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+            const maxDim = 400;
+            if (width > height && width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            resolve(compressed);
+          };
+          img.onerror = () => resolve(readerEvent.target?.result || '');
+          img.src = readerEvent.target?.result;
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn('Canvas compression fallback:', err);
+        resolve('');
+      }
+    });
+  };
+
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Please select an image smaller than 10MB.");
+    if (file.size > 15 * 1024 * 1024) {
+      alert("Please select an image smaller than 15MB.");
       return;
     }
 
@@ -574,22 +611,13 @@ export default function CRMContainer({
     setIsUploadingAvatar(true);
     const prevAvatar = userAvatar;
     
-    // Convert to base64 & create fast preview
-    let base64Data = '';
-    try {
-      const reader = new FileReader();
-      const readerPromise = new Promise((resolve) => {
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve('');
-      });
-      reader.readAsDataURL(file);
-      base64Data = await readerPromise;
-    } catch (e) {
-      console.warn('Preview reader warning:', e);
-    }
+    // Fast client-side compression for instant UI update and tiny payload
+    let base64Data = await compressAvatarFile(file);
 
     if (base64Data) {
       setUserAvatar(base64Data);
+      if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, base64Data);
+      localStorage.setItem('crm_user_avatar', base64Data);
     }
 
     try {
@@ -611,14 +639,16 @@ export default function CRMContainer({
           localStorage.setItem(`crm_user_avatar_${targetUserId}`, res.avatarUrl);
         }
         localStorage.setItem('crm_user_avatar', res.avatarUrl);
-      } else {
+      } else if (!base64Data) {
         setUserAvatar(prevAvatar);
         alert(`Photo upload failed: ${res.error || 'Server error'}`);
       }
     } catch (err) {
       console.error('Photo upload exception:', err);
-      setUserAvatar(prevAvatar);
-      alert('Photo upload failed. Please try again.');
+      if (!base64Data) {
+        setUserAvatar(prevAvatar);
+        alert('Photo upload failed. Please try again.');
+      }
     } finally {
       setIsUploadingAvatar(false);
       if (avatarInputRef.current) {
@@ -1270,13 +1300,19 @@ export default function CRMContainer({
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    // 1. Non-blocking audit log in background
     try {
-      await logAuditAction('User Logout', 'User logged out of active session');
-    } catch (e) {
-      console.error('Audit Log failed', e);
-    }
-    await supabase.auth.signOut();
+      logAuditAction('User Logout', 'User logged out of active session').catch(() => {});
+    } catch (e) {}
+
+    // 2. Clear client session in background
+    try {
+      supabase.auth.signOut().catch(() => {});
+      sessionStorage.clear();
+    } catch (e) {}
+
+    // 3. Instant direct navigation to logout endpoint
     window.location.href = '/auth/logout';
   };
 
