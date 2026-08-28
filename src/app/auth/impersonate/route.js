@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { consumeImpersonateToken } from "@/lib/impersonateStore";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 const getAdminClient = () => {
@@ -12,31 +11,13 @@ const getAdminClient = () => {
 
 export async function GET(request) {
   const requestUrl = new URL(request.url);
-  const key = requestUrl.searchParams.get("key");
-  const directToken = requestUrl.searchParams.get("token");
+  const tokenHash = requestUrl.searchParams.get("token");
+  const adminRestoreToken = requestUrl.searchParams.get("restore");
+  const targetName = requestUrl.searchParams.get("name") || "Employee";
+  const targetRole = requestUrl.searchParams.get("role") || "agent";
   const origin = requestUrl.origin;
 
-  let tokenHash = null;
-  let adminRestoreToken = null;
-  let targetName = "Employee";
-  let targetRole = "agent";
-
-  if (key) {
-    // Consume one-time token (single-use, expires in 5 minutes)
-    const entry = consumeImpersonateToken(key);
-    if (!entry) {
-      return NextResponse.redirect(`${origin}/auth/impersonate/expired?reason=expired`);
-    }
-    tokenHash = entry.tokenHash;
-    adminRestoreToken = entry.adminRestoreToken;
-    targetName = entry.name || "Employee";
-    targetRole = entry.role || "agent";
-  } else if (directToken) {
-    tokenHash = directToken;
-    adminRestoreToken = requestUrl.searchParams.get("restore");
-    targetName = requestUrl.searchParams.get("name") || "Employee";
-    targetRole = requestUrl.searchParams.get("role") || "agent";
-  } else {
+  if (!tokenHash) {
     return NextResponse.redirect(`${origin}/auth/impersonate/expired?reason=missing`);
   }
 
