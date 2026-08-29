@@ -473,3 +473,28 @@ export function calculateDelayStatus({
     formattedCutoff: cutoffDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   };
 }
+
+/**
+ * Metadata serialization helpers to guarantee 100% persistence of advance recurrence, slots, Sunday & Holiday rules
+ */
+export function serializeTemplateDescription(userDesc = '', scheduleMeta = {}) {
+  const cleanUserDesc = (userDesc || '').replace(/<!--__SWAN_SCHEDULE_META__[\s\S]*?__END_META__-->/g, '').trim();
+  const metaStr = `<!--__SWAN_SCHEDULE_META__${JSON.stringify(scheduleMeta)}__END_META__-->`;
+  return cleanUserDesc ? `${cleanUserDesc}\n${metaStr}` : metaStr;
+}
+
+export function parseTemplateDescription(rawDesc = '') {
+  let userDesc = rawDesc || '';
+  let scheduleMeta = {};
+  const match = (userDesc || '').match(/<!--__SWAN_SCHEDULE_META__([\s\S]*?)__END_META__-->/);
+  if (match) {
+    try {
+      scheduleMeta = JSON.parse(match[1]) || {};
+    } catch (e) {
+      console.warn('Error parsing schedule metadata:', e.message);
+    }
+    userDesc = userDesc.replace(/<!--__SWAN_SCHEDULE_META__[\s\S]*?__END_META__-->/g, '').trim();
+  }
+  return { userDescription: userDesc, scheduleMeta };
+}
+

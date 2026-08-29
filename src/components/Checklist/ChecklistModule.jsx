@@ -301,8 +301,8 @@ export default function ChecklistModule({
 
     const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
-    const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
-    const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+    const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
+    const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
 
     setTemplateForm({
       id: tmpl.id,
@@ -381,8 +381,8 @@ export default function ChecklistModule({
 
     const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
-    const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
-    const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+    const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
+    const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
 
     setTemplateForm({
       title: `${tmpl.title} (Copy)`,

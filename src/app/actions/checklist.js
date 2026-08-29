@@ -9,7 +9,9 @@ import {
   isDateSunday,
   isDateHoliday,
   generateDefaultDailySlots,
-  DEFAULT_HOLIDAYS_LIST
+  DEFAULT_HOLIDAYS_LIST,
+  serializeTemplateDescription,
+  parseTemplateDescription
 } from '@/utils/checklistUtils';
 import crypto from 'crypto';
 
@@ -49,21 +51,57 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
     if (error) throw error;
 
     const normalized = (data || []).map(t => {
-      let status = t.status;
+      const { userDescription, scheduleMeta } = parseTemplateDescription(t.description);
+
+      let status = t.status || scheduleMeta.status;
       if (!status) {
         status = t.is_active ? 'ACTIVE' : 'INACTIVE';
       }
 
-      const scheduleConfig = t.schedule_config || {};
-      const repCount = t.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
-      const dailySlots = t.daily_slots || scheduleConfig.daily_slots || generateDefaultDailySlots(repCount);
-      const daysOfWeek = t.days_of_week || scheduleConfig.days_of_week || ['Monday'];
-      const dayOfMonth = t.day_of_month || scheduleConfig.day_of_month || 1;
-      const includeSundays = t.include_sundays !== undefined ? t.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
-      const includeHolidays = t.include_holidays !== undefined ? t.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+      const repCount = t.daily_repetition_count || scheduleMeta.daily_repetition_count || t.schedule_config?.daily_repetition_count || 1;
+      const dailySlots = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0)
+        ? t.daily_slots
+        : ((Array.isArray(scheduleMeta.daily_slots) && scheduleMeta.daily_slots.length > 0)
+          ? scheduleMeta.daily_slots
+          : ((Array.isArray(t.schedule_config?.daily_slots) && t.schedule_config.daily_slots.length > 0)
+            ? t.schedule_config.daily_slots
+            : generateDefaultDailySlots(repCount)));
+
+      const daysOfWeek = (Array.isArray(t.days_of_week) && t.days_of_week.length > 0)
+        ? t.days_of_week
+        : ((Array.isArray(scheduleMeta.days_of_week) && scheduleMeta.days_of_week.length > 0)
+          ? scheduleMeta.days_of_week
+          : (Array.isArray(t.schedule_config?.days_of_week) && t.schedule_config.days_of_week.length > 0
+            ? t.schedule_config.days_of_week
+            : ['Monday']));
+
+      const dayOfMonth = t.day_of_month || scheduleMeta.day_of_month || t.schedule_config?.day_of_month || 1;
+
+      const includeSundays = t.include_sundays !== undefined
+        ? Boolean(t.include_sundays)
+        : (scheduleMeta.include_sundays !== undefined
+          ? Boolean(scheduleMeta.include_sundays)
+          : (t.schedule_config?.include_sundays !== undefined ? Boolean(t.schedule_config.include_sundays) : true));
+
+      const includeHolidays = t.include_holidays !== undefined
+        ? Boolean(t.include_holidays)
+        : (scheduleMeta.include_holidays !== undefined
+          ? Boolean(scheduleMeta.include_holidays)
+          : (t.schedule_config?.include_holidays !== undefined ? Boolean(t.schedule_config.include_holidays) : false));
+
+      const scheduleConfig = {
+        daily_repetition_count: repCount,
+        daily_slots: dailySlots,
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        include_sundays: includeSundays,
+        include_holidays: includeHolidays,
+        status: status.toUpperCase()
+      };
 
       return {
         ...t,
+        description: userDescription,
         status: status.toUpperCase(),
         daily_repetition_count: repCount,
         daily_slots: dailySlots,
@@ -71,14 +109,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
-        schedule_config: {
-          daily_repetition_count: repCount,
-          daily_slots: dailySlots,
-          days_of_week: daysOfWeek,
-          day_of_month: dayOfMonth,
-          include_sundays: includeSundays,
-          include_holidays: includeHolidays
-        }
+        schedule_config: scheduleConfig
       };
     });
 
@@ -109,20 +140,24 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
     const includeSundays = templateData.include_sundays !== undefined ? Boolean(templateData.include_sundays) : true;
     const includeHolidays = templateData.include_holidays !== undefined ? Boolean(templateData.include_holidays) : false;
 
+    const { userDescription } = parseTemplateDescription(templateData.description);
     const scheduleConfig = {
       daily_repetition_count: repCount,
       daily_slots: dailySlots,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
-      include_holidays: includeHolidays
+      include_holidays: includeHolidays,
+      status: resolvedStatus
     };
+
+    const packedDescription = serializeTemplateDescription(userDescription, scheduleConfig);
 
     const payload = {
       id,
       tenant_id: tenantId,
       title: (templateData.title || '').trim(),
-      description: templateData.description || '',
+      description: packedDescription,
       frequency: (templateData.frequency || 'DAILY').toUpperCase(),
       department: templateData.department || 'General',
       category: templateData.category || 'OPERATIONS',
@@ -152,12 +187,12 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       .single();
 
     if (error) {
-      // Graceful fallback if certain columns are not present in Supabase table
+      // Graceful fallback for environments with standard table columns, using packed description
       const safePayload = {
         id,
         tenant_id: tenantId,
         title: (templateData.title || '').trim(),
-        description: templateData.description || '',
+        description: packedDescription,
         frequency: (templateData.frequency || 'DAILY').toUpperCase(),
         department: templateData.department || 'General',
         category: templateData.category || 'OPERATIONS',
@@ -188,6 +223,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       success: true,
       data: {
         ...data,
+        description: userDescription,
         status: resolvedStatus,
         daily_repetition_count: repCount,
         daily_slots: dailySlots,
@@ -230,9 +266,24 @@ export async function setChecklistTemplateStatus(templateId, newStatus, tenantId
 
     const isActive = statusClean === 'ACTIVE';
 
+    // Fetch existing template description so we update the embedded metadata too
+    const { data: existingTmpl } = await adminClient
+      .from('checklist_templates')
+      .select('description')
+      .eq('id', templateId)
+      .single();
+
+    let updatedDescription = undefined;
+    if (existingTmpl) {
+      const { userDescription, scheduleMeta } = parseTemplateDescription(existingTmpl.description);
+      scheduleMeta.status = statusClean;
+      updatedDescription = serializeTemplateDescription(userDescription, scheduleMeta);
+    }
+
     let updatePayload = {
       is_active: isActive,
       status: statusClean,
+      ...(updatedDescription !== undefined ? { description: updatedDescription } : {}),
       updated_at: new Date().toISOString()
     };
 
@@ -243,12 +294,14 @@ export async function setChecklistTemplateStatus(templateId, newStatus, tenantId
       .eq('tenant_id', tenantId);
 
     if (error) {
+      const fallbackPayload = {
+        is_active: isActive,
+        ...(updatedDescription !== undefined ? { description: updatedDescription } : {}),
+        updated_at: new Date().toISOString()
+      };
       const { error: fallbackErr } = await adminClient
         .from('checklist_templates')
-        .update({
-          is_active: isActive,
-          updated_at: new Date().toISOString()
-        })
+        .update(fallbackPayload)
         .eq('id', templateId)
         .eq('tenant_id', tenantId);
       if (fallbackErr) throw fallbackErr;
@@ -290,11 +343,62 @@ export async function getEmployeeChecklistDashboard({
       templatesQuery = templatesQuery.eq('frequency', frequency.toUpperCase());
     }
 
-    const { data: templates, error: tmplErr } = await templatesQuery;
+    const { data: rawTemplates, error: tmplErr } = await templatesQuery;
     if (tmplErr) throw tmplErr;
 
+    const templates = (rawTemplates || []).map(tmpl => {
+      const { userDescription, scheduleMeta } = parseTemplateDescription(tmpl.description);
+      const repCount = tmpl.daily_repetition_count || scheduleMeta.daily_repetition_count || tmpl.schedule_config?.daily_repetition_count || 1;
+      const dailySlots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
+        ? tmpl.daily_slots
+        : ((Array.isArray(scheduleMeta.daily_slots) && scheduleMeta.daily_slots.length > 0)
+          ? scheduleMeta.daily_slots
+          : ((Array.isArray(tmpl.schedule_config?.daily_slots) && tmpl.schedule_config.daily_slots.length > 0)
+            ? tmpl.schedule_config.daily_slots
+            : generateDefaultDailySlots(repCount)));
+      const daysOfWeek = (Array.isArray(tmpl.days_of_week) && tmpl.days_of_week.length > 0)
+        ? tmpl.days_of_week
+        : ((Array.isArray(scheduleMeta.days_of_week) && scheduleMeta.days_of_week.length > 0)
+          ? scheduleMeta.days_of_week
+          : (Array.isArray(tmpl.schedule_config?.days_of_week) && tmpl.schedule_config.days_of_week.length > 0
+            ? tmpl.schedule_config.days_of_week
+            : ['Monday']));
+      const dayOfMonth = tmpl.day_of_month || scheduleMeta.day_of_month || tmpl.schedule_config?.day_of_month || 1;
+      const includeSundays = tmpl.include_sundays !== undefined
+        ? Boolean(tmpl.include_sundays)
+        : (scheduleMeta.include_sundays !== undefined
+          ? Boolean(scheduleMeta.include_sundays)
+          : (tmpl.schedule_config?.include_sundays !== undefined ? Boolean(tmpl.schedule_config.include_sundays) : true));
+      const includeHolidays = tmpl.include_holidays !== undefined
+        ? Boolean(tmpl.include_holidays)
+        : (scheduleMeta.include_holidays !== undefined
+          ? Boolean(scheduleMeta.include_holidays)
+          : (tmpl.schedule_config?.include_holidays !== undefined ? Boolean(tmpl.schedule_config.include_holidays) : false));
+
+      const scheduleConfig = {
+        daily_repetition_count: repCount,
+        daily_slots: dailySlots,
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        include_sundays: includeSundays,
+        include_holidays: includeHolidays
+      };
+
+      return {
+        ...tmpl,
+        description: userDescription,
+        daily_repetition_count: repCount,
+        daily_slots: dailySlots,
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        include_sundays: includeSundays,
+        include_holidays: includeHolidays,
+        schedule_config: scheduleConfig
+      };
+    });
+
     // Filter by assigned employee, Sunday rule, and Holiday rule
-    const filteredTemplates = (templates || []).filter(tmpl => {
+    const filteredTemplates = templates.filter(tmpl => {
       // 1. Assignment check
       if (tmpl.assigned_type !== 'ALL' && emailClean) {
         const assignedEmails = (tmpl.assigned_employee_email || '')
@@ -305,17 +409,13 @@ export async function getEmployeeChecklistDashboard({
         if (!assignedEmails.includes(emailClean)) return false;
       }
 
-      const scheduleConfig = tmpl.schedule_config || {};
-      const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
-      const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
-
       // 2. Sunday exclusion check
-      if (isSunday && includeSundays === false) {
+      if (isSunday && tmpl.include_sundays === false) {
         return false;
       }
 
       // 3. Holiday exclusion check
-      if (holidayInfo && includeHolidays === false) {
+      if (holidayInfo && tmpl.include_holidays === false) {
         return false;
       }
 
