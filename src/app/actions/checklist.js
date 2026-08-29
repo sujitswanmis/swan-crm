@@ -94,6 +94,12 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
 
       const bufferMinutes = parseInt(t.buffer_minutes || scheduleMeta.buffer_minutes || t.schedule_config?.buffer_minutes, 10) || 20;
 
+      const allowDelayedSubmission = t.allow_delayed_submission !== undefined
+        ? Boolean(t.allow_delayed_submission)
+        : (scheduleMeta.allow_delayed_submission !== undefined
+          ? Boolean(scheduleMeta.allow_delayed_submission)
+          : (t.schedule_config?.allow_delayed_submission !== undefined ? Boolean(t.schedule_config.allow_delayed_submission) : false));
+
       const scheduleConfig = {
         daily_repetition_count: repCount,
         daily_slots: dailySlots,
@@ -102,6 +108,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
         buffer_minutes: bufferMinutes,
+        allow_delayed_submission: allowDelayedSubmission,
         status: status.toUpperCase()
       };
 
@@ -116,6 +123,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
         buffer_minutes: bufferMinutes,
+        allow_delayed_submission: allowDelayedSubmission,
         schedule_config: scheduleConfig
       };
     });
@@ -147,6 +155,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
     const includeSundays = templateData.include_sundays !== undefined ? Boolean(templateData.include_sundays) : true;
     const includeHolidays = templateData.include_holidays !== undefined ? Boolean(templateData.include_holidays) : false;
     const bufferMinutes = parseInt(templateData.buffer_minutes, 10) || 20;
+    const allowDelayedSubmission = Boolean(templateData.allow_delayed_submission);
 
     const { userDescription } = parseTemplateDescription(templateData.description);
     const scheduleConfig = {
@@ -157,6 +166,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
       buffer_minutes: bufferMinutes,
+      allow_delayed_submission: allowDelayedSubmission,
       status: resolvedStatus
     };
 
@@ -395,6 +405,11 @@ export async function getEmployeeChecklistDashboard({
           : (tmpl.schedule_config?.include_holidays !== undefined ? Boolean(tmpl.schedule_config.include_holidays) : false));
 
       const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleMeta.buffer_minutes || tmpl.schedule_config?.buffer_minutes, 10) || 20;
+      const allowDelayedSubmission = tmpl.allow_delayed_submission !== undefined
+        ? Boolean(tmpl.allow_delayed_submission)
+        : (scheduleMeta.allow_delayed_submission !== undefined
+          ? Boolean(scheduleMeta.allow_delayed_submission)
+          : (tmpl.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmpl.schedule_config.allow_delayed_submission) : false));
 
       const scheduleConfig = {
         daily_repetition_count: repCount,
@@ -403,7 +418,8 @@ export async function getEmployeeChecklistDashboard({
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
-        buffer_minutes: bufferMinutes
+        buffer_minutes: bufferMinutes,
+        allow_delayed_submission: allowDelayedSubmission
       };
 
       return {
@@ -416,6 +432,7 @@ export async function getEmployeeChecklistDashboard({
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
         buffer_minutes: bufferMinutes,
+        allow_delayed_submission: allowDelayedSubmission,
         schedule_config: scheduleConfig
       };
     });
@@ -490,9 +507,9 @@ export async function getEmployeeChecklistDashboard({
         const repCount = tmpl.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
         const dailySlots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
           ? tmpl.daily_slots
-          : (Array.isArray(scheduleConfig.daily_slots) && scheduleConfig.daily_slots.length > 0
+          : (Array.isArray(scheduleConfig.daily_slots) && scheduleConfig.daily_slots.length > 0)
             ? scheduleConfig.daily_slots
-            : generateDefaultDailySlots(repCount));
+            : generateDefaultDailySlots(repCount);
 
         if (repCount > 1 || dailySlots.length > 1) {
           // Multiple Daily Repetitions (e.g. 8 slots)
@@ -515,6 +532,7 @@ export async function getEmployeeChecklistDashboard({
               dayOfMonth: tmpl.day_of_month || 1,
               submittedAt: sub?.submitted_at || null,
               isCompleted: isDone,
+              allowDelayedSubmission: tmpl.allow_delayed_submission,
               now: new Date()
             });
 
@@ -562,6 +580,7 @@ export async function getEmployeeChecklistDashboard({
         dayOfMonth: tmpl.day_of_month || 1,
         submittedAt: sub?.submitted_at || null,
         isCompleted: isDone,
+        allowDelayedSubmission: tmpl.allow_delayed_submission,
         now: new Date()
       });
 

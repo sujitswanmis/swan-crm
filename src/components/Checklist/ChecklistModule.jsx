@@ -733,6 +733,7 @@ export default function ChecklistModule({
       daily_slots: generateDefaultDailySlots(1),
       due_time: '18:00',
       buffer_minutes: 20,
+      allow_delayed_submission: false,
       days_of_week: ['Monday'],
       day_of_month: 1,
       include_sundays: true,
@@ -770,6 +771,7 @@ export default function ChecklistModule({
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
     const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
+    const allowDelayedSubmission = tmpl.allow_delayed_submission !== undefined ? Boolean(tmpl.allow_delayed_submission) : Boolean(scheduleConfig.allow_delayed_submission);
 
     setTemplateForm({
       id: tmpl.id,
@@ -786,6 +788,7 @@ export default function ChecklistModule({
       daily_slots: dailySlots,
       due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
       buffer_minutes: bufferMinutes,
+      allow_delayed_submission: allowDelayedSubmission,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
@@ -853,6 +856,7 @@ export default function ChecklistModule({
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
     const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
+    const allowDelayedSubmission = tmpl.allow_delayed_submission !== undefined ? Boolean(tmpl.allow_delayed_submission) : Boolean(scheduleConfig.allow_delayed_submission);
 
     setTemplateForm({
       title: `${tmpl.title} (Copy)`,
@@ -868,6 +872,7 @@ export default function ChecklistModule({
       daily_slots: dailySlots,
       due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
       buffer_minutes: bufferMinutes,
+      allow_delayed_submission: allowDelayedSubmission,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
@@ -2475,9 +2480,9 @@ export default function ChecklistModule({
                               </span>
                             ) : isActive ? (
                               <span style={{
-                                background: '#dcfce7',
-                                color: '#166534',
-                                border: '1px solid #86efac',
+                                background: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '#fef3c7' : '#dcfce7',
+                                color: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '#92400e' : '#166534',
+                                border: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '1px solid #fde68a' : '1px solid #86efac',
                                 padding: '0.25rem 0.6rem',
                                 borderRadius: '12px',
                                 fontSize: '0.75rem',
@@ -2486,7 +2491,7 @@ export default function ChecklistModule({
                                 alignItems: 'center',
                                 gap: '0.25rem'
                               }}>
-                                🟢 Open Now ({delayInfo.delayText})
+                                {delayInfo.badgeStatus === 'DELAYED_OPEN' ? `⚠️ Late Allowed (${delayInfo.delayMinutes}m overdue)` : `🟢 Open Now`}
                               </span>
                             ) : isExpired ? (
                               <span style={{
@@ -3036,6 +3041,11 @@ export default function ChecklistModule({
                               {!includeHolidays && (
                                 <span style={{ fontSize: '0.68rem', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
                                   Skip Hol
+                                </span>
+                              )}
+                              {Boolean(tmpl.allow_delayed_submission || tmpl.schedule_config?.allow_delayed_submission) && (
+                                <span style={{ fontSize: '0.68rem', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                                  ⚠️ Delay OK
                                 </span>
                               )}
                             </div>
@@ -3719,18 +3729,26 @@ export default function ChecklistModule({
                 return (
                   <div style={{
                     padding: '0.75rem 1rem',
-                    background: '#f0fdf4',
-                    color: '#166534',
-                    border: '1.5px solid #86efac',
+                    background: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '#fef3c7' : '#f0fdf4',
+                    color: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '#92400e' : '#166534',
+                    border: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '1.5px solid #fde68a' : '1.5px solid #86efac',
                     borderRadius: '8px',
                     fontSize: '0.85rem',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.6rem'
                   }}>
-                    <Clock size={16} style={{ flexShrink: 0, color: '#16a34a' }} />
+                    <Clock size={16} style={{ flexShrink: 0, color: delayInfo.badgeStatus === 'DELAYED_OPEN' ? '#d97706' : '#16a34a' }} />
                     <div>
-                      <strong>🟢 Active Submission Window:</strong> Closes at <strong>{delayInfo.formattedExpire}</strong> ({delayInfo.delayText || 'Time remaining'}). Please complete all required items.
+                      {delayInfo.badgeStatus === 'DELAYED_OPEN' ? (
+                        <>
+                          <strong>⚠️ Late Submission Allowed:</strong> Buffer window closed at <strong>{delayInfo.formattedExpire}</strong> ({delayInfo.delayMinutes}m overdue). You can still fill and submit, and it will be recorded with a Late tag.
+                        </>
+                      ) : (
+                        <>
+                          <strong>🟢 Active Submission Window:</strong> Closes at <strong>{delayInfo.formattedExpire}</strong> ({delayInfo.delayText || 'Time remaining'}). Please complete all required items.
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -4609,6 +4627,36 @@ export default function ChecklistModule({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Delayed / Late Submission Setting Toggle */}
+              <div style={{
+                background: templateForm.allow_delayed_submission ? '#fef3c7' : 'var(--bg-secondary, #f8fafc)',
+                padding: '0.85rem',
+                borderRadius: '10px',
+                border: templateForm.allow_delayed_submission ? '1.5px solid #fde68a' : '1px solid var(--border-color, #e2e8f0)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                transition: 'all 0.2s ease'
+              }}>
+                <input
+                  type="checkbox"
+                  id="allow_delayed_submission_toggle"
+                  checked={Boolean(templateForm.allow_delayed_submission)}
+                  onChange={(e) => setTemplateForm(prev => ({ ...prev, allow_delayed_submission: e.target.checked }))}
+                  style={{ width: '18px', height: '18px', marginTop: '0.15rem', cursor: 'pointer', accentColor: '#d97706' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', cursor: 'pointer' }}>
+                  <label htmlFor="allow_delayed_submission_toggle" style={{ fontSize: '0.88rem', fontWeight: 700, color: templateForm.allow_delayed_submission ? '#92400e' : 'var(--text-primary, #1e293b)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>⚠️ Allow Late / Delayed Submissions (Delay Submission Option)</span>
+                  </label>
+                  <span style={{ fontSize: '0.78rem', color: templateForm.allow_delayed_submission ? '#78350f' : 'var(--text-secondary, #64748b)' }}>
+                    {templateForm.allow_delayed_submission
+                      ? '✓ Enabled: Buffer time khatam hone ke baad bhi checklist submit ki ja sakegi (Dashboard me "Completed Late / Delayed" tag ke sath record hogi).'
+                      : '✗ Disabled (Strict Window): Buffer time cross hone par slot lock ho jayega aur "Expired / Missed" mark ho jayega.'}
+                  </span>
                 </div>
               </div>
 

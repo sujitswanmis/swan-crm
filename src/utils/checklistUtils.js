@@ -422,6 +422,7 @@ export function calculateDelayStatus({
   dayOfMonth = 1,
   submittedAt = null,
   isCompleted = false,
+  allowDelayedSubmission = false,
   now = new Date()
 }) {
   const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
@@ -535,8 +536,35 @@ export function calculateDelayStatus({
     };
   }
 
-  // 4. If buffer window expired: EXPIRED / MISSED (buffer samay khatam hone ke baad: Expired)
+  // 4. If buffer window expired:
   const overdueMs = currentTime.getTime() - expireDateTime.getTime();
+
+  // If delayed submission is allowed for this template:
+  if (allowDelayedSubmission) {
+    return {
+      startDateTime,
+      cutoffDate: expireDateTime,
+      expireDateTime,
+      isBeforeStart: false,
+      isLocked: false,
+      isActive: true,
+      isPastCutoff: true,
+      isCompleted: false,
+      isDelayed: true,
+      isExpired: false,
+      canExecute: true,
+      delayMinutes: Math.floor(overdueMs / 60000),
+      delayText: `⚠️ Delayed Submission Open (${formatDurationHuman(overdueMs)} overdue)`,
+      badgeStatus: 'DELAYED_OPEN',
+      formattedStart,
+      formattedCutoff: formattedExpire,
+      formattedExpire,
+      windowState: 'DELAYED_OPEN',
+      overdueMs
+    };
+  }
+
+  // Default: Strictly Expired / Missed
   return {
     startDateTime,
     cutoffDate: expireDateTime,
