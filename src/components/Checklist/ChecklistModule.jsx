@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import {
   FREQUENCIES_CONFIG,
+  CHECKLIST_ITEM_TYPES,
   getCurrentPeriodKey,
   getHumanPeriodLabel,
   calculateChecklistCompletion
@@ -259,7 +260,7 @@ export default function ChecklistModule({
       days_of_week: ['Monday'],
       day_of_month: 1,
       items: [
-        { id: `item_${Date.now()}_1`, title: 'Check equipment status', type: 'checkbox', is_required: true, standard_guideline: '' },
+        { id: `item_${Date.now()}_1`, title: 'Check equipment status', type: 'done_not_done', is_required: true, standard_guideline: '' },
         { id: `item_${Date.now()}_2`, title: 'Upload cleanliness photo', type: 'photo', is_required: false, standard_guideline: '' }
       ],
       is_active: true
@@ -291,7 +292,7 @@ export default function ChecklistModule({
       days_of_week: tmpl.days_of_week || ['Monday'],
       day_of_month: tmpl.day_of_month || 1,
       items: tmpl.items && tmpl.items.length > 0 ? tmpl.items : [
-        { id: `item_${Date.now()}_1`, title: 'Check item', type: 'checkbox', is_required: true, standard_guideline: '' }
+        { id: `item_${Date.now()}_1`, title: 'Check item', type: 'done_not_done', is_required: true, standard_guideline: '' }
       ],
       is_active: tmpl.is_active !== undefined ? tmpl.is_active : true
     });
@@ -306,7 +307,7 @@ export default function ChecklistModule({
         {
           id: `item_${Date.now()}_${prev.items.length + 1}`,
           title: '',
-          type: 'checkbox',
+          type: 'done_not_done',
           is_required: true,
           standard_guideline: ''
         }
@@ -1242,8 +1243,8 @@ export default function ChecklistModule({
                         <label style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>
                           {idx + 1}. {item.title} {item.is_required && !isAlreadyCompleted && <span style={{ color: '#ef4444' }}>*</span>}
                         </label>
-                        <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '0.15rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase' }}>
-                          {item.type}
+                        <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 600, color: '#475569' }}>
+                          {CHECKLIST_ITEM_TYPES.find(t => t.id === item.type)?.label || item.type || 'Done / Not Done'}
                         </span>
                       </div>
 
@@ -1254,20 +1255,98 @@ export default function ChecklistModule({
                       )}
 
                       {/* Input based on type */}
-                      {item.type === 'checkbox' && (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer', marginTop: '0.25rem' }}>
-                          <input
-                            type="checkbox"
-                            disabled={isAlreadyCompleted}
-                            checked={val === true || val === 'true'}
-                            onChange={(e) => handleResponseChange(item.id, e.target.checked)}
-                            style={{ width: '18px', height: '18px', cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer' }}
-                          />
-                          <span style={{ fontSize: '0.9rem', fontWeight: 500, color: val ? '#166534' : 'inherit' }}>
-                            {val ? '✓ Completed / Verified' : 'Mark as Done'}
-                          </span>
-                        </label>
-                      )}
+                      {(item.type === 'done_not_done' || item.type === 'working_not_working' || item.type === 'updated_not_updated' || item.type === 'completed_not_completed' || item.type === 'checkbox' || !item.type) && (() => {
+                        let opt1Label = 'Done';
+                        let opt2Label = 'Not Done';
+                        let opt1Val = 'DONE';
+                        let opt2Val = 'NOT_DONE';
+                        let icon1 = '✅';
+                        let icon2 = '❌';
+
+                        if (item.type === 'working_not_working') {
+                          opt1Label = 'Working';
+                          opt2Label = 'Not Working';
+                          opt1Val = 'WORKING';
+                          opt2Val = 'NOT_WORKING';
+                          icon1 = '🟢';
+                          icon2 = '🔴';
+                        } else if (item.type === 'updated_not_updated') {
+                          opt1Label = 'Updated';
+                          opt2Label = 'Not Updated';
+                          opt1Val = 'UPDATED';
+                          opt2Val = 'NOT_UPDATED';
+                          icon1 = '✅';
+                          icon2 = '❌';
+                        } else if (item.type === 'completed_not_completed') {
+                          opt1Label = 'Completed';
+                          opt2Label = 'Not Completed';
+                          opt1Val = 'COMPLETED';
+                          opt2Val = 'NOT_COMPLETED';
+                          icon1 = '✅';
+                          icon2 = '❌';
+                        }
+
+                        const isOpt1Selected = val === opt1Val || val === true || val === 'true' || val === opt1Label || val === 'YES' || val === 'yes';
+                        const isOpt2Selected = val === opt2Val || val === false || val === 'false' || val === opt2Label || val === 'NO' || val === 'no';
+
+                        return (
+                          <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              disabled={isAlreadyCompleted}
+                              onClick={() => handleResponseChange(item.id, opt1Val)}
+                              style={{
+                                flex: 1,
+                                minWidth: '130px',
+                                padding: '0.6rem 0.85rem',
+                                borderRadius: '8px',
+                                fontWeight: 700,
+                                fontSize: '0.88rem',
+                                cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.45rem',
+                                transition: 'all 0.15s ease',
+                                border: isOpt1Selected ? '2px solid #16a34a' : '1.5px solid #cbd5e1',
+                                background: isOpt1Selected ? '#dcfce7' : '#ffffff',
+                                color: isOpt1Selected ? '#15803d' : '#475569',
+                                boxShadow: isOpt1Selected ? '0 2px 4px rgba(22, 163, 74, 0.15)' : 'none',
+                                opacity: isAlreadyCompleted && !isOpt1Selected ? 0.45 : 1
+                              }}
+                            >
+                              <span>{icon1}</span> {opt1Label}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isAlreadyCompleted}
+                              onClick={() => handleResponseChange(item.id, opt2Val)}
+                              style={{
+                                flex: 1,
+                                minWidth: '130px',
+                                padding: '0.6rem 0.85rem',
+                                borderRadius: '8px',
+                                fontWeight: 700,
+                                fontSize: '0.88rem',
+                                cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.45rem',
+                                transition: 'all 0.15s ease',
+                                border: isOpt2Selected ? '2px solid #dc2626' : '1.5px solid #cbd5e1',
+                                background: isOpt2Selected ? '#fee2e2' : '#ffffff',
+                                color: isOpt2Selected ? '#b91c1c' : '#475569',
+                                boxShadow: isOpt2Selected ? '0 2px 4px rgba(220, 38, 38, 0.15)' : 'none',
+                                opacity: isAlreadyCompleted && !isOpt2Selected ? 0.45 : 1
+                              }}
+                            >
+                              <span>{icon2}</span> {opt2Label}
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {item.type === 'number' && (
                         <input
@@ -1703,14 +1782,13 @@ export default function ChecklistModule({
                       />
 
                       <select
-                        value={item.type}
+                        value={item.type || 'done_not_done'}
                         onChange={(e) => handleUpdateTemplateItem(idx, 'type', e.target.value)}
-                        style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                        style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 500, fontSize: '0.85rem' }}
                       >
-                        <option value="checkbox">Checkbox (Done/Not Done)</option>
-                        <option value="number">Number / Reading</option>
-                        <option value="photo">Photo / Proof Required</option>
-                        <option value="text">Text Remarks</option>
+                        {CHECKLIST_ITEM_TYPES.map(t => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
                       </select>
 
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
@@ -1813,6 +1891,40 @@ export default function ChecklistModule({
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>Checklist:</span>
                 <div style={{ fontWeight: 600 }}>{verifyingSubmission.template_title} ({verifyingSubmission.frequency})</div>
               </div>
+
+              {verifyingSubmission.responses && Object.keys(verifyingSubmission.responses).length > 0 && (
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>
+                    Item Responses ({Object.keys(verifyingSubmission.responses).length}):
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto', background: 'var(--bg-secondary, #f8fafc)', padding: '0.6rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    {Object.entries(verifyingSubmission.responses).map(([k, v], idx) => {
+                      let displayVal = String(v);
+                      let badgeBg = '#f1f5f9';
+                      let badgeColor = '#334155';
+
+                      if (v === 'DONE' || v === true || v === 'true' || v === 'WORKING' || v === 'UPDATED' || v === 'COMPLETED' || v === 'YES') {
+                        badgeBg = '#dcfce7';
+                        badgeColor = '#15803d';
+                        displayVal = v === 'WORKING' ? '🟢 Working' : v === 'UPDATED' ? '✅ Updated' : v === 'COMPLETED' ? '✅ Completed' : '✅ Done';
+                      } else if (v === 'NOT_DONE' || v === false || v === 'false' || v === 'NOT_WORKING' || v === 'NOT_UPDATED' || v === 'NOT_COMPLETED' || v === 'NO') {
+                        badgeBg = '#fee2e2';
+                        badgeColor = '#b91c1c';
+                        displayVal = v === 'NOT_WORKING' ? '🔴 Not Working' : v === 'NOT_UPDATED' ? '❌ Not Updated' : v === 'NOT_COMPLETED' ? '❌ Not Completed' : '❌ Not Done';
+                      }
+
+                      return (
+                        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '0.25rem 0.4rem', borderBottom: '1px solid #e2e8f0' }}>
+                          <span style={{ color: '#475569' }}>Item #{idx + 1}</span>
+                          <span style={{ background: badgeBg, color: badgeColor, fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                            {displayVal}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>Employee Submission Notes:</span>

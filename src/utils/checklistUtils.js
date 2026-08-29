@@ -178,17 +178,29 @@ export function getHumanPeriodLabel(frequency = 'DAILY', periodKey = '') {
   return periodKey;
 }
 
+export const CHECKLIST_ITEM_TYPES = [
+  { id: 'done_not_done', label: 'Done / Not Done', opt1: 'Done', opt2: 'Not Done', icon1: '✅', icon2: '❌', color1: '#16a34a', color2: '#dc2626' },
+  { id: 'working_not_working', label: 'Working / Not Working', opt1: 'Working', opt2: 'Not Working', icon1: '🟢', icon2: '🔴', color1: '#16a34a', color2: '#dc2626' },
+  { id: 'updated_not_updated', label: 'Updated / Not Updated', opt1: 'Updated', opt2: 'Not Updated', icon1: '✅', icon2: '❌', color1: '#16a34a', color2: '#dc2626' },
+  { id: 'completed_not_completed', label: 'Completed / Not Completed', opt1: 'Completed', opt2: 'Not Completed', icon1: '✅', icon2: '❌', color1: '#16a34a', color2: '#dc2626' },
+  { id: 'number', label: 'Number / Reading' },
+  { id: 'photo', label: 'Photo / Proof Required' },
+  { id: 'text', label: 'Text Remarks' }
+];
+
 export function calculateChecklistCompletion(items = [], responses = {}) {
   if (!items || items.length === 0) return { completedCount: 0, totalCount: 0, percent: 0, isAllDone: false };
 
   let completedCount = 0;
   items.forEach(item => {
     const val = responses[item.id];
-    if (item.type === 'checkbox') {
-      if (val === true || val === 'true' || val === 'YES' || val === 'yes') completedCount++;
-    } else if (item.type === 'number') {
+    const itemType = item.type || 'done_not_done';
+
+    if (['done_not_done', 'working_not_working', 'updated_not_updated', 'completed_not_completed', 'checkbox'].includes(itemType)) {
       if (val !== undefined && val !== null && val !== '') completedCount++;
-    } else if (item.type === 'photo' || item.type === 'file') {
+    } else if (itemType === 'number') {
+      if (val !== undefined && val !== null && val !== '') completedCount++;
+    } else if (itemType === 'photo' || itemType === 'file') {
       if (val && typeof val === 'string' && val.trim() !== '') completedCount++;
     } else {
       if (val && typeof val === 'string' && val.trim() !== '') completedCount++;
