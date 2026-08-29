@@ -1149,6 +1149,30 @@ export default function ChecklistModule({
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', marginRight: '0.5rem' }}>
             Schedule Frequencies:
           </span>
+
+          {/* ALL CHECKLISTS PILL TAB */}
+          <button
+            onClick={() => setSelectedFrequency('ALL')}
+            style={{
+              background: selectedFrequency === 'ALL' ? '#6366f1' : 'var(--bg-secondary, #f8fafc)',
+              color: selectedFrequency === 'ALL' ? '#ffffff' : 'var(--text-primary, #1e293b)',
+              border: selectedFrequency === 'ALL' ? '1px solid #6366f1' : '1px solid var(--border-color, #e2e8f0)',
+              padding: '0.45rem 0.95rem',
+              borderRadius: '20px',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.15s ease',
+              boxShadow: selectedFrequency === 'ALL' ? '0 2px 5px rgba(99,102,241,0.3)' : 'none'
+            }}
+          >
+            <span>📋</span>
+            <span>All Checklists</span>
+          </button>
+
           {FREQUENCIES_CONFIG.map(freq => {
             const isSelected = selectedFrequency === freq.id;
             return (
@@ -1167,7 +1191,8 @@ export default function ChecklistModule({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.4rem',
-                  transition: 'all 0.15s ease'
+                  transition: 'all 0.15s ease',
+                  boxShadow: isSelected ? `0 2px 5px ${freq.badgeColor}35` : 'none'
                 }}
               >
                 <span>{freq.icon}</span>
@@ -2254,7 +2279,7 @@ export default function ChecklistModule({
               <CheckSquare size={48} style={{ opacity: 0.4, margin: '0 auto 1rem' }} />
               <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Checklists Scheduled for this Date</h3>
               <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                No active {selectedFrequency.toLowerCase()} checklists found for {new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}.
+                No active {selectedFrequency === 'ALL' ? 'scheduled' : selectedFrequency.toLowerCase()} checklists found for {new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}.
               </p>
               {isManager && (
                 <button
@@ -2281,7 +2306,7 @@ export default function ChecklistModule({
               {/* View Mode Toggle Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', margin: '0.25rem 0' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                  Showing <strong>{dashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency}</strong> frequency
+                  Showing <strong>{dashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
                 </span>
 
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
