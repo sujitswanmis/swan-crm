@@ -93,9 +93,9 @@ export async function getDelegatedTasks({
       .order('deadline', { ascending: true });
 
     if (viewType === 'to_me' && emailClean) {
-      query = query.eq('assigned_to_email', emailClean);
+      query = query.ilike('assigned_to_email', emailClean);
     } else if (viewType === 'by_me' && emailClean) {
-      query = query.eq('delegated_by_email', emailClean);
+      query = query.ilike('delegated_by_email', emailClean);
     }
 
     if (status && status !== 'ALL') {

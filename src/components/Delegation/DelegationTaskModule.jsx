@@ -1826,8 +1826,8 @@ export default function DelegationTaskModule({
                     </button>
                   )}
 
-                  {/* Delegator Actions */}
-                  {isDelegatedByMe && task.status === 'SUBMITTED' && (
+                  {/* Delegator / Admin Actions */}
+                  {(isDelegatedByMe || isAdmin) && task.status === 'SUBMITTED' && (
                     <button
                       onClick={() => handleOpenVerifyModal(task)}
                       style={{
