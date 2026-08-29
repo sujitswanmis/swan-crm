@@ -875,7 +875,7 @@ export default function ChecklistModule({
 
                 return (
                   <div
-                    key={tmpl.id || idx}
+                    key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
                     style={{
                       background: isOverdue ? '#fff5f5' : 'var(--card-bg, #ffffff)',
                       border: isOverdue
@@ -1553,7 +1553,7 @@ export default function ChecklistModule({
 
                   return (
                     <div
-                      key={h.id || h.date + hIdx}
+                      key={h.id ? `hol_${h.id}` : `hol_${h.date}_${hIdx}`}
                       style={{
                         background: isPast ? 'var(--bg-secondary, #f8fafc)' : 'var(--card-bg, #ffffff)',
                         border: isPast ? '1px solid var(--border-color, #e2e8f0)' : '1.5px solid #fed7aa',
