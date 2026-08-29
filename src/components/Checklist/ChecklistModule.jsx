@@ -1118,9 +1118,9 @@ export default function ChecklistModule({
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>Title & Description</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Frequency</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Recurrence Frequency</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Time / Days / Date</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Assigned To</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Cutoff Time</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Questions / Items</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Status</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
@@ -1144,36 +1144,130 @@ export default function ChecklistModule({
                     const color = isAct ? '#166534' : isDrf ? '#92400e' : '#991b1b';
                     const border = isAct ? '#86efac' : isDrf ? '#fcd34d' : '#fca5a5';
 
+                    const repCount = tmpl.daily_repetition_count || tmpl.schedule_config?.daily_repetition_count || 1;
+                    const slots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
+                      ? tmpl.daily_slots
+                      : (Array.isArray(tmpl.schedule_config?.daily_slots) && tmpl.schedule_config.daily_slots.length > 0
+                        ? tmpl.schedule_config.daily_slots
+                        : [{ slot_id: 'S1', label: 'Daily Cutoff', due_time: tmpl.due_time || '18:00' }]);
+
+                    const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (tmpl.schedule_config?.include_sundays !== undefined ? tmpl.schedule_config.include_sundays : true);
+                    const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (tmpl.schedule_config?.include_holidays !== undefined ? tmpl.schedule_config.include_holidays : false);
+
                     return (
                       <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{tmpl.description || tmpl.department}</div>
                         </td>
+
+                        {/* Recurrence Frequency */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <span style={{
-                            background: `${freqMeta.badgeColor}15`,
-                            color: freqMeta.badgeColor,
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700
-                          }}>
-                            {freqMeta.icon} {tmpl.frequency}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                            <span style={{
+                              background: `${freqMeta.badgeColor}15`,
+                              color: freqMeta.badgeColor,
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem'
+                            }}>
+                              {freqMeta.icon} {tmpl.frequency}
+                              {tmpl.frequency === 'DAILY' && repCount > 1 && (
+                                <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 800 }}>
+                                  {repCount}x / Day
+                                </span>
+                              )}
+                            </span>
+
+                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                              {!includeSundays && (
+                                <span style={{ fontSize: '0.68rem', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                                  Skip Sun
+                                </span>
+                              )}
+                              {!includeHolidays && (
+                                <span style={{ fontSize: '0.68rem', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                                  Skip Hol
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
+
+                        {/* Time / Days / Date */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          {tmpl.frequency === 'DAILY' ? (
+                            repCount === 1 ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                                <Clock size={14} color="#0284c7" />
+                                <span>{tmpl.due_time || slots[0]?.due_time || '18:00'}</span>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxWidth: '240px' }}>
+                                {slots.map((sl, slIdx) => (
+                                  <span
+                                    key={sl.slot_id || slIdx}
+                                    title={`${sl.label || `Slot ${slIdx + 1}`}: ${sl.due_time}`}
+                                    style={{
+                                      background: '#f0fdf4',
+                                      border: '1px solid #bbf7d0',
+                                      color: '#15803d',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.4rem',
+                                      borderRadius: '4px'
+                                    }}
+                                  >
+                                    {sl.due_time}
+                                  </span>
+                                ))}
+                              </div>
+                            )
+                          ) : tmpl.frequency === 'WEEKLY' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 600, color: '#1e293b' }}>
+                                <Calendar size={13} color="#10b981" />
+                                <span>{(tmpl.days_of_week || ['Monday']).join(', ')}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : tmpl.frequency === 'FORTNIGHTLY' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#8b5cf6' }}>1st & 16th Cycle</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f59e0b' }}>
+                                Day {tmpl.day_of_month || 1} of Month
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Assigned To */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                             <User size={14} style={{ opacity: 0.7 }} />
                             <span>{tmpl.assigned_type === 'ALL' ? 'All Staff' : tmpl.assigned_employee_name || tmpl.assigned_employee_email}</span>
                           </div>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <Clock size={14} />
-                            <span>{tmpl.due_time || '18:00'}</span>
-                          </div>
-                        </td>
+
+                        {/* Questions / Items */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
                             {(tmpl.items || []).length} items
