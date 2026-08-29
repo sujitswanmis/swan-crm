@@ -114,6 +114,25 @@ export default function ChecklistModule({
   const [complianceLogs, setComplianceLogs] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
 
+  // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
+  const myReportingTeam = useMemo(() => {
+    const emailLow = (userEmail || '').toLowerCase().trim();
+    const nameLow = (userName || '').toLowerCase().trim();
+    if (!emailLow && !nameLow) return [];
+    return (employeesList || []).filter(e => {
+      const p = (e.primary_reporting_person || '').toLowerCase().trim();
+      const s = (e.secondary_reporting_person || '').toLowerCase().trim();
+      const h = (e.hod_person || '').toLowerCase().trim();
+      return (p && (p === emailLow || p === nameLow || (emailLow && emailLow.includes(p)))) ||
+             (s && (s === emailLow || s === nameLow || (emailLow && emailLow.includes(s)))) ||
+             (h && (h === emailLow || h === nameLow || (emailLow && emailLow.includes(h))));
+    });
+  }, [employeesList, userEmail, userName]);
+
+  const isReportingManager = myReportingTeam.length > 0;
+  const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
+  const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
+
   // Computed Checklist Dashboard KPI Metrics
   const dashboardMetrics = useMemo(() => {
     const total = dashboardChecklists.length;
@@ -366,25 +385,6 @@ export default function ChecklistModule({
   const [holidayForm, setHolidayForm] = useState({ id: null, date: '', name: '', type: 'COMPANY', description: '' });
   const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
   const [savingHoliday, setSavingHoliday] = useState(false);
-
-  // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
-  const myReportingTeam = useMemo(() => {
-    const emailLow = (userEmail || '').toLowerCase().trim();
-    const nameLow = (userName || '').toLowerCase().trim();
-    if (!emailLow && !nameLow) return [];
-    return (employeesList || []).filter(e => {
-      const p = (e.primary_reporting_person || '').toLowerCase().trim();
-      const s = (e.secondary_reporting_person || '').toLowerCase().trim();
-      const h = (e.hod_person || '').toLowerCase().trim();
-      return (p && (p === emailLow || p === nameLow || (emailLow && emailLow.includes(p)))) ||
-             (s && (s === emailLow || s === nameLow || (emailLow && emailLow.includes(s)))) ||
-             (h && (h === emailLow || h === nameLow || (emailLow && emailLow.includes(h))));
-    });
-  }, [employeesList, userEmail, userName]);
-
-  const isReportingManager = myReportingTeam.length > 0;
-  const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
-  const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
   // Modals & Drawers
   const [executingChecklist, setExecutingChecklist] = useState(null);
