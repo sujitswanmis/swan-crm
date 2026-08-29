@@ -1,0 +1,98 @@
+[
+  {
+    "id": "hol_1",
+    "date": "2026-01-26",
+    "name": "Republic Day",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "hol_2",
+    "date": "2026-03-03",
+    "name": "Holi",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_3",
+    "date": "2026-03-21",
+    "name": "Eid-ul-Fitr",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_4",
+    "date": "2026-04-03",
+    "name": "Good Friday",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_5",
+    "date": "2026-04-14",
+    "name": "Dr. Ambedkar Jayanti",
+    "type": "REGIONAL"
+  },
+  {
+    "id": "hol_6",
+    "date": "2026-05-01",
+    "name": "May Day / Labor Day",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "hol_7",
+    "date": "2026-05-27",
+    "name": "Bakrid / Eid-ul-Adha",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_8",
+    "date": "2026-08-15",
+    "name": "Independence Day",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "hol_9",
+    "date": "2026-09-04",
+    "name": "Janmashtami",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_10",
+    "date": "2026-10-02",
+    "name": "Mahatma Gandhi Jayanti",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "hol_11",
+    "date": "2026-10-20",
+    "name": "Dussehra / Vijayadashami",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_12",
+    "date": "2026-11-08",
+    "name": "Diwali / Deepavali",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_13",
+    "date": "2026-11-09",
+    "name": "Govardhan Puja",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_14",
+    "date": "2026-11-10",
+    "name": "Bhai Dooj",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_15",
+    "date": "2026-11-24",
+    "name": "Guru Nanak Jayanti",
+    "type": "FESTIVAL"
+  },
+  {
+    "id": "hol_16",
+    "date": "2026-12-25",
+    "name": "Christmas Day",
+    "type": "FESTIVAL"
+  }
+]

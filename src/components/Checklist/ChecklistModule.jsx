@@ -26,7 +26,11 @@ import {
   getEmployeeChecklistDashboard,
   submitChecklistResponse,
   verifyChecklistSubmission,
-  getChecklistComplianceReport
+  getChecklistComplianceReport,
+  getCompanyHolidays,
+  saveCompanyHoliday,
+  deleteCompanyHoliday,
+  resetCompanyHolidaysToDefault
 } from '@/app/actions/checklist';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
@@ -43,7 +47,7 @@ export default function ChecklistModule({
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
 
-  // Tabs: 'my_checklists' | 'templates' | 'compliance'
+  // Tabs: 'my_checklists' | 'templates' | 'compliance' | 'holidays'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'my_checklists');
   const [selectedFrequency, setSelectedFrequency] = useState('DAILY');
   const [loading, setLoading] = useState(false);
@@ -58,6 +62,14 @@ export default function ChecklistModule({
   const [templates, setTemplates] = useState([]);
   const [complianceLogs, setComplianceLogs] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
+
+  // Manual Holidays State
+  const [holidaysList, setHolidaysList] = useState([]);
+  const [holidayModalOpen, setHolidayModalOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState(null);
+  const [holidayForm, setHolidayForm] = useState({ id: null, date: '', name: '', type: 'COMPANY', description: '' });
+  const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
+  const [savingHoliday, setSavingHoliday] = useState(false);
 
   // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
   const myReportingTeam = useMemo(() => {
@@ -121,6 +133,8 @@ export default function ChecklistModule({
       loadTemplates();
     } else if (activeTab === 'compliance') {
       loadCompliance();
+    } else if (activeTab === 'holidays') {
+      loadHolidays();
     }
   }, [activeTab, selectedFrequency, userEmail]);
 
@@ -193,6 +207,96 @@ export default function ChecklistModule({
       showNotification('Failed to load compliance report', true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHolidays = async () => {
+    setLoading(true);
+    try {
+      const res = await getCompanyHolidays();
+      if (res.success) {
+        setHolidaysList(res.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+      showNotification('Failed to load company holidays', true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenAddHoliday = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    setEditingHoliday(null);
+    setHolidayForm({ id: null, date: todayStr, name: '', type: 'COMPANY', description: '' });
+    setHolidayModalOpen(true);
+  };
+
+  const handleOpenEditHoliday = (h) => {
+    setEditingHoliday(h);
+    setHolidayForm({
+      id: h.id || h.date,
+      date: h.date,
+      name: h.name,
+      type: h.type || 'COMPANY',
+      description: h.description || ''
+    });
+    setHolidayModalOpen(true);
+  };
+
+  const handleSaveHoliday = async () => {
+    if (!holidayForm.date || !holidayForm.name.trim()) {
+      showNotification('Please enter both holiday date and holiday name', true);
+      return;
+    }
+    setSavingHoliday(true);
+    try {
+      const res = await saveCompanyHoliday(holidayForm);
+      if (res.success) {
+        setHolidaysList(res.data || []);
+        setHolidayModalOpen(false);
+        showNotification(`🎉 Holiday "${holidayForm.name}" saved successfully!`);
+      } else {
+        showNotification(res.error || 'Failed to save holiday', true);
+      }
+    } catch (e) {
+      showNotification(e.message, true);
+    } finally {
+      setSavingHoliday(false);
+    }
+  };
+
+  const handleDeleteHoliday = async (h) => {
+    if (!window.confirm(`Are you sure you want to delete holiday "${h.name}" (${h.date})?`)) {
+      return;
+    }
+    try {
+      const res = await deleteCompanyHoliday(h.id || h.date);
+      if (res.success) {
+        setHolidaysList(res.data || []);
+        showNotification(`🗑️ Holiday "${h.name}" deleted!`);
+      } else {
+        showNotification(res.error || 'Failed to delete holiday', true);
+      }
+    } catch (e) {
+      showNotification(e.message, true);
+    }
+  };
+
+  const handleResetHolidays = async () => {
+    if (!window.confirm('Reset company holidays to standard National/Gazetted holidays list? Custom added holidays will be overwritten.')) {
+      return;
+    }
+    try {
+      const res = await resetCompanyHolidaysToDefault();
+      if (res.success) {
+        setHolidaysList(res.data || []);
+        showNotification('🔄 Restored default national holidays list!');
+      } else {
+        showNotification(res.error || 'Failed to reset holidays', true);
+      }
+    } catch (e) {
+      showNotification(e.message, true);
     }
   };
 
@@ -1315,61 +1419,242 @@ export default function ChecklistModule({
       })()}
 
       {/* ========================================================================= */}
-      {/* TAB 4: COMPANY & NATIONAL HOLIDAYS CALENDAR                              */}
+      {/* TAB 4: COMPANY & NATIONAL HOLIDAYS CALENDAR (MANUAL MANAGEMENT)          */}
       {/* ========================================================================= */}
       {activeTab === 'holidays' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>🎉 Company & National Holidays Calendar</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
-                Checklists configured with "Skip Holidays" will be automatically exempt on these scheduled dates.
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #1e293b)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                🎉 Company & Public Holidays Master
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0.2rem 0 0' }}>
+                Manage custom company holidays, festivals, and mandatory days off. Checklists set to "Skip Holidays" will automatically exclude these dates.
               </p>
             </div>
-            <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.35rem 0.85rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 700 }}>
-              {DEFAULT_HOLIDAYS_LIST.length} Registered Holidays
-            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary, #94a3b8)' }} />
+                <input
+                  type="text"
+                  placeholder="Search holiday name / date..."
+                  value={holidaySearchQuery}
+                  onChange={(e) => setHolidaySearchQuery(e.target.value)}
+                  style={{
+                    padding: '0.45rem 0.75rem 0.45rem 2.2rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    width: '100%',
+                    fontSize: '0.82rem'
+                  }}
+                />
+              </div>
+
+              {isManager && (
+                <>
+                  <button
+                    onClick={handleOpenAddHoliday}
+                    style={{
+                      background: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      boxShadow: '0 2px 4px rgba(22, 163, 74, 0.2)'
+                    }}
+                  >
+                    <Plus size={16} /> Add Holiday
+                  </button>
+
+                  <button
+                    onClick={handleResetHolidays}
+                    title="Restore default national & gazetted holidays list"
+                    style={{
+                      background: 'var(--bg-secondary, #f1f5f9)',
+                      color: 'var(--text-secondary, #475569)',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      padding: '0.5rem 0.85rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <RefreshCw size={14} /> Reset List
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-            {DEFAULT_HOLIDAYS_LIST.map((h, hIdx) => {
-              const d = new Date(h.date);
-              const isPast = d.getTime() < new Date().setHours(0, 0, 0, 0);
+          {/* Holiday List Grid */}
+          {(() => {
+            const queryLow = (holidaySearchQuery || '').toLowerCase().trim();
+            const filtered = (holidaysList || []).filter(h => {
+              if (!queryLow) return true;
+              return (h.name || '').toLowerCase().includes(queryLow) || (h.date || '').includes(queryLow);
+            });
+
+            if (filtered.length === 0) {
               return (
-                <div
-                  key={h.date + hIdx}
-                  style={{
-                    background: isPast ? 'var(--bg-secondary, #f8fafc)' : 'var(--card-bg, #ffffff)',
-                    border: isPast ? '1px solid var(--border-color, #e2e8f0)' : '1.5px solid #fed7aa',
-                    borderRadius: '12px',
-                    padding: '1rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    opacity: isPast ? 0.75 : 1,
-                    boxShadow: isPast ? 'none' : '0 2px 4px rgba(251, 146, 60, 0.08)'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>{h.name}</div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.2rem' }}>
-                      {d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
-                    </div>
-                  </div>
-                  <span style={{
-                    background: isPast ? '#e2e8f0' : '#ffedd5',
-                    color: isPast ? '#64748b' : '#c2410c',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    padding: '0.25rem 0.6rem',
-                    borderRadius: '12px'
-                  }}>
-                    {isPast ? 'Passed' : 'Upcoming'}
-                  </span>
+                <div style={{
+                  background: 'var(--bg-secondary, #f8fafc)',
+                  border: '1px dashed var(--border-color, #cbd5e1)',
+                  borderRadius: '12px',
+                  padding: '3rem 2rem',
+                  textAlign: 'center',
+                  color: 'var(--text-secondary, #64748b)'
+                }}>
+                  <Calendar size={42} style={{ opacity: 0.4, margin: '0 auto 0.75rem' }} />
+                  <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Holidays Found</h3>
+                  <p style={{ margin: 0, fontSize: '0.88rem' }}>
+                    {queryLow ? `No holidays match "${holidaySearchQuery}".` : 'No company holidays are registered.'}
+                  </p>
+                  {isManager && (
+                    <button
+                      onClick={handleOpenAddHoliday}
+                      style={{
+                        marginTop: '1rem',
+                        background: '#16a34a',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '0.5rem 1.25rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      <Plus size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                      Add First Company Holiday
+                    </button>
+                  )}
                 </div>
               );
-            })}
-          </div>
+            }
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                {filtered.map((h, hIdx) => {
+                  const d = new Date(h.date);
+                  const isPast = d.getTime() < new Date().setHours(0, 0, 0, 0);
+
+                  const typeColor = h.type === 'NATIONAL' ? '#2563eb' : h.type === 'FESTIVAL' ? '#d97706' : h.type === 'REGIONAL' ? '#7c3aed' : '#059669';
+                  const typeBg = h.type === 'NATIONAL' ? '#eff6ff' : h.type === 'FESTIVAL' ? '#fffbeb' : h.type === 'REGIONAL' ? '#f5f3ff' : '#ecfdf5';
+
+                  return (
+                    <div
+                      key={h.id || h.date + hIdx}
+                      style={{
+                        background: isPast ? 'var(--bg-secondary, #f8fafc)' : 'var(--card-bg, #ffffff)',
+                        border: isPast ? '1px solid var(--border-color, #e2e8f0)' : '1.5px solid #fed7aa',
+                        borderRadius: '12px',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                        opacity: isPast ? 0.78 : 1,
+                        boxShadow: isPast ? 'none' : '0 2px 6px rgba(251, 146, 60, 0.1)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary, #1e293b)' }}>
+                            {h.name}
+                          </div>
+                          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Calendar size={14} color="#f59e0b" />
+                            <strong>{d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+                          </div>
+                          {h.description && (
+                            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.35rem', fontStyle: 'italic' }}>
+                              "{h.description}"
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+                          <span style={{
+                            background: isPast ? '#e2e8f0' : '#ffedd5',
+                            color: isPast ? '#64748b' : '#c2410c',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '10px'
+                          }}>
+                            {isPast ? 'Passed' : 'Upcoming'}
+                          </span>
+                          <span style={{
+                            background: typeBg,
+                            color: typeColor,
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '6px'
+                          }}>
+                            {h.type || 'COMPANY'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Footer with Edit / Delete */}
+                      {isManager && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                          <button
+                            onClick={() => handleOpenEditHoliday(h)}
+                            style={{
+                              background: '#eff6ff',
+                              color: '#2563eb',
+                              border: '1px solid #bfdbfe',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                          >
+                            <Edit3 size={12} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteHoliday(h)}
+                            style={{
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2659,6 +2944,148 @@ export default function ChecklistModule({
                 }}
               >
                 Approve & Sign Off
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: ADD / EDIT COMPANY HOLIDAY                                       */}
+      {/* ========================================================================= */}
+      {holidayModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--card-bg, #ffffff)',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '500px',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.25)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '1.2rem 1.5rem', background: '#1e293b', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.2rem' }}>🎉</span>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                  {editingHoliday ? 'Edit Company Holiday' : 'Add New Company Holiday'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setHolidayModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Holiday Date *
+                </label>
+                <input
+                  type="date"
+                  value={holidayForm.date}
+                  onChange={(e) => setHolidayForm(prev => ({ ...prev, date: e.target.value }))}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontWeight: 600 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Holiday Name / Occasion *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Diwali Pujan / Company Founders Day"
+                  value={holidayForm.name}
+                  onChange={(e) => setHolidayForm(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Holiday Category / Type
+                </label>
+                <select
+                  value={holidayForm.type}
+                  onChange={(e) => setHolidayForm(prev => ({ ...prev, type: e.target.value }))}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
+                >
+                  <option value="COMPANY">🏢 Company Holiday / Annual Off</option>
+                  <option value="NATIONAL">🏛️ National Holiday</option>
+                  <option value="FESTIVAL">🎉 Festival / Religious</option>
+                  <option value="REGIONAL">📍 Regional / State Off</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Description / Remarks (Optional)
+                </label>
+                <textarea
+                  placeholder="e.g. Mandatory day off across all departments..."
+                  rows={2}
+                  value={holidayForm.description}
+                  onChange={(e) => setHolidayForm(prev => ({ ...prev, description: e.target.value }))}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setHolidayModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  padding: '0.55rem 1.2rem',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingHoliday}
+                onClick={handleSaveHoliday}
+                style={{
+                  background: '#16a34a',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.55rem 1.5rem',
+                  borderRadius: '8px',
+                  cursor: savingHoliday ? 'not-allowed' : 'pointer',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <Check size={16} />
+                {savingHoliday ? 'Saving...' : editingHoliday ? 'Update Holiday' : 'Save Holiday'}
               </button>
             </div>
           </div>

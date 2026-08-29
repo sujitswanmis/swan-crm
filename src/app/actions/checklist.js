@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import fs from 'fs/promises';
+import path from 'path';
 import {
   getCurrentPeriodKey,
   calculateChecklistCompletion,
@@ -16,6 +18,7 @@ import {
 import crypto from 'crypto';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const HOLIDAYS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'company_holidays.json');
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -328,7 +331,16 @@ export async function getEmployeeChecklistDashboard({
   const emailClean = (employeeEmail || '').trim().toLowerCase();
   const targetObj = new Date(targetDate);
   const isSunday = isDateSunday(targetObj);
-  const holidayInfo = isDateHoliday(targetObj);
+
+  let companyHolidays = [];
+  try {
+    const holRes = await getCompanyHolidays();
+    companyHolidays = holRes.data || [];
+  } catch (e) {
+    console.warn('Could not fetch company holidays:', e.message);
+  }
+
+  const holidayInfo = isDateHoliday(targetObj, companyHolidays);
   const todayDayName = targetObj.toLocaleDateString('en-US', { weekday: 'long' });
 
   try {
@@ -709,3 +721,113 @@ export async function getChecklistComplianceReport({
     return { success: true, data: [] };
   }
 }
+
+// ==========================================
+// 4. MANUAL COMPANY HOLIDAYS MANAGEMENT
+// ==========================================
+
+export async function getCompanyHolidays() {
+  try {
+    const raw = await fs.readFile(HOLIDAYS_FILE_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return { success: true, data: parsed };
+    }
+  } catch (err) {
+    try {
+      const initial = DEFAULT_HOLIDAYS_LIST.map((h, idx) => ({
+        id: `hol_${Date.now()}_${idx}`,
+        date: h.date,
+        name: h.name,
+        type: 'NATIONAL'
+      }));
+      await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(initial, null, 2), 'utf8');
+      return { success: true, data: initial };
+    } catch (e) {
+      console.warn('Error creating holidays config file:', e.message);
+    }
+  }
+  return { success: true, data: DEFAULT_HOLIDAYS_LIST };
+}
+
+export async function saveCompanyHoliday(holidayData) {
+  try {
+    if (!holidayData.date || !holidayData.name?.trim()) {
+      return { success: false, error: 'Holiday date and name are required' };
+    }
+
+    const holidaysRes = await getCompanyHolidays();
+    let holidays = holidaysRes.data || [];
+
+    if (holidayData.id) {
+      // Edit existing
+      const idx = holidays.findIndex(h => h.id === holidayData.id);
+      if (idx >= 0) {
+        holidays[idx] = {
+          ...holidays[idx],
+          date: holidayData.date,
+          name: (holidayData.name || '').trim(),
+          type: holidayData.type || 'COMPANY',
+          description: (holidayData.description || '').trim()
+        };
+      } else {
+        holidays.push({
+          id: holidayData.id,
+          date: holidayData.date,
+          name: (holidayData.name || '').trim(),
+          type: holidayData.type || 'COMPANY',
+          description: (holidayData.description || '').trim()
+        });
+      }
+    } else {
+      // Add new
+      holidays.push({
+        id: `hol_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        date: holidayData.date,
+        name: (holidayData.name || '').trim(),
+        type: holidayData.type || 'COMPANY',
+        description: (holidayData.description || '').trim()
+      });
+    }
+
+    // Sort by date ascending
+    holidays.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(holidays, null, 2), 'utf8');
+    return { success: true, data: holidays };
+  } catch (err) {
+    console.error('Error saving holiday:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteCompanyHoliday(holidayId) {
+  try {
+    const holidaysRes = await getCompanyHolidays();
+    let holidays = holidaysRes.data || [];
+
+    holidays = holidays.filter(h => h.id !== holidayId && h.date !== holidayId);
+    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(holidays, null, 2), 'utf8');
+    return { success: true, data: holidays };
+  } catch (err) {
+    console.error('Error deleting holiday:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function resetCompanyHolidaysToDefault() {
+  try {
+    const initial = DEFAULT_HOLIDAYS_LIST.map((h, idx) => ({
+      id: `hol_${Date.now()}_${idx}`,
+      date: h.date,
+      name: h.name,
+      type: 'NATIONAL'
+    }));
+    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(initial, null, 2), 'utf8');
+    return { success: true, data: initial };
+  } catch (err) {
+    console.error('Error resetting holidays:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
