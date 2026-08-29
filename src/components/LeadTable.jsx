@@ -1520,16 +1520,24 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       
       {/* Search, Filters, and Export Header */}
-      <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.75rem 1rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary)' }}>
+      <div style={{ padding: isMobile ? '0.65rem 0.75rem' : '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.5rem 0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary)' }}>
         
-        {/* Left Side: Search, Status Filter & Clear Filters (Stays unified) */}
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', flex: '1 1 auto', minWidth: 'fit-content' }}>
+        {/* Left Side: Search, Status Filter & Clear Filters */}
+        <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center', flex: '1 1 260px', minWidth: 0 }}>
           <input 
             type="text" 
             placeholder="🔍 Search name, email, phone..." 
             value={globalFilter ?? ''}
             onChange={e => setGlobalFilter(e.target.value)}
-            style={{ padding: '0.55rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '180px', width: '220px', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
+            style={{ 
+              padding: '0.5rem 0.75rem', 
+              borderRadius: '6px', 
+              border: '1px solid var(--border-light)', 
+              flex: isMobile ? '1 1 100%' : '1 1 180px', 
+              minWidth: isMobile ? '100%' : '180px', 
+              fontSize: '0.85rem', 
+              background: 'var(--bg-surface)' 
+            }}
           />
           {(() => {
             const rawStatusFilter = table.getColumn('status')?.getFilterValue();
@@ -1541,7 +1549,15 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               <select 
                 value={scalarStatusFilter}
                 onChange={e => table.getColumn('status')?.setFilterValue(e.target.value || undefined)}
-                style={{ padding: '0.55rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: '140px', maxWidth: '200px', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
+                style={{ 
+                  padding: '0.5rem 0.75rem', 
+                  borderRadius: '6px', 
+                  border: '1px solid var(--border-light)', 
+                  flex: isMobile ? '1 1 100%' : '0 1 180px', 
+                  minWidth: isMobile ? '100%' : '140px', 
+                  fontSize: '0.85rem', 
+                  background: 'var(--bg-surface)' 
+                }}
               >
                 {scalarStatusFilter === '__multiple__' && (
                   <option value="__multiple__" disabled>{`${rawStatusFilter.length} Statuses Selected`}</option>
@@ -1575,31 +1591,40 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem 0.85rem',
+                gap: '0.35rem',
+                padding: '0.45rem 0.65rem',
                 borderRadius: '6px',
                 border: '1px solid #fca5a5',
                 background: '#fef2f2',
                 color: '#dc2626',
                 fontWeight: 600,
-                fontSize: '0.82rem',
+                fontSize: '0.8rem',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 flexShrink: 0
               }}
             >
-              <RotateCcw size={14} />
-              <span>Clear All Filters ({activeFilterCount})</span>
+              <RotateCcw size={13} />
+              <span>Clear ({activeFilterCount})</span>
             </button>
           )}
 
         </div>
 
         {/* Right Side: Columns, Import/Export, Table/Tiles & Add Lead */}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: '0.4rem', 
+          alignItems: 'center', 
+          flexShrink: 0,
+          maxWidth: '100%',
+          overflowX: isMobile ? 'auto' : 'visible',
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: isMobile ? '3px' : '0'
+        }}>
           
           {/* Settings ⚙️ Icon Button with ColumnSelectorModal (Image 1) */}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
             {(() => {
               const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
               const leadTableColumns = filterableCols.map(c => ({
@@ -1613,7 +1638,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                   <button 
                     onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
                     style={{ 
-                      padding: '0.6rem 0.75rem', 
+                      padding: '0.5rem 0.65rem', 
                       background: showColumnModal ? '#0284c7' : 'var(--bg-surface)', 
                       color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
                       border: '1px solid var(--border-light)', 
@@ -1627,7 +1652,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                     }}
                     title="Column Settings (Show/Hide & Push/Keep Reordering)"
                   >
-                    <Settings size={18} />
+                    <Settings size={17} />
                   </button>
 
                   <ColumnSelectorModal
@@ -1667,7 +1692,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
           </div>
 
           {/* Filter 🌪️ Icon Button with MultiColumnFilterModal (Image 2) */}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
             {(() => {
               const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
               const leadTableColumns = filterableCols.map(c => ({
@@ -1681,7 +1706,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                   <button 
                     onClick={() => { setShowFilterModal(!showFilterModal); setShowColumnModal(false); }}
                     style={{ 
-                      padding: '0.6rem 0.75rem', 
+                      padding: '0.5rem 0.65rem', 
                       background: showFilterModal ? '#0284c7' : (activeRuleCount > 0 ? '#eff6ff' : 'var(--bg-surface)'), 
                       color: showFilterModal ? '#ffffff' : (activeRuleCount > 0 ? '#0284c7' : 'var(--text-primary)'),
                       border: activeRuleCount > 0 ? '1px solid #0284c7' : '1px solid var(--border-light)', 
@@ -1696,7 +1721,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                     }}
                     title="Advanced Multi-Column Filter (AND / OR conditions)"
                   >
-                    <Filter size={18} />
+                    <Filter size={17} />
                     {activeRuleCount > 0 && (
                       <span
                         style={{
@@ -1751,20 +1776,21 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
                 ref={fileInputRef} 
                 onChange={handleFileUpload} 
               />
-              <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                {isImporting ? '⏳ Importing...' : '⬆️ Import CSV'}
+              <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 500, color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {isImporting ? '⏳ Importing...' : (isMobile ? '⬆️ Import' : '⬆️ Import CSV')}
               </button>
             </>
           )}
 
           {(userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_export_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.export) && (
-            <button onClick={exportToCSV} style={{ padding: '0.6rem 1rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              📥 Export CSV
+            <button onClick={exportToCSV} style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 500, color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {isMobile ? '📥 Export' : '📥 Export CSV'}
             </button>
           )}
 
-          {/* View Mode Toggle: Table vs Tiles */}
+          {/* View Mode Toggle: Table vs Tiles (Desktop Only) */}
           <div 
+            className="desktop-only"
             style={{ 
               display: 'inline-flex', 
               alignItems: 'center', 
@@ -1773,7 +1799,8 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               borderRadius: '8px', 
               padding: '3px',
               boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
-              userSelect: 'none'
+              userSelect: 'none',
+              flexShrink: 0
             }}
           >
             <button
@@ -1823,14 +1850,14 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
             </button>
           </div>
 
-          <button onClick={() => setIsModalOpen(true)} className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>
+          <button onClick={() => setIsModalOpen(true)} className="btn-primary" style={{ padding: '0.5rem 0.9rem', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
             + Add Lead
           </button>
         </div>
       </div>
 
       {viewMode === 'tiles' || isMobile ? (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem', alignContent: 'start', backgroundColor: 'var(--bg-primary)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0.65rem' : '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: isMobile ? '0.75rem' : '1.25rem', alignContent: 'start', backgroundColor: 'var(--bg-primary)' }}>
           {table.getRowModel().rows.length === 0 ? (
             <div className="card" style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
               No leads found.
@@ -2335,12 +2362,13 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
               const totalPages = table.getPageCount();
               const currentPage = table.getState().pagination.pageIndex + 1;
               const pages = [];
+              const effectivePageJump = isMobile ? 1 : pageJump;
               
-              let startPage = Math.max(1, currentPage - pageJump);
-              let endPage = Math.min(totalPages, currentPage + pageJump);
+              let startPage = Math.max(1, currentPage - effectivePageJump);
+              let endPage = Math.min(totalPages, currentPage + effectivePageJump);
 
-              if (currentPage <= pageJump + 1) endPage = Math.min((pageJump * 2) + 1, totalPages);
-              if (currentPage >= totalPages - pageJump) startPage = Math.max(1, totalPages - (pageJump * 2));
+              if (currentPage <= effectivePageJump + 1) endPage = Math.min((effectivePageJump * 2) + 1, totalPages);
+              if (currentPage >= totalPages - effectivePageJump) startPage = Math.max(1, totalPages - (effectivePageJump * 2));
 
               for (let i = startPage; i <= endPage; i++) {
                 pages.push(

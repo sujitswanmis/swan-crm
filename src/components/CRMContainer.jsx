@@ -2711,14 +2711,14 @@ export default function CRMContainer({
               title={`Syncing Leads: ${syncLoadedCount}/${syncTotalCount}`}
             />
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
-            <button className="mobile-menu-toggle" onClick={() => setIsSidebarOpen(true)}>
-              <Menu size={24} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+            <button className="mobile-menu-toggle" onClick={() => setIsSidebarOpen(true)} style={{ padding: '0.35rem', flexShrink: 0, background: 'transparent' }}>
+              <Menu size={22} />
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.25rem', minWidth: 0 }}>
-                <h1 style={{ fontSize: '1.02rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px', margin: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                <h1 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1 }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
@@ -2761,7 +2761,7 @@ export default function CRMContainer({
                   {activeTab === 'settings' && 'Enterprise Settings'}
                 </h1>
                 
-                <span style={{ 
+                <span className="desktop-only" style={{ 
                   fontSize: '0.65rem', 
                   padding: '0.1rem 0.35rem', 
                   borderRadius: '4px', 
@@ -2781,11 +2781,11 @@ export default function CRMContainer({
               <div className="desktop-only" style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
             )}
 
-            {/* Intelligent Global Spotlight Search Trigger */}
+            {/* Desktop Intelligent Global Spotlight Search Trigger */}
             <button
               type="button"
               onClick={() => setIsGlobalSearchOpen(true)}
-              className="global-search-trigger-btn"
+              className="global-search-trigger-btn desktop-only"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -2847,7 +2847,32 @@ export default function CRMContainer({
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', position: 'relative', flexShrink: 0 }}>
+            {/* Mobile Global Spotlight Search Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              className="header-icon-btn mobile-only"
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'var(--bg-surface)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: 'var(--accent-color)',
+                transition: 'all 0.2s',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                flexShrink: 0
+              }}
+              title="Search CRM"
+            >
+              <Search size={16} />
+            </button>
+
             {/* Admin Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin') && (
               <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.25rem' }}>
@@ -2891,15 +2916,15 @@ export default function CRMContainer({
             </button>
 
             {/* Notifications Button (Square Button Box) */}
-            <div style={{ position: 'relative' }} ref={notificationMenuRef}>
+            <div style={{ position: 'relative', flexShrink: 0 }} ref={notificationMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="header-icon-btn"
                 style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '10px',
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
                   border: '1px solid var(--border-light)',
                   backgroundColor: showNotifications ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
                   display: 'flex',
@@ -2913,24 +2938,24 @@ export default function CRMContainer({
                 }}
                 title="Notifications"
               >
-                <Bell size={18} />
+                <Bell size={16} />
                 {dueFollowUps.length > 0 && (
                   <div style={{
                     position: 'absolute',
-                    top: '-6px',
-                    right: '-8px',
+                    top: '-5px',
+                    right: '-6px',
                     backgroundColor: '#ef4444',
                     color: '#ffffff',
-                    fontSize: '0.62rem',
+                    fontSize: '0.6rem',
                     fontWeight: 700,
-                    minWidth: '18px',
-                    height: '18px',
-                    padding: '0 5px',
-                    borderRadius: '10px',
+                    minWidth: '16px',
+                    height: '16px',
+                    padding: '0 4px',
+                    borderRadius: '8px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    border: '2px solid var(--bg-surface)',
+                    border: '1.5px solid var(--bg-surface)',
                     boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                     pointerEvents: 'none',
                     lineHeight: 1,
@@ -2944,11 +2969,13 @@ export default function CRMContainer({
               {showNotifications && (
                 <div style={{
                   position: 'fixed',
-                  top: '60px',
+                  top: '58px',
                   bottom: '10px',
-                  right: '12px',
-                  width: '460px',
-                  maxWidth: 'calc(100vw - 24px)',
+                  right: '8px',
+                  left: '8px',
+                  width: 'auto',
+                  maxWidth: '460px',
+                  margin: '0 auto',
                   backgroundColor: 'var(--bg-surface)',
                   border: '1px solid var(--border-light)',
                   borderRadius: '16px',
@@ -3371,38 +3398,38 @@ export default function CRMContainer({
             </div>
 
             {/* Unified User Profile Button with Photo & Dropdown */}
-            <div style={{ position: 'relative' }} ref={profileMenuRef}>
+            <div style={{ position: 'relative', flexShrink: 0 }} ref={profileMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.25rem 0.6rem 0.25rem 0.25rem',
-                  borderRadius: '12px',
+                  gap: '0.35rem',
+                  padding: '2px 4px 2px 2px',
+                  borderRadius: '8px',
                   border: '1px solid var(--border-light)',
                   backgroundColor: showProfileMenu ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
                   cursor: 'pointer',
                   color: 'var(--text-primary)',
                   transition: 'all 0.2s',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  minHeight: '38px'
+                  minHeight: '34px'
                 }}
                 title="User Profile"
               >
                 {/* Avatar / Photo */}
                 <div style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '8px',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
                   backgroundColor: 'var(--accent-color)',
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontWeight: 'bold',
-                  fontSize: '0.9rem',
+                  fontSize: '0.85rem',
                   overflow: 'hidden',
                   flexShrink: 0
                 }}>
@@ -3414,11 +3441,11 @@ export default function CRMContainer({
                 </div>
 
                 {/* User Details (Desktop) */}
-                <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', marginRight: '0.25rem' }}>
+                <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', margin: '0 0.25rem' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1 }}>{userName || 'User'}</span>
                   <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{userRole}</span>
                 </div>
-                <ChevronDown size={14} style={{ color: 'var(--text-secondary)' }} />
+                <ChevronDown size={13} className="desktop-only" style={{ color: 'var(--text-secondary)', marginRight: '2px' }} />
               </button>
               
               {/* Profile Dropdown Menu */}
@@ -3428,7 +3455,7 @@ export default function CRMContainer({
                   top: 'calc(100% + 8px)',
                   right: 0,
                   width: '280px',
-                  maxWidth: 'calc(100vw - 32px)',
+                  maxWidth: 'calc(100vw - 20px)',
                   backgroundColor: 'var(--bg-surface)',
                   border: '1px solid var(--border-light)',
                   borderRadius: '14px',

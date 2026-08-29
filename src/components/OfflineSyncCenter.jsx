@@ -109,16 +109,18 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       <button
         type="button"
         onClick={() => setShowModal(true)}
+        className="sync-center-btn"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '4px 10px',
-          borderRadius: '20px',
+          gap: '5px',
+          padding: '4px 8px',
+          borderRadius: '16px',
           fontSize: '12px',
           fontWeight: '500',
           cursor: 'pointer',
           transition: 'all 0.2s',
+          flexShrink: 0,
           border: !isOnline 
             ? '1px solid #f87171' 
             : pendingCount > 0 
@@ -139,23 +141,23 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       >
         {!isOnline ? (
           <>
-            <WifiOff style={{ width: '13px', height: '13px', color: '#f87171' }} />
-            <span>Offline {pendingCount > 0 ? `(${pendingCount})` : ''}</span>
+            <WifiOff style={{ width: '14px', height: '14px', color: '#f87171', flexShrink: 0 }} />
+            <span className="desktop-only-text">Offline {pendingCount > 0 ? `(${pendingCount})` : ''}</span>
           </>
         ) : isSyncing ? (
           <>
-            <RefreshCw style={{ width: '13px', height: '13px', animation: 'spin 1s linear infinite', color: '#38bdf8' }} />
-            <span>Syncing...</span>
+            <RefreshCw style={{ width: '14px', height: '14px', animation: 'spin 1s linear infinite', color: '#38bdf8', flexShrink: 0 }} />
+            <span className="desktop-only-text">Syncing...</span>
           </>
         ) : pendingCount > 0 ? (
           <>
-            <Clock style={{ width: '13px', height: '13px', color: '#fbbf24' }} />
-            <span>{pendingCount} Pending</span>
+            <Clock style={{ width: '14px', height: '14px', color: '#fbbf24', flexShrink: 0 }} />
+            <span className="desktop-only-text">{pendingCount} Pending</span>
           </>
         ) : (
           <>
-            <Wifi style={{ width: '13px', height: '13px', color: '#4ade80' }} />
-            <span style={{ color: '#cbd5e1' }}>Synced</span>
+            <Wifi style={{ width: '14px', height: '14px', color: '#4ade80', flexShrink: 0 }} />
+            <span className="desktop-only-text" style={{ color: '#cbd5e1' }}>Synced</span>
           </>
         )}
       </button>
