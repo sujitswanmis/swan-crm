@@ -1178,6 +1178,11 @@ export default function ChecklistModule({
                                 <Clock size={13} />
                                 <span>{tmpl.due_time || '18:00'}</span>
                               </div>
+                              {!isCompleted && delayInfo.delayText && (
+                                <div style={{ fontSize: '0.72rem', color: isOverdue ? '#dc2626' : '#2563eb', fontWeight: 600, marginTop: '0.15rem' }}>
+                                  {delayInfo.delayText}
+                                </div>
+                              )}
                             </td>
                             <td style={{ padding: '0.85rem 1rem' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '130px' }}>
@@ -1196,40 +1201,64 @@ export default function ChecklistModule({
                             </td>
                             <td style={{ padding: '0.85rem 1rem' }}>
                               {isCompleted ? (
-                                <span style={{
-                                  background: isDelayedCompleted ? '#fef3c7' : '#dcfce7',
-                                  color: isDelayedCompleted ? '#92400e' : '#166534',
-                                  border: isDelayedCompleted ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                                  padding: '0.25rem 0.55rem',
-                                  borderRadius: '10px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700
-                                }}>
-                                  {isDelayedCompleted ? `⚠️ Done (Delayed)` : '✓ Completed'}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                  <span style={{
+                                    background: isDelayedCompleted ? '#fef3c7' : '#dcfce7',
+                                    color: isDelayedCompleted ? '#92400e' : '#166534',
+                                    border: isDelayedCompleted ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '10px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700
+                                  }}>
+                                    {isDelayedCompleted ? `⚠️ Done (Delayed)` : '✓ Completed (On Time)'}
+                                  </span>
+                                  {isDelayedCompleted && delayInfo.delayText && (
+                                    <span style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 600 }}>
+                                      {delayInfo.delayText}
+                                    </span>
+                                  )}
+                                </div>
                               ) : isOverdue ? (
-                                <span style={{
-                                  background: '#fee2e2',
-                                  color: '#991b1b',
-                                  border: '1px solid #fca5a5',
-                                  padding: '0.25rem 0.55rem',
-                                  borderRadius: '10px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700
-                                }}>
-                                  🚨 Overdue
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                  <span style={{
+                                    background: '#fee2e2',
+                                    color: '#991b1b',
+                                    border: '1px solid #fca5a5',
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '10px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}>
+                                    🚨 {delayInfo.delayText || 'Overdue'}
+                                  </span>
+                                  {delayInfo.delayMinutes > 0 && !delayInfo.delayText?.includes('Delayed by') && (
+                                    <span style={{ fontSize: '0.72rem', color: '#b91c1c', fontWeight: 700 }}>
+                                      Delayed by {Math.floor(delayInfo.delayMinutes / 60)}h {delayInfo.delayMinutes % 60}m
+                                    </span>
+                                  )}
+                                </div>
                               ) : (
-                                <span style={{
-                                  background: percent > 0 ? '#fef3c7' : '#f1f5f9',
-                                  color: percent > 0 ? '#92400e' : '#475569',
-                                  padding: '0.25rem 0.55rem',
-                                  borderRadius: '10px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700
-                                }}>
-                                  {percent > 0 ? 'In Progress' : 'Pending'}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                  <span style={{
+                                    background: percent > 0 ? '#fef3c7' : '#f1f5f9',
+                                    color: percent > 0 ? '#92400e' : '#475569',
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '10px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700
+                                  }}>
+                                    {percent > 0 ? 'In Progress' : 'Pending'}
+                                  </span>
+                                  {delayInfo.delayText && (
+                                    <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>
+                                      {delayInfo.delayText}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
