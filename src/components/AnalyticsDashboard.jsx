@@ -9,7 +9,7 @@ import { getDashboardMetrics, getUserAssignedWorkSummary } from '@/app/actions/a
 import {
   Activity, Loader2, CheckSquare, ListTodo, Users, Clock, AlertTriangle,
   CheckCircle2, TrendingUp, Calendar, ArrowRight, Target, Sparkles,
-  ShieldAlert, RefreshCw, Layers, PhoneCall, ExternalLink
+  ShieldAlert, RefreshCw, Layers, PhoneCall, ExternalLink, User, Phone, Mail, Building2, MapPin
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
@@ -36,8 +36,21 @@ export default function AnalyticsDashboard({
   const [startDate, setStartDate] = useState(() => computeDateRange('today').startDate);
   const [endDate, setEndDate] = useState(() => computeDateRange('today').endDate);
   
-  // Default to 'All' or individual employee
-  const [selectedEmployee, setSelectedEmployee] = useState('All');
+  // Find current user's team member record
+  const myTeamMember = useMemo(() => {
+    if (!teamMembers || teamMembers.length === 0) return null;
+    return teamMembers.find(t => 
+      (userEmail && (t.email?.toLowerCase() === userEmail?.toLowerCase() || t.user_id === userEmail)) ||
+      (userName && t.emp_name && t.emp_name.toLowerCase() === userName.toLowerCase()) ||
+      (userId && t.user_id === userId)
+    );
+  }, [teamMembers, userEmail, userName, userId]);
+
+  // Default to user's assigned scope or 'All'
+  const [selectedEmployee, setSelectedEmployee] = useState(() => {
+    return myTeamMember?.user_id || 'All';
+  });
+
   const [metrics, setMetrics] = useState({ employeeActivity: [], whatsappStats: { period: 0, total: 0 } });
   const [loading, setLoading] = useState(true);
 
@@ -48,8 +61,9 @@ export default function AnalyticsDashboard({
     effectiveEmail: ''
   });
   const [loadingAssignedWork, setLoadingAssignedWork] = useState(true);
-  const [activeWorkTab, setActiveWorkTab] = useState('delegation'); // 'delegation' | 'checklists' | 'leads'
+  const [activeWorkTab, setActiveWorkTab] = useState('leads'); // 'leads' | 'delegation' | 'checklists'
   const [taskFilter, setTaskFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'OVERDUE' | 'COMPLETED'
+  const [leadFilter, setLeadFilter] = useState('ACTION_NEEDED'); // 'ACTION_NEEDED' | 'FOLLOW_UPS' | 'NEW' | 'PIPELINE' | 'WON' | 'ALL'
 
   const dateFilterLabel = (() => {
     if (datePreset === 'today') return 'Today';
@@ -93,6 +107,13 @@ export default function AnalyticsDashboard({
     }
     return selectedEmployee;
   }, [selectedEmployee, selectedEmployeeObj]);
+
+  const isMyWorkSelected = useMemo(() => {
+    if (selectedEmployee === 'All') return false;
+    if (myTeamMember && (selectedEmployee === myTeamMember.user_id || selectedEmployee === myTeamMember.email)) return true;
+    if (userEmail && (selectedEmployee === userEmail || selectedEmployeeObj?.email === userEmail)) return true;
+    return false;
+  }, [selectedEmployee, myTeamMember, userEmail, selectedEmployeeObj]);
 
   // Load Lead Activity & WhatsApp Metrics
   useEffect(() => {
@@ -210,6 +231,58 @@ export default function AnalyticsDashboard({
     return '01 - New Stage';
   };
 
+  // Helper for cleaning and formatting Lead Name and Company
+  const formatLeadDisplayName = (lead) => {
+    const company = lead.company || lead.business_name || lead.customer_name;
+    const person = lead.contact_person || (lead.name && lead.name !== lead.company ? lead.name : null);
+    
+    if (company && person && person !== 'Unnamed Lead') {
+      return { title: company, subtitle: person, hasPerson: true };
+    }
+    if (company) {
+      return { title: company, subtitle: lead.city ? `${lead.city}${lead.state ? `, ${lead.state}` : ''}` : null, hasPerson: false };
+    }
+    if (person && person !== 'Unnamed Lead') {
+      return { title: person, subtitle: lead.city ? `${lead.city}` : null, hasPerson: true };
+    }
+    return { title: lead.lead_ref_id || `Lead #${lead.id}`, subtitle: null, hasPerson: false };
+  };
+
+  // Helper for cleaning and badge-styling status
+  const formatLeadStatusBadge = (status) => {
+    if (!status || status === 'None' || status === 'null' || status.toLowerCase() === 'new' || status.toLowerCase() === 'pending') {
+      return { label: 'New Lead', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' };
+    }
+    let raw = status;
+    if (raw.includes('>')) {
+      raw = raw.split('>').pop().trim();
+    } else if (raw.includes(';')) {
+      raw = raw.split(';')[1]?.trim() || raw;
+    }
+    
+    const lower = raw.toLowerCase();
+    if (lower.includes('reschedule') || lower.includes('follow')) {
+      return { label: raw, icon: '⏰', bg: '#fef3c7', color: '#b45309', border: '#fde68a' };
+    }
+    if (lower.includes('won') || lower.includes('converted') || lower.includes('order received') || lower.includes('closed')) {
+      return { label: raw, icon: '🏆', bg: '#dcfce7', color: '#15803d', border: '#86efac' };
+    }
+    if (lower.includes('not connected') || lower.includes('no response') || lower.includes('busy') || lower.includes('switched off')) {
+      return { label: raw, icon: '📞', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
+    }
+    if (lower.includes('lost') || lower.includes('not interested') || lower.includes('junk') || lower.includes('invalid') || lower.includes('dropped')) {
+      return { label: raw, icon: '❌', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+    }
+    if (lower.includes('contact') || lower.includes('qualif') || lower.includes('sales') || lower.includes('demo') || lower.includes('quotation')) {
+      return { label: raw, icon: '⚡', bg: '#ede9fe', color: '#6d28d9', border: '#ddd6fe' };
+    }
+    return { label: raw, icon: '📌', bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
+  };
+
+  const getLeadContactPhone = (lead) => {
+    return lead.phone || lead.mobile || lead.business_contact_1 || lead.phone_number || lead.contact_no || lead.business_contact_2 || '';
+  };
+
   // Synchronous filtered leads for currently selected employee
   const filteredLeadsSync = useMemo(() => {
     if (selectedEmployee === 'All') return leads;
@@ -254,7 +327,7 @@ export default function AnalyticsDashboard({
     const total = filteredLeadsSync.length;
     const newLeads = filteredLeadsSync.filter(l => {
       const stage = getStageFromStatus(l.status);
-      return stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending';
+      return stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending' || !l.status || l.status === 'None';
     }).length;
     const followUps = filteredLeadsSync.filter(l => {
       const stage = getStageFromStatus(l.status);
@@ -266,10 +339,45 @@ export default function AnalyticsDashboard({
     }).length;
     const won = filteredLeadsSync.filter(l => {
       const stage = getStageFromStatus(l.status);
-      return stage === '07 - Final Stage' && (l.status?.includes('Won') || l.status?.includes('Converted') || l.status?.includes('Closed'));
+      return stage === '07 - Final Stage' && (l.status?.includes('Won') || l.status?.includes('Converted') || l.status?.includes('Closed') || l.status?.includes('Order Received'));
     }).length;
-    return { total, newLeads, followUps, inPipeline, won };
+    const actionNeeded = newLeads + followUps;
+    return { total, newLeads, followUps, inPipeline, won, actionNeeded };
   }, [filteredLeadsSync]);
+
+  // Tabbed Filtered Leads List
+  const displayedLeads = useMemo(() => {
+    let list = filteredLeadsSync;
+    if (leadFilter === 'ACTION_NEEDED') {
+      list = list.filter(l => {
+        const stage = getStageFromStatus(l.status);
+        const isFollowUp = stage === '04 - Follow Up Stage' || (l.status && l.status.toLowerCase().includes('reschedule')) || (l.status && l.status.toLowerCase().includes('follow'));
+        const isNew = stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending' || !l.status || l.status === 'None';
+        return isFollowUp || isNew;
+      });
+    } else if (leadFilter === 'FOLLOW_UPS') {
+      list = list.filter(l => {
+        const stage = getStageFromStatus(l.status);
+        return stage === '04 - Follow Up Stage' || (l.status && l.status.toLowerCase().includes('reschedule')) || (l.status && l.status.toLowerCase().includes('follow'));
+      });
+    } else if (leadFilter === 'NEW') {
+      list = list.filter(l => {
+        const stage = getStageFromStatus(l.status);
+        return stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending' || !l.status || l.status === 'None';
+      });
+    } else if (leadFilter === 'PIPELINE') {
+      list = list.filter(l => {
+        const stage = getStageFromStatus(l.status);
+        return ['02 - Contact Stage', '03 - Qualification Stage', '05 - Sales Process Stage', '06 - Conversion Stage'].includes(stage);
+      });
+    } else if (leadFilter === 'WON') {
+      list = list.filter(l => {
+        const stage = getStageFromStatus(l.status);
+        return stage === '07 - Final Stage' && (l.status?.includes('Won') || l.status?.includes('Converted') || l.status?.includes('Closed') || l.status?.includes('Order Received'));
+      });
+    }
+    return list;
+  }, [filteredLeadsSync, leadFilter]);
 
   // Overall Health / Assigned Work Summary Stats
   const delegation = assignedWork.delegation || { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, recentTasks: [] };
@@ -281,7 +389,7 @@ export default function AnalyticsDashboard({
     ? Math.round((totalCompletedWorkItems / totalAssignedWorkItems) * 100) 
     : 0;
 
-  const totalPendingActionItems = delegation.pending + delegation.inProgress + checklists.pending + assignedLeadStats.newLeads + assignedLeadStats.followUps;
+  const totalPendingActionItems = delegation.pending + delegation.inProgress + checklists.pending + assignedLeadStats.actionNeeded;
   const totalOverdueAlerts = delegation.overdue + checklists.completedLate;
 
   // Filtered Delegation Tasks for Table View
@@ -344,21 +452,71 @@ export default function AnalyticsDashboard({
             <TrendingUp size={22} style={{ color: 'var(--accent-color)' }} /> Performance & Analytics Dashboard
           </h2>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Comprehensive Work Execution, Task Delegations, Daily Checklists & Pipeline Analytics
+            Work Execution Summary, Task Delegations, Daily Checklists & Pipeline Analytics
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          
+          {/* Quick Scope Toggle: My Work vs All */}
+          <div style={{ display: 'flex', backgroundColor: 'var(--th-bg)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+            {myTeamMember && (
+              <button
+                onClick={() => setSelectedEmployee(myTeamMember.user_id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  backgroundColor: isMyWorkSelected ? 'var(--accent-color)' : 'transparent',
+                  color: isMyWorkSelected ? '#ffffff' : 'var(--text-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <User size={14} />
+                <span>My Assigned Work</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedEmployee('All')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                border: 'none',
+                backgroundColor: selectedEmployee === 'All' ? 'var(--accent-color)' : 'transparent',
+                color: selectedEmployee === 'All' ? '#ffffff' : 'var(--text-primary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              <Users size={14} />
+              <span>All Team Members</span>
+            </button>
+          </div>
+
+          {/* Specific Employee Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--th-bg)', padding: '0.35rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <Users size={16} style={{ color: 'var(--text-secondary)' }} />
             <select 
               value={selectedEmployee} 
               onChange={(e) => setSelectedEmployee(e.target.value)}
-              style={{ background: 'transparent', border: 'none', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', maxWidth: '200px' }}
+              style={{ background: 'transparent', border: 'none', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', maxWidth: '200px' }}
             >
-              <option value="All" style={{ background: 'var(--bg-surface)' }}>All Employees</option>
+              <option value="All" style={{ background: 'var(--bg-surface)' }}>All Employees (Team Overview)</option>
               {teamMembers.filter(m => m.emp_name).map(m => (
-                <option key={m.user_id} value={m.user_id} style={{ background: 'var(--bg-surface)' }}>{m.emp_name}</option>
+                <option key={m.user_id} value={m.user_id} style={{ background: 'var(--bg-surface)' }}>
+                  {m.emp_name} {myTeamMember?.user_id === m.user_id ? '(You)' : ''}
+                </option>
               ))}
             </select>
           </div>
@@ -377,9 +535,7 @@ export default function AnalyticsDashboard({
           />
 
           <button
-            onClick={() => {
-              fetchAssignedWork();
-            }}
+            onClick={() => fetchAssignedWork()}
             title="Refresh All Metrics"
             style={{
               display: 'flex',
@@ -426,21 +582,21 @@ export default function AnalyticsDashboard({
               </h3>
             </div>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span>Viewing assigned workload for:</span>
+              <span>Work summary for:</span>
               <strong style={{ color: 'var(--accent-color)', backgroundColor: 'var(--th-bg)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                {viewingLabel}
+                {isMyWorkSelected ? `👤 Your Profile: ${viewingLabel}` : viewingLabel}
               </strong>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             {totalOverdueAlerts > 0 && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', fontWeight: 700, color: '#dc2626', backgroundColor: '#fee2e2', padding: '0.35rem 0.75rem', borderRadius: '20px', border: '1px solid #fca5a5' }}>
                 <AlertTriangle size={14} /> {totalOverdueAlerts} Overdue / Delayed Tasks
               </span>
             )}
             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', backgroundColor: 'var(--th-bg)', padding: '0.35rem 0.75rem', borderRadius: '20px' }}>
-              {totalAssignedWorkItems} Total Work Items
+              {totalPendingActionItems} Action Items Pending
             </span>
           </div>
         </div>
@@ -448,7 +604,61 @@ export default function AnalyticsDashboard({
         {/* 4 Assigned Work Metric Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: '1.25rem' }}>
           
-          {/* 1. Delegated Tasks Card */}
+          {/* 1. Assigned Leads & Action Items Card */}
+          <div 
+            className="card" 
+            style={{ 
+              padding: '1.25rem', 
+              borderRadius: '10px', 
+              borderLeft: '4px solid #3b82f6', 
+              backgroundColor: 'var(--bg-primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: '0.75rem'
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  🎯 Assigned Leads
+                </span>
+                <Target size={18} style={{ color: '#3b82f6' }} />
+              </div>
+              <div style={{ fontSize: '2.1rem', fontWeight: 800, margin: '0.4rem 0', color: 'var(--text-primary)' }}>
+                {assignedLeadStats.total}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                <span style={{ color: '#d97706', fontWeight: 700 }}>⚡ {assignedLeadStats.actionNeeded} Needs Action</span>
+                <span>•</span>
+                <span style={{ color: '#16a34a', fontWeight: 600 }}>🏆 {assignedLeadStats.won} Won</span>
+              </div>
+            </div>
+            {onNavigateTab && (
+              <button
+                onClick={() => onNavigateTab('leads')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.35rem 0',
+                  color: '#3b82f6',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  borderTop: '1px solid var(--border-light)',
+                  marginTop: '0.5rem'
+                }}
+              >
+                <span>Open Leads Database</span>
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* 2. Delegated Tasks Card */}
           <div 
             className="card" 
             style={{ 
@@ -508,7 +718,7 @@ export default function AnalyticsDashboard({
             )}
           </div>
 
-          {/* 2. Daily Checklists Card */}
+          {/* 3. Daily Checklists Card */}
           <div 
             className="card" 
             style={{ 
@@ -572,62 +782,6 @@ export default function AnalyticsDashboard({
             )}
           </div>
 
-          {/* 3. Assigned Leads Card */}
-          <div 
-            className="card" 
-            style={{ 
-              padding: '1.25rem', 
-              borderRadius: '10px', 
-              borderLeft: '4px solid #3b82f6', 
-              backgroundColor: 'var(--bg-primary)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              gap: '0.75rem'
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>
-                  🎯 Assigned Leads
-                </span>
-                <Target size={18} style={{ color: '#3b82f6' }} />
-              </div>
-              <div style={{ fontSize: '2.1rem', fontWeight: 800, margin: '0.4rem 0', color: 'var(--text-primary)' }}>
-                {assignedLeadStats.total}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                <span style={{ fontWeight: 600 }}>🆕 {assignedLeadStats.newLeads} New</span>
-                <span>•</span>
-                <span style={{ color: '#d97706', fontWeight: 600 }}>📞 {assignedLeadStats.followUps} Follow-ups</span>
-                <span>•</span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>🏆 {assignedLeadStats.won} Won</span>
-              </div>
-            </div>
-            {onNavigateTab && (
-              <button
-                onClick={() => onNavigateTab('leads')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: 'none',
-                  border: 'none',
-                  padding: '0.35rem 0',
-                  color: '#3b82f6',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  borderTop: '1px solid var(--border-light)',
-                  marginTop: '0.5rem'
-                }}
-              >
-                <span>Open Leads Database</span>
-                <ArrowRight size={14} />
-              </button>
-            )}
-          </div>
-
           {/* 4. Overall Work Health & Execution Index */}
           <div 
             className="card" 
@@ -670,7 +824,7 @@ export default function AnalyticsDashboard({
               </div>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-              Calculated across Tasks, Checklists & Leads
+              Across Leads, Delegation & Checklists
             </div>
           </div>
 
@@ -680,6 +834,30 @@ export default function AnalyticsDashboard({
         <div style={{ marginTop: '0.5rem' }}>
           {/* Tab Navigation */}
           <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid var(--border-light)', paddingBottom: '0.25rem', overflowX: 'auto' }}>
+            <button
+              onClick={() => setActiveWorkTab('leads')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.6rem 1.1rem',
+                border: 'none',
+                background: 'none',
+                fontSize: '0.9rem',
+                fontWeight: activeWorkTab === 'leads' ? 700 : 500,
+                color: activeWorkTab === 'leads' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                borderBottom: activeWorkTab === 'leads' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              <Target size={16} />
+              <span>Assigned Leads & Follow-ups</span>
+              <span style={{ fontSize: '0.75rem', backgroundColor: activeWorkTab === 'leads' ? 'var(--accent-color)' : 'var(--th-bg)', color: activeWorkTab === 'leads' ? '#fff' : 'var(--text-secondary)', padding: '0.1rem 0.45rem', borderRadius: '10px' }}>
+                {filteredLeadsSync.length}
+              </span>
+            </button>
+
             <button
               onClick={() => setActiveWorkTab('delegation')}
               style={{
@@ -727,33 +905,170 @@ export default function AnalyticsDashboard({
                 {checklists.totalSlots}
               </span>
             </button>
-
-            <button
-              onClick={() => setActiveWorkTab('leads')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.6rem 1.1rem',
-                border: 'none',
-                background: 'none',
-                fontSize: '0.9rem',
-                fontWeight: activeWorkTab === 'leads' ? 700 : 500,
-                color: activeWorkTab === 'leads' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                borderBottom: activeWorkTab === 'leads' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.15s'
-              }}
-            >
-              <Target size={16} />
-              <span>Assigned Leads & Follow-ups</span>
-              <span style={{ fontSize: '0.75rem', backgroundColor: activeWorkTab === 'leads' ? 'var(--accent-color)' : 'var(--th-bg)', color: activeWorkTab === 'leads' ? '#fff' : 'var(--text-secondary)', padding: '0.1rem 0.45rem', borderRadius: '10px' }}>
-                {filteredLeadsSync.length}
-              </span>
-            </button>
           </div>
 
-          {/* TAB 1: DELEGATION TASKS LIST */}
+          {/* TAB 1: ASSIGNED LEADS & FOLLOW-UPS */}
+          {activeWorkTab === 'leads' && (
+            <div style={{ marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {/* Actionable Sub-filters */}
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'ACTION_NEEDED', label: '⚡ Needs Action', count: assignedLeadStats.actionNeeded },
+                    { id: 'FOLLOW_UPS', label: '📞 Follow-ups / Reschedule', count: assignedLeadStats.followUps },
+                    { id: 'NEW', label: '🆕 Fresh Leads', count: assignedLeadStats.newLeads },
+                    { id: 'PIPELINE', label: '🔄 In Pipeline', count: assignedLeadStats.inPipeline },
+                    { id: 'WON', label: '🏆 Won Deals', count: assignedLeadStats.won },
+                    { id: 'ALL', label: '📑 All Assigned', count: assignedLeadStats.total }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setLeadFilter(f.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        border: leadFilter === f.id ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                        backgroundColor: leadFilter === f.id ? 'var(--accent-color)' : 'var(--bg-surface)',
+                        color: leadFilter === f.id ? '#ffffff' : 'var(--text-secondary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span>{f.label}</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.85 }}>({f.count})</span>
+                    </button>
+                  ))}
+                </div>
+
+                {onNavigateTab && (
+                  <button
+                    onClick={() => onNavigateTab('leads')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-color)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span>View all in Leads Database</span>
+                    <ExternalLink size={13} />
+                  </button>
+                )}
+              </div>
+
+              {displayedLeads.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.88rem' }}>
+                  No leads found for this filter in {viewingLabel}'s workload.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
+                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Lead / Company</th>
+                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Current Stage</th>
+                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Contact Info</th>
+                        <th style={{ textAlign: 'right', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Deal Value</th>
+                        <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Status & Call Response</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedLeads.slice(0, 20).map(lead => {
+                        const stage = getStageFromStatus(lead.status);
+                        const displayObj = formatLeadDisplayName(lead);
+                        const statusBadge = formatLeadStatusBadge(lead.status);
+                        const phone = getLeadContactPhone(lead);
+
+                        return (
+                          <tr key={lead.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-primary)' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Building2 size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                                <span>{displayObj.title}</span>
+                              </div>
+                              {displayObj.subtitle && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  {displayObj.hasPerson ? (
+                                    <span>👤 {displayObj.subtitle}</span>
+                                  ) : (
+                                    <span>📍 {displayObj.subtitle}</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }}>
+                                {stage.split('- ')[1] || stage}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                              {phone ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                                  <Phone size={12} style={{ color: 'var(--accent-color)' }} />
+                                  <span>{phone}</span>
+                                </div>
+                              ) : (
+                                <div>-</div>
+                              )}
+                              {lead.email && (
+                                <div style={{ fontSize: '0.72rem', marginTop: '0.15rem' }}>{lead.email}</div>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {lead.deal_value ? `₹${Number(lead.deal_value).toLocaleString('en-IN')}` : '-'}
+                            </td>
+                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                              <span 
+                                style={{ 
+                                  fontSize: '0.75rem', 
+                                  fontWeight: 700, 
+                                  padding: '0.25rem 0.6rem', 
+                                  borderRadius: '12px', 
+                                  backgroundColor: statusBadge.bg,
+                                  color: statusBadge.color,
+                                  border: `1px solid ${statusBadge.border}`,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                {statusBadge.icon && <span>{statusBadge.icon}</span>}
+                                <span>{statusBadge.label}</span>
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {displayedLeads.length > 20 && (
+                    <div style={{ textAlign: 'center', padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-light)' }}>
+                      Showing top 20 of {displayedLeads.length} leads in this view.{' '}
+                      {onNavigateTab && (
+                        <button
+                          onClick={() => onNavigateTab('leads')}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          Open complete Leads Database →
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: DELEGATION TASKS LIST */}
           {activeWorkTab === 'delegation' && (
             <div style={{ marginTop: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -805,7 +1120,7 @@ export default function AnalyticsDashboard({
                 </div>
               ) : filteredTasks.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.88rem' }}>
-                  No delegation tasks found matching this filter.
+                  No delegation tasks found matching this filter for {viewingLabel}.
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
@@ -855,12 +1170,12 @@ export default function AnalyticsDashboard({
             </div>
           )}
 
-          {/* TAB 2: TODAY'S CHECKLISTS */}
+          {/* TAB 3: TODAY'S CHECKLISTS */}
           {activeWorkTab === 'checklists' && (
             <div style={{ marginTop: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                  Today's scheduled checklist routine and compliance status.
+                  Today's scheduled checklist routine and compliance status for {viewingLabel}.
                 </div>
 
                 {onNavigateTab && (
@@ -934,99 +1249,6 @@ export default function AnalyticsDashboard({
                                   ⏳ Pending Today
                                 </span>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: ASSIGNED LEADS & FOLLOW-UPS */}
-          {activeWorkTab === 'leads' && (
-            <div style={{ marginTop: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                  Active Leads, Follow-ups and conversions assigned to {viewingLabel}.
-                </div>
-
-                {onNavigateTab && (
-                  <button
-                    onClick={() => onNavigateTab('leads')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--accent-color)',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <span>View all in Leads Database</span>
-                    <ExternalLink size={13} />
-                  </button>
-                )}
-              </div>
-
-              {filteredLeadsSync.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.88rem' }}>
-                  No leads assigned to this employee.
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
-                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Lead / Company</th>
-                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Current Stage</th>
-                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Contact Info</th>
-                        <th style={{ textAlign: 'right', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Deal Value</th>
-                        <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredLeadsSync.slice(0, 15).map(lead => {
-                        const stage = getStageFromStatus(lead.status);
-                        const isWon = stage === '07 - Final Stage' && (lead.status?.includes('Won') || lead.status?.includes('Converted') || lead.status?.includes('Closed'));
-                        const isFollowUp = stage === '04 - Follow Up Stage' || (lead.status && lead.status.includes('ReSchedule'));
-                        return (
-                          <tr key={lead.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                            <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-primary)' }}>
-                              <div style={{ fontWeight: 600 }}>{lead.name || 'Unnamed Lead'}</div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{lead.company || 'Individual'}</div>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.75rem' }}>
-                              <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }}>
-                                {stage.split('- ')[1] || stage}
-                              </span>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                              <div>{lead.phone || '-'}</div>
-                              <div style={{ fontSize: '0.72rem' }}>{lead.email || ''}</div>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {lead.deal_value ? `₹${Number(lead.deal_value).toLocaleString('en-IN')}` : '-'}
-                            </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
-                              <span 
-                                style={{ 
-                                  fontSize: '0.72rem', 
-                                  fontWeight: 700, 
-                                  padding: '0.2rem 0.5rem', 
-                                  borderRadius: '12px', 
-                                  backgroundColor: isWon ? '#dcfce7' : isFollowUp ? '#fef3c7' : '#f1f5f9',
-                                  color: isWon ? '#15803d' : isFollowUp ? '#b45309' : '#475569',
-                                  border: `1px solid ${isWon ? '#86efac' : isFollowUp ? '#fde68a' : '#cbd5e1'}`
-                                }}
-                              >
-                                {lead.status || 'Active'}
-                              </span>
                             </td>
                           </tr>
                         );
