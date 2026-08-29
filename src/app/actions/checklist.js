@@ -944,3 +944,59 @@ export async function resetCompanyHolidaysToDefault(tenantId = DEFAULT_TENANT_ID
   }
 }
 
+// ==========================================
+// 5. MANAGED DEPARTMENTS RETRIEVAL
+// ==========================================
+
+export async function getCompanyDepartmentsList() {
+  const adminClient = getAdminClient();
+  try {
+    const { data, error } = await adminClient
+      .from('departments')
+      .select('id, name')
+      .order('name', { ascending: true });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return { success: true, data: data.map(d => d.name).filter(Boolean) };
+    }
+  } catch (err) {
+    console.warn('Error fetching departments from Supabase:', err.message);
+  }
+
+  return {
+    success: true,
+    data: [
+      'Accounts & Finance',
+      'Administration',
+      'Audit',
+      'Corporate Strategy and Planning',
+      'Director',
+      'Dispatch',
+      'Electrical & Maintenance',
+      'Human Resource',
+      'Human Resource & Administration',
+      'Information Technology',
+      'Logistics',
+      'Manufacturing Engineering',
+      'Marketing',
+      'Operations',
+      'Production',
+      'Production Planning and Control',
+      'Purchase',
+      'Quality Assurance',
+      'Research & Development',
+      'Sales',
+      'Sales & Marketing',
+      'Security',
+      'Service',
+      'Store',
+      'Testing',
+      'Tool Room',
+      'Training and Development',
+      'Transport',
+      'Vendor Development'
+    ]
+  };
+}
+
+

@@ -31,7 +31,8 @@ import {
   getCompanyHolidays,
   saveCompanyHoliday,
   deleteCompanyHoliday,
-  resetCompanyHolidaysToDefault
+  resetCompanyHolidaysToDefault,
+  getCompanyDepartmentsList
 } from '@/app/actions/checklist';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
@@ -113,6 +114,7 @@ export default function ChecklistModule({
   const [templates, setTemplates] = useState([]);
   const [complianceLogs, setComplianceLogs] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
+  const [managedDepartments, setManagedDepartments] = useState([]);
 
   // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
   const myReportingTeam = useMemo(() => {
@@ -156,17 +158,17 @@ export default function ChecklistModule({
     };
   }, [dashboardChecklists, isFutureDate]);
 
-  // Available distinct departments
+  // Available distinct departments (from Settings > Manage Departments + employee/template records)
   const availableDepartments = useMemo(() => {
-    const set = new Set();
+    const set = new Set(managedDepartments || []);
     (employeesList || []).forEach(e => {
       if (e.department) set.add(e.department);
     });
     (templates || []).forEach(t => {
       if (t.department) set.add(t.department);
     });
-    return Array.from(set).sort();
-  }, [employeesList, templates]);
+    return Array.from(set).filter(Boolean).sort();
+  }, [managedDepartments, employeesList, templates]);
 
   // Analytics Dashboard Computation
   const analyticsData = useMemo(() => {
@@ -420,6 +422,7 @@ export default function ChecklistModule({
   // Initial load
   useEffect(() => {
     loadEmployees();
+    loadDepartments();
   }, []);
 
   useEffect(() => {
@@ -445,6 +448,17 @@ export default function ChecklistModule({
     } else {
       setSuccessMsg(msg);
       setTimeout(() => setSuccessMsg(''), 4000);
+    }
+  };
+
+  const loadDepartments = async () => {
+    try {
+      const res = await getCompanyDepartmentsList();
+      if (res.success && Array.isArray(res.data)) {
+        setManagedDepartments(res.data);
+      }
+    } catch (e) {
+      console.warn('Could not load company departments from settings master:', e.message);
     }
   };
 
@@ -4121,16 +4135,30 @@ export default function ChecklistModule({
                 </div>
 
                 <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Department
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-primary, #1e293b)' }}>
+                    🏢 Target Department *
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Operations / Sales"
-                    value={templateForm.department}
+                  <select
+                    value={templateForm.department || ''}
                     onChange={(e) => setTemplateForm(prev => ({ ...prev, department: e.target.value }))}
-                    style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', width: '100%' }}
-                  />
+                    style={{
+                      padding: '0.6rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      width: '100%',
+                      background: 'var(--card-bg, #ffffff)',
+                      color: 'var(--text-primary, #1e293b)',
+                      fontSize: '0.9rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                    required
+                  >
+                    <option value="">-- Select Department (From Settings Master) --</option>
+                    {availableDepartments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
