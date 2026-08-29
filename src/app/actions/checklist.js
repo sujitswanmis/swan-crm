@@ -104,6 +104,27 @@ export async function deleteChecklistTemplate(templateId, tenantId = DEFAULT_TEN
   }
 }
 
+export async function toggleChecklistTemplateStatus(templateId, newActiveStatus, tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  try {
+    const isActive = Boolean(newActiveStatus);
+    const { error } = await adminClient
+      .from('checklist_templates')
+      .update({
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', templateId)
+      .eq('tenant_id', tenantId);
+
+    if (error) throw error;
+    return { success: true, is_active: isActive };
+  } catch (err) {
+    console.error('Error toggling template status:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // ==========================================
 // 2. EMPLOYEE DASHBOARD & EXECUTION ACTIONS
 // ==========================================

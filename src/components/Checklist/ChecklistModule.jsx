@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
   Trash2, Edit3, ShieldCheck, Filter, Search, RefreshCw, Eye,
   Sparkles, Check, ChevronRight, X, AlertTriangle, FileSpreadsheet,
-  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock
+  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock, Copy
 } from 'lucide-react';
 import {
   FREQUENCIES_CONFIG,
@@ -18,6 +18,7 @@ import {
   getChecklistTemplates,
   saveChecklistTemplate,
   deleteChecklistTemplate,
+  toggleChecklistTemplateStatus,
   getEmployeeChecklistDashboard,
   submitChecklistResponse,
   verifyChecklistSubmission,
@@ -45,6 +46,8 @@ export default function ChecklistModule({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
+  const [templateStatusFilter, setTemplateStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+  const [togglingStatusId, setTogglingStatusId] = useState(null);
 
   // Data states
   const [dashboardChecklists, setDashboardChecklists] = useState([]);
@@ -330,7 +333,61 @@ export default function ChecklistModule({
     }));
   };
 
-  const handleSaveTemplate = async () => {
+  const handleCopyTemplate = (tmpl) => {
+    setEditingTemplate(null);
+    let assignmentMode = 'SINGLE';
+    if (tmpl.assigned_type === 'ALL') {
+      assignmentMode = 'ALL';
+    } else if (tmpl.assigned_employee_email && tmpl.assigned_employee_email.includes(',')) {
+      assignmentMode = 'MULTI';
+    }
+
+    setTemplateForm({
+      title: `${tmpl.title} (Copy)`,
+      description: tmpl.description || '',
+      frequency: tmpl.frequency || 'DAILY',
+      department: tmpl.department || 'General',
+      category: tmpl.category || 'OPERATIONS',
+      assignment_mode: assignmentMode,
+      assigned_type: tmpl.assigned_type || 'EMPLOYEE',
+      assigned_employee_email: tmpl.assigned_employee_email || '',
+      assigned_employee_name: tmpl.assigned_employee_name || '',
+      due_time: tmpl.due_time || '18:00',
+      days_of_week: tmpl.days_of_week || ['Monday'],
+      day_of_month: tmpl.day_of_month || 1,
+      items: (tmpl.items || []).map((it, idx) => ({
+        ...it,
+        id: `item_${Date.now()}_${idx + 1}`
+      })),
+      is_active: true
+    });
+    showNotification(`📋 Template cloned! Modify Title, Cutoff Time or Questions and save.`);
+    setTemplateModalOpen(true);
+  };
+
+  const handleToggleStatus = async (tmpl) => {
+    const newStatus = !tmpl.is_active;
+    // Optimistic update
+    setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: newStatus } : t));
+    setTogglingStatusId(tmpl.id);
+    try {
+      const res = await toggleChecklistTemplateStatus(tmpl.id, newStatus);
+      if (res.success) {
+        showNotification(`Template marked ${newStatus ? 'Active' : 'Inactive'}`);
+      } else {
+        // Revert on failure
+        setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: !newStatus } : t));
+        showNotification(res.error || 'Failed to toggle status', true);
+      }
+    } catch (e) {
+      setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: !newStatus } : t));
+      showNotification(e.message, true);
+    } finally {
+      setTogglingStatusId(null);
+    }
+  };
+
+  const handleSaveTemplate = async (forceIsActive = null) => {
     if (!templateForm.title.trim()) {
       showNotification('Please enter a template title', true);
       return;
@@ -340,15 +397,18 @@ export default function ChecklistModule({
       return;
     }
 
+    const activeState = forceIsActive !== null ? forceIsActive : (templateForm.is_active !== undefined ? templateForm.is_active : true);
+
     try {
       const res = await saveChecklistTemplate({
         ...templateForm,
         id: editingTemplate?.id,
+        is_active: activeState,
         created_by: userName
       });
 
       if (res.success) {
-        showNotification('✅ Checklist template saved successfully!');
+        showNotification(activeState ? '✅ Checklist template published successfully!' : '📁 Template saved as Draft (Inactive)!');
         setTemplateModalOpen(false);
         loadTemplates();
       } else {
@@ -815,130 +875,194 @@ export default function ChecklistModule({
       {/* ========================================================================= */}
       {/* TAB 2: TEMPLATES MASTER (FOR MANAGERS / ADMINS)                           */}
       {/* ========================================================================= */}
-      {activeTab === 'templates' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Checklist Templates Repository</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
-                Configure multi-frequency recurring checklists and assign them to employees or departments.
-              </p>
-            </div>
-            <button
-              onClick={handleOpenNewTemplate}
-              style={{
-                background: '#3b82f6',
-                color: '#fff',
-                border: 'none',
-                padding: '0.5rem 1.25rem',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem'
-              }}
-            >
-              <Plus size={16} /> Add New Template
-            </button>
-          </div>
+      {/* ========================================================================= */}
+      {/* TAB 2: TEMPLATES MASTER (FOR MANAGERS / ADMINS)                           */}
+      {/* ========================================================================= */}
+      {activeTab === 'templates' && (() => {
+        const displayedTemplates = templates.filter(tmpl => {
+          if (templateStatusFilter === 'ACTIVE') return tmpl.is_active === true;
+          if (templateStatusFilter === 'INACTIVE') return tmpl.is_active === false;
+          return true;
+        });
 
-          <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Title & Description</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Frequency</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Assigned To</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Cutoff Time</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Questions / Items</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.length === 0 && (
-                  <tr>
-                    <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
-                      No templates created for {selectedFrequency} yet. Click "Add New Template" to create one.
-                    </td>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Checklist Templates Repository</h2>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
+                  Configure multi-frequency recurring checklists, duplicate templates, and toggle active/inactive status.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <select
+                  value={templateStatusFilter}
+                  onChange={(e) => setTemplateStatusFilter(e.target.value)}
+                  style={{
+                    padding: '0.5rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    background: 'var(--card-bg, #ffffff)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="ALL">All Status ({templates.length})</option>
+                  <option value="ACTIVE">🟢 Active Only ({templates.filter(t => t.is_active).length})</option>
+                  <option value="INACTIVE">🔴 Inactive / Draft ({templates.filter(t => !t.is_active).length})</option>
+                </select>
+
+                <button
+                  onClick={handleOpenNewTemplate}
+                  style={{
+                    background: '#3b82f6',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '0.5rem 1.25rem',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <Plus size={16} /> Add New Template
+                </button>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>Title & Description</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Frequency</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Assigned To</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Cutoff Time</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Questions / Items</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
                   </tr>
-                )}
-                {templates.map(tmpl => {
-                  const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
-                  return (
-                    <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{tmpl.description || tmpl.department}</div>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <span style={{
-                          background: `${freqMeta.badgeColor}15`,
-                          color: freqMeta.badgeColor,
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700
-                        }}>
-                          {freqMeta.icon} {tmpl.frequency}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <User size={14} style={{ opacity: 0.7 }} />
-                          <span>{tmpl.assigned_type === 'ALL' ? 'All Staff' : tmpl.assigned_employee_name || tmpl.assigned_employee_email}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Clock size={14} />
-                          <span>{tmpl.due_time || '18:00'}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
-                          {(tmpl.items || []).length} items
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <span style={{
-                          color: tmpl.is_active ? '#166534' : '#991b1b',
-                          background: tmpl.is_active ? '#dcfce7' : '#fee2e2',
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700
-                        }}>
-                          {tmpl.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                          <button
-                            onClick={() => handleEditTemplate(tmpl)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '0.25rem' }}
-                            title="Edit Template"
-                          >
-                            <Edit3 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTemplate(tmpl.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem' }}
-                            title="Delete Template"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                </thead>
+                <tbody>
+                  {displayedTemplates.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                        No templates found for this status. Click "Add New Template" to create one.
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  )}
+                  {displayedTemplates.map(tmpl => {
+                    const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
+                    return (
+                      <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{tmpl.description || tmpl.department}</div>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{
+                            background: `${freqMeta.badgeColor}15`,
+                            color: freqMeta.badgeColor,
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}>
+                            {freqMeta.icon} {tmpl.frequency}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <User size={14} style={{ opacity: 0.7 }} />
+                            <span>{tmpl.assigned_type === 'ALL' ? 'All Staff' : tmpl.assigned_employee_name || tmpl.assigned_employee_email}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Clock size={14} />
+                            <span>{tmpl.due_time || '18:00'}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
+                            {(tmpl.items || []).length} items
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(tmpl)}
+                            disabled={togglingStatusId === tmpl.id}
+                            title={`Click to set as ${tmpl.is_active ? 'Inactive' : 'Active'}`}
+                            style={{
+                              background: tmpl.is_active ? '#dcfce7' : '#fee2e2',
+                              color: tmpl.is_active ? '#166534' : '#991b1b',
+                              border: tmpl.is_active ? '1px solid #86efac' : '1px solid #fca5a5',
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '12px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: tmpl.is_active ? '#16a34a' : '#dc2626' }} />
+                            {togglingStatusId === tmpl.id ? 'Updating...' : (tmpl.is_active ? 'Active' : 'Inactive')}
+                          </button>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: '0.55rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <button
+                              onClick={() => handleCopyTemplate(tmpl)}
+                              style={{
+                                background: '#ecfdf5',
+                                border: '1px solid #a7f3d0',
+                                color: '#059669',
+                                cursor: 'pointer',
+                                padding: '0.3rem 0.5rem',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.78rem',
+                                fontWeight: 600
+                              }}
+                              title="Copy / Duplicate this template with same assigned employees"
+                            >
+                              <Copy size={13} /> Copy
+                            </button>
+                            <button
+                              onClick={() => handleEditTemplate(tmpl)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '0.25rem' }}
+                              title="Edit Template"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTemplate(tmpl.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem' }}
+                              title="Delete Template"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* TAB 3: COMPLIANCE & VERIFICATION AUDIT                                    */}
@@ -1535,12 +1659,36 @@ export default function ChecklistModule({
               <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
                 {editingTemplate ? 'Edit Checklist Template' : 'Create Recurring Checklist Template'}
               </h3>
-              <button
-                onClick={() => setTemplateModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Status:</span>
+                <button
+                  type="button"
+                  onClick={() => setTemplateForm(prev => ({ ...prev, is_active: !prev.is_active }))}
+                  style={{
+                    background: templateForm.is_active ? '#16a34a' : '#475569',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}
+                  title="Click to toggle between Active and Draft"
+                >
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff' }} />
+                  {templateForm.is_active ? 'Active' : 'Draft / Inactive'}
+                </button>
+                <button
+                  onClick={() => setTemplateModalOpen(false)}
+                  style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '0.25rem' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Template Form Body */}
@@ -1814,8 +1962,9 @@ export default function ChecklistModule({
             </div>
 
             {/* Footer */}
-            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
               <button
+                type="button"
                 onClick={() => setTemplateModalOpen(false)}
                 style={{
                   background: 'none',
@@ -1828,20 +1977,43 @@ export default function ChecklistModule({
               >
                 Cancel
               </button>
-              <button
-                onClick={handleSaveTemplate}
-                style={{
-                  background: '#3b82f6',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.55rem 1.5rem',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Save Template
-              </button>
+
+              <div style={{ display: 'flex', gap: '0.65rem' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSaveTemplate(false)}
+                  style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                  title="Save without assigning to employees yet"
+                >
+                  📁 Save as Draft (Inactive)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveTemplate(true)}
+                  style={{
+                    background: '#22c55e',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.55rem 1.4rem',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <Check size={16} /> Publish & Activate
+                </button>
+              </div>
             </div>
           </div>
         </div>
