@@ -203,6 +203,12 @@ export default function CRMContainer({
     setModuleAccess(initialModuleAccess);
   }, [initialModuleAccess]);
 
+  useEffect(() => {
+    if (initialUserEmail) {
+      setUserEmail(initialUserEmail);
+    }
+  }, [initialUserEmail]);
+
   // Real-time Permission Synchronizer: Automatically updates permissions without refreshing
   useEffect(() => {
     if (!userId) return;
@@ -770,10 +776,10 @@ export default function CRMContainer({
     async function fetchUser() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user?.email) {
+        if (!isImpersonating && !initialUserEmail && user?.email) {
           setUserEmail(user.email);
         }
-        if (user?.user_metadata?.avatar_url) {
+        if (!isImpersonating && user?.user_metadata?.avatar_url) {
           setUserAvatar(user.user_metadata.avatar_url);
           localStorage.setItem(`crm_user_avatar_${user.id}`, user.user_metadata.avatar_url);
           localStorage.setItem('crm_user_avatar', user.user_metadata.avatar_url);
@@ -783,7 +789,7 @@ export default function CRMContainer({
       }
     }
     fetchUser();
-  }, []);
+  }, [isImpersonating, initialUserEmail]);
   
   // Fetch team members for LeadTable dropdown
   useEffect(() => {
