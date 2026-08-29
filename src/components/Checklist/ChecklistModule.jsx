@@ -36,8 +36,6 @@ export default function ChecklistModule({
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
-  const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
-  const canAccessCompliance = isManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
   // Tabs: 'my_checklists' | 'templates' | 'compliance'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'my_checklists');
@@ -45,12 +43,32 @@ export default function ChecklistModule({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
 
   // Data states
   const [dashboardChecklists, setDashboardChecklists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [complianceLogs, setComplianceLogs] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
+
+  // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
+  const myReportingTeam = useMemo(() => {
+    const emailLow = (userEmail || '').toLowerCase().trim();
+    const nameLow = (userName || '').toLowerCase().trim();
+    if (!emailLow && !nameLow) return [];
+    return (employeesList || []).filter(e => {
+      const p = (e.primary_reporting_person || '').toLowerCase().trim();
+      const s = (e.secondary_reporting_person || '').toLowerCase().trim();
+      const h = (e.hod_person || '').toLowerCase().trim();
+      return (p && (p === emailLow || p === nameLow || (emailLow && emailLow.includes(p)))) ||
+             (s && (s === emailLow || s === nameLow || (emailLow && emailLow.includes(s)))) ||
+             (h && (h === emailLow || h === nameLow || (emailLow && emailLow.includes(h))));
+    });
+  }, [employeesList, userEmail, userName]);
+
+  const isReportingManager = myReportingTeam.length > 0;
+  const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
+  const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
   // Modals & Drawers
   const [executingChecklist, setExecutingChecklist] = useState(null);
@@ -924,40 +942,68 @@ export default function ChecklistModule({
       {/* ========================================================================= */}
       {/* TAB 3: COMPLIANCE & VERIFICATION AUDIT                                    */}
       {/* ========================================================================= */}
-      {activeTab === 'compliance' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Compliance & Sign-Off Dashboard</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
-                Audit employee checklist completions, check submitted photos/readings, and sign off.
-              </p>
-            </div>
-          </div>
+      {activeTab === 'compliance' && (() => {
+        const teamEmailsSet = new Set(myReportingTeam.map(e => (e.email || '').toLowerCase().trim()));
+        const displayedComplianceLogs = (complianceTeamFilter === 'MY_TEAM' && teamEmailsSet.size > 0)
+          ? complianceLogs.filter(log => teamEmailsSet.has((log.employee_email || '').toLowerCase().trim()))
+          : complianceLogs;
 
-          <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Employee</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Checklist</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Period</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Submitted At</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Timing & Delay</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Score</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Verification</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {complianceLogs.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
-                      No submissions recorded for this filter yet.
-                    </td>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Compliance & Sign-Off Dashboard</h2>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
+                  Audit employee checklist completions, check submitted photos/readings, and sign off.
+                </p>
+              </div>
+
+              {myReportingTeam.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <select
+                    value={complianceTeamFilter}
+                    onChange={(e) => setComplianceTeamFilter(e.target.value)}
+                    style={{
+                      padding: '0.5rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1.5px solid #3b82f6',
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
+                    {isAdmin && <option value="ALL">🏢 All Company Submissions</option>}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>Employee</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Checklist</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Period</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Submitted At</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Timing & Delay</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Score</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Verification</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
                   </tr>
-                )}
-                {complianceLogs.map(log => {
+                </thead>
+                <tbody>
+                  {displayedComplianceLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                        No submissions recorded for this filter yet.
+                      </td>
+                    </tr>
+                  )}
+                  {displayedComplianceLogs.map(log => {
                   const humanPeriod = getHumanPeriodLabel(log.frequency, log.period_key);
                   const isApproved = log.verification_status === 'APPROVED';
                   const isDelayed = log.delayInfo?.isDelayed;
@@ -1058,7 +1104,8 @@ export default function ChecklistModule({
             </table>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* MODAL 1: CHECKLIST EXECUTION (FILL & SUBMIT)                               */}

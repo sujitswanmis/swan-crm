@@ -51,7 +51,6 @@ export default function DelegationTaskModule({
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.delegation?.is_manager === true;
   const canAccessToMe = moduleAccess?.delegation?.sub_items?.to_me?.view !== false;
   const canAccessByMe = moduleAccess?.delegation?.sub_items?.by_me?.view !== false;
-  const canAccessTeamBoard = isManager || moduleAccess?.delegation?.sub_items?.all?.view === true;
 
   // Tabs: 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'to_me');
@@ -62,6 +61,25 @@ export default function DelegationTaskModule({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [employeesList, setEmployeesList] = useState([]);
+  const [teamBoardFilter, setTeamBoardFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
+
+  // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
+  const myReportingTeam = useMemo(() => {
+    const emailLow = (userEmail || '').toLowerCase().trim();
+    const nameLow = (userName || '').toLowerCase().trim();
+    if (!emailLow && !nameLow) return [];
+    return (employeesList || []).filter(e => {
+      const p = (e.primary_reporting_person || '').toLowerCase().trim();
+      const s = (e.secondary_reporting_person || '').toLowerCase().trim();
+      const h = (e.hod_person || '').toLowerCase().trim();
+      return (p && (p === emailLow || p === nameLow || (emailLow && emailLow.includes(p)))) ||
+             (s && (s === emailLow || s === nameLow || (emailLow && emailLow.includes(s)))) ||
+             (h && (h === emailLow || h === nameLow || (emailLow && emailLow.includes(h))));
+    });
+  }, [employeesList, userEmail, userName]);
+
+  const isReportingManager = myReportingTeam.length > 0;
+  const canAccessTeamBoard = isManager || isReportingManager || moduleAccess?.delegation?.sub_items?.all?.view === true;
 
   // Notifications
   const [successMsg, setSuccessMsg] = useState('');
@@ -112,7 +130,7 @@ export default function DelegationTaskModule({
   useEffect(() => {
     loadTasks();
     loadAnalytics();
-  }, [activeTab, statusFilter, priorityFilter, searchQuery, userEmail]);
+  }, [activeTab, teamBoardFilter, statusFilter, priorityFilter, searchQuery, userEmail, myReportingTeam.length]);
 
   const showNotification = (msg, isError = false) => {
     if (isError) {
@@ -136,9 +154,13 @@ export default function DelegationTaskModule({
   const loadTasks = async () => {
     setLoading(true);
     try {
+      const teamEmails = myReportingTeam.map(e => e.email).filter(Boolean);
+      const isTeamView = activeTab === 'all' && (teamBoardFilter === 'MY_TEAM' || !isAdmin);
+
       const res = await getDelegatedTasks({
         userEmail,
-        viewType: activeTab,
+        viewType: isTeamView && teamEmails.length > 0 ? 'team' : activeTab,
+        teamMemberEmails: teamEmails,
         status: statusFilter,
         priority: priorityFilter,
         search: searchQuery
@@ -653,6 +675,26 @@ export default function DelegationTaskModule({
             style={{ border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
           />
         </div>
+
+        {activeTab === 'all' && myReportingTeam.length > 0 && (
+          <select
+            value={teamBoardFilter}
+            onChange={(e) => setTeamBoardFilter(e.target.value)}
+            style={{
+              padding: '0.5rem 0.75rem',
+              borderRadius: '8px',
+              border: '1.5px solid #3b82f6',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
+            {isAdmin && <option value="ALL">🏢 All Company Tasks</option>}
+          </select>
+        )}
 
         <select
           value={statusFilter}

@@ -74,7 +74,8 @@ export async function createDelegationTask(taskData, tenantId = DEFAULT_TENANT_I
 
 export async function getDelegatedTasks({
   userEmail = '',
-  viewType = 'to_me', // 'to_me' | 'by_me' | 'all'
+  viewType = 'to_me', // 'to_me' | 'by_me' | 'team' | 'all'
+  teamMemberEmails = [],
   status = 'ALL',
   priority = 'ALL',
   search = '',
@@ -82,6 +83,7 @@ export async function getDelegatedTasks({
 } = {}) {
   const adminClient = getAdminClient();
   const emailClean = (userEmail || '').trim().toLowerCase();
+  const teamEmailsClean = (teamMemberEmails || []).map(e => (e || '').trim().toLowerCase()).filter(Boolean);
 
   try {
     let query = adminClient
@@ -108,6 +110,15 @@ export async function getDelegatedTasks({
     if (error) throw error;
 
     let tasks = data || [];
+
+    // If viewing team tasks specifically (for Primary/Secondary reporting managers and HODs)
+    if (viewType === 'team' && teamEmailsClean.length > 0) {
+      tasks = tasks.filter(t => {
+        const assign = (t.assigned_to_email || '').toLowerCase();
+        const deleg = (t.delegated_by_email || '').toLowerCase();
+        return teamEmailsClean.includes(assign) || teamEmailsClean.includes(deleg) || assign === emailClean || deleg === emailClean;
+      });
+    }
 
     // Calculate overdue status dynamically
     const now = new Date();
