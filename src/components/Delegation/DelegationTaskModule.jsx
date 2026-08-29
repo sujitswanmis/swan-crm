@@ -146,6 +146,17 @@ export default function DelegationTaskModule({
   const [newComment, setNewComment] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
 
+  // Drilldown Tasks Modal (Popup on metric count click)
+  const [drilldownModal, setDrilldownModal] = useState({
+    open: false,
+    title: '',
+    employeeName: '',
+    employeeEmail: '',
+    filterType: '',
+    tasks: []
+  });
+  const [drilldownSearch, setDrilldownSearch] = useState('');
+
   useEffect(() => {
     loadEmployees();
     // Default deadline to tomorrow 6 PM
@@ -423,93 +434,152 @@ export default function DelegationTaskModule({
       }
     });
 
-    // Employee Leaderboard & Accountability Table
+    // Employee Leaderboard & Accountability Table (Tracking both Assignee & Delegator metrics)
     const empMap = {};
-    baseTasks.forEach(t => {
-      const email = (t.assigned_to_email || '').toLowerCase().trim();
-      const name = t.assigned_to_name || 'Staff';
-      const dept = t.assigned_to_department || 'General';
-      if (!email) return;
 
-      if (!empMap[email]) {
-        empMap[email] = {
-          email,
-          name,
-          department: dept,
+    const getOrCreateEmp = (email, name, dept) => {
+      const em = (email || '').toLowerCase().trim();
+      if (!em) return null;
+      if (!empMap[em]) {
+        empMap[em] = {
+          email: em,
+          name: name || 'Staff',
+          department: dept || 'General',
+          // Assignee stats (Tasks Delegated TO this employee)
           assignedTotal: 0,
-          completed: 0,
-          completedOnTime: 0,
-          completedLate: 0,
-          inProgress: 0,
-          submitted: 0,
-          overdue: 0,
-          ratings: []
+          assignedCompleted: 0,
+          assignedCompletedOnTime: 0,
+          assignedCompletedLate: 0,
+          assignedInProgress: 0,
+          assignedSubmitted: 0,
+          assignedOverdue: 0,
+          ratings: [],
+          // Delegator stats (Tasks Delegated BY this employee to others)
+          delegatedTotal: 0,
+          delegatedCompleted: 0,
+          delegatedInProgress: 0,
+          delegatedSubmitted: 0, // Waiting for delegator to review
+          delegatedOverdue: 0,
+          // Tasks references for drilldown modal
+          tasksAssigned: [],
+          tasksDelegated: []
         };
       }
-      empMap[email].assignedTotal++;
-      if (t.status === 'COMPLETED') {
-        empMap[email].completed++;
-        if (!t.completed_at || new Date(t.completed_at) <= new Date(t.deadline)) {
-          empMap[email].completedOnTime++;
-        } else {
-          empMap[email].completedLate++;
+      return empMap[em];
+    };
+
+    baseTasks.forEach(t => {
+      const assignEmail = (t.assigned_to_email || '').toLowerCase().trim();
+      const delegEmail = (t.delegated_by_email || '').toLowerCase().trim();
+
+      // 1. Process as Assignee (Tasks received)
+      if (assignEmail) {
+        const emp = getOrCreateEmp(assignEmail, t.assigned_to_name, t.assigned_to_department);
+        if (emp) {
+          emp.assignedTotal++;
+          emp.tasksAssigned.push(t);
+          if (t.status === 'COMPLETED') {
+            emp.assignedCompleted++;
+            if (!t.completed_at || new Date(t.completed_at) <= new Date(t.deadline)) {
+              emp.assignedCompletedOnTime++;
+            } else {
+              emp.assignedCompletedLate++;
+            }
+            if (t.rating > 0) emp.ratings.push(t.rating);
+          } else if (t.status === 'IN_PROGRESS' || t.status === 'REOPENED') {
+            emp.assignedInProgress++;
+          } else if (t.status === 'SUBMITTED') {
+            emp.assignedSubmitted++;
+          }
+          if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
+            emp.assignedOverdue++;
+          }
         }
-        if (t.rating > 0) empMap[email].ratings.push(t.rating);
-      } else if (t.status === 'IN_PROGRESS') {
-        empMap[email].inProgress++;
-      } else if (t.status === 'SUBMITTED') {
-        empMap[email].submitted++;
       }
-      if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
-        empMap[email].overdue++;
+
+      // 2. Process as Delegator (Tasks created & delegated)
+      if (delegEmail) {
+        const delegEmp = getOrCreateEmp(delegEmail, t.delegated_by_name, 'General');
+        if (delegEmp) {
+          delegEmp.delegatedTotal++;
+          delegEmp.tasksDelegated.push(t);
+          if (t.status === 'COMPLETED') {
+            delegEmp.delegatedCompleted++;
+          } else if (t.status === 'IN_PROGRESS' || t.status === 'REOPENED') {
+            delegEmp.delegatedInProgress++;
+          } else if (t.status === 'SUBMITTED') {
+            delegEmp.delegatedSubmitted++; // Awaiting this delegator's review
+          }
+          if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
+            delegEmp.delegatedOverdue++;
+          }
+        }
       }
     });
 
-    // Populate active employees from master
+    // Populate active employees from master list
     (employeesList || []).forEach(emp => {
       const email = (emp.email || '').toLowerCase().trim();
       if (email && !empMap[email]) {
         if (dashboardScope === 'COMPANY_WIDE' || (dashboardScope === 'MY_TEAM' && teamEmails.includes(email))) {
-          empMap[email] = {
-            email,
-            name: emp.name || emp.full_name || 'Staff',
-            department: emp.department || 'General',
-            assignedTotal: 0,
-            completed: 0,
-            completedOnTime: 0,
-            completedLate: 0,
-            inProgress: 0,
-            submitted: 0,
-            overdue: 0,
-            ratings: []
-          };
+          getOrCreateEmp(email, emp.name || emp.full_name || 'Staff', emp.department || 'General');
         }
       }
     });
 
     const leaderboard = Object.values(empMap).map(e => {
-      const rate = e.assignedTotal > 0 ? Math.round((e.completed / e.assignedTotal) * 100) : 100;
-      const onTimePct = e.completed > 0 ? Math.round((e.completedOnTime / e.completed) * 100) : 100;
-      const avg = e.ratings.length > 0 
-        ? (e.ratings.reduce((a, b) => a + b, 0) / e.ratings.length).toFixed(1) 
-        : (e.assignedTotal === 0 ? '-' : '5.0');
+      const hasAssigned = e.assignedTotal > 0;
+      const hasDelegated = e.delegatedTotal > 0;
+      const isParticipating = hasAssigned || hasDelegated;
 
-      let badge = 'STAR';
-      if (e.assignedTotal > 0) {
+      const rate = hasAssigned ? Math.round((e.assignedCompleted / e.assignedTotal) * 100) : null;
+      const onTimePct = e.assignedCompleted > 0 ? Math.round((e.assignedCompletedOnTime / e.assignedCompleted) * 100) : null;
+      const avg = e.ratings.length > 0 ? (e.ratings.reduce((a, b) => a + b, 0) / e.ratings.length).toFixed(1) : '-';
+
+      let badge = 'NO_TASKS'; // 'STAR' | 'RELIABLE' | 'AT_RISK' | 'DELEGATOR' | 'NO_TASKS'
+      if (hasAssigned) {
         if (rate >= 90) badge = 'STAR';
         else if (rate >= 75) badge = 'RELIABLE';
         else badge = 'AT_RISK';
+      } else if (hasDelegated) {
+        badge = 'DELEGATOR';
+      } else {
+        badge = 'NO_TASKS';
       }
+
       return {
         ...e,
+        completed: e.assignedCompleted,
+        completedOnTime: e.assignedCompletedOnTime,
+        inProgress: e.assignedInProgress,
+        submitted: e.assignedSubmitted,
+        overdue: e.assignedOverdue,
         completionRate: rate,
         onTimeRate: onTimePct,
         avgRating: avg,
-        badge
+        badge,
+        isParticipating
       };
     }).sort((a, b) => {
-      if (b.completionRate !== a.completionRate) return b.completionRate - a.completionRate;
-      return b.assignedTotal - a.assignedTotal;
+      // 1. Active participating employees first
+      if (a.isParticipating && !b.isParticipating) return -1;
+      if (!a.isParticipating && b.isParticipating) return 1;
+
+      // 2. Highest completed tasks
+      if (b.completed !== a.completed) return b.completed - a.completed;
+
+      // 3. Highest completion rate (if assigned > 0)
+      const aRate = a.completionRate !== null ? a.completionRate : -1;
+      const bRate = b.completionRate !== null ? b.completionRate : -1;
+      if (bRate !== aRate) return bRate - aRate;
+
+      // 4. Highest assigned total
+      if (b.assignedTotal !== a.assignedTotal) return b.assignedTotal - a.assignedTotal;
+
+      // 5. Highest delegated total
+      if (b.delegatedTotal !== a.delegatedTotal) return b.delegatedTotal - a.delegatedTotal;
+
+      return a.name.localeCompare(b.name);
     });
 
     // Critical Overdue & Urgent Action Items
@@ -544,6 +614,46 @@ export default function DelegationTaskModule({
       pendingVerifications
     };
   }, [allDashboardTasks, tasks, dashboardScope, dashboardTimeRange, customStartDate, customEndDate, dashboardDept, dashboardCategory, userEmail, myReportingTeam, employeesList]);
+
+  // Handler to open Drilldown Modal on count click
+  const handleOpenDrilldown = (emp, metricType) => {
+    let title = '';
+    let filtered = [];
+
+    if (metricType === 'ASSIGNED_ALL') {
+      title = `Tasks Assigned to ${emp.name}`;
+      filtered = emp.tasksAssigned || [];
+    } else if (metricType === 'DELEGATED_ALL') {
+      title = `Tasks Delegated (Created) by ${emp.name}`;
+      filtered = emp.tasksDelegated || [];
+    } else if (metricType === 'IN_PROGRESS') {
+      title = `In Progress Tasks of ${emp.name}`;
+      filtered = (emp.tasksAssigned || []).filter(t => t.status === 'IN_PROGRESS' || t.status === 'REOPENED');
+    } else if (metricType === 'SUBMITTED') {
+      title = `Tasks Submitted for Review (Waiting Approval) - ${emp.name}`;
+      filtered = (emp.tasksAssigned || []).filter(t => t.status === 'SUBMITTED');
+    } else if (metricType === 'COMPLETED') {
+      title = `Completed Tasks of ${emp.name}`;
+      filtered = (emp.tasksAssigned || []).filter(t => t.status === 'COMPLETED');
+    } else if (metricType === 'OVERDUE') {
+      title = `Overdue / Delayed Tasks Assigned to ${emp.name}`;
+      const now = new Date();
+      filtered = (emp.tasksAssigned || []).filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now);
+    } else if (metricType === 'DELEGATED_SUBMITTED') {
+      title = `Tasks Delegated by ${emp.name} Awaiting Review`;
+      filtered = (emp.tasksDelegated || []).filter(t => t.status === 'SUBMITTED');
+    }
+
+    setDrilldownSearch('');
+    setDrilldownModal({
+      open: true,
+      title,
+      employeeName: emp.name,
+      employeeEmail: emp.email,
+      filterType: metricType,
+      tasks: filtered
+    });
+  };
 
   // ==========================================
   // CREATE TASK HANDLERS
@@ -1434,7 +1544,7 @@ export default function DelegationTaskModule({
                   <Award size={20} color="#f59e0b" /> Employee Delegation Accountability & Leaderboard
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-                  Live employee task completion score, on-time velocity, and quality rating
+                  Live 360° task completion score, delegator velocity, on-time velocity, and quality rating (Click any count to drilldown)
                 </p>
               </div>
 
@@ -1451,12 +1561,14 @@ export default function DelegationTaskModule({
                   />
                 </div>
 
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '6px', flexWrap: 'wrap', gap: '0.2rem' }}>
                   {[
                     { id: 'ALL', label: 'All Staff' },
+                    { id: 'ACTIVE', label: '⚡ Active' },
                     { id: 'STAR', label: '🌟 Star (≥90%)' },
                     { id: 'RELIABLE', label: '👍 Reliable (75-89%)' },
-                    { id: 'AT_RISK', label: '🚨 At Risk (<75%)' }
+                    { id: 'AT_RISK', label: '🚨 At Risk (<75%)' },
+                    { id: 'NO_TASKS', label: '⚪ No Tasks' }
                   ].map(tier => (
                     <button
                       key={tier.id}
@@ -1484,23 +1596,26 @@ export default function DelegationTaskModule({
             <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    <th style={{ padding: '0.75rem 1rem' }}>Rank</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Employee</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Department</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Tasks Assigned</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Completed</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>🟢 On-Time</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>⚠️ Overdue</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Avg Rating</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Completion Rate</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Status Badge</th>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>Rank</th>
+                    <th style={{ padding: '0.75rem 0.85rem' }}>Employee</th>
+                    <th style={{ padding: '0.75rem 0.85rem' }}>Department</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }} title="Tasks assigned to this employee">📥 Assigned (To)</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }} title="Tasks delegated by this employee to others">📤 Delegated (By)</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>⚡ In Progress</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>⏳ Review Wait</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>✓ Completed</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>⚠️ Overdue</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>Avg Rating</th>
+                    <th style={{ padding: '0.75rem 0.85rem' }}>Completion Rate</th>
+                    <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>Status Badge</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dashboardAnalytics.leaderboard
                     .filter(emp => {
-                      if (leaderboardTier !== 'ALL' && emp.badge !== leaderboardTier) return false;
+                      if (leaderboardTier === 'ACTIVE' && !emp.isParticipating) return false;
+                      if (leaderboardTier !== 'ALL' && leaderboardTier !== 'ACTIVE' && emp.badge !== leaderboardTier) return false;
                       if (leaderboardSearch) {
                         const q = leaderboardSearch.toLowerCase();
                         return (
@@ -1512,70 +1627,218 @@ export default function DelegationTaskModule({
                       return true;
                     })
                     .map((emp, idx) => {
-                      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                      const medal = emp.isParticipating && emp.completed > 0
+                        ? (idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`)
+                        : `#${idx + 1}`;
+
                       return (
                         <tr key={emp.email} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '0.75rem 1rem', fontWeight: 700, fontSize: '0.9rem' }}>
+                          {/* Rank */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center', fontWeight: 700, fontSize: '0.9rem', color: emp.isParticipating ? '#1e293b' : '#94a3b8' }}>
                             {medal}
                           </td>
-                          <td style={{ padding: '0.75rem 1rem' }}>
+
+                          {/* Employee info */}
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
                             <div style={{ fontWeight: 600, color: '#1e293b' }}>{emp.name}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{emp.email}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{emp.email}</div>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>
-                            <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+
+                          {/* Department */}
+                          <td style={{ padding: '0.75rem 0.85rem', color: '#64748b' }}>
+                            <span style={{ background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600 }}>
                               {emp.department}
                             </span>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>
-                            {emp.assignedTotal}
+
+                          {/* Tasks Assigned (To) - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.assignedTotal > 0 && handleOpenDrilldown(emp, 'ASSIGNED_ALL')}
+                              disabled={emp.assignedTotal === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.assignedTotal > 0 ? '#eff6ff' : 'transparent',
+                                color: emp.assignedTotal > 0 ? '#1d4ed8' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '6px',
+                                cursor: emp.assignedTotal > 0 ? 'pointer' : 'default',
+                                transition: 'all 0.15s ease'
+                              }}
+                              title={emp.assignedTotal > 0 ? `Click to view all ${emp.assignedTotal} assigned tasks` : 'No tasks assigned'}
+                            >
+                              {emp.assignedTotal}
+                            </button>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#10b981' }}>
-                            {emp.completed}
+
+                          {/* Tasks Delegated (By) - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.delegatedTotal > 0 && handleOpenDrilldown(emp, 'DELEGATED_ALL')}
+                              disabled={emp.delegatedTotal === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.delegatedTotal > 0 ? '#f5f3ff' : 'transparent',
+                                color: emp.delegatedTotal > 0 ? '#7c3aed' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '6px',
+                                cursor: emp.delegatedTotal > 0 ? 'pointer' : 'default',
+                                transition: 'all 0.15s ease'
+                              }}
+                              title={emp.delegatedTotal > 0 ? `Click to view ${emp.delegatedTotal} tasks delegated by ${emp.name}` : 'No tasks delegated'}
+                            >
+                              {emp.delegatedTotal}
+                            </button>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 600, color: '#059669' }}>
-                            {emp.completedOnTime}
+
+                          {/* In Progress - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.inProgress > 0 && handleOpenDrilldown(emp, 'IN_PROGRESS')}
+                              disabled={emp.inProgress === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.inProgress > 0 ? '#dbeafe' : 'transparent',
+                                color: emp.inProgress > 0 ? '#2563eb' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                cursor: emp.inProgress > 0 ? 'pointer' : 'default'
+                              }}
+                              title={emp.inProgress > 0 ? 'Click to view in-progress tasks' : '0 in progress'}
+                            >
+                              {emp.inProgress}
+                            </button>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: emp.overdue > 0 ? '#dc2626' : '#94a3b8' }}>
-                            {emp.overdue > 0 ? `⚠️ ${emp.overdue}` : '0'}
+
+                          {/* Waiting Review (Submitted) - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.submitted > 0 && handleOpenDrilldown(emp, 'SUBMITTED')}
+                              disabled={emp.submitted === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.submitted > 0 ? '#fef3c7' : 'transparent',
+                                color: emp.submitted > 0 ? '#d97706' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                cursor: emp.submitted > 0 ? 'pointer' : 'default'
+                              }}
+                              title={emp.submitted > 0 ? 'Click to view tasks submitted for review' : '0 pending review'}
+                            >
+                              {emp.submitted}
+                            </button>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#f59e0b' }}>
+
+                          {/* Completed - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.completed > 0 && handleOpenDrilldown(emp, 'COMPLETED')}
+                              disabled={emp.completed === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.completed > 0 ? '#dcfce7' : 'transparent',
+                                color: emp.completed > 0 ? '#15803d' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                cursor: emp.completed > 0 ? 'pointer' : 'default'
+                              }}
+                              title={emp.completed > 0 ? 'Click to view completed tasks' : '0 completed'}
+                            >
+                              {emp.completed}
+                            </button>
+                          </td>
+
+                          {/* Overdue - Clickable Drilldown */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => emp.overdue > 0 && handleOpenDrilldown(emp, 'OVERDUE')}
+                              disabled={emp.overdue === 0}
+                              style={{
+                                border: 'none',
+                                background: emp.overdue > 0 ? '#fee2e2' : 'transparent',
+                                color: emp.overdue > 0 ? '#dc2626' : '#94a3b8',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                cursor: emp.overdue > 0 ? 'pointer' : 'default'
+                              }}
+                              title={emp.overdue > 0 ? 'Click to view overdue tasks' : '0 overdue'}
+                            >
+                              {emp.overdue > 0 ? `⚠️ ${emp.overdue}` : '0'}
+                            </button>
+                          </td>
+
+                          {/* Avg Rating */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center', fontWeight: 700, color: emp.avgRating !== '-' ? '#f59e0b' : '#94a3b8' }}>
                             {emp.avgRating !== '-' ? `${emp.avgRating} ★` : '-'}
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', minWidth: '150px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ flex: 1, height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{
-                                  width: `${emp.completionRate}%`,
-                                  height: '100%',
-                                  background: emp.completionRate >= 90 ? '#10b981' : emp.completionRate >= 75 ? '#f59e0b' : '#ef4444',
-                                  borderRadius: '3px'
-                                }} />
+
+                          {/* Completion Rate Progress Bar */}
+                          <td style={{ padding: '0.75rem 0.85rem', minWidth: '130px' }}>
+                            {emp.completionRate !== null ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ flex: 1, height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    width: `${emp.completionRate}%`,
+                                    height: '100%',
+                                    background: emp.completionRate >= 90 ? '#10b981' : emp.completionRate >= 75 ? '#f59e0b' : '#ef4444',
+                                    borderRadius: '3px'
+                                  }} />
+                                </div>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', width: '34px' }}>
+                                  {emp.completionRate}%
+                                </span>
                               </div>
-                              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', width: '36px' }}>
-                                {emp.completionRate}%
-                              </span>
-                            </div>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>-</span>
+                            )}
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                            <span style={{
-                              padding: '0.2rem 0.6rem',
-                              borderRadius: '12px',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              background: emp.badge === 'STAR' ? '#ecfdf5' : emp.badge === 'RELIABLE' ? '#fffbeb' : '#fef2f2',
-                              color: emp.badge === 'STAR' ? '#059669' : emp.badge === 'RELIABLE' ? '#d97706' : '#dc2626',
-                              border: `1px solid ${emp.badge === 'STAR' ? '#a7f3d0' : emp.badge === 'RELIABLE' ? '#fde68a' : '#fecaca'}`
-                            }}>
-                              {emp.badge === 'STAR' ? '🌟 Star' : emp.badge === 'RELIABLE' ? '👍 Reliable' : '🚨 At Risk'}
-                            </span>
+
+                          {/* Status Badge */}
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {emp.badge === 'STAR' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', whiteSpace: 'nowrap' }}>
+                                🌟 Star
+                              </span>
+                            )}
+                            {emp.badge === 'RELIABLE' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>
+                                👍 Reliable
+                              </span>
+                            )}
+                            {emp.badge === 'AT_RISK' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', whiteSpace: 'nowrap' }}>
+                                🚨 At Risk
+                              </span>
+                            )}
+                            {emp.badge === 'DELEGATOR' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', whiteSpace: 'nowrap' }}>
+                                📤 Delegator
+                              </span>
+                            )}
+                            {emp.badge === 'NO_TASKS' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 600, background: '#f8fafc', color: '#94a3b8', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                                ⚪ No Tasks
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
                     })}
                   {dashboardAnalytics.leaderboard.length === 0 && (
                     <tr>
-                      <td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                         No employee data found matching filters.
                       </td>
                     </tr>
@@ -2828,6 +3091,225 @@ export default function DelegationTaskModule({
             >
               <Send size={16} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: DRILLDOWN TASKS POPUP (When clicking any count in Leaderboard)       */}
+      {/* ========================================================================= */}
+      {drilldownModal.open && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '1.5rem',
+          backdropFilter: 'blur(2px)'
+        }}>
+          <div style={{
+            background: 'var(--card-bg, #ffffff)',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '880px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            overflow: 'hidden',
+            border: '1px solid var(--border-color, #cbd5e1)'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '1.2rem 1.5rem',
+              borderBottom: '1px solid var(--border-color, #e2e8f0)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: '#f8fafc'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
+                    📋 {drilldownModal.title}
+                  </h3>
+                  <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '12px' }}>
+                    {drilldownModal.tasks.length} {drilldownModal.tasks.length === 1 ? 'Task' : 'Tasks'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>
+                  Accountability breakdown for <strong style={{ color: '#1e293b' }}>{drilldownModal.employeeName}</strong> ({drilldownModal.employeeEmail})
+                </div>
+              </div>
+              <button
+                onClick={() => setDrilldownModal(prev => ({ ...prev, open: false }))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '0.35rem', borderRadius: '6px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Quick Search Bar inside Modal */}
+            <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid #f1f5f9', background: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Search size={15} color="#94a3b8" />
+              <input
+                type="text"
+                placeholder="Search within these tasks by code, title, category, status..."
+                value={drilldownSearch}
+                onChange={(e) => setDrilldownSearch(e.target.value)}
+                style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            {/* Tasks List */}
+            <div style={{ padding: '1rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {(() => {
+                const q = (drilldownSearch || '').toLowerCase().trim();
+                const filtered = drilldownModal.tasks.filter(t => {
+                  if (!q) return true;
+                  return (
+                    (t.title && t.title.toLowerCase().includes(q)) ||
+                    (t.task_code && t.task_code.toLowerCase().includes(q)) ||
+                    (t.category && t.category.toLowerCase().includes(q)) ||
+                    (t.assigned_to_name && t.assigned_to_name.toLowerCase().includes(q)) ||
+                    (t.delegated_by_name && t.delegated_by_name.toLowerCase().includes(q)) ||
+                    (t.status && t.status.toLowerCase().includes(q))
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>No delegation tasks found matching this criteria.</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map(t => {
+                  const prio = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.MEDIUM;
+                  const deadlineBadge = formatDeadlineBadge(t.deadline, t.status);
+                  const completedSubtasks = (t.subtasks || []).filter(s => s.completed).length;
+                  const totalSubtasks = (t.subtasks || []).length;
+
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        background: '#ffffff',
+                        border: deadlineBadge.isLate && t.status !== 'COMPLETED' ? '1.5px solid #fca5a5' : '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.6rem',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      {/* Top info */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ background: prio.bg, color: prio.color, padding: '0.12rem 0.45rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700 }}>
+                            {prio.icon} {prio.label}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', background: '#f1f5f9', color: '#475569', padding: '0.12rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>
+                            {t.category}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#94a3b8', fontWeight: 600 }}>
+                            {t.task_code}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ fontSize: '0.72rem', background: deadlineBadge.bg, color: deadlineBadge.color, padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 700 }}>
+                            {deadlineBadge.text}
+                          </span>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '12px',
+                            background: t.status === 'COMPLETED' ? '#ecfdf5' : t.status === 'SUBMITTED' ? '#fffbeb' : t.status === 'IN_PROGRESS' ? '#eff6ff' : '#f8fafc',
+                            color: t.status === 'COMPLETED' ? '#059669' : t.status === 'SUBMITTED' ? '#d97706' : t.status === 'IN_PROGRESS' ? '#2563eb' : '#64748b',
+                            border: `1px solid ${t.status === 'COMPLETED' ? '#a7f3d0' : t.status === 'SUBMITTED' ? '#fde68a' : t.status === 'IN_PROGRESS' ? '#bfdbfe' : '#e2e8f0'}`
+                          }}>
+                            {t.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Title & Description */}
+                      <div>
+                        <h4 style={{ margin: '0 0 0.2rem', fontSize: '0.95rem', fontWeight: 600, color: '#1e293b' }}>
+                          {t.title}
+                        </h4>
+                        {t.description && (
+                          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {t.description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* People, Checkpoints, Rating, and Action */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', fontSize: '0.78rem', color: '#64748b', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                          <span><strong>Delegated By:</strong> {t.delegated_by_name}</span>
+                          <span><strong>Assigned To:</strong> {t.assigned_to_name}</span>
+                          {totalSubtasks > 0 && <span><strong>Checkpoints:</strong> {completedSubtasks}/{totalSubtasks}</span>}
+                          {t.rating > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}>{'⭐'.repeat(t.rating)}</span>}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setDrilldownModal(prev => ({ ...prev, open: false }));
+                            handleOpenDrawer(t);
+                          }}
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#1d4ed8',
+                            padding: '0.3rem 0.65rem',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            fontSize: '0.78rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem'
+                          }}
+                        >
+                          <MessageSquare size={13} /> View Discussion & Details →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '0.85rem 1.5rem', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDrilldownModal(prev => ({ ...prev, open: false }))}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  padding: '0.45rem 1rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
