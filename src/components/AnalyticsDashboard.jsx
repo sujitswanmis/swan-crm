@@ -13,6 +13,7 @@ import {
   CalendarClock
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
+import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 
 const COLORS = [
   'var(--chart-1, #3b82f6)',
@@ -46,6 +47,18 @@ export default function AnalyticsDashboard({
       (userId && t.user_id === userId)
     );
   }, [teamMembers, userEmail, userName, userId]);
+
+  const formattedEmployees = useMemo(() => {
+    return teamMembers.map(m => ({
+      ...m,
+      name: m.emp_name || m.name || m.user_id,
+      emp_name: m.emp_name || m.name || m.user_id,
+      email: m.email || m.user_id,
+      user_id: m.user_id || m.email,
+      department: m.department || m.emp_department || m.dept || 'Staff',
+      designation: m.designation || m.role || 'Member'
+    }));
+  }, [teamMembers]);
 
   // Default to user's assigned scope or 'All'
   const [selectedEmployee, setSelectedEmployee] = useState(() => {
@@ -580,20 +593,22 @@ export default function AnalyticsDashboard({
             </button>
           </div>
 
-          {/* Specific Employee Dropdown */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--th-bg)', padding: '0.35rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <select 
-              value={selectedEmployee} 
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              style={{ background: 'transparent', border: 'none', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', maxWidth: '200px' }}
-            >
-              <option value="All" style={{ background: 'var(--bg-surface)' }}>All Employees (Team Overview)</option>
-              {teamMembers.filter(m => m.emp_name).map(m => (
-                <option key={m.user_id} value={m.user_id} style={{ background: 'var(--bg-surface)' }}>
-                  {m.emp_name} {myTeamMember?.user_id === m.user_id ? '(You)' : ''}
-                </option>
-              ))}
-            </select>
+          {/* Searchable Employee Selector */}
+          <div style={{ minWidth: '240px', maxWidth: '320px', flex: '1 1 240px' }}>
+            <SearchableEmployeeSelect 
+              employees={formattedEmployees} 
+              selectedEmail={selectedEmployee === 'All' ? 'ALL' : (selectedEmployeeObj?.email || selectedEmployee)}
+              onSelect={(emp) => {
+                if (!emp || emp.email === 'ALL') {
+                  setSelectedEmployee('All');
+                } else {
+                  setSelectedEmployee(emp.user_id || emp.email);
+                }
+              }}
+              allowAllStaff={true}
+              allStaffLabel="All Employees (Team Overview)"
+              placeholder="🔍 Search employee by name, email..."
+            />
           </div>
 
           <DateRangePicker
