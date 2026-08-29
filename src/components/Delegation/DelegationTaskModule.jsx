@@ -6,7 +6,7 @@ import {
   Search, Filter, RefreshCw, User, Users, ArrowRight, MessageSquare,
   Star, Check, X, ShieldCheck, ChevronRight, Send, CheckSquare,
   FileText, ExternalLink, Flame, Sparkles, Award, CornerDownRight, RotateCcw,
-  BarChart3, TrendingUp, Layers, Eye, Activity, CheckCircle
+  BarChart3, TrendingUp, Layers, Eye, Activity, CheckCircle, LayoutGrid, List
 } from 'lucide-react';
 import {
   createDelegationTask,
@@ -55,6 +55,7 @@ export default function DelegationTaskModule({
 
   // Tabs: 'dashboard' (Delegation Dashboard) | 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
+  const [viewMode, setViewMode] = useState('tiles'); // 'tiles' | 'table'
   const [tasks, setTasks] = useState([]);
   const [allDashboardTasks, setAllDashboardTasks] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -1608,10 +1609,54 @@ export default function DelegationTaskModule({
             <option value="MEDIUM">📌 Medium</option>
             <option value="LOW">☕ Low</option>
           </select>
+
+          {/* View Mode Toggle: Tiles (Cards) vs Table */}
+          <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginLeft: 'auto' }}>
+            <button
+              onClick={() => setViewMode('tiles')}
+              title="Tiles / Cards View"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                border: 'none',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: viewMode === 'tiles' ? '#ffffff' : 'transparent',
+                color: viewMode === 'tiles' ? '#1e293b' : '#64748b',
+                boxShadow: viewMode === 'tiles' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <LayoutGrid size={15} /> Tiles
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              title="Table View"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                border: 'none',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: viewMode === 'table' ? '#ffffff' : 'transparent',
+                color: viewMode === 'table' ? '#1e293b' : '#64748b',
+                boxShadow: viewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <List size={15} /> Table
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Task Cards Grid (Only when not on dashboard) */}
+      {/* Loading state */}
       {activeTab !== 'dashboard' && loading && (
         <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
           <RefreshCw className="spin" size={32} style={{ margin: '0 auto 1rem' }} />
@@ -1619,6 +1664,7 @@ export default function DelegationTaskModule({
         </div>
       )}
 
+      {/* Empty state */}
       {activeTab !== 'dashboard' && !loading && tasks.length === 0 && (
         <div style={{
           background: 'var(--bg-secondary, #f8fafc)',
@@ -1651,7 +1697,10 @@ export default function DelegationTaskModule({
         </div>
       )}
 
-      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && (
+      {/* ==================================================== */}
+      {/* 🗂️ TILES / CARDS VIEW                               */}
+      {/* ==================================================== */}
+      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && viewMode === 'tiles' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
           {tasks.map(task => {
             const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;
@@ -1873,6 +1922,265 @@ export default function DelegationTaskModule({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* 📊 TABLE VIEW                                       */}
+      {/* ==================================================== */}
+      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && viewMode === 'table' && (
+        <div style={{
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <th style={{ padding: '0.85rem 1rem' }}>Task & Priority</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Category</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Delegated By</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Assigned To</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Checkpoints</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Due Deadline</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Rating</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map(task => {
+                  const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;
+                  const deadlineBadge = formatDeadlineBadge(task.deadline, task.status);
+                  const isAssignedToMe = (task.assigned_to_email || '').toLowerCase() === (userEmail || '').toLowerCase();
+                  const isDelegatedByMe = (task.delegated_by_email || '').toLowerCase() === (userEmail || '').toLowerCase();
+                  const completedSubtasks = (task.subtasks || []).filter(s => s.completed).length;
+                  const totalSubtasks = (task.subtasks || []).length;
+                  const subtaskPct = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
+
+                  return (
+                    <tr
+                      key={task.id}
+                      style={{
+                        borderBottom: '1px solid #f1f5f9',
+                        transition: 'background 0.15s ease',
+                        background: deadlineBadge.isLate && task.status !== 'COMPLETED' ? '#fffbfb' : 'transparent'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = deadlineBadge.isLate && task.status !== 'COMPLETED' ? '#fffbfb' : 'transparent'}
+                    >
+                      {/* Task Code, Priority & Title */}
+                      <td style={{ padding: '0.85rem 1rem', maxWidth: '280px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                          <span style={{
+                            background: prio.bg,
+                            color: prio.color,
+                            padding: '0.12rem 0.45rem',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700
+                          }}>
+                            {prio.icon} {prio.label}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {task.task_code}
+                          </span>
+                        </div>
+                        <div
+                          onClick={() => handleOpenDrawer(task)}
+                          style={{ fontWeight: 600, color: '#1e293b', cursor: 'pointer', fontSize: '0.9rem' }}
+                          title="Click to view full details"
+                        >
+                          {task.title}
+                        </div>
+                        {task.description && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px' }}>
+                            {task.description}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Category */}
+                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                        <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>
+                          {task.category}
+                        </span>
+                      </td>
+
+                      {/* Delegated By */}
+                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{task.delegated_by_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{task.delegated_by_email}</div>
+                      </td>
+
+                      {/* Assigned To */}
+                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{task.assigned_to_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{task.assigned_to_email}</div>
+                      </td>
+
+                      {/* Checkpoints */}
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', minWidth: '120px' }}>
+                        {totalSubtasks > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
+                              {completedSubtasks}/{totalSubtasks} ({subtaskPct}%)
+                            </span>
+                            <div style={{ width: '80px', height: '5px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{
+                                width: `${subtaskPct}%`,
+                                height: '100%',
+                                background: subtaskPct === 100 ? '#10b981' : '#3b82f6',
+                                borderRadius: '3px'
+                              }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>
+                        )}
+                      </td>
+
+                      {/* Due Deadline */}
+                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            background: deadlineBadge.bg,
+                            color: deadlineBadge.color,
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                            display: 'inline-block',
+                            width: 'fit-content'
+                          }}>
+                            {deadlineBadge.text}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            {new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '12px',
+                          background: task.status === 'COMPLETED' ? '#ecfdf5' : task.status === 'SUBMITTED' ? '#fffbeb' : task.status === 'IN_PROGRESS' ? '#eff6ff' : task.status === 'REOPENED' ? '#fef2f2' : '#f8fafc',
+                          color: task.status === 'COMPLETED' ? '#059669' : task.status === 'SUBMITTED' ? '#d97706' : task.status === 'IN_PROGRESS' ? '#2563eb' : task.status === 'REOPENED' ? '#dc2626' : '#64748b',
+                          border: `1px solid ${task.status === 'COMPLETED' ? '#a7f3d0' : task.status === 'SUBMITTED' ? '#fde68a' : task.status === 'IN_PROGRESS' ? '#bfdbfe' : task.status === 'REOPENED' ? '#fecaca' : '#e2e8f0'}`
+                        }}>
+                          {task.status.replace('_', ' ')}
+                        </span>
+                      </td>
+
+                      {/* Rating */}
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {task.status === 'COMPLETED' && task.rating ? (
+                          <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.82rem' }}>
+                            {'⭐'.repeat(task.rating)}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {/* Assignee Actions */}
+                          {isAssignedToMe && task.status === 'PENDING' && (
+                            <button
+                              onClick={() => handleStartTask(task)}
+                              style={{
+                                background: '#3b82f6',
+                                color: '#fff',
+                                border: 'none',
+                                padding: '0.35rem 0.7rem',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '0.78rem'
+                              }}
+                            >
+                              ▶ Start
+                            </button>
+                          )}
+
+                          {isAssignedToMe && (task.status === 'IN_PROGRESS' || task.status === 'REOPENED') && (
+                            <button
+                              onClick={() => handleOpenSubmitModal(task)}
+                              style={{
+                                background: '#10b981',
+                                color: '#fff',
+                                border: 'none',
+                                padding: '0.35rem 0.7rem',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '0.78rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                            >
+                              <Check size={14} /> Submit
+                            </button>
+                          )}
+
+                          {/* Delegator / Admin Actions */}
+                          {(isDelegatedByMe || isAdmin) && task.status === 'SUBMITTED' && (
+                            <button
+                              onClick={() => handleOpenVerifyModal(task)}
+                              style={{
+                                background: '#f59e0b',
+                                color: '#fff',
+                                border: 'none',
+                                padding: '0.35rem 0.7rem',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '0.78rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                            >
+                              <Star size={14} /> Review
+                            </button>
+                          )}
+
+                          {/* Details / Chat Drawer button */}
+                          <button
+                            onClick={() => handleOpenDrawer(task)}
+                            style={{
+                              background: '#f1f5f9',
+                              border: '1px solid #cbd5e1',
+                              color: '#334155',
+                              padding: '0.35rem 0.55rem',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                            title="Discussion & Activity"
+                          >
+                            <MessageSquare size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
