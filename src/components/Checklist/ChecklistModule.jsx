@@ -2690,6 +2690,8 @@ export default function ChecklistModule({
                               ? '#e2e8f0'
                               : isExpired
                               ? '#fee2e2'
+                              : delayInfo.badgeStatus === 'DELAYED_OPEN'
+                              ? '#d97706'
                               : '#16a34a',
                             color: isCompleted
                               ? '#166534'
@@ -2713,7 +2715,7 @@ export default function ChecklistModule({
                             justifyContent: 'center',
                             gap: '0.5rem',
                             marginTop: 'auto',
-                            boxShadow: isActive ? '0 2px 8px rgba(22,163,74,0.3)' : 'none'
+                            boxShadow: isActive ? (delayInfo.badgeStatus === 'DELAYED_OPEN' ? '0 2px 8px rgba(217,119,6,0.3)' : '0 2px 8px rgba(22,163,74,0.3)') : 'none'
                           }}
                         >
                           {isCompleted ? (
@@ -2727,6 +2729,10 @@ export default function ChecklistModule({
                           ) : isExpired ? (
                             <>
                               <AlertTriangle size={16} /> Window Expired (Missed)
+                            </>
+                          ) : delayInfo.badgeStatus === 'DELAYED_OPEN' ? (
+                            <>
+                              <Clock size={16} /> ⚠️ Submit with Late Tag ({delayInfo.delayMinutes}m overdue)
                             </>
                           ) : (
                             <>
@@ -2884,6 +2890,21 @@ export default function ChecklistModule({
                                 }}>
                                   <Lock size={11} /> Locked
                                 </span>
+                              ) : delayInfo.badgeStatus === 'DELAYED_OPEN' ? (
+                                <span style={{
+                                  background: '#fef3c7',
+                                  color: '#92400e',
+                                  border: '1px solid #fde68a',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  <Clock size={11} color="#d97706" /> ⚠️ Late Allowed ({delayInfo.delayMinutes}m)
+                                </span>
                               ) : isActive ? (
                                 <span style={{
                                   background: '#dcfce7',
@@ -2941,6 +2962,8 @@ export default function ChecklistModule({
                                     ? '#e2e8f0'
                                     : isExpired
                                     ? '#fee2e2'
+                                    : delayInfo.badgeStatus === 'DELAYED_OPEN'
+                                    ? '#d97706'
                                     : '#16a34a',
                                   color: isCompleted
                                     ? '#166534'
@@ -2975,6 +2998,10 @@ export default function ChecklistModule({
                                 ) : isExpired ? (
                                   <>
                                     <AlertTriangle size={13} /> Expired
+                                  </>
+                                ) : delayInfo.badgeStatus === 'DELAYED_OPEN' ? (
+                                  <>
+                                    <Clock size={13} /> ⚠️ Submit Late
                                   </>
                                 ) : (
                                   <>
