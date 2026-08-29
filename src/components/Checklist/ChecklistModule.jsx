@@ -74,11 +74,19 @@ export default function ChecklistModule({
   };
 
   // Performance Dashboard Filters & State
-  const [dashboardTimeframe, setDashboardTimeframe] = useState('THIS_MONTH'); // 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_30_DAYS' | 'ALL_TIME'
+  const [dashboardTimeframe, setDashboardTimeframe] = useState('THIS_MONTH'); // 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_30_DAYS' | 'CUSTOM' | 'ALL_TIME'
   const [dashboardScope, setDashboardScope] = useState(isAdmin || isManager ? 'COMPANY_WIDE' : 'MY_PERFORMANCE'); // 'COMPANY_WIDE' | 'MY_TEAM' | 'MY_PERFORMANCE'
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState('ALL');
   const [dashboardSearchEmployee, setDashboardSearchEmployee] = useState('');
   const [dashboardLeaderboardScoreFilter, setDashboardLeaderboardScoreFilter] = useState('ALL');
+  const [analyticsStartDate, setAnalyticsStartDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [analyticsEndDate, setAnalyticsEndDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
 
   // View Mode for My Checklists: 'tiles' | 'table'
   const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
@@ -173,23 +181,40 @@ export default function ChecklistModule({
   // Analytics Dashboard Computation
   const analyticsData = useMemo(() => {
     const now = new Date();
-    let startDate = null;
+    let startBoundary = null;
+    let endBoundary = null;
 
-    if (dashboardTimeframe === 'THIS_WEEK') {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
+    if (dashboardTimeframe === 'TODAY') {
+      startBoundary = new Date();
+      startBoundary.setHours(0, 0, 0, 0);
+      endBoundary = new Date();
+      endBoundary.setHours(23, 59, 59, 999);
+    } else if (dashboardTimeframe === 'THIS_WEEK') {
+      startBoundary = new Date(now);
+      startBoundary.setDate(now.getDate() - 7);
+      startBoundary.setHours(0, 0, 0, 0);
     } else if (dashboardTimeframe === 'THIS_MONTH') {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      startBoundary = new Date(now.getFullYear(), now.getMonth(), 1);
+      startBoundary.setHours(0, 0, 0, 0);
     } else if (dashboardTimeframe === 'LAST_30_DAYS') {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 30);
+      startBoundary = new Date(now);
+      startBoundary.setDate(now.getDate() - 30);
+      startBoundary.setHours(0, 0, 0, 0);
+    } else if (dashboardTimeframe === 'CUSTOM') {
+      if (analyticsStartDate) {
+        startBoundary = new Date(`${analyticsStartDate}T00:00:00`);
+      }
+      if (analyticsEndDate) {
+        endBoundary = new Date(`${analyticsEndDate}T23:59:59`);
+      }
     }
 
     const filteredLogs = (complianceLogs || []).filter(log => {
-      if (!startDate) return true;
       const logDate = log.submitted_at ? new Date(log.submitted_at) : null;
       if (!logDate || isNaN(logDate.getTime())) return true;
-      return logDate >= startDate;
+      if (startBoundary && logDate < startBoundary) return false;
+      if (endBoundary && logDate > endBoundary) return false;
+      return true;
     });
 
     const userEmailClean = (userEmail || '').toLowerCase().trim();
@@ -374,6 +399,8 @@ export default function ChecklistModule({
     myReportingTeam,
     userEmail,
     dashboardTimeframe,
+    analyticsStartDate,
+    analyticsEndDate,
     dashboardScope,
     dashboardDeptFilter,
     dashboardSearchEmployee,
@@ -1193,25 +1220,22 @@ export default function ChecklistModule({
             borderRadius: '12px',
             padding: '1.25rem',
             display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
+            flexDirection: 'column',
             gap: '1rem',
             boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
           }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <TrendingUp size={22} color="#3b82f6" /> Checklist Performance & Compliance Analytics
-              </h2>
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
-                {dashboardScope === 'MY_PERFORMANCE'
-                  ? `Personal compliance score, on-time punctuality & completion rate for ${userName}`
-                  : `Company-wide accountability overview, team rankings & department compliance`}
-              </p>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <TrendingUp size={22} color="#3b82f6" /> Checklist Performance & Compliance Analytics
+                </h2>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                  {dashboardScope === 'MY_PERFORMANCE'
+                    ? `Personal compliance score, on-time punctuality & completion rate for ${userName}`
+                    : `Company-wide accountability overview, team rankings & department compliance`}
+                </p>
+              </div>
 
-            {/* Controls: Scope Switcher & Timeframe Selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               {/* Scope Switcher (for Admin/Manager) */}
               {isManager && (
                 <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
@@ -1223,8 +1247,8 @@ export default function ChecklistModule({
                       color: dashboardScope === 'COMPANY_WIDE' ? '#ffffff' : 'var(--text-secondary, #64748b)',
                       border: 'none',
                       borderRadius: '6px',
-                      padding: '0.35rem 0.75rem',
-                      fontSize: '0.8rem',
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.82rem',
                       fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1243,8 +1267,8 @@ export default function ChecklistModule({
                         color: dashboardScope === 'MY_TEAM' ? '#ffffff' : 'var(--text-secondary, #64748b)',
                         border: 'none',
                         borderRadius: '6px',
-                        padding: '0.35rem 0.75rem',
-                        fontSize: '0.8rem',
+                        padding: '0.4rem 0.8rem',
+                        fontSize: '0.82rem',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'flex',
@@ -1263,8 +1287,8 @@ export default function ChecklistModule({
                       color: dashboardScope === 'MY_PERFORMANCE' ? '#ffffff' : 'var(--text-secondary, #64748b)',
                       border: 'none',
                       borderRadius: '6px',
-                      padding: '0.35rem 0.75rem',
-                      fontSize: '0.8rem',
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.82rem',
                       fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1276,57 +1300,148 @@ export default function ChecklistModule({
                   </button>
                 </div>
               )}
+            </div>
 
-              {/* Timeframe Selector */}
-              <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
+            {/* Row 2: Comprehensive Timeframe Presets & Date Picker Inputs */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-color, #f1f5f9)'
+            }}>
+              {/* Presets Button Group */}
+              <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', flexWrap: 'wrap' }}>
                 {[
-                  { id: 'THIS_WEEK', label: 'This Week' },
-                  { id: 'THIS_MONTH', label: 'This Month' },
-                  { id: 'LAST_30_DAYS', label: 'Last 30 Days' },
-                  { id: 'ALL_TIME', label: 'All Time' }
-                ].map(tf => (
-                  <button
-                    key={tf.id}
-                    type="button"
-                    onClick={() => setDashboardTimeframe(tf.id)}
-                    style={{
-                      background: dashboardTimeframe === tf.id ? '#ffffff' : 'transparent',
-                      color: dashboardTimeframe === tf.id ? '#0f172a' : 'var(--text-secondary, #64748b)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '0.35rem 0.65rem',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      boxShadow: dashboardTimeframe === tf.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
-                    }}
-                  >
-                    {tf.label}
-                  </button>
-                ))}
+                  { id: 'TODAY', label: '📅 Today' },
+                  { id: 'THIS_WEEK', label: '📆 This Week' },
+                  { id: 'THIS_MONTH', label: '🗓️ This Month' },
+                  { id: 'LAST_30_DAYS', label: '📊 Last 30 Days' },
+                  { id: 'CUSTOM', label: '🎯 Custom Range' },
+                  { id: 'ALL_TIME', label: '♾️ All Time' }
+                ].map(tf => {
+                  const isSelected = dashboardTimeframe === tf.id;
+                  return (
+                    <button
+                      key={tf.id}
+                      type="button"
+                      onClick={() => {
+                        setDashboardTimeframe(tf.id);
+                        const d = new Date();
+                        const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        if (tf.id === 'TODAY') {
+                          setAnalyticsStartDate(todayStr);
+                          setAnalyticsEndDate(todayStr);
+                        } else if (tf.id === 'THIS_WEEK') {
+                          const w = new Date();
+                          w.setDate(w.getDate() - 7);
+                          setAnalyticsStartDate(`${w.getFullYear()}-${String(w.getMonth() + 1).padStart(2, '0')}-${String(w.getDate()).padStart(2, '0')}`);
+                          setAnalyticsEndDate(todayStr);
+                        } else if (tf.id === 'THIS_MONTH') {
+                          setAnalyticsStartDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
+                          setAnalyticsEndDate(todayStr);
+                        } else if (tf.id === 'LAST_30_DAYS') {
+                          const m = new Date();
+                          m.setDate(m.getDate() - 30);
+                          setAnalyticsStartDate(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(m.getDate()).padStart(2, '0')}`);
+                          setAnalyticsEndDate(todayStr);
+                        }
+                      }}
+                      style={{
+                        background: isSelected ? '#3b82f6' : 'transparent',
+                        color: isSelected ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.65rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: isSelected ? '0 1px 3px rgba(59,130,246,0.3)' : 'none'
+                      }}
+                    >
+                      {tf.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Department filter (when Company mode) */}
-              {dashboardScope === 'COMPANY_WIDE' && availableDepartments.length > 0 && (
-                <select
-                  value={dashboardDeptFilter}
-                  onChange={(e) => setDashboardDeptFilter(e.target.value)}
-                  style={{
-                    padding: '0.4rem 0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    background: 'var(--bg-secondary, #f8fafc)',
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    color: 'var(--text-primary, #1e293b)'
-                  }}
-                >
-                  <option value="ALL">All Departments</option>
-                  {availableDepartments.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              )}
+              {/* Date Pickers & Department Filter Container */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Date Picker Form Group */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: 'var(--bg-secondary, #f8fafc)',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color, #cbd5e1)'
+                }}>
+                  <Calendar size={15} color="#3b82f6" />
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)' }}>From:</span>
+                  <input
+                    type="date"
+                    value={analyticsStartDate}
+                    onChange={(e) => {
+                      setAnalyticsStartDate(e.target.value);
+                      setDashboardTimeframe('CUSTOM');
+                    }}
+                    style={{
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      borderRadius: '6px',
+                      padding: '0.25rem 0.4rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary, #1e293b)',
+                      background: 'var(--card-bg, #ffffff)',
+                      cursor: 'pointer'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)' }}>To:</span>
+                  <input
+                    type="date"
+                    value={analyticsEndDate}
+                    onChange={(e) => {
+                      setAnalyticsEndDate(e.target.value);
+                      setDashboardTimeframe('CUSTOM');
+                    }}
+                    style={{
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      borderRadius: '6px',
+                      padding: '0.25rem 0.4rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary, #1e293b)',
+                      background: 'var(--card-bg, #ffffff)',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+
+                {/* Department filter (when Company mode) */}
+                {dashboardScope === 'COMPANY_WIDE' && availableDepartments.length > 0 && (
+                  <select
+                    value={dashboardDeptFilter}
+                    onChange={(e) => setDashboardDeptFilter(e.target.value)}
+                    style={{
+                      padding: '0.4rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: 'var(--bg-secondary, #f8fafc)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary, #1e293b)'
+                    }}
+                  >
+                    <option value="ALL">All Departments ({availableDepartments.length})</option>
+                    {availableDepartments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
           </div>
 
