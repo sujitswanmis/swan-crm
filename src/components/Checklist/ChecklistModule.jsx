@@ -5,7 +5,8 @@ import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
   Trash2, Edit3, ShieldCheck, Filter, Search, RefreshCw, Eye,
   Sparkles, Check, ChevronRight, X, AlertTriangle, FileSpreadsheet,
-  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock, Copy
+  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock, Copy,
+  LayoutGrid, List
 } from 'lucide-react';
 import {
   FREQUENCIES_CONFIG,
@@ -56,6 +57,9 @@ export default function ChecklistModule({
   const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
   const [templateStatusFilter, setTemplateStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [togglingStatusId, setTogglingStatusId] = useState(null);
+
+  // View Mode for My Checklists: 'tiles' | 'table'
+  const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
 
   // Data states
   const [dashboardChecklists, setDashboardChecklists] = useState([]);
@@ -862,187 +866,413 @@ export default function ChecklistModule({
           )}
 
           {!loading && dashboardChecklists.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
-              {dashboardChecklists.map((item, idx) => {
-                const tmpl = item.template;
-                const isCompleted = item.status === 'COMPLETED';
-                const percent = item.stats.percent;
-                const humanPeriod = getHumanPeriodLabel(tmpl.frequency, item.currentPeriodKey);
-                const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
-                const delayInfo = item.delayInfo || {};
-                const isOverdue = delayInfo.isPastCutoff && !isCompleted;
-                const isDelayedCompleted = isCompleted && delayInfo.isDelayed;
+            <>
+              {/* View Mode Toggle Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', margin: '0.25rem 0' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
+                  Showing <strong>{dashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency}</strong> frequency
+                </span>
 
-                return (
-                  <div
-                    key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setMyChecklistsViewMode('tiles')}
                     style={{
-                      background: isOverdue ? '#fff5f5' : 'var(--card-bg, #ffffff)',
-                      border: isOverdue
-                        ? '1.5px solid #f87171'
-                        : isCompleted
-                        ? '1px solid #86efac'
-                        : '1px solid var(--border-color, #e2e8f0)',
-                      borderRadius: '12px',
-                      padding: '1.25rem',
+                      background: myChecklistsViewMode === 'tiles' ? '#ffffff' : 'transparent',
+                      color: myChecklistsViewMode === 'tiles' ? '#0f172a' : '#64748b',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '1rem',
-                      boxShadow: isOverdue ? '0 4px 12px rgba(239,68,68,0.12)' : '0 2px 8px rgba(0,0,0,0.04)',
-                      position: 'relative'
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      boxShadow: myChecklistsViewMode === 'tiles' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    {/* Top status bar */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.4rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{
-                          background: `${freqMeta.badgeColor}15`,
-                          color: freqMeta.badgeColor,
-                          padding: '0.25rem 0.6rem',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.25rem'
-                        }}>
-                          {freqMeta.icon} {tmpl.frequency}
-                        </span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
-                          {tmpl.department}
-                        </span>
-                      </div>
+                    <LayoutGrid size={15} /> Tiles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMyChecklistsViewMode('table')}
+                    style={{
+                      background: myChecklistsViewMode === 'table' ? '#ffffff' : 'transparent',
+                      color: myChecklistsViewMode === 'table' ? '#0f172a' : '#64748b',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      boxShadow: myChecklistsViewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <List size={15} /> Table
+                  </button>
+                </div>
+              </div>
 
-                      {/* Status Badges */}
-                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                        {isCompleted ? (
-                          <span style={{
-                            background: isDelayedCompleted ? '#fef3c7' : '#dcfce7',
-                            color: isDelayedCompleted ? '#92400e' : '#166534',
-                            border: isDelayedCompleted ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '12px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700
-                          }}>
-                            {isDelayedCompleted ? `⚠️ Done (${delayInfo.delayText || 'Delayed'})` : '✓ Completed (On Time)'}
-                          </span>
-                        ) : isOverdue ? (
-                          <span style={{
-                            background: '#fee2e2',
-                            color: '#991b1b',
-                            border: '1px solid #fca5a5',
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '12px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
+              {/* 1. TILES VIEW */}
+              {myChecklistsViewMode === 'tiles' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
+                  {dashboardChecklists.map((item, idx) => {
+                    const tmpl = item.template;
+                    const isCompleted = item.status === 'COMPLETED';
+                    const percent = item.stats.percent;
+                    const humanPeriod = getHumanPeriodLabel(tmpl.frequency, item.currentPeriodKey);
+                    const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
+                    const delayInfo = item.delayInfo || {};
+                    const isOverdue = delayInfo.isPastCutoff && !isCompleted;
+                    const isDelayedCompleted = isCompleted && delayInfo.isDelayed;
+
+                    return (
+                      <div
+                        key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
+                        style={{
+                          background: isOverdue ? '#fff5f5' : 'var(--card-bg, #ffffff)',
+                          border: isOverdue
+                            ? '1.5px solid #f87171'
+                            : isCompleted
+                            ? '1px solid #86efac'
+                            : '1px solid var(--border-color, #e2e8f0)',
+                          borderRadius: '12px',
+                          padding: '1.25rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '1rem',
+                          boxShadow: isOverdue ? '0 4px 12px rgba(239,68,68,0.12)' : '0 2px 8px rgba(0,0,0,0.04)',
+                          position: 'relative'
+                        }}
+                      >
+                        {/* Top status bar */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{
+                              background: `${freqMeta.badgeColor}15`,
+                              color: freqMeta.badgeColor,
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}>
+                              {freqMeta.icon} {tmpl.frequency}
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
+                              {tmpl.department}
+                            </span>
+                          </div>
+
+                          {/* Status Badges */}
+                          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            {isCompleted ? (
+                              <span style={{
+                                background: isDelayedCompleted ? '#fef3c7' : '#dcfce7',
+                                color: isDelayedCompleted ? '#92400e' : '#166534',
+                                border: isDelayedCompleted ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700
+                              }}>
+                                {isDelayedCompleted ? `⚠️ Done (${delayInfo.delayText || 'Delayed'})` : '✓ Completed (On Time)'}
+                              </span>
+                            ) : isOverdue ? (
+                              <span style={{
+                                background: '#fee2e2',
+                                color: '#991b1b',
+                                border: '1px solid #fca5a5',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                🚨 {delayInfo.delayText || 'Overdue'}
+                              </span>
+                            ) : (
+                              <span style={{
+                                background: percent > 0 ? '#fef3c7' : '#f1f5f9',
+                                color: percent > 0 ? '#92400e' : '#475569',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700
+                              }}>
+                                {percent > 0 ? 'In Progress' : 'Pending'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Title & Period */}
+                        <div>
+                          <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.05rem', fontWeight: 600 }}>{tmpl.title}</h3>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                            {tmpl.description || 'Routine operational checklist items'}
+                          </p>
+                        </div>
+
+                        {/* Meta info & Cutoff tracking */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.8rem',
+                          color: isOverdue ? '#991b1b' : 'var(--text-secondary, #64748b)',
+                          background: isOverdue ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
+                          border: isOverdue ? '1px solid #fecaca' : 'none',
+                          padding: '0.6rem 0.75rem',
+                          borderRadius: '8px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Calendar size={14} />
+                            <span>{humanPeriod}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: isOverdue ? 700 : 500 }}>
+                            <Clock size={14} />
+                            <span>Cutoff: {tmpl.due_time || '18:00'}</span>
+                            {!isCompleted && !isOverdue && delayInfo.delayText && (
+                              <span style={{ color: '#2563eb', fontSize: '0.75rem' }}>({delayInfo.delayText})</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                            <span>Progress</span>
+                            <span>{item.stats.completedCount} of {item.stats.totalCount} items ({percent}%)</span>
+                          </div>
+                          <div style={{ width: '100%', height: '8px', background: 'var(--border-color, #e2e8f0)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{
+                              width: `${percent}%`,
+                              height: '100%',
+                              background: isCompleted ? '#22c55e' : isOverdue ? '#ef4444' : '#3b82f6',
+                              transition: 'width 0.3s ease'
+                            }} />
+                          </div>
+                        </div>
+
+                        {/* Action Button */}
+                        <button
+                          onClick={() => handleOpenExecution(item)}
+                          style={{
+                            background: isCompleted ? '#f0fdf4' : isOverdue ? '#ef4444' : '#3b82f6',
+                            color: isCompleted ? '#166534' : '#ffffff',
+                            border: isCompleted ? '1px solid #bbf7d0' : 'none',
+                            padding: '0.65rem 1rem',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.25rem'
-                          }}>
-                            🚨 {delayInfo.delayText || 'Overdue'}
-                          </span>
-                        ) : (
-                          <span style={{
-                            background: percent > 0 ? '#fef3c7' : '#f1f5f9',
-                            color: percent > 0 ? '#92400e' : '#475569',
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '12px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700
-                          }}>
-                            {percent > 0 ? 'In Progress' : 'Pending'}
-                          </span>
-                        )}
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            marginTop: 'auto'
+                          }}
+                        >
+                          {isCompleted ? (
+                            <>
+                              <Lock size={16} /> View Submitted Checklist (Locked)
+                            </>
+                          ) : isOverdue ? (
+                            <>
+                              <AlertTriangle size={16} /> Submit Delayed Checklist
+                            </>
+                          ) : (
+                            <>
+                              <CheckSquare size={16} /> Fill & Complete Checklist
+                            </>
+                          )}
+                        </button>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                    {/* Title & Period */}
-                    <div>
-                      <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.05rem', fontWeight: 600 }}>{tmpl.title}</h3>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
-                        {tmpl.description || 'Routine operational checklist items'}
-                      </p>
-                    </div>
+              {/* 2. TABLE VIEW */}
+              {myChecklistsViewMode === 'table' && (
+                <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
+                        <th style={{ padding: '0.75rem 1rem' }}>Checklist Title</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Frequency & Department</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Period / Date</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Cutoff Time</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Progress</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardChecklists.map((item, idx) => {
+                        const tmpl = item.template;
+                        const isCompleted = item.status === 'COMPLETED';
+                        const percent = item.stats.percent;
+                        const humanPeriod = getHumanPeriodLabel(tmpl.frequency, item.currentPeriodKey);
+                        const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
+                        const delayInfo = item.delayInfo || {};
+                        const isOverdue = delayInfo.isPastCutoff && !isCompleted;
+                        const isDelayedCompleted = isCompleted && delayInfo.isDelayed;
 
-                    {/* Meta info & Cutoff tracking */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      fontSize: '0.8rem',
-                      color: isOverdue ? '#991b1b' : 'var(--text-secondary, #64748b)',
-                      background: isOverdue ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
-                      border: isOverdue ? '1px solid #fecaca' : 'none',
-                      padding: '0.6rem 0.75rem',
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Calendar size={14} />
-                        <span>{humanPeriod}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: isOverdue ? 700 : 500 }}>
-                        <Clock size={14} />
-                        <span>Cutoff: {tmpl.due_time || '18:00'}</span>
-                        {!isCompleted && !isOverdue && delayInfo.delayText && (
-                          <span style={{ color: '#2563eb', fontSize: '0.75rem' }}>({delayInfo.delayText})</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-                        <span>Progress</span>
-                        <span>{item.stats.completedCount} of {item.stats.totalCount} items ({percent}%)</span>
-                      </div>
-                      <div style={{ width: '100%', height: '8px', background: 'var(--border-color, #e2e8f0)', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{
-                          width: `${percent}%`,
-                          height: '100%',
-                          background: isCompleted ? '#22c55e' : isOverdue ? '#ef4444' : '#3b82f6',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <button
-                      onClick={() => handleOpenExecution(item)}
-                      style={{
-                        background: isCompleted ? '#f0fdf4' : isOverdue ? '#ef4444' : '#3b82f6',
-                        color: isCompleted ? '#166534' : '#ffffff',
-                        border: isCompleted ? '1px solid #bbf7d0' : 'none',
-                        padding: '0.65rem 1rem',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem',
-                        marginTop: 'auto'
-                      }}
-                    >
-                      {isCompleted ? (
-                        <>
-                          <Lock size={16} /> View Submitted Checklist (Locked)
-                        </>
-                      ) : isOverdue ? (
-                        <>
-                          <AlertTriangle size={16} /> Submit Delayed Checklist
-                        </>
-                      ) : (
-                        <>
-                          <CheckSquare size={16} /> Fill & Complete Checklist
-                        </>
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                        return (
+                          <tr
+                            key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
+                            style={{
+                              borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                              background: isOverdue ? '#fff5f5' : isCompleted ? '#f0fdf4' : 'transparent'
+                            }}
+                          >
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                                {tmpl.description || tmpl.department}
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{
+                                  background: `${freqMeta.badgeColor}15`,
+                                  color: freqMeta.badgeColor,
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  {freqMeta.icon} {tmpl.frequency}
+                                </span>
+                                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{tmpl.department}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Calendar size={13} color="#f59e0b" />
+                                <span>{humanPeriod}</span>
+                              </div>
+                            </td>
+                            <td style={{
+                              padding: '0.85rem 1rem',
+                              fontSize: '0.85rem',
+                              fontWeight: isOverdue ? 700 : 600,
+                              color: isOverdue ? '#991b1b' : 'inherit'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Clock size={13} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '130px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
+                                  <span>{item.stats.completedCount}/{item.stats.totalCount}</span>
+                                  <span>{percent}%</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    width: `${percent}%`,
+                                    height: '100%',
+                                    background: isCompleted ? '#22c55e' : isOverdue ? '#ef4444' : '#3b82f6'
+                                  }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              {isCompleted ? (
+                                <span style={{
+                                  background: isDelayedCompleted ? '#fef3c7' : '#dcfce7',
+                                  color: isDelayedCompleted ? '#92400e' : '#166534',
+                                  border: isDelayedCompleted ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                                  padding: '0.25rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700
+                                }}>
+                                  {isDelayedCompleted ? `⚠️ Done (Delayed)` : '✓ Completed'}
+                                </span>
+                              ) : isOverdue ? (
+                                <span style={{
+                                  background: '#fee2e2',
+                                  color: '#991b1b',
+                                  border: '1px solid #fca5a5',
+                                  padding: '0.25rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700
+                                }}>
+                                  🚨 Overdue
+                                </span>
+                              ) : (
+                                <span style={{
+                                  background: percent > 0 ? '#fef3c7' : '#f1f5f9',
+                                  color: percent > 0 ? '#92400e' : '#475569',
+                                  padding: '0.25rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700
+                                }}>
+                                  {percent > 0 ? 'In Progress' : 'Pending'}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                              <button
+                                onClick={() => handleOpenExecution(item)}
+                                style={{
+                                  background: isCompleted ? '#f0fdf4' : isOverdue ? '#ef4444' : '#3b82f6',
+                                  color: isCompleted ? '#166534' : '#ffffff',
+                                  border: isCompleted ? '1px solid #bbf7d0' : 'none',
+                                  padding: '0.4rem 0.9rem',
+                                  borderRadius: '6px',
+                                  fontWeight: 700,
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  boxShadow: isCompleted ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'
+                                }}
+                              >
+                                {isCompleted ? (
+                                  <>
+                                    <Lock size={13} /> View (Locked)
+                                  </>
+                                ) : isOverdue ? (
+                                  <>
+                                    <AlertTriangle size={13} /> Submit Delayed
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckSquare size={13} /> Fill Checklist
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
