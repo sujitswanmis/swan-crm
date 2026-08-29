@@ -3656,7 +3656,15 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('dashboard', moduleAccess, userRole) && visitedTabs.has('dashboard')}
               >
                 <ErrorBoundary>
-                  <AnalyticsDashboard leads={leads} teamMembers={teamMembers} />
+                  <AnalyticsDashboard 
+                    leads={leads} 
+                    teamMembers={teamMembers} 
+                    userEmail={userEmail}
+                    userName={userName}
+                    userId={userId}
+                    userRole={userRole}
+                    onNavigateTab={(tab) => setActiveTab(tab)}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
