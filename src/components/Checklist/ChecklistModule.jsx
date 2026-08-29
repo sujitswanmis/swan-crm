@@ -192,9 +192,20 @@ export default function ChecklistModule({
     // 1. Personal metrics for logged in user
     const myLogs = filteredLogs.filter(l => (l.employee_email || '').toLowerCase().trim() === userEmailClean);
     const myCompleted = myLogs.filter(l => l.status === 'COMPLETED').length;
-    const myMissedToday = dashboardChecklists.filter(c => c.status !== 'COMPLETED' && c.delayInfo?.isExpired).length;
-    const myTotal = myCompleted + myMissedToday;
-    const myScore = myTotal > 0 ? Math.round((myCompleted / myTotal) * 100) : (myCompleted > 0 ? 100 : 0);
+
+    let myAssignedSlots = 0;
+    (templates || []).filter(t => t.is_active !== false).forEach(t => {
+      const rawEmails = (t.assigned_employee_email || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      const isAssigned = t.assigned_type === 'ALL' || rawEmails.includes(userEmailClean);
+      if (isAssigned) {
+        const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0) ? t.daily_slots.length : (t.daily_repetition_count || 1);
+        myAssignedSlots += slotsCount;
+      }
+    });
+
+    const myAssigned = Math.max(myAssignedSlots, myCompleted);
+    const myMissedToday = Math.max(0, myAssigned - myCompleted);
+    const myScore = myAssigned > 0 ? Math.round((myCompleted / myAssigned) * 100) : (myCompleted > 0 ? 100 : 0);
 
     const myTemplatesGroup = new Map();
     myLogs.forEach(l => {
@@ -228,26 +239,11 @@ export default function ChecklistModule({
     }
 
     const companyCompleted = companyScopeLogs.filter(l => l.status === 'COMPLETED').length;
-    const companyScore = companyCompleted > 0 ? 100 : 100;
 
-    const submittingEmployeesSet = new Set(companyScopeLogs.map(l => (l.employee_email || '').toLowerCase().trim()).filter(Boolean));
-
-    const deptGroup = new Map();
-    companyScopeLogs.forEach(l => {
-      const dept = l.department || 'General';
-      if (!deptGroup.has(dept)) {
-        deptGroup.set(dept, { name: dept, total: 0 });
-      }
-      const entry = deptGroup.get(dept);
-      entry.total += 1;
-    });
-
-    const departmentStats = Array.from(deptGroup.values()).map(d => ({
-      ...d,
-      complianceRate: 100
-    })).sort((a, b) => b.total - a.total);
-
+    // Build comprehensive map of all assigned employees from templates & master list
     const empMap = new Map();
+
+    // First, populate all active employees from employeesList
     (employeesList || []).forEach(emp => {
       const eEmail = (emp.email || '').toLowerCase().trim();
       if (eEmail) {
@@ -255,11 +251,40 @@ export default function ChecklistModule({
           email: eEmail,
           name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || eEmail,
           department: emp.department || 'General',
-          totalDone: 0
+          assigned: 0,
+          completed: 0
         });
       }
     });
 
+    // Calculate assigned slots per employee from active templates
+    (templates || []).filter(t => t.is_active !== false).forEach(t => {
+      const rawEmails = (t.assigned_employee_email || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0) ? t.daily_slots.length : (t.daily_repetition_count || 1);
+
+      if (t.assigned_type === 'ALL') {
+        empMap.forEach((val) => {
+          val.assigned += slotsCount;
+        });
+      } else {
+        rawEmails.forEach(e => {
+          if (!empMap.has(e)) {
+            const matchedP = (employeesList || []).find(p => (p.email || '').toLowerCase().trim() === e);
+            const name = matchedP ? `${matchedP.first_name || ''} ${matchedP.last_name || ''}`.trim() : e;
+            empMap.set(e, {
+              email: e,
+              name: name || e,
+              department: matchedP?.department || t.department || 'General',
+              assigned: 0,
+              completed: 0
+            });
+          }
+          empMap.get(e).assigned += slotsCount;
+        });
+      }
+    });
+
+    // Populate completed counts from actual submissions
     companyScopeLogs.forEach(l => {
       const eEmail = (l.employee_email || '').toLowerCase().trim();
       if (!eEmail) return;
@@ -268,27 +293,79 @@ export default function ChecklistModule({
           email: eEmail,
           name: l.employee_name || eEmail,
           department: l.department || 'General',
-          totalDone: 0
+          assigned: 0,
+          completed: 0
         });
       }
-      const item = empMap.get(eEmail);
-      item.totalDone += 1;
+      if (l.status === 'COMPLETED') {
+        empMap.get(eEmail).completed += 1;
+      }
     });
 
+    // Compute company totals and individual compliance rates
+    let totalCompanyAssigned = 0;
+    let totalCompanyCompleted = 0;
+
     let leaderboard = Array.from(empMap.values())
-      .filter(emp => emp.totalDone > 0)
+      .filter(emp => emp.assigned > 0 || emp.completed > 0)
       .map(emp => {
+        const assigned = Math.max(emp.assigned, emp.completed);
+        const missed = Math.max(0, assigned - emp.completed);
+        const complianceRate = assigned > 0 ? Math.round((emp.completed / assigned) * 100) : (emp.completed > 0 ? 100 : 0);
+
+        totalCompanyAssigned += assigned;
+        totalCompanyCompleted += emp.completed;
+
+        let rating = 'STAR';
+        if (complianceRate >= 90) rating = 'STAR';
+        else if (complianceRate >= 75) rating = 'RELIABLE';
+        else rating = 'AT_RISK';
+
         return {
           ...emp,
-          complianceRate: 100,
-          rating: 'STAR'
+          assigned,
+          missed,
+          complianceRate,
+          rating
         };
       })
-      .sort((a, b) => b.totalDone - a.totalDone);
+      .sort((a, b) => {
+        if (b.complianceRate !== a.complianceRate) return b.complianceRate - a.complianceRate;
+        return b.completed - a.completed;
+      });
 
+    const companyScore = totalCompanyAssigned > 0 ? Math.round((totalCompanyCompleted / totalCompanyAssigned) * 100) : (totalCompanyCompleted > 0 ? 100 : 0);
+    const companyMissed = Math.max(0, totalCompanyAssigned - totalCompanyCompleted);
+
+    // Department breakdown
+    const deptGroup = new Map();
+    leaderboard.forEach(emp => {
+      const dept = emp.department || 'General';
+      if (!deptGroup.has(dept)) {
+        deptGroup.set(dept, { name: dept, totalAssigned: 0, totalCompleted: 0 });
+      }
+      const entry = deptGroup.get(dept);
+      entry.totalAssigned += emp.assigned;
+      entry.totalCompleted += emp.completed;
+    });
+
+    const departmentStats = Array.from(deptGroup.values()).map(d => ({
+      ...d,
+      complianceRate: d.totalAssigned > 0 ? Math.round((d.totalCompleted / d.totalAssigned) * 100) : (d.totalCompleted > 0 ? 100 : 0)
+    })).sort((a, b) => b.totalAssigned - a.totalAssigned);
+
+    // Filter leaderboard
     if (dashboardSearchEmployee.trim()) {
       const q = dashboardSearchEmployee.toLowerCase().trim();
       leaderboard = leaderboard.filter(e => e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || e.department.toLowerCase().includes(q));
+    }
+
+    if (dashboardLeaderboardScoreFilter === 'HIGH') {
+      leaderboard = leaderboard.filter(e => e.complianceRate >= 90);
+    } else if (dashboardLeaderboardScoreFilter === 'MEDIUM') {
+      leaderboard = leaderboard.filter(e => e.complianceRate >= 70 && e.complianceRate < 90);
+    } else if (dashboardLeaderboardScoreFilter === 'LOW') {
+      leaderboard = leaderboard.filter(e => e.complianceRate < 70);
     }
 
     const templateStatsMap = new Map();
@@ -306,14 +383,18 @@ export default function ChecklistModule({
       .slice(0, 5);
 
     return {
+      myAssigned,
       myCompleted,
       myMissedToday,
       myScore,
       myChecklistsBreakdown,
       myRecentLogs: myLogs.slice(0, 10),
+      totalCompanyAssigned,
+      totalCompanyCompleted,
       companyCompleted,
+      companyMissed,
       companyScore,
-      activeEmployeesCount: submittingEmployeesSet.size,
+      activeEmployeesCount: leaderboard.length,
       departmentStats,
       leaderboard,
       topChecklists
@@ -1297,7 +1378,7 @@ export default function ChecklistModule({
           {/* KPI METRIC CARDS ROW */}
           {dashboardScope === 'MY_PERFORMANCE' ? (
             /* 1. PERSONAL METRIC CARDS (EMPLOYEE VIEW) */
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
               {/* Card 1: My Compliance Score */}
               <div style={{
                 background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
@@ -1312,21 +1393,48 @@ export default function ChecklistModule({
                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span>🏆 MY COMPLIANCE SCORE</span>
                   <span style={{ fontSize: '0.75rem', background: '#3b82f6', color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
-                    {analyticsData.myScore >= 90 ? '🌟 Star' : analyticsData.myScore >= 75 ? '👍 Good' : '⚠️ Low'}
+                    {analyticsData.myScore >= 90 ? '🌟 Star' : analyticsData.myScore >= 75 ? '👍 Good' : '🚨 Low'}
                   </span>
                 </div>
                 <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#1d4ed8' }}>
                   {analyticsData.myScore}%
                 </div>
                 <div style={{ width: '100%', height: '7px', background: '#bfdbfe', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: `${analyticsData.myScore}%`, height: '100%', background: '#2563eb', transition: 'width 0.4s ease' }} />
+                  <div style={{
+                    width: `${analyticsData.myScore}%`,
+                    height: '100%',
+                    background: analyticsData.myScore >= 90 ? '#16a34a' : analyticsData.myScore >= 75 ? '#f59e0b' : '#dc2626',
+                    transition: 'width 0.4s ease'
+                  }} />
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '0.2rem' }}>
-                  Based on on-time submissions vs total assigned slots
+                  {analyticsData.myCompleted} completed out of {analyticsData.myAssigned} assigned
                 </div>
               </div>
 
-              {/* Card 2: Total Completed */}
+              {/* Card 2: Total Assigned */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Layers size={16} color="#3b82f6" /> MY ASSIGNED SLOTS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.myAssigned}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Scheduled slots for you
+                </div>
+              </div>
+
+              {/* Card 3: Total Completed */}
               <div style={{
                 background: '#f0fdf4',
                 border: '1px solid #bbf7d0',
@@ -1344,11 +1452,11 @@ export default function ChecklistModule({
                   {analyticsData.myCompleted}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#166534' }}>
-                  Successfully submitted within buffer window
+                  Submitted within window
                 </div>
               </div>
 
-              {/* Card 3: Missed / Expired Slots */}
+              {/* Card 4: Missed / Expired Slots */}
               <div style={{
                 background: analyticsData.myMissedToday > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
                 border: analyticsData.myMissedToday > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)',
@@ -1360,7 +1468,7 @@ export default function ChecklistModule({
                 boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
               }}>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: analyticsData.myMissedToday > 0 ? '#991b1b' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <AlertTriangle size={16} color={analyticsData.myMissedToday > 0 ? '#dc2626' : '#94a3b8'} /> MISSED / EXPIRED SLOTS
+                  <AlertTriangle size={16} color={analyticsData.myMissedToday > 0 ? '#dc2626' : '#94a3b8'} /> MISSED / EXPIRED
                 </div>
                 <div style={{ fontSize: '2rem', fontWeight: 800, color: analyticsData.myMissedToday > 0 ? '#dc2626' : 'var(--text-primary, #0f172a)' }}>
                   {analyticsData.myMissedToday}
@@ -1372,7 +1480,7 @@ export default function ChecklistModule({
             </div>
           ) : (
             /* 2. COMPANY / TEAM METRIC CARDS (ADMIN & MANAGER VIEW) */
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
               {/* Card 1: Company Compliance Score */}
               <div style={{
                 background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
@@ -1394,14 +1502,41 @@ export default function ChecklistModule({
                   {analyticsData.companyScore}%
                 </div>
                 <div style={{ width: '100%', height: '7px', background: '#bfdbfe', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: `${analyticsData.companyScore}%`, height: '100%', background: '#2563eb', transition: 'width 0.4s ease' }} />
+                  <div style={{
+                    width: `${analyticsData.companyScore}%`,
+                    height: '100%',
+                    background: analyticsData.companyScore >= 90 ? '#16a34a' : analyticsData.companyScore >= 75 ? '#f59e0b' : '#dc2626',
+                    transition: 'width 0.4s ease'
+                  }} />
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '0.2rem' }}>
-                  Total {analyticsData.companyCompleted} on-time submissions completed
+                  {analyticsData.companyCompleted} done / {analyticsData.totalCompanyAssigned} assigned
                 </div>
               </div>
 
-              {/* Card 2: Total Completed */}
+              {/* Card 2: Total Assigned */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Layers size={16} color="#3b82f6" /> TOTAL ASSIGNED SLOTS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.totalCompanyAssigned}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Across all active staff
+                </div>
+              </div>
+
+              {/* Card 3: Total Completed */}
               <div style={{
                 background: '#f0fdf4',
                 border: '1px solid #bbf7d0',
@@ -1413,17 +1548,39 @@ export default function ChecklistModule({
                 boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
               }}>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <CheckCircle2 size={16} color="#16a34a" /> TOTAL ON-TIME EXECUTIONS
+                  <CheckCircle2 size={16} color="#16a34a" /> TOTAL COMPLETED
                 </div>
                 <div style={{ fontSize: '2rem', fontWeight: 800, color: '#15803d' }}>
                   {analyticsData.companyCompleted}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#166534' }}>
-                  Completed within buffer window
+                  On-time submissions
                 </div>
               </div>
 
-              {/* Card 3: Active Participating Employees */}
+              {/* Card 4: Total Missed */}
+              <div style={{
+                background: analyticsData.companyMissed > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
+                border: analyticsData.companyMissed > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: analyticsData.companyMissed > 0 ? '#991b1b' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <AlertTriangle size={16} color={analyticsData.companyMissed > 0 ? '#dc2626' : '#94a3b8'} /> TOTAL MISSED SLOTS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: analyticsData.companyMissed > 0 ? '#dc2626' : 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.companyMissed}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: analyticsData.companyMissed > 0 ? '#b91c1c' : 'var(--text-secondary, #64748b)' }}>
+                  Expired without filling
+                </div>
+              </div>
+
+              {/* Card 5: Active Participating Employees */}
               <div style={{
                 background: 'var(--bg-secondary, #f8fafc)',
                 border: '1px solid var(--border-color, #e2e8f0)',
@@ -1435,13 +1592,13 @@ export default function ChecklistModule({
                 boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
               }}>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <User size={16} color="#6366f1" /> PARTICIPATING STAFF
+                  <User size={16} color="#6366f1" /> ASSIGNED STAFF
                 </div>
                 <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
                   {analyticsData.activeEmployeesCount}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
-                  Active submitting employees
+                  Employees with checklists
                 </div>
               </div>
             </div>
@@ -1598,17 +1755,17 @@ export default function ChecklistModule({
                             <span style={{
                               fontWeight: 800,
                               fontSize: '0.85rem',
-                              color: '#16a34a'
+                              color: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#f59e0b' : '#dc2626'
                             }}>
-                              {dept.total} Completed
+                              {dept.totalCompleted} / {dept.totalAssigned} ({dept.complianceRate}%)
                             </span>
                           </div>
 
                           <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
                             <div style={{
-                              width: '100%',
+                              width: `${dept.complianceRate}%`,
                               height: '100%',
-                              background: '#16a34a',
+                              background: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#f59e0b' : '#dc2626',
                               transition: 'width 0.3s ease'
                             }} />
                           </div>
@@ -1689,11 +1846,11 @@ export default function ChecklistModule({
                       <Award size={20} color="#f59e0b" /> Employee Compliance Leaderboard & Accountability Ranking
                     </h3>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
-                      Rankings based on on-time checklist completion in the selected timeframe
+                      Rankings based on on-time checklist completion vs total assigned slots in the selected timeframe
                     </p>
                   </div>
 
-                  {/* Search and filter */}
+                  {/* Search and score filter */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                       <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: '#94a3b8' }} />
@@ -1712,6 +1869,33 @@ export default function ChecklistModule({
                         }}
                       />
                     </div>
+
+                    <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.15rem', borderRadius: '6px' }}>
+                      {[
+                        { id: 'ALL', label: 'All Staff' },
+                        { id: 'HIGH', label: '⭐ >90%' },
+                        { id: 'MEDIUM', label: '⚠️ 70-90%' },
+                        { id: 'LOW', label: '🚨 <70%' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setDashboardLeaderboardScoreFilter(f.id)}
+                          style={{
+                            background: dashboardLeaderboardScoreFilter === f.id ? '#ffffff' : 'transparent',
+                            color: dashboardLeaderboardScoreFilter === f.id ? '#0f172a' : 'var(--text-secondary, #64748b)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1727,7 +1911,9 @@ export default function ChecklistModule({
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>RANK</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>EMPLOYEE</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>DEPARTMENT</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>COMPLETED TASKS</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>ASSIGNED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>COMPLETED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>MISSED</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>COMPLIANCE SCORE</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>STATUS</th>
                         </tr>
@@ -1754,8 +1940,14 @@ export default function ChecklistModule({
                               <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary, #334155)' }}>
                                 {emp.department}
                               </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary, #0f172a)' }}>
+                                {emp.assigned}
+                              </td>
                               <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', color: '#16a34a' }}>
-                                {emp.totalDone}
+                                {emp.completed}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', color: emp.missed > 0 ? '#dc2626' : 'var(--text-secondary, #94a3b8)' }}>
+                                {emp.missed}
                               </td>
                               <td style={{ padding: '0.75rem 1rem', minWidth: '150px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1763,13 +1955,13 @@ export default function ChecklistModule({
                                     <div style={{
                                       width: `${emp.complianceRate}%`,
                                       height: '100%',
-                                      background: '#16a34a'
+                                      background: emp.complianceRate >= 90 ? '#16a34a' : emp.complianceRate >= 75 ? '#f59e0b' : '#dc2626'
                                     }} />
                                   </div>
                                   <span style={{
                                     fontWeight: 800,
                                     fontSize: '0.85rem',
-                                    color: '#16a34a',
+                                    color: emp.complianceRate >= 90 ? '#16a34a' : emp.complianceRate >= 75 ? '#d97706' : '#dc2626',
                                     minWidth: '38px',
                                     textAlign: 'right'
                                   }}>
@@ -1783,10 +1975,10 @@ export default function ChecklistModule({
                                   fontWeight: 800,
                                   padding: '0.2rem 0.55rem',
                                   borderRadius: '12px',
-                                  background: '#dcfce7',
-                                  color: '#166534'
+                                  background: emp.rating === 'STAR' ? '#dcfce7' : emp.rating === 'RELIABLE' ? '#fef3c7' : '#fee2e2',
+                                  color: emp.rating === 'STAR' ? '#166534' : emp.rating === 'RELIABLE' ? '#92400e' : '#991b1b'
                                 }}>
-                                  🌟 Star
+                                  {emp.rating === 'STAR' ? '🌟 Star' : emp.rating === 'RELIABLE' ? '👍 Reliable' : '🚨 At Risk'}
                                 </span>
                               </td>
                             </tr>
