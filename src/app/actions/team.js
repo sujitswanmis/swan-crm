@@ -1284,5 +1284,76 @@ export async function restoreAdminSession(restoreToken) {
   }
 }
 
+/**
+ * Grant Smart Checklist (My Checklists) & Delegation Tasks (To Me, By Me) to all approved users
+ */
+export async function grantChecklistAndDelegationToAllApprovedUsers() {
+  const adminClient = getAdminClient();
+  try {
+    const { data: users, error } = await adminClient
+      .from('user_roles')
+      .select('user_id, emp_name, email, role, module_access, is_approved, emp_status')
+      .eq('is_approved', true);
+
+    if (error) throw error;
+
+    let updatedCount = 0;
+    for (const u of (users || [])) {
+      const currentAccess = u.module_access || {};
+      const isRoleAdminOrMgr = ['admin', 'Admin', 'manager', 'hod'].includes(u.role);
+
+      // Checklist module access
+      const existingChecklist = currentAccess.checklist || {};
+      const existingChecklistSubs = existingChecklist.sub_items || {};
+      const checklistAccess = {
+        view: true,
+        add: true,
+        edit: true,
+        delete: existingChecklist.delete === true || isRoleAdminOrMgr,
+        sub_items: {
+          ...existingChecklistSubs,
+          my_checklists: { view: true, add: true, edit: true, delete: false },
+          templates: existingChecklistSubs.templates !== undefined ? existingChecklistSubs.templates : { view: isRoleAdminOrMgr, add: isRoleAdminOrMgr, edit: isRoleAdminOrMgr, delete: isRoleAdminOrMgr },
+          compliance: existingChecklistSubs.compliance !== undefined ? existingChecklistSubs.compliance : { view: isRoleAdminOrMgr, add: isRoleAdminOrMgr, edit: isRoleAdminOrMgr, delete: false }
+        }
+      };
+
+      // Delegation module access
+      const existingDelegation = currentAccess.delegation || {};
+      const existingDelegationSubs = existingDelegation.sub_items || {};
+      const delegationAccess = {
+        view: true,
+        add: true,
+        edit: true,
+        delete: existingDelegation.delete === true || isRoleAdminOrMgr,
+        sub_items: {
+          ...existingDelegationSubs,
+          to_me: { view: true, add: true, edit: true, delete: false },
+          by_me: { view: true, add: true, edit: true, delete: false },
+          all: existingDelegationSubs.all !== undefined ? existingDelegationSubs.all : { view: isRoleAdminOrMgr, add: isRoleAdminOrMgr, edit: isRoleAdminOrMgr, delete: false }
+        }
+      };
+
+      const updatedModuleAccess = {
+        ...currentAccess,
+        checklist: checklistAccess,
+        delegation: delegationAccess
+      };
+
+      const { error: updateErr } = await adminClient
+        .from('user_roles')
+        .update({ module_access: updatedModuleAccess })
+        .eq('user_id', u.user_id);
+
+      if (!updateErr) updatedCount++;
+    }
+
+    return { success: true, updatedCount, totalApprovedUsers: (users || []).length };
+  } catch (err) {
+    console.error('Error granting checklist and delegation access:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 
 
