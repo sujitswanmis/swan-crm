@@ -1,92 +1,74 @@
 [
   {
-    "id": "hol_1",
+    "id": "b390cabd-e7e6-4681-8f94-7a9d566bcdaa",
     "date": "2026-01-26",
     "name": "Republic Day",
     "type": "NATIONAL"
   },
   {
-    "id": "hol_2",
-    "date": "2026-03-03",
+    "id": "4483de43-1ce5-4b71-93f0-5cf448c6ca17",
+    "date": "2026-03-04",
     "name": "Holi",
-    "type": "FESTIVAL"
-  },
-  {
-    "id": "hol_3",
-    "date": "2026-03-21",
-    "name": "Eid-ul-Fitr",
-    "type": "FESTIVAL"
-  },
-  {
-    "id": "hol_4",
-    "date": "2026-04-03",
-    "name": "Good Friday",
-    "type": "FESTIVAL"
-  },
-  {
-    "id": "hol_5",
-    "date": "2026-04-14",
-    "name": "Dr. Ambedkar Jayanti",
-    "type": "REGIONAL"
-  },
-  {
-    "id": "hol_6",
-    "date": "2026-05-01",
-    "name": "May Day / Labor Day",
     "type": "NATIONAL"
   },
   {
-    "id": "hol_7",
-    "date": "2026-05-27",
-    "name": "Bakrid / Eid-ul-Adha",
-    "type": "FESTIVAL"
+    "id": "d0a9e1e0-476c-478a-8a79-b5f15bbe34cd",
+    "date": "2026-03-21",
+    "name": "Eid-ul-Fitr",
+    "type": "NATIONAL"
   },
   {
-    "id": "hol_8",
+    "id": "070200ad-9739-4142-97c6-e25e0432d412",
+    "date": "2026-04-14",
+    "name": "Dr. Ambedkar Jayanti",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "d3fcb1e4-c5bb-436b-b8ab-1672b023200b",
+    "date": "2026-05-01",
+    "name": "May Day / Labour Day",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "70670de6-336d-4dc8-8961-14faf9fa1258",
+    "date": "2026-05-28",
+    "name": "Bakrid / Eid-al-Adha",
+    "type": "NATIONAL"
+  },
+  {
+    "id": "e496ba61-4928-4c1d-a640-987f7b5bd91c",
     "date": "2026-08-15",
     "name": "Independence Day",
     "type": "NATIONAL"
   },
   {
-    "id": "hol_10",
+    "id": "17b25198-5c68-4ddf-86a5-b94c597120df",
     "date": "2026-10-02",
     "name": "Mahatma Gandhi Jayanti",
     "type": "NATIONAL"
   },
   {
-    "id": "hol_11",
+    "id": "9171847a-51d9-499b-80fe-92f99fffd45f",
     "date": "2026-10-20",
     "name": "Dussehra / Vijayadashami",
-    "type": "FESTIVAL"
+    "type": "NATIONAL"
   },
   {
-    "id": "hol_12",
+    "id": "7314881e-ef8b-476a-ba45-139eef152e4d",
     "date": "2026-11-08",
     "name": "Diwali / Deepavali",
-    "type": "FESTIVAL"
+    "type": "NATIONAL"
   },
   {
-    "id": "hol_13",
-    "date": "2026-11-09",
-    "name": "Govardhan Puja",
-    "type": "FESTIVAL"
-  },
-  {
-    "id": "hol_14",
-    "date": "2026-11-10",
-    "name": "Bhai Dooj",
-    "type": "FESTIVAL"
-  },
-  {
-    "id": "hol_15",
+    "id": "d24f8892-9dca-4242-9116-31aae875473f",
     "date": "2026-11-24",
     "name": "Guru Nanak Jayanti",
-    "type": "FESTIVAL"
+    "type": "NATIONAL"
   },
   {
-    "id": "hol_16",
+    "id": "d6546500-aa6a-43f2-9228-8dc61b3039a9",
     "date": "2026-12-25",
     "name": "Christmas Day",
-    "type": "FESTIVAL"
+    "type": "NATIONAL"
   }
 ]

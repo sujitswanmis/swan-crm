@@ -791,105 +791,153 @@ export async function getChecklistComplianceReport({
 // 4. MANUAL COMPANY HOLIDAYS MANAGEMENT
 // ==========================================
 
-export async function getCompanyHolidays() {
+export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  try {
+    const { data: dbHolidays, error } = await adminClient
+      .from('holiday_master')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('holiday_date', { ascending: true });
+
+    if (!error && Array.isArray(dbHolidays) && dbHolidays.length > 0) {
+      const mapped = dbHolidays.map(h => ({
+        id: h.id,
+        date: h.holiday_date,
+        name: h.holiday_name,
+        type: h.holiday_type || 'NATIONAL'
+      }));
+      try {
+        await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(mapped, null, 2), 'utf8');
+      } catch (_) {}
+      return { success: true, data: mapped };
+    }
+
+    // If Supabase table is empty, seed with DEFAULT_HOLIDAYS_LIST
+    if (!error && Array.isArray(dbHolidays) && dbHolidays.length === 0) {
+      const seedPayload = DEFAULT_HOLIDAYS_LIST.map(h => ({
+        tenant_id: tenantId,
+        holiday_date: h.date,
+        holiday_name: h.name,
+        holiday_type: h.type || 'NATIONAL'
+      }));
+      const { data: seeded, error: seedErr } = await adminClient
+        .from('holiday_master')
+        .insert(seedPayload)
+        .select();
+
+      if (!seedErr && Array.isArray(seeded) && seeded.length > 0) {
+        const mapped = seeded.map(h => ({
+          id: h.id,
+          date: h.holiday_date,
+          name: h.holiday_name,
+          type: h.holiday_type || 'NATIONAL'
+        }));
+        try {
+          await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(mapped, null, 2), 'utf8');
+        } catch (_) {}
+        return { success: true, data: mapped };
+      }
+    }
+  } catch (dbErr) {
+    console.warn('Supabase holiday_master fetch error, using local fallback:', dbErr.message);
+  }
+
+  // Fallback to local JSON file
   try {
     const raw = await fs.readFile(HOLIDAYS_FILE_PATH, 'utf8');
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
+    if (Array.isArray(parsed) && parsed.length > 0) {
       return { success: true, data: parsed };
     }
-  } catch (err) {
-    try {
-      const initial = DEFAULT_HOLIDAYS_LIST.map((h, idx) => ({
-        id: `hol_${Date.now()}_${idx}`,
-        date: h.date,
-        name: h.name,
-        type: 'NATIONAL'
-      }));
-      await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(initial, null, 2), 'utf8');
-      return { success: true, data: initial };
-    } catch (e) {
-      console.warn('Error creating holidays config file:', e.message);
-    }
-  }
+  } catch (_) {}
+
   return { success: true, data: DEFAULT_HOLIDAYS_LIST };
 }
 
-export async function saveCompanyHoliday(holidayData) {
+export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
   try {
     if (!holidayData.date || !holidayData.name?.trim()) {
       return { success: false, error: 'Holiday date and name are required' };
     }
 
-    const holidaysRes = await getCompanyHolidays();
-    let holidays = holidaysRes.data || [];
+    const payload = {
+      tenant_id: tenantId,
+      holiday_date: holidayData.date,
+      holiday_name: (holidayData.name || '').trim(),
+      holiday_type: holidayData.type || 'COMPANY'
+    };
 
-    if (holidayData.id) {
-      // Edit existing
-      const idx = holidays.findIndex(h => h.id === holidayData.id);
-      if (idx >= 0) {
-        holidays[idx] = {
-          ...holidays[idx],
-          date: holidayData.date,
-          name: (holidayData.name || '').trim(),
-          type: holidayData.type || 'COMPANY',
-          description: (holidayData.description || '').trim()
-        };
-      } else {
-        holidays.push({
-          id: holidayData.id,
-          date: holidayData.date,
-          name: (holidayData.name || '').trim(),
-          type: holidayData.type || 'COMPANY',
-          description: (holidayData.description || '').trim()
-        });
-      }
-    } else {
-      // Add new
-      holidays.push({
-        id: `hol_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        date: holidayData.date,
-        name: (holidayData.name || '').trim(),
-        type: holidayData.type || 'COMPANY',
-        description: (holidayData.description || '').trim()
+    if (holidayData.id && typeof holidayData.id === 'string' && holidayData.id.includes('-')) {
+      payload.id = holidayData.id;
+    }
+
+    const { error: upsertErr } = await adminClient
+      .from('holiday_master')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (upsertErr) {
+      console.warn('Error upserting holiday into Supabase:', upsertErr.message);
+      await adminClient.from('holiday_master').insert({
+        tenant_id: tenantId,
+        holiday_date: holidayData.date,
+        holiday_name: (holidayData.name || '').trim(),
+        holiday_type: holidayData.type || 'COMPANY'
       });
     }
 
-    // Sort by date ascending
-    holidays.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(holidays, null, 2), 'utf8');
-    return { success: true, data: holidays };
+    return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error saving holiday:', err.message);
     return { success: false, error: err.message };
   }
 }
 
-export async function deleteCompanyHoliday(holidayId) {
+export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
   try {
-    const holidaysRes = await getCompanyHolidays();
-    let holidays = holidaysRes.data || [];
+    if (holidayId && typeof holidayId === 'string' && holidayId.includes('-')) {
+      await adminClient
+        .from('holiday_master')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('id', holidayId);
+    } else {
+      await adminClient
+        .from('holiday_master')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('holiday_date', holidayId);
+    }
 
-    holidays = holidays.filter(h => h.id !== holidayId && h.date !== holidayId);
-    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(holidays, null, 2), 'utf8');
-    return { success: true, data: holidays };
+    return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error deleting holiday:', err.message);
     return { success: false, error: err.message };
   }
 }
 
-export async function resetCompanyHolidaysToDefault() {
+export async function resetCompanyHolidaysToDefault(tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
   try {
-    const initial = DEFAULT_HOLIDAYS_LIST.map((h, idx) => ({
-      id: `hol_${Date.now()}_${idx}`,
-      date: h.date,
-      name: h.name,
-      type: 'NATIONAL'
+    await adminClient
+      .from('holiday_master')
+      .delete()
+      .eq('tenant_id', tenantId);
+
+    const seedPayload = DEFAULT_HOLIDAYS_LIST.map(h => ({
+      tenant_id: tenantId,
+      holiday_date: h.date,
+      holiday_name: h.name,
+      holiday_type: h.type || 'NATIONAL'
     }));
-    await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(initial, null, 2), 'utf8');
-    return { success: true, data: initial };
+
+    await adminClient
+      .from('holiday_master')
+      .insert(seedPayload);
+
+    return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error resetting holidays:', err.message);
     return { success: false, error: err.message };
