@@ -373,8 +373,57 @@ export async function recordUserActivityHeartbeat({
 // -------------------------------------------------------------
 // 3. AGENT BREAK MANAGEMENT (START & END BREAKS)
 // -------------------------------------------------------------
+function parseBreaksFromAuditLogs(logs = []) {
+  const userBreaksMap = {};
+
+  logs.forEach(log => {
+    const email = (log.email || '').toLowerCase();
+    if (!email) return;
+    if (!userBreaksMap[email]) {
+      userBreaksMap[email] = { breaks: [], currentBreak: null };
+    }
+
+    const details = log.details || {};
+    const breakType = details.breakType || (log.target && log.target.includes('started ') ? log.target.split('started ')[1].split(' at ')[0] : 'Break');
+    const breakIcon = details.breakIcon || '☕';
+    const timeIso = log.created_at;
+    const timeFormatted = new Date(timeIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+    if (log.action === 'Start Break') {
+      userBreaksMap[email].currentBreak = {
+        id: details.breakId || log.id,
+        type: breakType,
+        icon: breakIcon,
+        startTime: details.startTime || timeIso,
+        startTimeFormatted: details.startTimeFormatted || timeFormatted
+      };
+    } else if (log.action === 'End Break') {
+      const cur = userBreaksMap[email].currentBreak;
+      const startTime = cur?.startTime || details.startTime || timeIso;
+      const endTime = details.endTime || timeIso;
+      const durationSeconds = details.durationSeconds || Math.max(1, Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000));
+
+      userBreaksMap[email].breaks.push({
+        id: details.breakId || log.id,
+        type: details.breakType || cur?.type || breakType,
+        icon: details.breakIcon || cur?.icon || breakIcon,
+        startTime,
+        startTimeFormatted: cur?.startTimeFormatted || new Date(startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+        endTime,
+        endTimeFormatted: details.endTimeFormatted || new Date(endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+        durationSeconds,
+        durationFormatted: details.durationFormatted || formatDuration(durationSeconds)
+      });
+      userBreaksMap[email].currentBreak = null;
+    }
+  });
+
+  return userBreaksMap;
+}
+
 export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = '☕', userEmail = '' }) {
   try {
+    const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     const email = user?.email || userEmail;
@@ -383,28 +432,15 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
     const today = getOfficeTodayDateStr();
     const nowIso = new Date().toISOString();
 
-    await ensureConfigFile(ACTIVITY_FILE_PATH, {});
-    let activityData = {};
+    let empName = user?.user_metadata?.full_name || (email ? email.split('@')[0] : 'Employee');
     try {
-      const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
-      activityData = JSON.parse(content || '{}');
-    } catch {
-      activityData = {};
-    }
-
-    if (!activityData[today]) activityData[today] = {};
-    const userKey = user?.id || email;
-    const existing = activityData[today][userKey] || {
-      userId: user?.id || null,
-      email: email,
-      empName: email ? email.split('@')[0] : 'Employee',
-      activeSeconds: 0,
-      idleSeconds: 0,
-      firstSeen: nowIso,
-      lastSeen: nowIso,
-      status: 'working',
-      breaks: []
-    };
+      const { data: roleData } = await adminClient
+        .from('user_roles')
+        .select('emp_name')
+        .eq('email', email)
+        .maybeSingle();
+      if (roleData?.emp_name) empName = roleData.emp_name;
+    } catch (e) {}
 
     const newBreak = {
       id: `brk_${Date.now()}`,
@@ -414,18 +450,42 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
       startTimeFormatted: new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
     };
 
-    existing.currentBreak = newBreak;
-    existing.status = 'on_break';
-    existing.lastSeen = nowIso;
-    activityData[today][userKey] = existing;
-
-    await fs.writeFile(ACTIVITY_FILE_PATH, JSON.stringify(activityData, null, 2), 'utf-8');
-
-    // Audit log
+    // 1. Audit Log in Supabase (Primary Source of Truth)
     try {
       const { logAuditAction } = await import('@/app/actions/audit');
-      await logAuditAction('Start Break', `${existing.empName} started ${breakType} at ${newBreak.startTimeFormatted}`);
-    } catch (e) { /* ignore */ }
+      await logAuditAction('Start Break', `${empName} started ${breakType} at ${newBreak.startTimeFormatted}`, {
+        breakType,
+        breakIcon,
+        startTime: nowIso,
+        startTimeFormatted: newBreak.startTimeFormatted,
+        breakId: newBreak.id
+      });
+    } catch (e) {
+      console.error('Failed to log start break:', e);
+    }
+
+    // 2. Update user_daily_activity status
+    try {
+      await adminClient.from('user_daily_activity').upsert({
+        user_id: user?.id || null,
+        email,
+        emp_name: empName,
+        activity_date: today,
+        status: 'on_break',
+        last_active: nowIso,
+        updated_at: nowIso
+      }, { onConflict: 'email,activity_date' });
+    } catch (e) {}
+
+    // 3. Update user_sessions status
+    try {
+      if (user?.id) {
+        await adminClient.from('user_sessions').update({
+          last_active: nowIso,
+          is_active: true
+        }).eq('user_id', user.id);
+      }
+    } catch (e) {}
 
     return { success: true, currentBreak: newBreak };
   } catch (err) {
@@ -436,6 +496,7 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
 
 export async function endEmployeeBreak({ userEmail = '' } = {}) {
   try {
+    const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     const email = user?.email || userEmail;
@@ -444,51 +505,74 @@ export async function endEmployeeBreak({ userEmail = '' } = {}) {
     const today = getOfficeTodayDateStr();
     const nowIso = new Date().toISOString();
 
-    await ensureConfigFile(ACTIVITY_FILE_PATH, {});
-    let activityData = {};
+    let empName = user?.user_metadata?.full_name || (email ? email.split('@')[0] : 'Employee');
     try {
-      const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
-      activityData = JSON.parse(content || '{}');
-    } catch {
-      activityData = {};
-    }
+      const { data: roleData } = await adminClient
+        .from('user_roles')
+        .select('emp_name')
+        .eq('email', email)
+        .maybeSingle();
+      if (roleData?.emp_name) empName = roleData.emp_name;
+    } catch (e) {}
 
-    if (!activityData[today]) activityData[today] = {};
-    const userKey = user?.id || email;
-    const existing = activityData[today][userKey];
+    // 1. Fetch latest Start Break from audit_logs
+    const { data: breakLogs } = await adminClient
+      .from('audit_logs')
+      .select('*')
+      .in('action', ['Start Break', 'End Break'])
+      .eq('email', email)
+      .gte('created_at', `${today}T00:00:00.000Z`)
+      .order('created_at', { ascending: true });
 
-    if (!existing || !existing.currentBreak) {
-      return { success: true, message: 'No active break found' };
-    }
+    const breaksMap = parseBreaksFromAuditLogs(breakLogs || []);
+    const cur = breaksMap[email.toLowerCase()]?.currentBreak;
 
-    const cur = existing.currentBreak;
-    const durationSeconds = Math.max(1, Math.round((new Date(nowIso).getTime() - new Date(cur.startTime).getTime()) / 1000));
-    
+    const startTime = cur?.startTime || nowIso;
+    const durationSeconds = Math.max(1, Math.round((new Date(nowIso).getTime() - new Date(startTime).getTime()) / 1000));
+    const breakType = cur?.type || 'Break';
+    const breakIcon = cur?.icon || '☕';
+    const durationFormatted = formatDuration(durationSeconds);
+    const endTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
     const completedBreak = {
-      ...cur,
+      id: cur?.id || `brk_${Date.now()}`,
+      type: breakType,
+      icon: breakIcon,
+      startTime,
+      startTimeFormatted: cur?.startTimeFormatted || new Date(startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
       endTime: nowIso,
+      endTimeFormatted,
       durationSeconds,
-      endTimeFormatted: new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
-      durationFormatted: formatDuration(durationSeconds)
+      durationFormatted
     };
 
-    if (!Array.isArray(existing.breaks)) existing.breaks = [];
-    existing.breaks.push(completedBreak);
-    existing.idleSeconds = (existing.idleSeconds || 0) + durationSeconds;
-    existing.currentBreak = null;
-    existing.status = 'working';
-    existing.lastSeen = nowIso;
-
-    activityData[today][userKey] = existing;
-    await fs.writeFile(ACTIVITY_FILE_PATH, JSON.stringify(activityData, null, 2), 'utf-8');
-
-    // Audit log
+    // 2. Log End Break in Supabase audit_logs
     try {
       const { logAuditAction } = await import('@/app/actions/audit');
-      await logAuditAction('End Break', `${existing.empName} completed ${completedBreak.type} (${completedBreak.durationFormatted})`);
-    } catch (e) { /* ignore */ }
+      await logAuditAction('End Break', `${empName} completed ${breakType} (${durationFormatted})`, {
+        breakType,
+        breakIcon,
+        startTime,
+        endTime: nowIso,
+        endTimeFormatted,
+        durationSeconds,
+        durationFormatted,
+        breakId: completedBreak.id
+      });
+    } catch (e) {
+      console.error('Failed to log end break:', e);
+    }
 
-    return { success: true, completedBreak, todaySummary: existing };
+    // 3. Update user_daily_activity status to 'working'
+    try {
+      await adminClient.from('user_daily_activity').update({
+        status: 'working',
+        last_active: nowIso,
+        updated_at: nowIso
+      }).eq('email', email).eq('activity_date', today);
+    } catch (e) {}
+
+    return { success: true, completedBreak };
   } catch (err) {
     console.error('Error ending break:', err);
     return { success: false, error: err.message };
@@ -497,31 +581,29 @@ export async function endEmployeeBreak({ userEmail = '' } = {}) {
 
 export async function getCurrentEmployeeStatus(userEmail = '') {
   try {
+    const adminClient = getAdminClient();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     const email = user?.email || userEmail;
     if (!email && !user) return { success: false, error: 'Not authenticated' };
 
     const today = getOfficeTodayDateStr();
-    await ensureConfigFile(ACTIVITY_FILE_PATH, {});
-    let activityData = {};
-    try {
-      const content = await fs.readFile(ACTIVITY_FILE_PATH, 'utf-8');
-      activityData = JSON.parse(content || '{}');
-    } catch {
-      activityData = {};
-    }
+    const { data: breakLogs } = await adminClient
+      .from('audit_logs')
+      .select('*')
+      .in('action', ['Start Break', 'End Break'])
+      .eq('email', email)
+      .gte('created_at', `${today}T00:00:00.000Z`)
+      .order('created_at', { ascending: true });
 
-    const userKey = user?.id || email;
-    const existing = (activityData[today] && activityData[today][userKey]) || null;
+    const parsed = parseBreaksFromAuditLogs(breakLogs || []);
+    const userBreakInfo = parsed[email.toLowerCase()] || { breaks: [], currentBreak: null };
 
     return {
       success: true,
-      currentBreak: existing?.currentBreak || null,
-      breaks: existing?.breaks || [],
-      activeSeconds: existing?.activeSeconds || 0,
-      idleSeconds: existing?.idleSeconds || 0,
-      status: existing?.status || 'working'
+      currentBreak: userBreakInfo.currentBreak,
+      breaks: userBreakInfo.breaks,
+      status: userBreakInfo.currentBreak ? 'on_break' : 'working'
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -551,8 +633,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
     const dateStartIso = `${startDate}T00:00:00.000Z`;
     const dateEndIso = `${finalEndDate}T23:59:59.999Z`;
 
-    // ⚡ HIGH PERFORMANCE: Fetch all database tables & local files concurrently in parallel
-    const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult] = await Promise.allSettled([
+    // ⚡ HIGH PERFORMANCE: Fetch all database tables concurrently in parallel
+    const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult, breakLogsResult] = await Promise.allSettled([
       // 1. Approved team members
       adminClient
         .from('user_roles')
@@ -598,7 +680,16 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         .from('user_sessions')
         .select('id, user_id, email, is_active, created_at, last_active')
         .gte('last_active', dateStartIso)
-        .lte('last_active', dateEndIso)
+        .lte('last_active', dateEndIso),
+
+      // 6. Break events from audit_logs
+      adminClient
+        .from('audit_logs')
+        .select('*')
+        .in('action', ['Start Break', 'End Break'])
+        .gte('created_at', dateStartIso)
+        .lte('created_at', dateEndIso)
+        .order('created_at', { ascending: true })
     ]);
 
     // Process 1: Team Members
@@ -710,7 +801,11 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       });
     }
 
-    // 6. Build comprehensive roster combining all authorized employees + activity + sessions + audit_logs
+    // Process 6: Break Logs from Supabase audit_logs
+    const breakLogsData = (breakLogsResult.status === 'fulfilled' && breakLogsResult.value?.data) ? breakLogsResult.value.data : [];
+    const breaksAuditMap = parseBreaksFromAuditLogs(breakLogsData);
+
+    // 7. Build comprehensive roster combining all authorized employees + activity + sessions + audit_logs
     const processedEmails = new Set();
     const records = [];
 
@@ -729,8 +824,9 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       let activeSeconds = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
       let idleSeconds = Math.max(d.idle_seconds || 0, f.idleSeconds || 0);
       
-      const currentBreak = f.currentBreak || null;
-      const breaksList = Array.isArray(f.breaks) ? f.breaks : [];
+      const auditBreakInfo = breaksAuditMap[emailLower] || (emp.email ? breaksAuditMap[emp.email.toLowerCase()] : null) || { breaks: [], currentBreak: null };
+      const currentBreak = auditBreakInfo.currentBreak || f.currentBreak || null;
+      const breaksList = (auditBreakInfo.breaks && auditBreakInfo.breaks.length > 0) ? auditBreakInfo.breaks : (Array.isArray(f.breaks) ? f.breaks : []);
 
       // Calculate earliest firstSeen (In-Time)
       const allFirstCandidates = [auditFirst, f.firstSeen, d.created_at, sess ? (sess.created_at || sess.last_active) : null].filter(Boolean);
@@ -749,7 +845,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       }
 
       const status = currentBreak ? 'on_break' : (d.status || f.status || (sess && sess.is_active ? 'working' : 'offline'));
-      const hasActivityToday = activeSeconds > 0 || idleSeconds > 0 || !!sess || !!auditFirst || breaksList.length > 0;
+      const hasActivityToday = activeSeconds > 0 || idleSeconds > 0 || !!sess || !!auditFirst || breaksList.length > 0 || !!currentBreak;
 
       let liveStatus = 'offline';
       if (currentBreak) {
@@ -764,7 +860,11 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         }
       }
 
-      const recordedBreakSec = breaksList.reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
+      let ongoingBreakSec = 0;
+      if (currentBreak && currentBreak.startTime) {
+        ongoingBreakSec = Math.max(0, Math.floor((now - new Date(currentBreak.startTime).getTime()) / 1000));
+      }
+      const recordedBreakSec = breaksList.reduce((acc, b) => acc + (b.durationSeconds || 0), 0) + ongoingBreakSec;
       
       let activeScreenSec = 0;
       let idleAwaySec = 0;
