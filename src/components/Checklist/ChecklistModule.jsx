@@ -42,14 +42,14 @@ export default function ChecklistModule({
   userName = 'Employee',
   userEmail = '',
   moduleAccess = {},
-  initialSubTab = 'my_checklists',
+  initialSubTab = 'dashboard',
   onSubTabChange = null
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
 
-  // Tabs: 'my_checklists' | 'templates' | 'compliance' | 'holidays'
-  const [activeTab, setActiveTab] = useState(initialSubTab || 'my_checklists');
+  // Tabs: 'dashboard' | 'my_checklists' | 'templates' | 'compliance' | 'holidays'
+  const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
   const [selectedFrequency, setSelectedFrequency] = useState('DAILY');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -57,6 +57,27 @@ export default function ChecklistModule({
   const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
   const [templateStatusFilter, setTemplateStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [togglingStatusId, setTogglingStatusId] = useState(null);
+
+  // Sync activeTab when initialSubTab changes from parent
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    if (onSubTabChange) {
+      onSubTabChange(tabId);
+    }
+  };
+
+  // Performance Dashboard Filters & State
+  const [dashboardTimeframe, setDashboardTimeframe] = useState('THIS_MONTH'); // 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_30_DAYS' | 'ALL_TIME'
+  const [dashboardScope, setDashboardScope] = useState(isAdmin || isManager ? 'COMPANY_WIDE' : 'MY_PERFORMANCE'); // 'COMPANY_WIDE' | 'MY_TEAM' | 'MY_PERFORMANCE'
+  const [dashboardDeptFilter, setDashboardDeptFilter] = useState('ALL');
+  const [dashboardSearchEmployee, setDashboardSearchEmployee] = useState('');
+  const [dashboardLeaderboardScoreFilter, setDashboardLeaderboardScoreFilter] = useState('ALL');
 
   // View Mode for My Checklists: 'tiles' | 'table'
   const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
@@ -115,6 +136,228 @@ export default function ChecklistModule({
       complianceRate
     };
   }, [dashboardChecklists, isFutureDate]);
+
+  // Available distinct departments
+  const availableDepartments = useMemo(() => {
+    const set = new Set();
+    (employeesList || []).forEach(e => {
+      if (e.department) set.add(e.department);
+    });
+    (templates || []).forEach(t => {
+      if (t.department) set.add(t.department);
+    });
+    return Array.from(set).sort();
+  }, [employeesList, templates]);
+
+  // Analytics Dashboard Computation
+  const analyticsData = useMemo(() => {
+    const now = new Date();
+    let startDate = null;
+
+    if (dashboardTimeframe === 'THIS_WEEK') {
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() - 7);
+    } else if (dashboardTimeframe === 'THIS_MONTH') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (dashboardTimeframe === 'LAST_30_DAYS') {
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() - 30);
+    }
+
+    const filteredLogs = (complianceLogs || []).filter(log => {
+      if (!startDate) return true;
+      const logDate = log.submitted_at ? new Date(log.submitted_at) : null;
+      if (!logDate || isNaN(logDate.getTime())) return true;
+      return logDate >= startDate;
+    });
+
+    const userEmailClean = (userEmail || '').toLowerCase().trim();
+
+    // 1. Personal metrics for logged in user
+    const myLogs = filteredLogs.filter(l => (l.employee_email || '').toLowerCase().trim() === userEmailClean);
+    const myCompleted = myLogs.filter(l => l.status === 'COMPLETED').length;
+    const myOnTime = myLogs.filter(l => l.status === 'COMPLETED' && !l.delayInfo?.isDelayed).length;
+    const myDelayed = myLogs.filter(l => l.status === 'COMPLETED' && l.delayInfo?.isDelayed).length;
+    const myMissedToday = dashboardChecklists.filter(c => c.status !== 'COMPLETED' && c.delayInfo?.isExpired).length;
+    const myTotal = myCompleted + myMissedToday;
+    const myScore = myTotal > 0 ? Math.round((myOnTime / myTotal) * 100) : (myCompleted > 0 ? 100 : 0);
+
+    const myTemplatesGroup = new Map();
+    myLogs.forEach(l => {
+      const tId = l.template_id || l.template_title || 'Unknown';
+      if (!myTemplatesGroup.has(tId)) {
+        myTemplatesGroup.set(tId, {
+          title: l.template_title || 'Checklist',
+          frequency: l.frequency || 'DAILY',
+          department: l.department || 'General',
+          total: 0,
+          onTime: 0,
+          delayed: 0
+        });
+      }
+      const entry = myTemplatesGroup.get(tId);
+      entry.total += 1;
+      if (!l.delayInfo?.isDelayed) entry.onTime += 1;
+      else entry.delayed += 1;
+    });
+
+    const myChecklistsBreakdown = Array.from(myTemplatesGroup.values()).map(item => ({
+      ...item,
+      complianceRate: item.total > 0 ? Math.round((item.onTime / item.total) * 100) : 100
+    }));
+
+    // 2. Company / Team metrics (for Admin / Manager)
+    let companyScopeLogs = filteredLogs;
+    if (dashboardScope === 'MY_TEAM') {
+      const teamEmails = new Set(myReportingTeam.map(m => (m.email || '').toLowerCase().trim()));
+      teamEmails.add(userEmailClean);
+      companyScopeLogs = companyScopeLogs.filter(l => teamEmails.has((l.employee_email || '').toLowerCase().trim()));
+    }
+    if (dashboardDeptFilter !== 'ALL') {
+      companyScopeLogs = companyScopeLogs.filter(l => (l.department || '').toLowerCase() === dashboardDeptFilter.toLowerCase());
+    }
+
+    const companyCompleted = companyScopeLogs.filter(l => l.status === 'COMPLETED').length;
+    const companyOnTime = companyScopeLogs.filter(l => l.status === 'COMPLETED' && !l.delayInfo?.isDelayed).length;
+    const companyDelayed = companyScopeLogs.filter(l => l.status === 'COMPLETED' && l.delayInfo?.isDelayed).length;
+    const companyScore = companyCompleted > 0 ? Math.round((companyOnTime / companyCompleted) * 100) : 100;
+
+    const submittingEmployeesSet = new Set(companyScopeLogs.map(l => (l.employee_email || '').toLowerCase().trim()).filter(Boolean));
+
+    const deptGroup = new Map();
+    companyScopeLogs.forEach(l => {
+      const dept = l.department || 'General';
+      if (!deptGroup.has(dept)) {
+        deptGroup.set(dept, { name: dept, total: 0, onTime: 0, delayed: 0 });
+      }
+      const entry = deptGroup.get(dept);
+      entry.total += 1;
+      if (!l.delayInfo?.isDelayed) entry.onTime += 1;
+      else entry.delayed += 1;
+    });
+
+    const departmentStats = Array.from(deptGroup.values()).map(d => ({
+      ...d,
+      complianceRate: d.total > 0 ? Math.round((d.onTime / d.total) * 100) : 100
+    })).sort((a, b) => b.total - a.total);
+
+    const empMap = new Map();
+    (employeesList || []).forEach(emp => {
+      const eEmail = (emp.email || '').toLowerCase().trim();
+      if (eEmail) {
+        empMap.set(eEmail, {
+          email: eEmail,
+          name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || eEmail,
+          department: emp.department || 'General',
+          totalDone: 0,
+          onTime: 0,
+          delayed: 0
+        });
+      }
+    });
+
+    companyScopeLogs.forEach(l => {
+      const eEmail = (l.employee_email || '').toLowerCase().trim();
+      if (!eEmail) return;
+      if (!empMap.has(eEmail)) {
+        empMap.set(eEmail, {
+          email: eEmail,
+          name: l.employee_name || eEmail,
+          department: l.department || 'General',
+          totalDone: 0,
+          onTime: 0,
+          delayed: 0
+        });
+      }
+      const item = empMap.get(eEmail);
+      item.totalDone += 1;
+      if (!l.delayInfo?.isDelayed) item.onTime += 1;
+      else item.delayed += 1;
+    });
+
+    let leaderboard = Array.from(empMap.values())
+      .filter(emp => emp.totalDone > 0)
+      .map(emp => {
+        const complianceRate = emp.totalDone > 0 ? Math.round((emp.onTime / emp.totalDone) * 100) : 0;
+        let rating = 'EXCELLENT';
+        if (complianceRate >= 90) rating = 'STAR';
+        else if (complianceRate >= 75) rating = 'RELIABLE';
+        else rating = 'AT_RISK';
+
+        return {
+          ...emp,
+          complianceRate,
+          rating
+        };
+      })
+      .sort((a, b) => {
+        if (b.complianceRate !== a.complianceRate) return b.complianceRate - a.complianceRate;
+        return b.totalDone - a.totalDone;
+      });
+
+    if (dashboardSearchEmployee.trim()) {
+      const q = dashboardSearchEmployee.toLowerCase().trim();
+      leaderboard = leaderboard.filter(e => e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || e.department.toLowerCase().includes(q));
+    }
+
+    if (dashboardLeaderboardScoreFilter === 'HIGH') {
+      leaderboard = leaderboard.filter(e => e.complianceRate >= 90);
+    } else if (dashboardLeaderboardScoreFilter === 'MEDIUM') {
+      leaderboard = leaderboard.filter(e => e.complianceRate >= 70 && e.complianceRate < 90);
+    } else if (dashboardLeaderboardScoreFilter === 'LOW') {
+      leaderboard = leaderboard.filter(e => e.complianceRate < 70);
+    }
+
+    const templateDelayMap = new Map();
+    companyScopeLogs.forEach(l => {
+      const tTitle = l.template_title || 'Unknown';
+      if (!templateDelayMap.has(tTitle)) {
+        templateDelayMap.set(tTitle, { title: tTitle, frequency: l.frequency || 'DAILY', total: 0, delayed: 0, onTime: 0 });
+      }
+      const t = templateDelayMap.get(tTitle);
+      t.total += 1;
+      if (l.delayInfo?.isDelayed) t.delayed += 1;
+      else t.onTime += 1;
+    });
+
+    const topDelayedChecklists = Array.from(templateDelayMap.values())
+      .map(t => ({
+        ...t,
+        delayRate: t.total > 0 ? Math.round((t.delayed / t.total) * 100) : 0
+      }))
+      .sort((a, b) => b.delayed - a.delayed)
+      .slice(0, 5);
+
+    return {
+      myCompleted,
+      myOnTime,
+      myDelayed,
+      myMissedToday,
+      myScore,
+      myChecklistsBreakdown,
+      myRecentLogs: myLogs.slice(0, 10),
+      companyCompleted,
+      companyOnTime,
+      companyDelayed,
+      companyScore,
+      activeEmployeesCount: submittingEmployeesSet.size,
+      departmentStats,
+      leaderboard,
+      topDelayedChecklists
+    };
+  }, [
+    complianceLogs,
+    templates,
+    dashboardChecklists,
+    employeesList,
+    myReportingTeam,
+    userEmail,
+    dashboardTimeframe,
+    dashboardScope,
+    dashboardDeptFilter,
+    dashboardSearchEmployee,
+    dashboardLeaderboardScoreFilter
+  ]);
 
   // Manual Holidays State
   const [holidaysList, setHolidaysList] = useState([]);
@@ -180,7 +423,11 @@ export default function ChecklistModule({
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'my_checklists') {
+    if (activeTab === 'dashboard') {
+      loadCompliance();
+      loadTemplates();
+      loadEmployeeDashboard(dashboardDate);
+    } else if (activeTab === 'my_checklists') {
       loadEmployeeDashboard(dashboardDate);
     } else if (activeTab === 'templates') {
       loadTemplates();
@@ -752,9 +999,19 @@ export default function ChecklistModule({
           )}
           <button
             onClick={() => {
-              if (activeTab === 'my_checklists') loadEmployeeDashboard();
-              else if (activeTab === 'templates') loadTemplates();
-              else loadCompliance();
+              if (activeTab === 'dashboard') {
+                loadCompliance();
+                loadTemplates();
+                loadEmployeeDashboard();
+              } else if (activeTab === 'my_checklists') {
+                loadEmployeeDashboard();
+              } else if (activeTab === 'templates') {
+                loadTemplates();
+              } else if (activeTab === 'compliance') {
+                loadCompliance();
+              } else {
+                loadHolidays();
+              }
             }}
             style={{
               background: 'rgba(255,255,255,0.15)',
@@ -774,14 +1031,33 @@ export default function ChecklistModule({
       </div>
 
       {/* Main Tab Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
         <button
-          onClick={() => setActiveTab('my_checklists')}
+          onClick={() => handleTabChange('dashboard')}
           style={{
             background: 'none',
             border: 'none',
             padding: '0.6rem 1.2rem',
-            fontWeight: 600,
+            fontWeight: 700,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'dashboard' ? '3px solid #3b82f6' : '3px solid transparent',
+            color: activeTab === 'dashboard' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <TrendingUp size={18} /> Checklist Dashboard
+        </button>
+
+        <button
+          onClick={() => handleTabChange('my_checklists')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '0.6rem 1.2rem',
+            fontWeight: 700,
             fontSize: '0.95rem',
             cursor: 'pointer',
             borderBottom: activeTab === 'my_checklists' ? '3px solid #3b82f6' : '3px solid transparent',
@@ -796,12 +1072,12 @@ export default function ChecklistModule({
 
         {canAccessTemplates && (
           <button
-            onClick={() => setActiveTab('templates')}
+            onClick={() => handleTabChange('templates')}
             style={{
               background: 'none',
               border: 'none',
               padding: '0.6rem 1.2rem',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: '0.95rem',
               cursor: 'pointer',
               borderBottom: activeTab === 'templates' ? '3px solid #3b82f6' : '3px solid transparent',
@@ -817,12 +1093,12 @@ export default function ChecklistModule({
 
         {canAccessCompliance && (
           <button
-            onClick={() => setActiveTab('compliance')}
+            onClick={() => handleTabChange('compliance')}
             style={{
               background: 'none',
               border: 'none',
               padding: '0.6rem 1.2rem',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: '0.95rem',
               cursor: 'pointer',
               borderBottom: activeTab === 'compliance' ? '3px solid #3b82f6' : '3px solid transparent',
@@ -837,12 +1113,12 @@ export default function ChecklistModule({
         )}
 
         <button
-          onClick={() => setActiveTab('holidays')}
+          onClick={() => handleTabChange('holidays')}
           style={{
             background: 'none',
             border: 'none',
             padding: '0.6rem 1.2rem',
-            fontWeight: 600,
+            fontWeight: 700,
             fontSize: '0.95rem',
             cursor: 'pointer',
             borderBottom: activeTab === 'holidays' ? '3px solid #f59e0b' : '3px solid transparent',
@@ -856,38 +1132,829 @@ export default function ChecklistModule({
         </button>
       </div>
 
-      {/* Frequency Pill Bar */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', marginRight: '0.5rem' }}>
-          Schedule Frequencies:
-        </span>
-        {FREQUENCIES_CONFIG.map(freq => {
-          const isSelected = selectedFrequency === freq.id;
-          return (
-            <button
-              key={freq.id}
-              onClick={() => setSelectedFrequency(freq.id)}
-              style={{
-                background: isSelected ? freq.badgeColor : 'var(--bg-secondary, #f8fafc)',
-                color: isSelected ? '#ffffff' : 'var(--text-primary, #1e293b)',
-                border: isSelected ? `1px solid ${freq.badgeColor}` : '1px solid var(--border-color, #e2e8f0)',
-                padding: '0.45rem 0.9rem',
-                borderRadius: '20px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                cursor: 'pointer',
+      {/* Frequency Pill Bar (for My Checklists, Templates, Compliance) */}
+      {activeTab !== 'dashboard' && activeTab !== 'holidays' && (
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', marginRight: '0.5rem' }}>
+            Schedule Frequencies:
+          </span>
+          {FREQUENCIES_CONFIG.map(freq => {
+            const isSelected = selectedFrequency === freq.id;
+            return (
+              <button
+                key={freq.id}
+                onClick={() => setSelectedFrequency(freq.id)}
+                style={{
+                  background: isSelected ? freq.badgeColor : 'var(--bg-secondary, #f8fafc)',
+                  color: isSelected ? '#ffffff' : 'var(--text-primary, #1e293b)',
+                  border: isSelected ? `1px solid ${freq.badgeColor}` : '1px solid var(--border-color, #e2e8f0)',
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '20px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>{freq.icon}</span>
+                <span>{freq.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 0: CHECKLIST DASHBOARD (PERFORMANCE & ANALYTICS)                      */}
+      {/* ========================================================================= */}
+      {activeTab === 'dashboard' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Top Filter & Scope Header */}
+          <div style={{
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            borderRadius: '12px',
+            padding: '1.25rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <TrendingUp size={22} color="#3b82f6" /> Checklist Performance & Compliance Analytics
+              </h2>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                {dashboardScope === 'MY_PERFORMANCE'
+                  ? `Personal compliance score, on-time punctuality & completion rate for ${userName}`
+                  : `Company-wide accountability overview, team rankings & department compliance`}
+              </p>
+            </div>
+
+            {/* Controls: Scope Switcher & Timeframe Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {/* Scope Switcher (for Admin/Manager) */}
+              {isManager && (
+                <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDashboardScope('COMPANY_WIDE')}
+                    style={{
+                      background: dashboardScope === 'COMPANY_WIDE' ? '#3b82f6' : 'transparent',
+                      color: dashboardScope === 'COMPANY_WIDE' ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    <Building size={14} /> Company
+                  </button>
+                  {isReportingManager && (
+                    <button
+                      type="button"
+                      onClick={() => setDashboardScope('MY_TEAM')}
+                      style={{
+                        background: dashboardScope === 'MY_TEAM' ? '#3b82f6' : 'transparent',
+                        color: dashboardScope === 'MY_TEAM' ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.75rem',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      <User size={14} /> My Team
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDashboardScope('MY_PERFORMANCE')}
+                    style={{
+                      background: dashboardScope === 'MY_PERFORMANCE' ? '#3b82f6' : 'transparent',
+                      color: dashboardScope === 'MY_PERFORMANCE' ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    <Award size={14} /> My Score
+                  </button>
+                </div>
+              )}
+
+              {/* Timeframe Selector */}
+              <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
+                {[
+                  { id: 'THIS_WEEK', label: 'This Week' },
+                  { id: 'THIS_MONTH', label: 'This Month' },
+                  { id: 'LAST_30_DAYS', label: 'Last 30 Days' },
+                  { id: 'ALL_TIME', label: 'All Time' }
+                ].map(tf => (
+                  <button
+                    key={tf.id}
+                    type="button"
+                    onClick={() => setDashboardTimeframe(tf.id)}
+                    style={{
+                      background: dashboardTimeframe === tf.id ? '#ffffff' : 'transparent',
+                      color: dashboardTimeframe === tf.id ? '#0f172a' : 'var(--text-secondary, #64748b)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.65rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: dashboardTimeframe === tf.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    {tf.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Department filter (when Company mode) */}
+              {dashboardScope === 'COMPANY_WIDE' && availableDepartments.length > 0 && (
+                <select
+                  value={dashboardDeptFilter}
+                  onChange={(e) => setDashboardDeptFilter(e.target.value)}
+                  style={{
+                    padding: '0.4rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    background: 'var(--bg-secondary, #f8fafc)',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary, #1e293b)'
+                  }}
+                >
+                  <option value="ALL">All Departments</option>
+                  {availableDepartments.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          {/* KPI METRIC CARDS ROW */}
+          {dashboardScope === 'MY_PERFORMANCE' ? (
+            /* 1. PERSONAL METRIC CARDS (EMPLOYEE VIEW) */
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+              {/* Card 1: My Compliance Score */}
+              <div style={{
+                background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                border: '1px solid #bfdbfe',
+                borderRadius: '12px',
+                padding: '1.2rem',
                 display: 'flex',
-                alignItems: 'center',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                boxShadow: '0 2px 5px rgba(59,130,246,0.08)'
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>🏆 MY COMPLIANCE SCORE</span>
+                  <span style={{ fontSize: '0.75rem', background: '#3b82f6', color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
+                    {analyticsData.myScore >= 90 ? '🌟 Star' : analyticsData.myScore >= 75 ? '👍 Good' : '⚠️ Low'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#1d4ed8' }}>
+                  {analyticsData.myScore}%
+                </div>
+                <div style={{ width: '100%', height: '7px', background: '#bfdbfe', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${analyticsData.myScore}%`, height: '100%', background: '#2563eb', transition: 'width 0.4s ease' }} />
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '0.2rem' }}>
+                  Based on on-time submissions vs total slots
+                </div>
+              </div>
+
+              {/* Card 2: Total Completed */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
                 gap: '0.4rem',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <span>{freq.icon}</span>
-              <span>{freq.label}</span>
-            </button>
-          );
-        })}
-      </div>
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <CheckSquare size={16} color="#3b82f6" /> TOTAL SUBMISSIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.myCompleted}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Checklists completed in timeframe
+                </div>
+              </div>
+
+              {/* Card 3: On-Time */}
+              <div style={{
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <CheckCircle2 size={16} color="#16a34a" /> ON-TIME SUBMISSIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#15803d' }}>
+                  {analyticsData.myOnTime}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#166534' }}>
+                  Submitted within buffer window
+                </div>
+              </div>
+
+              {/* Card 4: Delayed */}
+              <div style={{
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Clock size={16} color="#d97706" /> DELAYED SUBMISSIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#b45309' }}>
+                  {analyticsData.myDelayed}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                  Submitted after target due time
+                </div>
+              </div>
+
+              {/* Card 5: Missed Today */}
+              <div style={{
+                background: analyticsData.myMissedToday > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
+                border: analyticsData.myMissedToday > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: analyticsData.myMissedToday > 0 ? '#991b1b' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <AlertTriangle size={16} color={analyticsData.myMissedToday > 0 ? '#dc2626' : '#94a3b8'} /> MISSED / EXPIRED TODAY
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: analyticsData.myMissedToday > 0 ? '#dc2626' : 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.myMissedToday}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: analyticsData.myMissedToday > 0 ? '#b91c1c' : 'var(--text-secondary, #64748b)' }}>
+                  Slots expired without submission
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* 2. COMPANY / TEAM METRIC CARDS (ADMIN & MANAGER VIEW) */
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+              {/* Card 1: Company Compliance Score */}
+              <div style={{
+                background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                border: '1px solid #bfdbfe',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                boxShadow: '0 2px 5px rgba(59,130,246,0.08)'
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>🏢 OVERALL COMPLIANCE</span>
+                  <span style={{ fontSize: '0.75rem', background: '#3b82f6', color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
+                    {analyticsData.companyScore >= 90 ? '🌟 Healthy' : analyticsData.companyScore >= 75 ? '⚠️ Moderate' : '🚨 Critical'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#1d4ed8' }}>
+                  {analyticsData.companyScore}%
+                </div>
+                <div style={{ width: '100%', height: '7px', background: '#bfdbfe', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${analyticsData.companyScore}%`, height: '100%', background: '#2563eb', transition: 'width 0.4s ease' }} />
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '0.2rem' }}>
+                  {analyticsData.companyOnTime} on-time out of {analyticsData.companyCompleted} total
+                </div>
+              </div>
+
+              {/* Card 2: Total Completed */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Layers size={16} color="#3b82f6" /> TOTAL SUBMISSIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.companyCompleted}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Across all active templates
+                </div>
+              </div>
+
+              {/* Card 3: On-Time Rate */}
+              <div style={{
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <CheckCircle2 size={16} color="#16a34a" /> ON-TIME EXECUTIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#15803d' }}>
+                  {analyticsData.companyOnTime}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#166534' }}>
+                  Punctual submissions
+                </div>
+              </div>
+
+              {/* Card 4: Delayed Executions */}
+              <div style={{
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Clock size={16} color="#d97706" /> DELAYED EXECUTIONS
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#b45309' }}>
+                  {analyticsData.companyDelayed}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                  Submitted past buffer window
+                </div>
+              </div>
+
+              {/* Card 5: Active Participating Employees */}
+              <div style={{
+                background: 'var(--bg-secondary, #f8fafc)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <User size={16} color="#6366f1" /> PARTICIPATING STAFF
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.activeEmployeesCount}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Active submitting employees
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MIDDLE SECTION: BREAKDOWN CARDS */}
+          {dashboardScope === 'MY_PERFORMANCE' ? (
+            /* Personal Breakdown Table & Recent Activity */
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
+              {/* Left: My Checklists Breakdown */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+              }}>
+                <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>📋</span> My Checklists Performance Breakdown
+                </h3>
+
+                {analyticsData.myChecklistsBreakdown.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                    No submission history recorded in this timeframe.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {analyticsData.myChecklistsBreakdown.map((item, idx) => (
+                      <div key={idx} style={{
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        border: '1px solid var(--border-color, #e2e8f0)',
+                        borderRadius: '8px',
+                        padding: '0.75rem 1rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary, #0f172a)' }}>
+                            {item.title}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.15rem' }}>
+                            {item.frequency} • {item.department} • Total: {item.total} runs
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
+                          <span style={{
+                            fontSize: '0.85rem',
+                            fontWeight: 800,
+                            color: item.complianceRate >= 90 ? '#16a34a' : item.complianceRate >= 75 ? '#d97706' : '#dc2626'
+                          }}>
+                            {item.complianceRate}% On-Time
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                            {item.onTime} on-time, {item.delayed} delayed
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: My Recent Activity Timeline */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+              }}>
+                <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>🕒</span> My Recent Execution History
+                </h3>
+
+                {analyticsData.myRecentLogs.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                    No recent submissions found.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {analyticsData.myRecentLogs.map((log, idx) => (
+                      <div key={idx} style={{
+                        borderLeft: log.delayInfo?.isDelayed ? '3px solid #f59e0b' : '3px solid #10b981',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        padding: '0.6rem 0.85rem',
+                        borderRadius: '0 8px 8px 0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary, #0f172a)' }}>
+                            {log.template_title || 'Checklist Execution'}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.1rem' }}>
+                            {log.submitted_at ? new Date(log.submitted_at).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently'}
+                          </div>
+                        </div>
+
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '12px',
+                          background: log.delayInfo?.isDelayed ? '#fef3c7' : '#dcfce7',
+                          color: log.delayInfo?.isDelayed ? '#92400e' : '#166534'
+                        }}>
+                          {log.delayInfo?.isDelayed ? '⚠️ Delayed' : '✓ On-Time'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Company / Team Visualizations */
+            <>
+              {/* Department Compliance Grid & Delay Bottlenecks */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
+                {/* Department Compliance Distribution */}
+                <div style={{
+                  background: 'var(--card-bg, #ffffff)',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                }}>
+                  <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Building size={18} color="#3b82f6" /> Department-wise Compliance Distribution
+                  </h3>
+
+                  {analyticsData.departmentStats.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                      No department data available in this timeframe.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {analyticsData.departmentStats.map((dept, idx) => (
+                        <div key={idx} style={{
+                          background: 'var(--bg-secondary, #f8fafc)',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          borderRadius: '8px',
+                          padding: '0.75rem 1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.35rem'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary, #0f172a)' }}>
+                              🏢 {dept.name}
+                            </span>
+                            <span style={{
+                              fontWeight: 800,
+                              fontSize: '0.85rem',
+                              color: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#d97706' : '#dc2626'
+                            }}>
+                              {dept.complianceRate}% Compliance
+                            </span>
+                          </div>
+
+                          <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{
+                              width: `${dept.complianceRate}%`,
+                              height: '100%',
+                              background: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#f59e0b' : '#dc2626',
+                              transition: 'width 0.3s ease'
+                            }} />
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                            <span>Total: <strong>{dept.total}</strong></span>
+                            <span>On-Time: <strong style={{ color: '#16a34a' }}>{dept.onTime}</strong></span>
+                            <span>Delayed: <strong style={{ color: '#d97706' }}>{dept.delayed}</strong></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Top Delayed Checklists */}
+                <div style={{
+                  background: 'var(--card-bg, #ffffff)',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                }}>
+                  <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <AlertTriangle size={18} color="#f59e0b" /> Delay Hotspots (Attention Needed)
+                  </h3>
+
+                  {analyticsData.topDelayedChecklists.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                      No delayed checklists recorded. Great operational punctuality!
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                      {analyticsData.topDelayedChecklists.map((item, idx) => (
+                        <div key={idx} style={{
+                          background: 'var(--bg-secondary, #f8fafc)',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          borderRadius: '8px',
+                          padding: '0.75rem 1rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '0.5rem'
+                        }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary, #0f172a)' }}>
+                              {item.title}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.1rem' }}>
+                              Frequency: {item.frequency} • Total Executions: {item.total}
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{
+                              fontSize: '0.78rem',
+                              fontWeight: 800,
+                              background: '#fee2e2',
+                              color: '#991b1b',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '12px'
+                            }}>
+                              {item.delayed} Delayed ({item.delayRate}%)
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* BOTTOM SECTION: EMPLOYEE COMPLIANCE LEADERBOARD TABLE */}
+              <div style={{
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Award size={20} color="#f59e0b" /> Employee Compliance Leaderboard & Accountability Ranking
+                    </h3>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
+                      Rankings based on on-time checklist completion rate in the selected timeframe
+                    </p>
+                  </div>
+
+                  {/* Search and filter */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: '#94a3b8' }} />
+                      <input
+                        type="text"
+                        placeholder="Search employee..."
+                        value={dashboardSearchEmployee}
+                        onChange={(e) => setDashboardSearchEmployee(e.target.value)}
+                        style={{
+                          padding: '0.4rem 0.65rem 0.4rem 1.8rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #cbd5e1)',
+                          background: 'var(--bg-secondary, #f8fafc)',
+                          fontSize: '0.82rem',
+                          color: 'var(--text-primary, #1e293b)'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.15rem', borderRadius: '6px' }}>
+                      {[
+                        { id: 'ALL', label: 'All' },
+                        { id: 'HIGH', label: '⭐ >90%' },
+                        { id: 'MEDIUM', label: '⚠️ 70-90%' },
+                        { id: 'LOW', label: '🚨 <70%' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setDashboardLeaderboardScoreFilter(f.id)}
+                          style={{
+                            background: dashboardLeaderboardScoreFilter === f.id ? '#ffffff' : 'transparent',
+                            color: dashboardLeaderboardScoreFilter === f.id ? '#0f172a' : 'var(--text-secondary, #64748b)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {analyticsData.leaderboard.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                    No employee submission records found matching your filters.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '2px solid var(--border-color, #e2e8f0)' }}>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>RANK</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>EMPLOYEE</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>DEPARTMENT</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>TOTAL DONE</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>ON-TIME</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>DELAYED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>COMPLIANCE SCORE</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsData.leaderboard.map((emp, idx) => {
+                          const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                          return (
+                            <tr key={emp.email} style={{
+                              borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                              transition: 'background 0.15s ease'
+                            }}>
+                              <td style={{ padding: '0.75rem 1rem', fontWeight: 800, fontSize: '0.9rem' }}>
+                                {rankIcon}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem' }}>
+                                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary, #0f172a)' }}>
+                                  {emp.name}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                                  {emp.email}
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary, #334155)' }}>
+                                {emp.department}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem' }}>
+                                {emp.totalDone}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', color: '#16a34a' }}>
+                                {emp.onTime}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', color: '#d97706' }}>
+                                {emp.delayed}
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', minWidth: '150px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{
+                                      width: `${emp.complianceRate}%`,
+                                      height: '100%',
+                                      background: emp.complianceRate >= 90 ? '#16a34a' : emp.complianceRate >= 75 ? '#f59e0b' : '#dc2626'
+                                    }} />
+                                  </div>
+                                  <span style={{
+                                    fontWeight: 800,
+                                    fontSize: '0.85rem',
+                                    color: emp.complianceRate >= 90 ? '#16a34a' : emp.complianceRate >= 75 ? '#d97706' : '#dc2626',
+                                    minWidth: '38px',
+                                    textAlign: 'right'
+                                  }}>
+                                    {emp.complianceRate}%
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                                <span style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '12px',
+                                  background: emp.rating === 'STAR' ? '#dcfce7' : emp.rating === 'RELIABLE' ? '#fef3c7' : '#fee2e2',
+                                  color: emp.rating === 'STAR' ? '#166534' : emp.rating === 'RELIABLE' ? '#92400e' : '#991b1b'
+                                }}>
+                                  {emp.rating === 'STAR' ? '🌟 Star' : emp.rating === 'RELIABLE' ? '👍 Reliable' : '⚠️ At Risk'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: MY CHECKLISTS (EMPLOYEE EXECUTION STATION)                         */}

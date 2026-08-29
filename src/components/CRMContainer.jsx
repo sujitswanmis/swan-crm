@@ -281,7 +281,7 @@ export default function CRMContainer({
   const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
   const [attendanceSubTab, setAttendanceSubTab] = useState('my_attendance');
   const [checklistMenuExpanded, setChecklistMenuExpanded] = useState(false);
-  const [checklistSubTab, setChecklistSubTab] = useState('my_checklists');
+  const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
   const [delegationSubTab, setDelegationSubTab] = useState('to_me');
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
@@ -1909,6 +1909,13 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${checklistMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
+                  <button
+                    onClick={() => handleChecklistSubTabChange('dashboard')}
+                    className="submenu-item"
+                    data-active={activeTab === 'checklist' && (checklistSubTab === 'dashboard' || !checklistSubTab)}
+                  >
+                    📊 Checklist Dashboard
+                  </button>
                   {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.sub_items?.my_checklists?.view !== false) && (
                     <button
                       onClick={() => handleChecklistSubTabChange('my_checklists')}
@@ -1933,9 +1940,16 @@ export default function CRMContainer({
                       className="submenu-item"
                       data-active={activeTab === 'checklist' && checklistSubTab === 'compliance'}
                     >
-                      📊 Compliance & Audit
+                      🛡️ Compliance & Audit
                     </button>
                   )}
+                  <button
+                    onClick={() => handleChecklistSubTabChange('holidays')}
+                    className="submenu-item"
+                    data-active={activeTab === 'checklist' && checklistSubTab === 'holidays'}
+                  >
+                    🎉 Holidays Calendar
+                  </button>
                 </div>
               </div>
             </div>
