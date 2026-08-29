@@ -9,7 +9,8 @@ import { getDashboardMetrics, getUserAssignedWorkSummary } from '@/app/actions/a
 import {
   Activity, Loader2, CheckSquare, ListTodo, Users, Clock, AlertTriangle,
   CheckCircle2, TrendingUp, Calendar, ArrowRight, Target, Sparkles,
-  ShieldAlert, RefreshCw, Layers, PhoneCall, ExternalLink, User, Phone, Mail, Building2, MapPin
+  ShieldAlert, RefreshCw, Layers, PhoneCall, ExternalLink, User, Phone, Mail, Building2, MapPin,
+  CalendarClock
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
@@ -57,13 +58,13 @@ export default function AnalyticsDashboard({
   // Assigned Work State
   const [assignedWork, setAssignedWork] = useState({
     delegation: { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, recentTasks: [] },
-    checklists: { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, items: [] },
+    checklists: { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, isSunday: false, items: [] },
     effectiveEmail: ''
   });
   const [loadingAssignedWork, setLoadingAssignedWork] = useState(true);
   const [activeWorkTab, setActiveWorkTab] = useState('leads'); // 'leads' | 'delegation' | 'checklists'
   const [taskFilter, setTaskFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'OVERDUE' | 'COMPLETED'
-  const [leadFilter, setLeadFilter] = useState('ACTION_NEEDED'); // 'ACTION_NEEDED' | 'FOLLOW_UPS' | 'NEW' | 'PIPELINE' | 'WON' | 'ALL'
+  const [leadFilter, setLeadFilter] = useState('ACTION_NEEDED'); // 'ACTION_NEEDED' | 'OVERDUE_FOLLOWUPS' | 'TODAY_FOLLOWUPS' | 'FOLLOW_UPS' | 'NEW' | 'PIPELINE' | 'WON' | 'ALL'
 
   const dateFilterLabel = (() => {
     if (datePreset === 'today') return 'Today';
@@ -325,6 +326,24 @@ export default function AnalyticsDashboard({
   // Assigned Leads Statistics
   const assignedLeadStats = useMemo(() => {
     const total = filteredLeadsSync.length;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    let overdueFollowups = 0;
+    let todayFollowups = 0;
+
+    filteredLeadsSync.forEach(l => {
+      const fDateStr = l.follow_up_date || l.next_follow_up_date;
+      if (fDateStr) {
+        const d = new Date(fDateStr);
+        if (!isNaN(d.getTime())) {
+          const dateOnly = d.toISOString().split('T')[0];
+          if (dateOnly < todayStr) overdueFollowups++;
+          else if (dateOnly === todayStr) todayFollowups++;
+        }
+      }
+    });
+
     const newLeads = filteredLeadsSync.filter(l => {
       const stage = getStageFromStatus(l.status);
       return stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending' || !l.status || l.status === 'None';
@@ -342,18 +361,35 @@ export default function AnalyticsDashboard({
       return stage === '07 - Final Stage' && (l.status?.includes('Won') || l.status?.includes('Converted') || l.status?.includes('Closed') || l.status?.includes('Order Received'));
     }).length;
     const actionNeeded = newLeads + followUps;
-    return { total, newLeads, followUps, inPipeline, won, actionNeeded };
+    return { total, newLeads, followUps, inPipeline, won, actionNeeded, overdueFollowups, todayFollowups };
   }, [filteredLeadsSync]);
 
   // Tabbed Filtered Leads List
   const displayedLeads = useMemo(() => {
     let list = filteredLeadsSync;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
     if (leadFilter === 'ACTION_NEEDED') {
       list = list.filter(l => {
         const stage = getStageFromStatus(l.status);
         const isFollowUp = stage === '04 - Follow Up Stage' || (l.status && l.status.toLowerCase().includes('reschedule')) || (l.status && l.status.toLowerCase().includes('follow'));
         const isNew = stage === '01 - New Stage' || l.status === 'New' || l.status === 'Pending' || !l.status || l.status === 'None';
         return isFollowUp || isNew;
+      });
+    } else if (leadFilter === 'OVERDUE_FOLLOWUPS') {
+      list = list.filter(l => {
+        const fDateStr = l.follow_up_date || l.next_follow_up_date;
+        if (!fDateStr) return false;
+        const d = new Date(fDateStr);
+        return !isNaN(d.getTime()) && d.toISOString().split('T')[0] < todayStr;
+      });
+    } else if (leadFilter === 'TODAY_FOLLOWUPS') {
+      list = list.filter(l => {
+        const fDateStr = l.follow_up_date || l.next_follow_up_date;
+        if (!fDateStr) return false;
+        const d = new Date(fDateStr);
+        return !isNaN(d.getTime()) && d.toISOString().split('T')[0] === todayStr;
       });
     } else if (leadFilter === 'FOLLOW_UPS') {
       list = list.filter(l => {
@@ -381,16 +417,32 @@ export default function AnalyticsDashboard({
 
   // Overall Health / Assigned Work Summary Stats
   const delegation = assignedWork.delegation || { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, recentTasks: [] };
-  const checklists = assignedWork.checklists || { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, items: [] };
+  const checklists = assignedWork.checklists || { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, isSunday: false, items: [] };
 
-  const totalAssignedWorkItems = delegation.total + checklists.totalSlots + assignedLeadStats.total;
-  const totalCompletedWorkItems = delegation.completed + checklists.completed + assignedLeadStats.won;
-  const overallCompletionScore = totalAssignedWorkItems > 0 
-    ? Math.round((totalCompletedWorkItems / totalAssignedWorkItems) * 100) 
-    : 0;
+  // Weighted Work Health Score
+  const overallCompletionScore = useMemo(() => {
+    const taskScore = delegation.total > 0 ? Math.round((delegation.completed / delegation.total) * 100) : 100;
+    const checklistScore = checklists.totalSlots > 0 ? checklists.complianceRate : null;
+    
+    // For leads: % of leads that are actively won or moved forward from fresh stage
+    const leadScore = assignedLeadStats.total > 0 
+      ? Math.min(100, Math.round(((assignedLeadStats.won * 10 + assignedLeadStats.inPipeline * 2 + (assignedLeadStats.total - assignedLeadStats.actionNeeded)) / assignedLeadStats.total) * 100))
+      : 100;
+
+    if (checklistScore !== null && delegation.total > 0) {
+      return Math.round((taskScore * 0.4) + (checklistScore * 0.4) + (leadScore * 0.2));
+    }
+    if (checklistScore !== null) {
+      return Math.round((checklistScore * 0.7) + (leadScore * 0.3));
+    }
+    if (delegation.total > 0) {
+      return Math.round((taskScore * 0.6) + (leadScore * 0.4));
+    }
+    return leadScore;
+  }, [delegation, checklists, assignedLeadStats]);
 
   const totalPendingActionItems = delegation.pending + delegation.inProgress + checklists.pending + assignedLeadStats.actionNeeded;
-  const totalOverdueAlerts = delegation.overdue + checklists.completedLate;
+  const totalOverdueAlerts = delegation.overdue + checklists.completedLate + assignedLeadStats.overdueFollowups;
 
   // Filtered Delegation Tasks for Table View
   const filteredTasks = useMemo(() => {
@@ -440,6 +492,24 @@ export default function AnalyticsDashboard({
     }
     if (diffHours <= 24) return `${formatted} (Due in ${diffHours}h)`;
     return formatted;
+  };
+
+  const formatFollowUpDue = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const targetStr = d.toISOString().split('T')[0];
+    
+    const formatted = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    if (targetStr < todayStr) {
+      return { text: `🚨 Overdue (${formatted})`, color: '#dc2626', bg: '#fee2e2' };
+    }
+    if (targetStr === todayStr) {
+      return { text: `📅 Today Due`, color: '#b45309', bg: '#fef3c7' };
+    }
+    return { text: `🗓️ ${formatted}`, color: '#0369a1', bg: '#e0f2fe' };
   };
 
   return (
@@ -737,23 +807,31 @@ export default function AnalyticsDashboard({
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>
                   ✅ Today's Checklists
                 </span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: checklists.complianceRate >= 80 ? '#15803d' : '#b45309', backgroundColor: checklists.complianceRate >= 80 ? '#dcfce7' : '#fef3c7', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                  {checklists.complianceRate}% Score
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: checklists.totalSlots === 0 ? '#4b5563' : checklists.complianceRate >= 80 ? '#15803d' : '#b45309', backgroundColor: checklists.totalSlots === 0 ? 'var(--th-bg)' : checklists.complianceRate >= 80 ? '#dcfce7' : '#fef3c7', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                  {checklists.totalSlots === 0 ? '🌴 Sunday/Off' : `${checklists.complianceRate}% Score`}
                 </span>
               </div>
               <div style={{ fontSize: '2.1rem', fontWeight: 800, margin: '0.4rem 0', color: 'var(--text-primary)' }}>
                 {loadingAssignedWork ? (
                   <Loader2 size={24} className="animate-spin" />
+                ) : checklists.totalSlots === 0 ? (
+                  <span style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Off Duty</span>
                 ) : (
                   `${checklists.completed} / ${checklists.totalSlots}`
                 )}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                <span style={{ fontWeight: 600 }}>⏳ {checklists.pending} Pending</span>
-                {checklists.completedLate > 0 && (
+                {checklists.totalSlots === 0 ? (
+                  <span>No scheduled checklists for today</span>
+                ) : (
                   <>
-                    <span>•</span>
-                    <span style={{ color: '#d97706', fontWeight: 600 }}>⏰ {checklists.completedLate} Late</span>
+                    <span style={{ fontWeight: 600 }}>⏳ {checklists.pending} Pending</span>
+                    {checklists.completedLate > 0 && (
+                      <>
+                        <span>•</span>
+                        <span style={{ color: '#d97706', fontWeight: 600 }}>⏰ {checklists.completedLate} Late</span>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -824,7 +902,7 @@ export default function AnalyticsDashboard({
               </div>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-              Across Leads, Delegation & Checklists
+              Weighted index across Tasks & Follow-ups
             </div>
           </div>
 
@@ -915,11 +993,13 @@ export default function AnalyticsDashboard({
                 <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                   {[
                     { id: 'ACTION_NEEDED', label: '⚡ Needs Action', count: assignedLeadStats.actionNeeded },
-                    { id: 'FOLLOW_UPS', label: '📞 Follow-ups / Reschedule', count: assignedLeadStats.followUps },
+                    { id: 'OVERDUE_FOLLOWUPS', label: '🚨 Overdue Follow-ups', count: assignedLeadStats.overdueFollowups, alert: assignedLeadStats.overdueFollowups > 0 },
+                    { id: 'TODAY_FOLLOWUPS', label: '📅 Today Due', count: assignedLeadStats.todayFollowups },
+                    { id: 'FOLLOW_UPS', label: '📞 All Follow-ups', count: assignedLeadStats.followUps },
                     { id: 'NEW', label: '🆕 Fresh Leads', count: assignedLeadStats.newLeads },
                     { id: 'PIPELINE', label: '🔄 In Pipeline', count: assignedLeadStats.inPipeline },
                     { id: 'WON', label: '🏆 Won Deals', count: assignedLeadStats.won },
-                    { id: 'ALL', label: '📑 All Assigned', count: assignedLeadStats.total }
+                    { id: 'ALL', label: '📑 All Leads', count: assignedLeadStats.total }
                   ].map(f => (
                     <button
                       key={f.id}
@@ -932,9 +1012,9 @@ export default function AnalyticsDashboard({
                         borderRadius: '6px',
                         fontSize: '0.78rem',
                         fontWeight: 600,
-                        border: leadFilter === f.id ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
-                        backgroundColor: leadFilter === f.id ? 'var(--accent-color)' : 'var(--bg-surface)',
-                        color: leadFilter === f.id ? '#ffffff' : 'var(--text-secondary)',
+                        border: leadFilter === f.id ? '1px solid var(--accent-color)' : f.alert ? '1px solid #fca5a5' : '1px solid var(--border-light)',
+                        backgroundColor: leadFilter === f.id ? 'var(--accent-color)' : f.alert ? '#fee2e2' : 'var(--bg-surface)',
+                        color: leadFilter === f.id ? '#ffffff' : f.alert ? '#dc2626' : 'var(--text-secondary)',
                         cursor: 'pointer'
                       }}
                     >
@@ -977,7 +1057,7 @@ export default function AnalyticsDashboard({
                         <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Lead / Company</th>
                         <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Current Stage</th>
                         <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Contact Info</th>
-                        <th style={{ textAlign: 'right', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Deal Value</th>
+                        <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Follow-up Due / Schedule</th>
                         <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>Status & Call Response</th>
                       </tr>
                     </thead>
@@ -987,6 +1067,7 @@ export default function AnalyticsDashboard({
                         const displayObj = formatLeadDisplayName(lead);
                         const statusBadge = formatLeadStatusBadge(lead.status);
                         const phone = getLeadContactPhone(lead);
+                        const followUpBadge = formatFollowUpDue(lead.follow_up_date || lead.next_follow_up_date);
 
                         return (
                           <tr key={lead.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -1023,8 +1104,16 @@ export default function AnalyticsDashboard({
                                 <div style={{ fontSize: '0.72rem', marginTop: '0.15rem' }}>{lead.email}</div>
                               )}
                             </td>
-                            <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {lead.deal_value ? `₹${Number(lead.deal_value).toLocaleString('en-IN')}` : '-'}
+                            <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-primary)', fontSize: '0.82rem' }}>
+                              {followUpBadge ? (
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: followUpBadge.bg, color: followUpBadge.color }}>
+                                  {followUpBadge.text}
+                                </span>
+                              ) : lead.deal_value ? (
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>₹{Number(lead.deal_value).toLocaleString('en-IN')}</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>Not Scheduled</span>
+                              )}
                             </td>
                             <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
                               <span 
@@ -1205,7 +1294,7 @@ export default function AnalyticsDashboard({
                 </div>
               ) : checklists.items.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.88rem' }}>
-                  {checklists.isSunday ? 'Today is Sunday (No scheduled checklists).' : checklists.holidayInfo?.isHoliday ? `Today is a Company Holiday: ${checklists.holidayInfo.holidayName}` : 'No checklist templates assigned for today.'}
+                  {checklists.isSunday ? '🌴 Today is Sunday (No scheduled checklist routines).' : checklists.holidayInfo?.isHoliday ? `Today is a Company Holiday: ${checklists.holidayInfo.holidayName}` : 'No checklist templates assigned for today.'}
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
