@@ -283,7 +283,7 @@ export default function CRMContainer({
   const [checklistMenuExpanded, setChecklistMenuExpanded] = useState(false);
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
-  const [delegationSubTab, setDelegationSubTab] = useState('to_me');
+  const [delegationSubTab, setDelegationSubTab] = useState('dashboard');
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
 
@@ -1982,6 +1982,15 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${delegationMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.dashboard?.view !== false) && (
+                    <button
+                      onClick={() => handleDelegationSubTabChange('dashboard')}
+                      className="submenu-item"
+                      data-active={activeTab === 'delegation' && delegationSubTab === 'dashboard'}
+                    >
+                      📊 Delegation Dashboard
+                    </button>
+                  )}
                   {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.to_me?.view !== false) && (
                     <button
                       onClick={() => handleDelegationSubTabChange('to_me')}

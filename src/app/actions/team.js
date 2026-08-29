@@ -1328,6 +1328,7 @@ export async function grantChecklistAndDelegationToAllApprovedUsers() {
         delete: existingDelegation.delete === true || isRoleAdminOrMgr,
         sub_items: {
           ...existingDelegationSubs,
+          dashboard: { view: true, add: true, edit: true, delete: false },
           to_me: { view: true, add: true, edit: true, delete: false },
           by_me: { view: true, add: true, edit: true, delete: false },
           all: existingDelegationSubs.all !== undefined ? existingDelegationSubs.all : { view: isRoleAdminOrMgr, add: isRoleAdminOrMgr, edit: isRoleAdminOrMgr, delete: false }

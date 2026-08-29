@@ -5,7 +5,8 @@ import {
   Clock, Calendar, AlertTriangle, CheckCircle2, AlertCircle, Plus,
   Search, Filter, RefreshCw, User, Users, ArrowRight, MessageSquare,
   Star, Check, X, ShieldCheck, ChevronRight, Send, CheckSquare,
-  FileText, ExternalLink, Flame, Sparkles, Award, CornerDownRight, RotateCcw
+  FileText, ExternalLink, Flame, Sparkles, Award, CornerDownRight, RotateCcw,
+  BarChart3, TrendingUp, Layers, Eye, Activity, CheckCircle
 } from 'lucide-react';
 import {
   createDelegationTask,
@@ -44,7 +45,7 @@ export default function DelegationTaskModule({
   userName = 'Employee',
   userEmail = '',
   moduleAccess = {},
-  initialSubTab = 'to_me',
+  initialSubTab = 'dashboard',
   onSubTabChange = null
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
@@ -52,9 +53,10 @@ export default function DelegationTaskModule({
   const canAccessToMe = moduleAccess?.delegation?.sub_items?.to_me?.view !== false;
   const canAccessByMe = moduleAccess?.delegation?.sub_items?.by_me?.view !== false;
 
-  // Tabs: 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
-  const [activeTab, setActiveTab] = useState(initialSubTab || 'to_me');
+  // Tabs: 'dashboard' (Delegation Dashboard) | 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
+  const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
   const [tasks, setTasks] = useState([]);
+  const [allDashboardTasks, setAllDashboardTasks] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,6 +64,29 @@ export default function DelegationTaskModule({
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [employeesList, setEmployeesList] = useState([]);
   const [teamBoardFilter, setTeamBoardFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
+
+  // Dashboard specific filters
+  const [dashboardScope, setDashboardScope] = useState(isAdmin ? 'COMPANY_WIDE' : 'MY_DELEGATIONS');
+  const [dashboardTimeRange, setDashboardTimeRange] = useState('this_month');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [dashboardDept, setDashboardDept] = useState('ALL');
+  const [dashboardCategory, setDashboardCategory] = useState('ALL');
+  const [leaderboardSearch, setLeaderboardSearch] = useState('');
+  const [leaderboardTier, setLeaderboardTier] = useState('ALL'); // 'ALL' | 'STAR' | 'RELIABLE' | 'AT_RISK'
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== activeTab) {
+      setActiveTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  const handleTabChange = (t) => {
+    setActiveTab(t);
+    if (onSubTabChange) {
+      onSubTabChange(t);
+    }
+  };
 
   // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
   const myReportingTeam = useMemo(() => {
@@ -157,9 +182,23 @@ export default function DelegationTaskModule({
       const teamEmails = myReportingTeam.map(e => e.email).filter(Boolean);
       const isTeamView = activeTab === 'all' && (teamBoardFilter === 'MY_TEAM' || !isAdmin);
 
+      if (activeTab === 'dashboard' || allDashboardTasks.length === 0) {
+        const resDash = await getDelegatedTasks({
+          userEmail,
+          viewType: 'all',
+          teamMemberEmails: teamEmails,
+          status: 'ALL',
+          priority: 'ALL',
+          search: ''
+        });
+        if (resDash.success) {
+          setAllDashboardTasks(resDash.data || []);
+        }
+      }
+
       const res = await getDelegatedTasks({
         userEmail,
-        viewType: isTeamView && teamEmails.length > 0 ? 'team' : activeTab,
+        viewType: isTeamView && teamEmails.length > 0 ? 'team' : (activeTab === 'dashboard' ? 'all' : activeTab),
         teamMemberEmails: teamEmails,
         status: statusFilter,
         priority: priorityFilter,
@@ -186,6 +225,263 @@ export default function DelegationTaskModule({
       console.warn(e);
     }
   };
+
+  // Distinct departments extracted from employees & tasks
+  const availableDepartments = useMemo(() => {
+    const set = new Set([
+      'General', 'Operations', 'Sales & CRM', 'Accounts & Finance',
+      'Human Resource', 'Technical & IT', 'Administration', 'Customer Support'
+    ]);
+    (employeesList || []).forEach(e => { if (e.department) set.add(e.department); });
+    (allDashboardTasks || []).forEach(t => { if (t.assigned_to_department) set.add(t.assigned_to_department); });
+    return Array.from(set).sort();
+  }, [employeesList, allDashboardTasks]);
+
+  // Executive Dashboard Analytics Calculation
+  const dashboardAnalytics = useMemo(() => {
+    const rawTasks = allDashboardTasks.length > 0 ? allDashboardTasks : tasks;
+    let baseTasks = [...rawTasks];
+    const emailLow = (userEmail || '').toLowerCase().trim();
+    const teamEmails = myReportingTeam.map(e => (e.email || '').toLowerCase().trim()).filter(Boolean);
+
+    // 1. Scope Filter
+    if (dashboardScope === 'MY_DELEGATIONS') {
+      baseTasks = baseTasks.filter(t => 
+        (t.assigned_to_email || '').toLowerCase() === emailLow || 
+        (t.delegated_by_email || '').toLowerCase() === emailLow
+      );
+    } else if (dashboardScope === 'MY_TEAM') {
+      baseTasks = baseTasks.filter(t => 
+        teamEmails.includes((t.assigned_to_email || '').toLowerCase()) ||
+        teamEmails.includes((t.delegated_by_email || '').toLowerCase()) ||
+        (t.assigned_to_email || '').toLowerCase() === emailLow ||
+        (t.delegated_by_email || '').toLowerCase() === emailLow
+      );
+    }
+
+    // 2. Date Range Filter
+    const now = new Date();
+    if (dashboardTimeRange === 'today') {
+      const todayStr = now.toISOString().slice(0, 10);
+      baseTasks = baseTasks.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr);
+    } else if (dashboardTimeRange === 'yesterday') {
+      const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const yestStr = yest.toISOString().slice(0, 10);
+      baseTasks = baseTasks.filter(t => (t.created_at || '').slice(0, 10) === yestStr || (t.deadline || '').slice(0, 10) === yestStr);
+    } else if (dashboardTimeRange === 'this_week') {
+      const startOfWeek = new Date(now);
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      startOfWeek.setDate(diff);
+      startOfWeek.setHours(0, 0, 0, 0);
+      baseTasks = baseTasks.filter(t => new Date(t.created_at || t.deadline) >= startOfWeek);
+    } else if (dashboardTimeRange === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      baseTasks = baseTasks.filter(t => new Date(t.created_at || t.deadline) >= startOfMonth);
+    } else if (dashboardTimeRange === 'last_30_days') {
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      baseTasks = baseTasks.filter(t => new Date(t.created_at || t.deadline) >= thirtyDaysAgo);
+    } else if (dashboardTimeRange === 'custom' && customStartDate && customEndDate) {
+      const s = new Date(`${customStartDate}T00:00:00`);
+      const e = new Date(`${customEndDate}T23:59:59`);
+      baseTasks = baseTasks.filter(t => {
+        const d = new Date(t.created_at || t.deadline);
+        return d >= s && d <= e;
+      });
+    }
+
+    // 3. Department & Category Filter
+    if (dashboardDept !== 'ALL') {
+      baseTasks = baseTasks.filter(t => (t.assigned_to_department || 'General') === dashboardDept);
+    }
+    if (dashboardCategory !== 'ALL') {
+      baseTasks = baseTasks.filter(t => (t.category || 'OPERATIONS') === dashboardCategory);
+    }
+
+    // 4. Core KPI Totals
+    const totalTasks = baseTasks.length;
+    const pending = baseTasks.filter(t => t.status === 'PENDING').length;
+    const inProgress = baseTasks.filter(t => t.status === 'IN_PROGRESS').length;
+    const submitted = baseTasks.filter(t => t.status === 'SUBMITTED').length;
+    const completed = baseTasks.filter(t => t.status === 'COMPLETED').length;
+    const reopened = baseTasks.filter(t => t.status === 'REOPENED').length;
+    const cancelled = baseTasks.filter(t => t.status === 'CANCELLED').length;
+
+    // Overdue Active Tasks
+    const overdueActive = baseTasks.filter(t => 
+      !['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now
+    ).length;
+
+    // On-Time vs Late Completion
+    const completedOnTime = baseTasks.filter(t => 
+      t.status === 'COMPLETED' && (!t.completed_at || new Date(t.completed_at) <= new Date(t.deadline))
+    ).length;
+    const completedLate = baseTasks.filter(t => 
+      t.status === 'COMPLETED' && (t.completed_at && new Date(t.completed_at) > new Date(t.deadline))
+    ).length;
+
+    // Overall Completion Score %
+    const completionRate = totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 100;
+    const onTimeRate = completed > 0 ? Math.round((completedOnTime / completed) * 100) : 100;
+
+    // Quality Ratings
+    const ratedTasks = baseTasks.filter(t => t.status === 'COMPLETED' && t.rating > 0);
+    const avgRating = ratedTasks.length > 0 
+      ? (ratedTasks.reduce((acc, t) => acc + (t.rating || 5), 0) / ratedTasks.length).toFixed(1) 
+      : '5.0';
+
+    // Priority Distribution
+    const priorityStats = {
+      URGENT: { total: 0, completed: 0, overdue: 0, inProgress: 0 },
+      HIGH: { total: 0, completed: 0, overdue: 0, inProgress: 0 },
+      MEDIUM: { total: 0, completed: 0, overdue: 0, inProgress: 0 },
+      LOW: { total: 0, completed: 0, overdue: 0, inProgress: 0 }
+    };
+    baseTasks.forEach(t => {
+      const p = t.priority || 'MEDIUM';
+      if (priorityStats[p]) {
+        priorityStats[p].total++;
+        if (t.status === 'COMPLETED') priorityStats[p].completed++;
+        if (t.status === 'IN_PROGRESS') priorityStats[p].inProgress++;
+        if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
+          priorityStats[p].overdue++;
+        }
+      }
+    });
+
+    // Category Distribution
+    const categoryMap = {};
+    baseTasks.forEach(t => {
+      const c = t.category || 'OPERATIONS';
+      if (!categoryMap[c]) categoryMap[c] = { total: 0, completed: 0, overdue: 0 };
+      categoryMap[c].total++;
+      if (t.status === 'COMPLETED') categoryMap[c].completed++;
+      if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
+        categoryMap[c].overdue++;
+      }
+    });
+
+    // Employee Leaderboard & Accountability Table
+    const empMap = {};
+    baseTasks.forEach(t => {
+      const email = (t.assigned_to_email || '').toLowerCase().trim();
+      const name = t.assigned_to_name || 'Staff';
+      const dept = t.assigned_to_department || 'General';
+      if (!email) return;
+
+      if (!empMap[email]) {
+        empMap[email] = {
+          email,
+          name,
+          department: dept,
+          assignedTotal: 0,
+          completed: 0,
+          completedOnTime: 0,
+          completedLate: 0,
+          inProgress: 0,
+          submitted: 0,
+          overdue: 0,
+          ratings: []
+        };
+      }
+      empMap[email].assignedTotal++;
+      if (t.status === 'COMPLETED') {
+        empMap[email].completed++;
+        if (!t.completed_at || new Date(t.completed_at) <= new Date(t.deadline)) {
+          empMap[email].completedOnTime++;
+        } else {
+          empMap[email].completedLate++;
+        }
+        if (t.rating > 0) empMap[email].ratings.push(t.rating);
+      } else if (t.status === 'IN_PROGRESS') {
+        empMap[email].inProgress++;
+      } else if (t.status === 'SUBMITTED') {
+        empMap[email].submitted++;
+      }
+      if (!['COMPLETED', 'CANCELLED'].includes(t.status) && new Date(t.deadline) < now) {
+        empMap[email].overdue++;
+      }
+    });
+
+    // Populate active employees from master
+    (employeesList || []).forEach(emp => {
+      const email = (emp.email || '').toLowerCase().trim();
+      if (email && !empMap[email]) {
+        if (dashboardScope === 'COMPANY_WIDE' || (dashboardScope === 'MY_TEAM' && teamEmails.includes(email))) {
+          empMap[email] = {
+            email,
+            name: emp.name || emp.full_name || 'Staff',
+            department: emp.department || 'General',
+            assignedTotal: 0,
+            completed: 0,
+            completedOnTime: 0,
+            completedLate: 0,
+            inProgress: 0,
+            submitted: 0,
+            overdue: 0,
+            ratings: []
+          };
+        }
+      }
+    });
+
+    const leaderboard = Object.values(empMap).map(e => {
+      const rate = e.assignedTotal > 0 ? Math.round((e.completed / e.assignedTotal) * 100) : 100;
+      const onTimePct = e.completed > 0 ? Math.round((e.completedOnTime / e.completed) * 100) : 100;
+      const avg = e.ratings.length > 0 
+        ? (e.ratings.reduce((a, b) => a + b, 0) / e.ratings.length).toFixed(1) 
+        : (e.assignedTotal === 0 ? '-' : '5.0');
+
+      let badge = 'STAR';
+      if (e.assignedTotal > 0) {
+        if (rate >= 90) badge = 'STAR';
+        else if (rate >= 75) badge = 'RELIABLE';
+        else badge = 'AT_RISK';
+      }
+      return {
+        ...e,
+        completionRate: rate,
+        onTimeRate: onTimePct,
+        avgRating: avg,
+        badge
+      };
+    }).sort((a, b) => {
+      if (b.completionRate !== a.completionRate) return b.completionRate - a.completionRate;
+      return b.assignedTotal - a.assignedTotal;
+    });
+
+    // Critical Overdue & Urgent Action Items
+    const criticalTasks = baseTasks.filter(t => 
+      !['COMPLETED', 'CANCELLED'].includes(t.status) && 
+      (new Date(t.deadline) < now || t.priority === 'URGENT' || t.priority === 'HIGH')
+    ).sort((a, b) => new Date(a.deadline) - new Date(b.deadline)).slice(0, 8);
+
+    // Recent Submissions Waiting Review
+    const pendingVerifications = baseTasks.filter(t => t.status === 'SUBMITTED').slice(0, 6);
+
+    return {
+      filteredTasks: baseTasks,
+      totalTasks,
+      pending,
+      inProgress,
+      submitted,
+      completed,
+      completedOnTime,
+      completedLate,
+      overdueActive,
+      reopened,
+      cancelled,
+      completionRate,
+      onTimeRate,
+      avgRating,
+      ratedTasksCount: ratedTasks.length,
+      priorityStats,
+      categoryMap,
+      leaderboard,
+      criticalTasks,
+      pendingVerifications
+    };
+  }, [allDashboardTasks, tasks, dashboardScope, dashboardTimeRange, customStartDate, customEndDate, dashboardDept, dashboardCategory, userEmail, myReportingTeam, employeesList]);
 
   // ==========================================
   // CREATE TASK HANDLERS
@@ -572,8 +868,661 @@ export default function DelegationTaskModule({
         </div>
       </div>
 
-      {/* Analytics KPI Metric Cards */}
-      {analytics && (
+      {/* Main Tabs Navigation */}
+      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => handleTabChange('dashboard')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '0.6rem 1.2rem',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'dashboard' ? '3px solid #3b82f6' : '3px solid transparent',
+            color: activeTab === 'dashboard' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <BarChart3 size={18} />
+          <span>📊 Delegation Dashboard</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('to_me')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '0.6rem 1.2rem',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'to_me' ? '3px solid #3b82f6' : '3px solid transparent',
+            color: activeTab === 'to_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <span>📥 Tasks Delegated To Me</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('by_me')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '0.6rem 1.2rem',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'by_me' ? '3px solid #3b82f6' : '3px solid transparent',
+            color: activeTab === 'by_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <span>📤 Tasks Delegated By Me</span>
+        </button>
+
+        {canAccessTeamBoard && (
+          <button
+            onClick={() => handleTabChange('all')}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '0.6rem 1.2rem',
+              fontWeight: 600,
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              borderBottom: activeTab === 'all' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'all' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            <Users size={18} /> Company Task Board
+          </button>
+        )}
+      </div>
+
+      {/* ==================================================== */}
+      {/* 📊 DELEGATION DASHBOARD VIEW                        */}
+      {/* ==================================================== */}
+      {activeTab === 'dashboard' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          
+          {/* Dashboard Control Bar (Scope & Date Filters) */}
+          <div style={{
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            borderRadius: '12px',
+            padding: '1rem 1.25rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+          }}>
+            {/* Scope Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
+                View Scope:
+              </span>
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px' }}>
+                <button
+                  onClick={() => setDashboardScope('MY_DELEGATIONS')}
+                  style={{
+                    border: 'none',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: dashboardScope === 'MY_DELEGATIONS' ? '#ffffff' : 'transparent',
+                    color: dashboardScope === 'MY_DELEGATIONS' ? '#1e293b' : '#64748b',
+                    boxShadow: dashboardScope === 'MY_DELEGATIONS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  👤 My Delegations
+                </button>
+                {(isReportingManager || isManager) && (
+                  <button
+                    onClick={() => setDashboardScope('MY_TEAM')}
+                    style={{
+                      border: 'none',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '6px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: dashboardScope === 'MY_TEAM' ? '#ffffff' : 'transparent',
+                      color: dashboardScope === 'MY_TEAM' ? '#1e293b' : '#64748b',
+                      boxShadow: dashboardScope === 'MY_TEAM' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    👥 My Team ({myReportingTeam.length})
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => setDashboardScope('COMPANY_WIDE')}
+                    style={{
+                      border: 'none',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '6px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: dashboardScope === 'COMPANY_WIDE' ? '#ffffff' : 'transparent',
+                      color: dashboardScope === 'COMPANY_WIDE' ? '#1e293b' : '#64748b',
+                      boxShadow: dashboardScope === 'COMPANY_WIDE' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    🏢 Entire Company
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Time Presets */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {[
+                { id: 'today', label: 'Today' },
+                { id: 'yesterday', label: 'Yesterday' },
+                { id: 'this_week', label: 'This Week' },
+                { id: 'this_month', label: 'This Month' },
+                { id: 'last_30_days', label: 'Last 30 Days' },
+                { id: 'all', label: 'All Time' },
+                { id: 'custom', label: 'Custom' }
+              ].map(preset => (
+                <button
+                  key={preset.id}
+                  onClick={() => setDashboardTimeRange(preset.id)}
+                  style={{
+                    border: '1px solid',
+                    borderColor: dashboardTimeRange === preset.id ? '#3b82f6' : 'var(--border-color, #e2e8f0)',
+                    background: dashboardTimeRange === preset.id ? '#eff6ff' : 'var(--card-bg, #ffffff)',
+                    color: dashboardTimeRange === preset.id ? '#1d4ed8' : '#64748b',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Date Pickers */}
+            {dashboardTimeRange === 'custom' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                />
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                />
+              </div>
+            )}
+
+            {/* Department & Category Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <select
+                value={dashboardDept}
+                onChange={(e) => setDashboardDept(e.target.value)}
+                style={{ padding: '0.38rem 0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 500 }}
+              >
+                <option value="ALL">🏢 All Departments</option>
+                {availableDepartments.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+
+              <select
+                value={dashboardCategory}
+                onChange={(e) => setDashboardCategory(e.target.value)}
+                style={{ padding: '0.38rem 0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 500 }}
+              >
+                <option value="ALL">📂 All Categories</option>
+                {CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 6 Executive KPI Metric Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            
+            {/* Card 1: Completion Score */}
+            <div style={{
+              background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+              color: '#ffffff',
+              padding: '1.25rem',
+              borderRadius: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              boxShadow: '0 4px 12px rgba(49, 46, 129, 0.15)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, opacity: 0.9 }}>COMPLETION SCORE</span>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: '12px',
+                  background: dashboardAnalytics.completionRate >= 90 ? 'rgba(16,185,129,0.25)' : dashboardAnalytics.completionRate >= 75 ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.25)',
+                  color: dashboardAnalytics.completionRate >= 90 ? '#6ee7b7' : dashboardAnalytics.completionRate >= 75 ? '#fde68a' : '#fca5a5'
+                }}>
+                  {dashboardAnalytics.completionRate >= 90 ? '🌟 Star' : dashboardAnalytics.completionRate >= 75 ? '👍 Reliable' : '🚨 At Risk'}
+                </span>
+              </div>
+              <div style={{ margin: '0.75rem 0 0.5rem' }}>
+                <span style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1 }}>
+                  {dashboardAnalytics.completionRate}%
+                </span>
+              </div>
+              <div style={{ width: '100%', background: 'rgba(255,255,255,0.2)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${dashboardAnalytics.completionRate}%`,
+                  background: dashboardAnalytics.completionRate >= 90 ? '#10b981' : dashboardAnalytics.completionRate >= 75 ? '#f59e0b' : '#ef4444',
+                  height: '100%',
+                  borderRadius: '3px'
+                }} />
+              </div>
+              <span style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.4rem' }}>
+                {dashboardAnalytics.completed} of {dashboardAnalytics.totalTasks} tasks closed
+              </span>
+            </div>
+
+            {/* Card 2: Total Delegated Tasks */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', padding: '1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.35rem', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>TOTAL DELEGATED</span>
+                <span style={{ background: '#f1f5f9', padding: '0.3rem', borderRadius: '6px' }}><CheckSquare size={16} color="#64748b" /></span>
+              </div>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>{dashboardAnalytics.totalTasks}</span>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Across all selected filters</span>
+            </div>
+
+            {/* Card 3: Active & In Progress */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid #bfdbfe', padding: '1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.35rem', boxShadow: '0 2px 6px rgba(59,130,246,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1e40af' }}>⚡ ACTIVE / IN PROGRESS</span>
+                <span style={{ background: '#dbeafe', padding: '0.3rem', borderRadius: '6px' }}><Activity size={16} color="#2563eb" /></span>
+              </div>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: '#2563eb' }}>
+                {dashboardAnalytics.inProgress + dashboardAnalytics.pending}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#3b82f6' }}>
+                {dashboardAnalytics.inProgress} in progress • {dashboardAnalytics.pending} pending start
+              </span>
+            </div>
+
+            {/* Card 4: Pending Review */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid #fde68a', padding: '1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.35rem', boxShadow: '0 2px 6px rgba(245,158,11,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#92400e' }}>⏳ PENDING REVIEW</span>
+                <span style={{ background: '#fef3c7', padding: '0.3rem', borderRadius: '6px' }}><Eye size={16} color="#d97706" /></span>
+              </div>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: '#d97706' }}>{dashboardAnalytics.submitted}</span>
+              <span style={{ fontSize: '0.75rem', color: '#b45309' }}>Submitted by assignee for rating</span>
+            </div>
+
+            {/* Card 5: Overdue / SLA Breach */}
+            <div style={{ background: '#fff5f5', border: '1px solid #fecaca', padding: '1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.35rem', boxShadow: '0 2px 6px rgba(239,68,68,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#991b1b' }}>⚠️ OVERDUE / DELAYED</span>
+                <span style={{ background: '#fee2e2', padding: '0.3rem', borderRadius: '6px' }}><AlertTriangle size={16} color="#dc2626" /></span>
+              </div>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: '#dc2626' }}>{dashboardAnalytics.overdueActive}</span>
+              <span style={{ fontSize: '0.75rem', color: '#b91c1c', fontWeight: 600 }}>Past deadline without completion</span>
+            </div>
+
+            {/* Card 6: Quality Rating */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', padding: '1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.35rem', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>⭐ AVG QUALITY RATING</span>
+                <span style={{ background: '#fef3c7', padding: '0.3rem', borderRadius: '6px' }}><Star size={16} color="#f59e0b" /></span>
+              </div>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: '#f59e0b' }}>
+                {dashboardAnalytics.avgRating} <span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 500 }}>/ 5.0</span>
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                From {dashboardAnalytics.ratedTasksCount} verified task sign-offs
+              </span>
+            </div>
+
+          </div>
+
+          {/* Analytics Breakdown Row (Status & Priority Matrices) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
+            
+            {/* Status Distribution */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <BarChart3 size={18} color="#3b82f6" /> Task Status Distribution
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{dashboardAnalytics.totalTasks} total</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {[
+                  { label: 'Completed (Approved)', count: dashboardAnalytics.completed, color: '#10b981', bg: '#ecfdf5' },
+                  { label: 'In Progress', count: dashboardAnalytics.inProgress, color: '#3b82f6', bg: '#eff6ff' },
+                  { label: 'Submitted (Waiting Review)', count: dashboardAnalytics.submitted, color: '#f59e0b', bg: '#fffbeb' },
+                  { label: 'Pending (Not Started)', count: dashboardAnalytics.pending, color: '#64748b', bg: '#f8fafc' },
+                  { label: 'Reopened', count: dashboardAnalytics.reopened, color: '#ef4444', bg: '#fef2f2' }
+                ].map(st => {
+                  const pct = dashboardAnalytics.totalTasks > 0 ? Math.round((st.count / dashboardAnalytics.totalTasks) * 100) : 0;
+                  return (
+                    <div key={st.label} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <span style={{ color: '#334155' }}>{st.label}</span>
+                        <span style={{ color: st.color }}>{st.count} ({pct}%)</span>
+                      </div>
+                      <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: st.color, borderRadius: '4px' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Priority & SLA Risk Breakdown */}
+            <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Flame size={18} color="#ef4444" /> Priority & SLA Risk Breakdown
+                </h3>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                {Object.entries(dashboardAnalytics.priorityStats).map(([prioKey, stats]) => {
+                  const cfg = PRIORITY_CONFIG[prioKey] || PRIORITY_CONFIG.MEDIUM;
+                  const complPct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+                  return (
+                    <div
+                      key={prioKey}
+                      style={{
+                        background: cfg.bg,
+                        border: `1px solid ${cfg.color}30`,
+                        borderRadius: '10px',
+                        padding: '0.85rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.35rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: cfg.color }}>
+                          {cfg.icon} {cfg.label}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: cfg.color }}>
+                          {stats.total} tasks
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '0.2rem' }}>
+                        <div>✅ {stats.completed} Done ({complPct}%)</div>
+                        <div>⚡ {stats.inProgress} In Progress</div>
+                        {stats.overdue > 0 && <div style={{ color: '#dc2626', fontWeight: 700 }}>⚠️ {stats.overdue} Overdue</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Critical Escalations & Urgent Watchlist */}
+          {dashboardAnalytics.criticalTasks.length > 0 && (
+            <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#9a3412', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertTriangle size={18} color="#ea580c" /> 🚨 Critical Attention & Overdue Escalations ({dashboardAnalytics.criticalTasks.length})
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#c2410c', fontWeight: 600 }}>Action Required by Delegator / Assignee</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.75rem' }}>
+                {dashboardAnalytics.criticalTasks.map(task => {
+                  const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;
+                  const deadlineBadge = formatDeadlineBadge(task.deadline, task.status);
+                  return (
+                    <div
+                      key={task.id}
+                      style={{
+                        background: '#ffffff',
+                        border: deadlineBadge.isLate ? '1.5px solid #fca5a5' : '1px solid #fed7aa',
+                        borderRadius: '8px',
+                        padding: '0.85rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.72rem', background: prio.bg, color: prio.color, padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 700 }}>
+                          {prio.icon} {prio.label}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', background: deadlineBadge.bg, color: deadlineBadge.color, padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 700 }}>
+                          {deadlineBadge.text}
+                        </span>
+                      </div>
+                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: '#1e293b' }}>
+                        {task.title}
+                      </h4>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#64748b' }}>
+                        <span>👤 {task.assigned_to_name}</span>
+                        <button
+                          onClick={() => handleOpenDrawer(task)}
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#1d4ed8',
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          View & Action →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Employee Delegation Accountability & Leaderboard Table */}
+          <div style={{ background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0f172a' }}>
+                  <Award size={20} color="#f59e0b" /> Employee Delegation Accountability & Leaderboard
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                  Live employee task completion score, on-time velocity, and quality rating
+                </p>
+              </div>
+
+              {/* Leaderboard Filters */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.6rem' }}>
+                  <Search size={14} color="#94a3b8" style={{ marginRight: '0.4rem' }} />
+                  <input
+                    type="text"
+                    placeholder="Search staff, email, dept..."
+                    value={leaderboardSearch}
+                    onChange={(e) => setLeaderboardSearch(e.target.value)}
+                    style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8rem', width: '160px' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '6px' }}>
+                  {[
+                    { id: 'ALL', label: 'All Staff' },
+                    { id: 'STAR', label: '🌟 Star (≥90%)' },
+                    { id: 'RELIABLE', label: '👍 Reliable (75-89%)' },
+                    { id: 'AT_RISK', label: '🚨 At Risk (<75%)' }
+                  ].map(tier => (
+                    <button
+                      key={tier.id}
+                      onClick={() => setLeaderboardTier(tier.id)}
+                      style={{
+                        border: 'none',
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background: leaderboardTier === tier.id ? '#ffffff' : 'transparent',
+                        color: leaderboardTier === tier.id ? '#1e293b' : '#64748b',
+                        boxShadow: leaderboardTier === tier.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
+                      }}
+                    >
+                      {tier.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Leaderboard Table */}
+            <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>Rank</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Employee</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Department</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Tasks Assigned</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Completed</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>🟢 On-Time</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>⚠️ Overdue</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Avg Rating</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Completion Rate</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Status Badge</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardAnalytics.leaderboard
+                    .filter(emp => {
+                      if (leaderboardTier !== 'ALL' && emp.badge !== leaderboardTier) return false;
+                      if (leaderboardSearch) {
+                        const q = leaderboardSearch.toLowerCase();
+                        return (
+                          emp.name.toLowerCase().includes(q) ||
+                          emp.email.toLowerCase().includes(q) ||
+                          emp.department.toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    })
+                    .map((emp, idx) => {
+                      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                      return (
+                        <tr key={emp.email} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '0.75rem 1rem', fontWeight: 700, fontSize: '0.9rem' }}>
+                            {medal}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <div style={{ fontWeight: 600, color: '#1e293b' }}>{emp.name}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{emp.email}</div>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>
+                            <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              {emp.department}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>
+                            {emp.assignedTotal}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#10b981' }}>
+                            {emp.completed}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 600, color: '#059669' }}>
+                            {emp.completedOnTime}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: emp.overdue > 0 ? '#dc2626' : '#94a3b8' }}>
+                            {emp.overdue > 0 ? `⚠️ ${emp.overdue}` : '0'}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, color: '#f59e0b' }}>
+                            {emp.avgRating !== '-' ? `${emp.avgRating} ★` : '-'}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', minWidth: '150px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ flex: 1, height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                                <div style={{
+                                  width: `${emp.completionRate}%`,
+                                  height: '100%',
+                                  background: emp.completionRate >= 90 ? '#10b981' : emp.completionRate >= 75 ? '#f59e0b' : '#ef4444',
+                                  borderRadius: '3px'
+                                }} />
+                              </div>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', width: '36px' }}>
+                                {emp.completionRate}%
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '12px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: emp.badge === 'STAR' ? '#ecfdf5' : emp.badge === 'RELIABLE' ? '#fffbeb' : '#fef2f2',
+                              color: emp.badge === 'STAR' ? '#059669' : emp.badge === 'RELIABLE' ? '#d97706' : '#dc2626',
+                              border: `1px solid ${emp.badge === 'STAR' ? '#a7f3d0' : emp.badge === 'RELIABLE' ? '#fde68a' : '#fecaca'}`
+                            }}>
+                              {emp.badge === 'STAR' ? '🌟 Star' : emp.badge === 'RELIABLE' ? '👍 Reliable' : '🚨 At Risk'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {dashboardAnalytics.leaderboard.length === 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                        No employee data found matching filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* Analytics KPI Metric Cards (Only for Tasks list views) */}
+      {activeTab !== 'dashboard' && analytics && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
           <div style={{ background: 'var(--card-bg, #ffffff)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', fontWeight: 600 }}>📥 My Pending Tasks</span>
@@ -601,136 +1550,76 @@ export default function DelegationTaskModule({
         </div>
       )}
 
-      {/* Main Tabs Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem' }}>
-        <button
-          onClick={() => setActiveTab('to_me')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'to_me' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'to_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <span>📥 Tasks Delegated To Me</span>
-        </button>
+      {/* Filter Bar (Only for tasks list views) */}
+      {activeTab !== 'dashboard' && (
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', padding: '0.45rem 0.75rem', flex: 1, minWidth: '220px' }}>
+            <Search size={16} style={{ color: '#94a3b8', marginRight: '0.5rem' }} />
+            <input
+              type="text"
+              placeholder="Search task title, code, employee, category..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
+            />
+          </div>
 
-        <button
-          onClick={() => setActiveTab('by_me')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'by_me' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'by_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <span>📤 Tasks Delegated By Me</span>
-        </button>
+          {activeTab === 'all' && myReportingTeam.length > 0 && (
+            <select
+              value={teamBoardFilter}
+              onChange={(e) => setTeamBoardFilter(e.target.value)}
+              style={{
+                padding: '0.5rem 0.75rem',
+                borderRadius: '8px',
+                border: '1.5px solid #3b82f6',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
+              {isAdmin && <option value="ALL">🏢 All Company Tasks</option>}
+            </select>
+          )}
 
-        {canAccessTeamBoard && (
-          <button
-            onClick={() => setActiveTab('all')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '0.6rem 1.2rem',
-              fontWeight: 600,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'all' ? '3px solid #3b82f6' : '3px solid transparent',
-              color: activeTab === 'all' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <Users size={18} /> Company Task Board
-          </button>
-        )}
-      </div>
-
-      {/* Filter Bar */}
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', padding: '0.45rem 0.75rem', flex: 1, minWidth: '220px' }}>
-          <Search size={16} style={{ color: '#94a3b8', marginRight: '0.5rem' }} />
-          <input
-            type="text"
-            placeholder="Search task title, code, employee, category..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
-          />
-        </div>
-
-        {activeTab === 'all' && myReportingTeam.length > 0 && (
           <select
-            value={teamBoardFilter}
-            onChange={(e) => setTeamBoardFilter(e.target.value)}
-            style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: '8px',
-              border: '1.5px solid #3b82f6',
-              background: '#eff6ff',
-              color: '#1d4ed8',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer'
-            }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
           >
-            <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
-            {isAdmin && <option value="ALL">🏢 All Company Tasks</option>}
+            <option value="ALL">All Statuses</option>
+            <option value="PENDING">Pending (Not Started)</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="SUBMITTED">Submitted for Review</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="REOPENED">Reopened</option>
           </select>
-        )}
 
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
-        >
-          <option value="ALL">All Statuses</option>
-          <option value="PENDING">Pending (Not Started)</option>
-          <option value="IN_PROGRESS">In Progress</option>
-          <option value="SUBMITTED">Submitted for Review</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="REOPENED">Reopened</option>
-        </select>
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
+          >
+            <option value="ALL">All Priorities</option>
+            <option value="URGENT">🔥 Urgent</option>
+            <option value="HIGH">⚡ High</option>
+            <option value="MEDIUM">📌 Medium</option>
+            <option value="LOW">☕ Low</option>
+          </select>
+        </div>
+      )}
 
-        <select
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
-        >
-          <option value="ALL">All Priorities</option>
-          <option value="URGENT">🔥 Urgent</option>
-          <option value="HIGH">⚡ High</option>
-          <option value="MEDIUM">📌 Medium</option>
-          <option value="LOW">☕ Low</option>
-        </select>
-      </div>
-
-      {/* Task Cards Grid */}
-      {loading && (
+      {/* Task Cards Grid (Only when not on dashboard) */}
+      {activeTab !== 'dashboard' && loading && (
         <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
           <RefreshCw className="spin" size={32} style={{ margin: '0 auto 1rem' }} />
           <p>Loading delegation tasks...</p>
         </div>
       )}
 
-      {!loading && tasks.length === 0 && (
+      {activeTab !== 'dashboard' && !loading && tasks.length === 0 && (
         <div style={{
           background: 'var(--bg-secondary, #f8fafc)',
           border: '1px dashed var(--border-color, #cbd5e1)',
@@ -762,7 +1651,7 @@ export default function DelegationTaskModule({
         </div>
       )}
 
-      {!loading && tasks.length > 0 && (
+      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
           {tasks.map(task => {
             const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;

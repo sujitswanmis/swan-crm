@@ -42,6 +42,7 @@ export const MODULES_CONFIG = [
     icon: <Users size={20} />,
     subItemsType: 'tabs',
     subItems: [
+      { id: 'dashboard', label: '📊 Delegation Dashboard' },
       { id: 'to_me', label: '📥 Tasks To Me' },
       { id: 'by_me', label: '📤 Tasks By Me' },
       { id: 'all', label: '👥 Team Task Board' }
