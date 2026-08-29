@@ -71,7 +71,7 @@ export default function DelegationTaskModule({
 
   // Dashboard specific filters
   const [dashboardScope, setDashboardScope] = useState(isAdmin ? 'COMPANY_WIDE' : 'MY_DELEGATIONS');
-  const [dashboardTimeRange, setDashboardTimeRange] = useState('this_month');
+  const [dashboardTimeRange, setDashboardTimeRange] = useState('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [dashboardDept, setDashboardDept] = useState('ALL');
@@ -1092,9 +1092,13 @@ export default function DelegationTaskModule({
               </div>
             </div>
 
-            {/* Time Presets */}
+            {/* Quick Date Presets */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.2rem' }}>
+                <Calendar size={14} /> Quick Date:
+              </span>
               {[
+                { id: 'all', label: 'All Time' },
                 { id: 'today', label: 'Today' },
                 { id: 'tomorrow', label: 'Tomorrow' },
                 { id: 'upcoming', label: '⏳ Upcoming' },
@@ -1102,7 +1106,6 @@ export default function DelegationTaskModule({
                 { id: 'this_month', label: 'This Month' },
                 { id: 'last_30_days', label: 'Last 30 Days' },
                 { id: 'yesterday', label: 'Yesterday' },
-                { id: 'all', label: 'All Time' },
                 { id: 'custom', label: 'Custom' }
               ].map(preset => (
                 <button
@@ -1111,13 +1114,14 @@ export default function DelegationTaskModule({
                   style={{
                     border: '1px solid',
                     borderColor: dashboardTimeRange === preset.id ? '#3b82f6' : 'var(--border-color, #e2e8f0)',
-                    background: dashboardTimeRange === preset.id ? '#eff6ff' : 'var(--card-bg, #ffffff)',
-                    color: dashboardTimeRange === preset.id ? '#1d4ed8' : '#64748b',
-                    padding: '0.35rem 0.75rem',
+                    background: dashboardTimeRange === preset.id ? '#eff6ff' : 'var(--bg-secondary, #f8fafc)',
+                    color: dashboardTimeRange === preset.id ? '#1d4ed8' : 'var(--text-secondary, #64748b)',
+                    padding: '0.25rem 0.65rem',
                     borderRadius: '6px',
-                    fontSize: '0.8rem',
+                    fontSize: '0.78rem',
                     fontWeight: 600,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
                   }}
                 >
                   {preset.label}
