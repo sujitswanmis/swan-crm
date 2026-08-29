@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
   Trash2, Edit3, ShieldCheck, Filter, Search, RefreshCw, Eye,
   Sparkles, Check, ChevronRight, X, AlertTriangle, FileSpreadsheet,
-  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink
+  Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock
 } from 'lucide-react';
 import {
   FREQUENCIES_CONFIG,
@@ -791,7 +791,7 @@ export default function ChecklistModule({
                     >
                       {isCompleted ? (
                         <>
-                          <Check size={16} /> View / Edit Submitted Checklist
+                          <Lock size={16} /> View Submitted Checklist (Locked)
                         </>
                       ) : isOverdue ? (
                         <>
@@ -1153,10 +1153,35 @@ export default function ChecklistModule({
 
             {/* Questions Body */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Cutoff & Delay Notice Banner */}
+              {/* Completed Lock Banner or Cutoff/Delay Notice Banner */}
               {(() => {
+                const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
                 const delayInfo = executingChecklist.delayInfo || {};
-                const isOverdue = delayInfo.isPastCutoff && executingChecklist.status !== 'COMPLETED';
+                const isOverdue = delayInfo.isPastCutoff && !isAlreadyCompleted;
+
+                if (isAlreadyCompleted) {
+                  return (
+                    <div style={{
+                      padding: '0.75rem 1rem',
+                      background: '#f0fdf4',
+                      color: '#166534',
+                      border: '1.5px solid #86efac',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem'
+                    }}>
+                      <Lock size={18} style={{ flexShrink: 0 }} />
+                      <div>
+                        <strong>🔒 Checklist Submitted & Locked:</strong> This checklist was submitted on{' '}
+                        <strong>{executingChecklist.submission?.submitted_at ? new Date(executingChecklist.submission.submitted_at).toLocaleString('en-IN') : 'Completed'}</strong>.
+                        It is locked in View-Only mode and cannot be edited.
+                      </div>
+                    </div>
+                  );
+                }
+
                 return isOverdue ? (
                   <div style={{
                     padding: '0.75rem 1rem',
@@ -1195,108 +1220,123 @@ export default function ChecklistModule({
                   </div>
                 );
               })()}
-              {executingChecklist.items.map((item, idx) => {
-                const val = execResponses[item.id];
-                return (
-                  <div
-                    key={item.id || idx}
-                    style={{
-                      background: 'var(--bg-secondary, #f8fafc)',
-                      border: '1px solid var(--border-color, #e2e8f0)',
-                      borderRadius: '8px',
-                      padding: '1rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>
-                        {idx + 1}. {item.title} {item.is_required && <span style={{ color: '#ef4444' }}>*</span>}
-                      </label>
-                      <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '0.15rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase' }}>
-                        {item.type}
-                      </span>
-                    </div>
 
-                    {item.standard_guideline && (
-                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic' }}>
-                        SOP: {item.standard_guideline}
-                      </p>
-                    )}
-
-                    {/* Input based on type */}
-                    {item.type === 'checkbox' && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', marginTop: '0.25rem' }}>
-                        <input
-                          type="checkbox"
-                          checked={val === true || val === 'true'}
-                          onChange={(e) => handleResponseChange(item.id, e.target.checked)}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
-                          {val ? '✓ Completed / Verified' : 'Mark as Done'}
+              {(() => {
+                const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
+                return executingChecklist.items.map((item, idx) => {
+                  const val = execResponses[item.id];
+                  return (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        border: '1px solid var(--border-color, #e2e8f0)',
+                        borderRadius: '8px',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>
+                          {idx + 1}. {item.title} {item.is_required && !isAlreadyCompleted && <span style={{ color: '#ef4444' }}>*</span>}
+                        </label>
+                        <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '0.15rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase' }}>
+                          {item.type}
                         </span>
-                      </label>
-                    )}
+                      </div>
 
-                    {item.type === 'number' && (
-                      <input
-                        type="number"
-                        placeholder="Enter measured reading / count..."
-                        value={val || ''}
-                        onChange={(e) => handleResponseChange(item.id, e.target.value)}
-                        style={{
-                          padding: '0.55rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color, #cbd5e1)',
-                          width: '100%',
-                          fontSize: '0.9rem'
-                        }}
-                      />
-                    )}
+                      {item.standard_guideline && (
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic' }}>
+                          SOP: {item.standard_guideline}
+                        </p>
+                      )}
 
-                    {(item.type === 'photo' || item.type === 'file') && (
-                      <input
-                        type="text"
-                        placeholder="Paste image / attachment link or notes..."
-                        value={val || ''}
-                        onChange={(e) => handleResponseChange(item.id, e.target.value)}
-                        style={{
-                          padding: '0.55rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color, #cbd5e1)',
-                          width: '100%',
-                          fontSize: '0.9rem'
-                        }}
-                      />
-                    )}
+                      {/* Input based on type */}
+                      {item.type === 'checkbox' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer', marginTop: '0.25rem' }}>
+                          <input
+                            type="checkbox"
+                            disabled={isAlreadyCompleted}
+                            checked={val === true || val === 'true'}
+                            onChange={(e) => handleResponseChange(item.id, e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.9rem', fontWeight: 500, color: val ? '#166534' : 'inherit' }}>
+                            {val ? '✓ Completed / Verified' : 'Mark as Done'}
+                          </span>
+                        </label>
+                      )}
 
-                    {item.type === 'text' && (
-                      <textarea
-                        placeholder="Enter remarks or details..."
-                        rows={2}
-                        value={val || ''}
-                        onChange={(e) => handleResponseChange(item.id, e.target.value)}
-                        style={{
-                          padding: '0.55rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color, #cbd5e1)',
-                          width: '100%',
-                          fontSize: '0.9rem'
-                        }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                      {item.type === 'number' && (
+                        <input
+                          type="number"
+                          disabled={isAlreadyCompleted}
+                          placeholder="Enter measured reading / count..."
+                          value={val || ''}
+                          onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                          style={{
+                            padding: '0.55rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color, #cbd5e1)',
+                            width: '100%',
+                            fontSize: '0.9rem',
+                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
+                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                          }}
+                        />
+                      )}
+
+                      {(item.type === 'photo' || item.type === 'file') && (
+                        <input
+                          type="text"
+                          disabled={isAlreadyCompleted}
+                          placeholder="Paste image / attachment link or notes..."
+                          value={val || ''}
+                          onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                          style={{
+                            padding: '0.55rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color, #cbd5e1)',
+                            width: '100%',
+                            fontSize: '0.9rem',
+                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
+                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                          }}
+                        />
+                      )}
+
+                      {item.type === 'text' && (
+                        <textarea
+                          disabled={isAlreadyCompleted}
+                          placeholder="Enter remarks or details..."
+                          rows={2}
+                          value={val || ''}
+                          onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                          style={{
+                            padding: '0.55rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color, #cbd5e1)',
+                            width: '100%',
+                            fontSize: '0.9rem',
+                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
+                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                });
+              })()}
 
               {/* Overall Summary Notes */}
               <div>
                 <label style={{ fontWeight: 600, fontSize: '0.9rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Overall Remarks / Notes (optional):
+                  Overall Remarks / Notes:
                 </label>
                 <textarea
+                  disabled={executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED'}
                   placeholder="Any general comments, observations or issues..."
                   rows={2}
                   value={execNotes}
@@ -1306,47 +1346,79 @@ export default function ChecklistModule({
                     borderRadius: '6px',
                     border: '1px solid var(--border-color, #cbd5e1)',
                     width: '100%',
-                    fontSize: '0.9rem'
+                    fontSize: '0.9rem',
+                    background: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED') ? '#f1f5f9' : '#fff',
+                    cursor: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED') ? 'not-allowed' : 'text'
                   }}
                 />
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                onClick={() => setExecutingChecklist(null)}
-                style={{
-                  background: 'none',
-                  border: '1px solid var(--border-color, #cbd5e1)',
-                  padding: '0.55rem 1.25rem',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitExecution}
-                disabled={savingSubmission}
-                style={{
-                  background: '#22c55e',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.55rem 1.5rem',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem'
-                }}
-              >
-                {savingSubmission ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}
-                Submit & Complete
-              </button>
-            </div>
+            {(() => {
+              const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
+
+              if (isAlreadyCompleted) {
+                return (
+                  <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <CheckCircle2 size={16} /> Submission Recorded ({executingChecklist.submission?.items_completed_count || executingChecklist.items.length}/{executingChecklist.items.length} Items Done)
+                    </span>
+                    <button
+                      onClick={() => setExecutingChecklist(null)}
+                      style={{
+                        background: '#3b82f6',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '0.55rem 1.5rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <button
+                    onClick={() => setExecutingChecklist(null)}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      padding: '0.55rem 1.25rem',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmitExecution}
+                    disabled={savingSubmission}
+                    style={{
+                      background: '#22c55e',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '0.55rem 1.5rem',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    {savingSubmission ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}
+                    Submit & Complete
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
