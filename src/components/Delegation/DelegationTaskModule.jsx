@@ -49,6 +49,9 @@ export default function DelegationTaskModule({
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.delegation?.is_manager === true;
+  const canAccessToMe = moduleAccess?.delegation?.sub_items?.to_me?.view !== false;
+  const canAccessByMe = moduleAccess?.delegation?.sub_items?.by_me?.view !== false;
+  const canAccessTeamBoard = isManager || moduleAccess?.delegation?.sub_items?.all?.view === true;
 
   // Tabs: 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'to_me');
@@ -616,7 +619,7 @@ export default function DelegationTaskModule({
           <span>📤 Tasks Delegated By Me</span>
         </button>
 
-        {isManager && (
+        {canAccessTeamBoard && (
           <button
             onClick={() => setActiveTab('all')}
             style={{

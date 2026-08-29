@@ -36,6 +36,8 @@ export default function ChecklistModule({
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
+  const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
+  const canAccessCompliance = isManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
   // Tabs: 'my_checklists' | 'templates' | 'compliance'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'my_checklists');
@@ -483,7 +485,7 @@ export default function ChecklistModule({
           <CheckSquare size={18} /> My Checklists
         </button>
 
-        {isManager && (
+        {canAccessTemplates && (
           <button
             onClick={() => setActiveTab('templates')}
             style={{
@@ -504,7 +506,7 @@ export default function ChecklistModule({
           </button>
         )}
 
-        {isManager && (
+        {canAccessCompliance && (
           <button
             onClick={() => setActiveTab('compliance')}
             style={{

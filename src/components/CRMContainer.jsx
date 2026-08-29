@@ -1909,30 +1909,32 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${checklistMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
-                  <button
-                    onClick={() => handleChecklistSubTabChange('my_checklists')}
-                    className="submenu-item"
-                    data-active={activeTab === 'checklist' && checklistSubTab === 'my_checklists'}
-                  >
-                    📋 My Checklists
-                  </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager) && (
-                    <>
-                      <button
-                        onClick={() => handleChecklistSubTabChange('templates')}
-                        className="submenu-item"
-                        data-active={activeTab === 'checklist' && checklistSubTab === 'templates'}
-                      >
-                        📑 Templates Master
-                      </button>
-                      <button
-                        onClick={() => handleChecklistSubTabChange('compliance')}
-                        className="submenu-item"
-                        data-active={activeTab === 'checklist' && checklistSubTab === 'compliance'}
-                      >
-                        📊 Compliance & Audit
-                      </button>
-                    </>
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.sub_items?.my_checklists?.view !== false) && (
+                    <button
+                      onClick={() => handleChecklistSubTabChange('my_checklists')}
+                      className="submenu-item"
+                      data-active={activeTab === 'checklist' && checklistSubTab === 'my_checklists'}
+                    >
+                      📋 My Checklists
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager || moduleAccess['checklist']?.sub_items?.templates?.view === true) && (
+                    <button
+                      onClick={() => handleChecklistSubTabChange('templates')}
+                      className="submenu-item"
+                      data-active={activeTab === 'checklist' && checklistSubTab === 'templates'}
+                    >
+                      📑 Templates Master
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager || moduleAccess['checklist']?.sub_items?.compliance?.view === true) && (
+                    <button
+                      onClick={() => handleChecklistSubTabChange('compliance')}
+                      className="submenu-item"
+                      data-active={activeTab === 'checklist' && checklistSubTab === 'compliance'}
+                    >
+                      📊 Compliance & Audit
+                    </button>
                   )}
                 </div>
               </div>
@@ -1966,21 +1968,25 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${delegationMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
-                  <button
-                    onClick={() => handleDelegationSubTabChange('to_me')}
-                    className="submenu-item"
-                    data-active={activeTab === 'delegation' && delegationSubTab === 'to_me'}
-                  >
-                    📥 Tasks To Me
-                  </button>
-                  <button
-                    onClick={() => handleDelegationSubTabChange('by_me')}
-                    className="submenu-item"
-                    data-active={activeTab === 'delegation' && delegationSubTab === 'by_me'}
-                  >
-                    📤 Tasks By Me
-                  </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['delegation']?.is_manager) && (
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.to_me?.view !== false) && (
+                    <button
+                      onClick={() => handleDelegationSubTabChange('to_me')}
+                      className="submenu-item"
+                      data-active={activeTab === 'delegation' && delegationSubTab === 'to_me'}
+                    >
+                      📥 Tasks To Me
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.by_me?.view !== false) && (
+                    <button
+                      onClick={() => handleDelegationSubTabChange('by_me')}
+                      className="submenu-item"
+                      data-active={activeTab === 'delegation' && delegationSubTab === 'by_me'}
+                    >
+                      📤 Tasks By Me
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['delegation']?.is_manager || moduleAccess['delegation']?.sub_items?.all?.view === true) && (
                     <button
                       onClick={() => handleDelegationSubTabChange('all')}
                       className="submenu-item"
