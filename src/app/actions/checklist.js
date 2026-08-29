@@ -29,9 +29,6 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
     if (filter.frequency) {
       query = query.eq('frequency', filter.frequency.toUpperCase());
     }
-    if (filter.is_active !== undefined) {
-      query = query.eq('is_active', filter.is_active);
-    }
     if (filter.department) {
       query = query.eq('department', filter.department);
     }
@@ -41,7 +38,19 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
 
     const { data, error } = await query;
     if (error) throw error;
-    return { success: true, data: data || [] };
+
+    const normalized = (data || []).map(t => {
+      let status = t.status;
+      if (!status) {
+        status = t.is_active ? 'ACTIVE' : 'INACTIVE';
+      }
+      return {
+        ...t,
+        status: status.toUpperCase()
+      };
+    });
+
+    return { success: true, data: normalized };
   } catch (err) {
     console.warn('Error fetching checklist templates from Supabase:', err.message);
     return { success: true, data: [] };
@@ -52,6 +61,9 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
   const adminClient = getAdminClient();
   try {
     const id = templateData.id || crypto.randomUUID();
+    const resolvedStatus = (templateData.status || (templateData.is_active === false ? 'INACTIVE' : 'ACTIVE')).toUpperCase();
+    const isActive = resolvedStatus === 'ACTIVE';
+
     const payload = {
       id,
       tenant_id: tenantId,
@@ -68,19 +80,31 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       days_of_week: templateData.days_of_week || [],
       day_of_month: templateData.day_of_month || 1,
       items: Array.isArray(templateData.items) ? templateData.items : [],
-      is_active: templateData.is_active !== undefined ? templateData.is_active : true,
+      is_active: isActive,
+      status: resolvedStatus,
       created_by: templateData.created_by || 'Admin',
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await adminClient
+    let { data, error } = await adminClient
       .from('checklist_templates')
       .upsert(payload)
       .select()
       .single();
 
+    if (error) {
+      delete payload.status;
+      const res = await adminClient
+        .from('checklist_templates')
+        .upsert(payload)
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    }
+
     if (error) throw error;
-    return { success: true, data };
+    return { success: true, data: { ...data, status: resolvedStatus } };
   } catch (err) {
     console.error('Error saving checklist template:', err.message);
     return { success: false, error: err.message };
@@ -104,23 +128,42 @@ export async function deleteChecklistTemplate(templateId, tenantId = DEFAULT_TEN
   }
 }
 
-export async function toggleChecklistTemplateStatus(templateId, newActiveStatus, tenantId = DEFAULT_TENANT_ID) {
+export async function setChecklistTemplateStatus(templateId, newStatus, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   try {
-    const isActive = Boolean(newActiveStatus);
-    const { error } = await adminClient
+    const statusClean = ['ACTIVE', 'INACTIVE', 'DRAFT'].includes(String(newStatus).toUpperCase())
+      ? String(newStatus).toUpperCase()
+      : (newStatus ? 'ACTIVE' : 'INACTIVE');
+
+    const isActive = statusClean === 'ACTIVE';
+
+    let updatePayload = {
+      is_active: isActive,
+      status: statusClean,
+      updated_at: new Date().toISOString()
+    };
+
+    let { error } = await adminClient
       .from('checklist_templates')
-      .update({
-        is_active: isActive,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', templateId)
       .eq('tenant_id', tenantId);
 
-    if (error) throw error;
-    return { success: true, is_active: isActive };
+    if (error) {
+      const { error: fallbackErr } = await adminClient
+        .from('checklist_templates')
+        .update({
+          is_active: isActive,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', templateId)
+        .eq('tenant_id', tenantId);
+      if (fallbackErr) throw fallbackErr;
+    }
+
+    return { success: true, status: statusClean, is_active: isActive };
   } catch (err) {
-    console.error('Error toggling template status:', err.message);
+    console.error('Error setting template status:', err.message);
     return { success: false, error: err.message };
   }
 }

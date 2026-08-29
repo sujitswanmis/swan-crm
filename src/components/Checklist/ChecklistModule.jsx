@@ -18,7 +18,7 @@ import {
   getChecklistTemplates,
   saveChecklistTemplate,
   deleteChecklistTemplate,
-  toggleChecklistTemplateStatus,
+  setChecklistTemplateStatus,
   getEmployeeChecklistDashboard,
   submitChecklistResponse,
   verifyChecklistSubmission,
@@ -266,6 +266,7 @@ export default function ChecklistModule({
         { id: `item_${Date.now()}_1`, title: 'Check equipment status', type: 'done_not_done', is_required: true, standard_guideline: '' },
         { id: `item_${Date.now()}_2`, title: 'Upload cleanliness photo', type: 'photo', is_required: false, standard_guideline: '' }
       ],
+      status: 'ACTIVE',
       is_active: true
     });
     setTemplateModalOpen(true);
@@ -279,6 +280,8 @@ export default function ChecklistModule({
     } else if (tmpl.assigned_employee_email && tmpl.assigned_employee_email.includes(',')) {
       assignmentMode = 'MULTI';
     }
+
+    const currentStatus = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
 
     setTemplateForm({
       id: tmpl.id,
@@ -297,7 +300,8 @@ export default function ChecklistModule({
       items: tmpl.items && tmpl.items.length > 0 ? tmpl.items : [
         { id: `item_${Date.now()}_1`, title: 'Check item', type: 'done_not_done', is_required: true, standard_guideline: '' }
       ],
-      is_active: tmpl.is_active !== undefined ? tmpl.is_active : true
+      status: currentStatus,
+      is_active: currentStatus === 'ACTIVE'
     });
     setTemplateModalOpen(true);
   };
@@ -359,35 +363,38 @@ export default function ChecklistModule({
         ...it,
         id: `item_${Date.now()}_${idx + 1}`
       })),
+      status: 'ACTIVE',
       is_active: true
     });
     showNotification(`📋 Template cloned! Modify Title, Cutoff Time or Questions and save.`);
     setTemplateModalOpen(true);
   };
 
-  const handleToggleStatus = async (tmpl) => {
-    const newStatus = !tmpl.is_active;
+  const handleSetStatus = async (tmpl, newStatus) => {
+    const statusClean = String(newStatus).toUpperCase();
+    const isActive = statusClean === 'ACTIVE';
+
     // Optimistic update
-    setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: newStatus } : t));
+    setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, status: statusClean, is_active: isActive } : t));
     setTogglingStatusId(tmpl.id);
     try {
-      const res = await toggleChecklistTemplateStatus(tmpl.id, newStatus);
+      const res = await setChecklistTemplateStatus(tmpl.id, statusClean);
       if (res.success) {
-        showNotification(`Template marked ${newStatus ? 'Active' : 'Inactive'}`);
+        showNotification(`Template set to ${statusClean === 'ACTIVE' ? '🟢 Active' : statusClean === 'DRAFT' ? '📝 Draft' : '🔴 Inactive'}`);
       } else {
-        // Revert on failure
-        setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: !newStatus } : t));
-        showNotification(res.error || 'Failed to toggle status', true);
+        // Revert
+        setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, status: tmpl.status, is_active: tmpl.is_active } : t));
+        showNotification(res.error || 'Failed to update status', true);
       }
     } catch (e) {
-      setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, is_active: !newStatus } : t));
+      setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, status: tmpl.status, is_active: tmpl.is_active } : t));
       showNotification(e.message, true);
     } finally {
       setTogglingStatusId(null);
     }
   };
 
-  const handleSaveTemplate = async (forceIsActive = null) => {
+  const handleSaveTemplate = async (explicitStatus = null) => {
     if (!templateForm.title.trim()) {
       showNotification('Please enter a template title', true);
       return;
@@ -397,18 +404,21 @@ export default function ChecklistModule({
       return;
     }
 
-    const activeState = forceIsActive !== null ? forceIsActive : (templateForm.is_active !== undefined ? templateForm.is_active : true);
+    const finalStatus = (explicitStatus || templateForm.status || 'ACTIVE').toUpperCase();
+    const isActive = finalStatus === 'ACTIVE';
 
     try {
       const res = await saveChecklistTemplate({
         ...templateForm,
         id: editingTemplate?.id,
-        is_active: activeState,
+        status: finalStatus,
+        is_active: isActive,
         created_by: userName
       });
 
       if (res.success) {
-        showNotification(activeState ? '✅ Checklist template published successfully!' : '📁 Template saved as Draft (Inactive)!');
+        const statusMsg = finalStatus === 'ACTIVE' ? '✅ Published as Active!' : finalStatus === 'DRAFT' ? '📝 Saved as Draft!' : '🔴 Saved as Inactive!';
+        showNotification(statusMsg);
         setTemplateModalOpen(false);
         loadTemplates();
       } else {
@@ -875,15 +885,18 @@ export default function ChecklistModule({
       {/* ========================================================================= */}
       {/* TAB 2: TEMPLATES MASTER (FOR MANAGERS / ADMINS)                           */}
       {/* ========================================================================= */}
-      {/* ========================================================================= */}
-      {/* TAB 2: TEMPLATES MASTER (FOR MANAGERS / ADMINS)                           */}
-      {/* ========================================================================= */}
       {activeTab === 'templates' && (() => {
         const displayedTemplates = templates.filter(tmpl => {
-          if (templateStatusFilter === 'ACTIVE') return tmpl.is_active === true;
-          if (templateStatusFilter === 'INACTIVE') return tmpl.is_active === false;
+          const s = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
+          if (templateStatusFilter === 'ACTIVE') return s === 'ACTIVE';
+          if (templateStatusFilter === 'INACTIVE') return s === 'INACTIVE';
+          if (templateStatusFilter === 'DRAFT') return s === 'DRAFT';
           return true;
         });
+
+        const activeCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'ACTIVE').length;
+        const inactiveCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'INACTIVE').length;
+        const draftCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'DRAFT').length;
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -891,7 +904,7 @@ export default function ChecklistModule({
               <div>
                 <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Checklist Templates Repository</h2>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
-                  Configure multi-frequency recurring checklists, duplicate templates, and toggle active/inactive status.
+                  Configure multi-frequency recurring checklists, duplicate templates, and manage Active, Inactive, or Draft status.
                 </p>
               </div>
 
@@ -909,9 +922,10 @@ export default function ChecklistModule({
                     cursor: 'pointer'
                   }}
                 >
-                  <option value="ALL">All Status ({templates.length})</option>
-                  <option value="ACTIVE">🟢 Active Only ({templates.filter(t => t.is_active).length})</option>
-                  <option value="INACTIVE">🔴 Inactive / Draft ({templates.filter(t => !t.is_active).length})</option>
+                  <option value="ALL">All Statuses ({templates.length})</option>
+                  <option value="ACTIVE">🟢 Active ({activeCount})</option>
+                  <option value="INACTIVE">🔴 Inactive ({inactiveCount})</option>
+                  <option value="DRAFT">📝 Draft ({draftCount})</option>
                 </select>
 
                 <button
@@ -957,6 +971,14 @@ export default function ChecklistModule({
                   )}
                   {displayedTemplates.map(tmpl => {
                     const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
+                    const s = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
+                    const isAct = s === 'ACTIVE';
+                    const isDrf = s === 'DRAFT';
+
+                    const bg = isAct ? '#dcfce7' : isDrf ? '#fef3c7' : '#fee2e2';
+                    const color = isAct ? '#166534' : isDrf ? '#92400e' : '#991b1b';
+                    const border = isAct ? '#86efac' : isDrf ? '#fcd34d' : '#fca5a5';
+
                     return (
                       <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -993,29 +1015,28 @@ export default function ChecklistModule({
                           </span>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(tmpl)}
+                          <select
+                            value={s}
                             disabled={togglingStatusId === tmpl.id}
-                            title={`Click to set as ${tmpl.is_active ? 'Inactive' : 'Active'}`}
+                            onChange={(e) => handleSetStatus(tmpl, e.target.value)}
                             style={{
-                              background: tmpl.is_active ? '#dcfce7' : '#fee2e2',
-                              color: tmpl.is_active ? '#166534' : '#991b1b',
-                              border: tmpl.is_active ? '1px solid #86efac' : '1px solid #fca5a5',
-                              padding: '0.25rem 0.65rem',
+                              background: bg,
+                              color: color,
+                              border: `1.5px solid ${border}`,
+                              padding: '0.3rem 0.65rem',
                               borderRadius: '12px',
-                              fontSize: '0.75rem',
+                              fontSize: '0.78rem',
                               fontWeight: 700,
                               cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                              transition: 'all 0.2s ease'
+                              outline: 'none',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                             }}
+                            title="Click to switch status directly"
                           >
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: tmpl.is_active ? '#16a34a' : '#dc2626' }} />
-                            {togglingStatusId === tmpl.id ? 'Updating...' : (tmpl.is_active ? 'Active' : 'Inactive')}
-                          </button>
+                            <option value="ACTIVE" style={{ background: '#ffffff', color: '#166534', fontWeight: 700 }}>🟢 Active</option>
+                            <option value="INACTIVE" style={{ background: '#ffffff', color: '#991b1b', fontWeight: 700 }}>🔴 Inactive</option>
+                            <option value="DRAFT" style={{ background: '#ffffff', color: '#92400e', fontWeight: 700 }}>📝 Draft</option>
+                          </select>
                         </td>
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: '0.55rem', justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -1661,27 +1682,29 @@ export default function ChecklistModule({
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Status:</span>
-                <button
-                  type="button"
-                  onClick={() => setTemplateForm(prev => ({ ...prev, is_active: !prev.is_active }))}
+                <select
+                  value={(templateForm.status || (templateForm.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase()}
+                  onChange={(e) => setTemplateForm(prev => ({
+                    ...prev,
+                    status: e.target.value,
+                    is_active: e.target.value === 'ACTIVE'
+                  }))}
                   style={{
-                    background: templateForm.is_active ? '#16a34a' : '#475569',
+                    background: (templateForm.status || 'ACTIVE') === 'ACTIVE' ? '#166534' : (templateForm.status || 'ACTIVE') === 'DRAFT' ? '#92400e' : '#991b1b',
                     color: '#ffffff',
-                    border: 'none',
-                    padding: '0.25rem 0.65rem',
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    padding: '0.3rem 0.75rem',
                     borderRadius: '12px',
-                    fontSize: '0.75rem',
+                    fontSize: '0.78rem',
                     fontWeight: 700,
                     cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
+                    outline: 'none'
                   }}
-                  title="Click to toggle between Active and Draft"
                 >
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff' }} />
-                  {templateForm.is_active ? 'Active' : 'Draft / Inactive'}
-                </button>
+                  <option value="ACTIVE" style={{ background: '#0f172a', color: '#fff' }}>🟢 Active (Published)</option>
+                  <option value="INACTIVE" style={{ background: '#0f172a', color: '#fff' }}>🔴 Inactive (Paused)</option>
+                  <option value="DRAFT" style={{ background: '#0f172a', color: '#fff' }}>📝 Draft (Work in Progress)</option>
+                </select>
                 <button
                   onClick={() => setTemplateModalOpen(false)}
                   style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '0.25rem' }}
@@ -1978,26 +2001,42 @@ export default function ChecklistModule({
                 Cancel
               </button>
 
-              <div style={{ display: 'flex', gap: '0.65rem' }}>
+              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={() => handleSaveTemplate(false)}
+                  onClick={() => handleSaveTemplate('DRAFT')}
                   style={{
-                    background: '#f1f5f9',
-                    color: '#475569',
-                    border: '1px solid #cbd5e1',
+                    background: '#fef3c7',
+                    color: '#92400e',
+                    border: '1px solid #fcd34d',
                     padding: '0.55rem 1.15rem',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     fontWeight: 600
                   }}
-                  title="Save without assigning to employees yet"
+                  title="Save as work-in-progress draft without assigning"
                 >
-                  📁 Save as Draft (Inactive)
+                  📝 Save as Draft
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSaveTemplate(true)}
+                  onClick={() => handleSaveTemplate('INACTIVE')}
+                  style={{
+                    background: '#fee2e2',
+                    color: '#991b1b',
+                    border: '1px solid #fca5a5',
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                  title="Save but keep paused/inactive"
+                >
+                  🔴 Save as Inactive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveTemplate('ACTIVE')}
                   style={{
                     background: '#22c55e',
                     color: '#ffffff',
@@ -2011,7 +2050,7 @@ export default function ChecklistModule({
                     gap: '0.4rem'
                   }}
                 >
-                  <Check size={16} /> Publish & Activate
+                  <Check size={16} /> 🟢 Publish & Activate
                 </button>
               </div>
             </div>
