@@ -1144,10 +1144,41 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     setColumnFilters([]);
   }, [stageFilter]);
 
+  const customGlobalFilterFn = (row, columnId, filterValue) => {
+    if (!filterValue || String(filterValue).trim() === '') return true;
+    const q = String(filterValue).toLowerCase().trim();
+    const cleanDigits = q.replace(/[^0-9]/g, '');
+    const lead = row.original || {};
+
+    const allValues = [
+      lead.lead_ref_id, lead.lead_id, lead['Lead ID'],
+      lead.name, lead.business_name, lead['Business Name'],
+      lead.company, lead['Company'],
+      lead.phone, lead.business_contact_1, lead.business_contact_2, lead.business_contact_in_aio, lead['Business Contact in AIO'],
+      lead.cp1_name, lead.cp2_name, lead.cp3_name, lead.cp_name_in_aio, lead['CP Name in AIO'],
+      lead.cp1_mobile_2, lead.cp2_mobile_1, lead.cp3_mobile_1, lead.cp_mobile_in_aio, lead['CP Mobile in AIO'],
+      lead.city_name, lead.district_name, lead.state_name,
+      lead.source_name, lead.source, lead.requirement, lead.our_company, lead.status
+    ];
+
+    for (const val of allValues) {
+      if (val !== null && val !== undefined && val !== '') {
+        const strVal = String(val).toLowerCase();
+        if (strVal.includes(q)) return true;
+        if (cleanDigits.length >= 4) {
+          const valDigits = strVal.replace(/[^0-9]/g, '');
+          if (valDigits && valDigits.includes(cleanDigits)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const table = useReactTable({
     data: stageFilteredData,
     columns: finalColumns,
     autoResetPageIndex: false,
+    globalFilterFn: customGlobalFilterFn,
     state: {
       globalFilter,
       columnFilters,

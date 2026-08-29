@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -35,6 +35,8 @@ import LocationManagementModule from './Location/LocationManagementModule';
 import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
 import EmailConfigModule from './EmailConfig/EmailConfigModule';
 import AttendanceModule from './Attendance/AttendanceModule';
+import ChecklistModule from './Checklist/ChecklistModule';
+import DelegationTaskModule from './Delegation/DelegationTaskModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
@@ -149,6 +151,8 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
   if (tabId === 'recruiter') return moduleAccess['recruiter']?.view === true;
   if (tabId === 'joining') return moduleAccess['joining']?.view === true;
   if (tabId === 'attendance') return moduleAccess['attendance']?.view !== false;
+  if (tabId === 'checklist') return moduleAccess['checklist']?.view !== false;
+  if (tabId === 'delegation') return moduleAccess['delegation']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'party') return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
@@ -276,6 +280,10 @@ export default function CRMContainer({
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
   const [attendanceSubTab, setAttendanceSubTab] = useState('my_attendance');
+  const [checklistMenuExpanded, setChecklistMenuExpanded] = useState(false);
+  const [checklistSubTab, setChecklistSubTab] = useState('my_checklists');
+  const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
+  const [delegationSubTab, setDelegationSubTab] = useState('to_me');
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
 
@@ -289,6 +297,12 @@ export default function CRMContainer({
       const attTab = search.get('tab') || search.get('subtab');
       if (attTab && (pathname === '/attendance' || pathname === 'attendance')) {
         setAttendanceSubTab(attTab);
+      }
+      if (attTab && (pathname === '/checklist' || pathname === 'checklist')) {
+        setChecklistSubTab(attTab);
+      }
+      if (attTab && (pathname === '/delegation' || pathname === 'delegation')) {
+        setDelegationSubTab(attTab);
       }
     }
   }, [pathname]);
@@ -477,6 +491,9 @@ export default function CRMContainer({
     // Auto-expand submenus
     setLeadDataExpanded(activeTab === 'leads');
     setRecruiterMenuExpanded(activeTab === 'recruiter');
+    setAttendanceMenuExpanded(activeTab === 'attendance');
+    setChecklistMenuExpanded(activeTab === 'checklist');
+    setDelegationMenuExpanded(activeTab === 'delegation');
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
     setSettingsMenuExpanded(activeTab === 'settings');
@@ -1306,6 +1323,36 @@ export default function CRMContainer({
     }
   };
 
+  const handleChecklistSubTabChange = (subTabId) => {
+    setChecklistSubTab(subTabId);
+    if (activeTab !== 'checklist') {
+      React.startTransition(() => {
+        setActiveTab('checklist');
+      });
+    }
+    const newPath = `/checklist?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleDelegationSubTabChange = (subTabId) => {
+    setDelegationSubTab(subTabId);
+    if (activeTab !== 'delegation') {
+      React.startTransition(() => {
+        setActiveTab('delegation');
+      });
+    }
+    const newPath = `/delegation?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
   const handleStageChange = (stage, subtab = null) => {
     setLeadsFilterStage(stage);
     
@@ -1829,6 +1876,118 @@ export default function CRMContainer({
                         👥 Team Attendance Report
                       </button>
                     </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Smart Checklist (Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, 1-Year) */}
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.view !== false) && (
+            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setChecklistMenuExpanded(true);
+                  } else {
+                    setChecklistMenuExpanded(!checklistMenuExpanded);
+                  }
+                  handleTabChange('checklist');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'checklist'}
+                title={isSidebarCollapsed ? "Smart Checklist" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {checklistMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <CheckSquare size={20} style={{ flexShrink: 0 }} />
+                <span>Smart Checklist</span>
+              </button>
+              
+              <div className={`submenu-list ${checklistMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleChecklistSubTabChange('my_checklists')}
+                    className="submenu-item"
+                    data-active={activeTab === 'checklist' && checklistSubTab === 'my_checklists'}
+                  >
+                    📋 My Checklists
+                  </button>
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager) && (
+                    <>
+                      <button
+                        onClick={() => handleChecklistSubTabChange('templates')}
+                        className="submenu-item"
+                        data-active={activeTab === 'checklist' && checklistSubTab === 'templates'}
+                      >
+                        📑 Templates Master
+                      </button>
+                      <button
+                        onClick={() => handleChecklistSubTabChange('compliance')}
+                        className="submenu-item"
+                        data-active={activeTab === 'checklist' && checklistSubTab === 'compliance'}
+                      >
+                        📊 Compliance & Audit
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delegation Tasks (Emp-to-Emp Task Management) */}
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.view !== false) && (
+            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setDelegationMenuExpanded(true);
+                  } else {
+                    setDelegationMenuExpanded(!delegationMenuExpanded);
+                  }
+                  handleTabChange('delegation');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'delegation'}
+                title={isSidebarCollapsed ? "Delegation Tasks" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {delegationMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <Users size={20} style={{ flexShrink: 0 }} />
+                <span>Delegation Tasks</span>
+              </button>
+              
+              <div className={`submenu-list ${delegationMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleDelegationSubTabChange('to_me')}
+                    className="submenu-item"
+                    data-active={activeTab === 'delegation' && delegationSubTab === 'to_me'}
+                  >
+                    📥 Tasks To Me
+                  </button>
+                  <button
+                    onClick={() => handleDelegationSubTabChange('by_me')}
+                    className="submenu-item"
+                    data-active={activeTab === 'delegation' && delegationSubTab === 'by_me'}
+                  >
+                    📤 Tasks By Me
+                  </button>
+                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['delegation']?.is_manager) && (
+                    <button
+                      onClick={() => handleDelegationSubTabChange('all')}
+                      className="submenu-item"
+                      data-active={activeTab === 'delegation' && delegationSubTab === 'all'}
+                    >
+                      👥 Team Task Board
+                    </button>
                   )}
                 </div>
               </div>
@@ -2543,6 +2702,8 @@ export default function CRMContainer({
                   )}
                   {activeTab === 'joining' && 'Joining Process'}
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
+                  {activeTab === 'checklist' && 'Smart Checklist Management'}
+                  {activeTab === 'delegation' && 'Employee-to-Employee Task Delegation'}
                   {activeTab === 'registration' && 'Client Registration'}
                   {activeTab === 'report' && 'Client Registered Report'}
                   {activeTab === 'aiadmin' && 'AI Admin'}
@@ -3489,6 +3650,42 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     initialSubTab={attendanceSubTab}
                     onSubTabChange={(tab) => handleAttendanceSubTabChange(tab)}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* Smart Checklist Management (Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, 1-Year) */}
+              <KeepAliveTab 
+                isActive={activeTab === 'checklist'} 
+                isVisited={isTabPermitted('checklist', moduleAccess, userRole) && visitedTabs.has('checklist')}
+              >
+                <ErrorBoundary>
+                  <ChecklistModule 
+                    userRole={userRole} 
+                    userId={userId} 
+                    userName={userName} 
+                    userEmail={userEmail} 
+                    moduleAccess={moduleAccess}
+                    initialSubTab={checklistSubTab}
+                    onSubTabChange={(tab) => handleChecklistSubTabChange(tab)}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* Employee-to-Employee Task Delegation */}
+              <KeepAliveTab 
+                isActive={activeTab === 'delegation'} 
+                isVisited={isTabPermitted('delegation', moduleAccess, userRole) && visitedTabs.has('delegation')}
+              >
+                <ErrorBoundary>
+                  <DelegationTaskModule 
+                    userRole={userRole} 
+                    userId={userId} 
+                    userName={userName} 
+                    userEmail={userEmail} 
+                    moduleAccess={moduleAccess}
+                    initialSubTab={delegationSubTab}
+                    onSubTabChange={(tab) => handleDelegationSubTabChange(tab)}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

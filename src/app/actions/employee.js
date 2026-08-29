@@ -15,32 +15,84 @@ const cleanUUID = (val) => (val && typeof val === 'string' && val.trim() !== '' 
 
 export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  
+  const employeeMap = new Map();
+
+  // 1. Fetch all team members & employees from user_roles (Primary CRM User Store)
   try {
-    // 1. Try relational join select
-    const { data, error } = await adminClient
+    const { data: userRoles, error: rolesErr } = await adminClient
+      .from('user_roles')
+      .select('*')
+      .order('emp_name', { ascending: true });
+
+    if (!rolesErr && Array.isArray(userRoles)) {
+      userRoles.forEach(u => {
+        const email = (u.email || '').trim().toLowerCase();
+        if (!email) return;
+
+        const name = u.emp_name || u.name || u.email.split('@')[0];
+        const status = u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active';
+        if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return;
+
+        employeeMap.set(email, {
+          id: u.user_id || u.id || email,
+          user_id: u.user_id || u.id,
+          emp_code: u.emp_id || u.emp_code || '',
+          emp_name: name,
+          name: name,
+          email: email,
+          department: u.emp_department || u.department || 'General',
+          emp_department: u.emp_department || u.department || 'General',
+          designation: u.emp_designation || u.designation || u.role || 'Staff',
+          emp_designation: u.emp_designation || u.designation || u.role || 'Staff',
+          role: u.role || 'agent',
+          status: status
+        });
+      });
+    }
+  } catch (e) {
+    console.warn('Error fetching from user_roles in getEmployeesMaster:', e.message);
+  }
+
+  // 2. Fetch from employees master table and merge
+  try {
+    const { data: empData, error: empErr } = await adminClient
       .from('employees')
       .select('*, designation:designations(designation_name, designation_level, category)')
       .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
+      .order('first_name', { ascending: true });
 
-    if (!error && data) {
-      return data;
+    if (!empErr && Array.isArray(empData)) {
+      empData.forEach(e => {
+        const email = (e.work_email || e.personal_email || e.email || '').trim().toLowerCase();
+        const fullName = [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || e.emp_name || email;
+        const desigName = e.designation?.designation_name || e.designation || 'Staff';
+
+        if (email) {
+          const existing = employeeMap.get(email) || {};
+          employeeMap.set(email, {
+            ...existing,
+            id: e.id || existing.id || email,
+            emp_code: e.emp_code || existing.emp_code || '',
+            emp_name: existing.emp_name || fullName,
+            name: existing.name || fullName,
+            email: email,
+            department: existing.department || e.department || 'General',
+            emp_department: existing.emp_department || e.department || 'General',
+            designation: existing.designation || desigName,
+            emp_designation: existing.emp_designation || desigName,
+            status: e.status || existing.status || 'Active'
+          });
+        }
+      });
     }
-  } catch (e) { console.warn('Relational join fetch fallback:', e.message); }
+  } catch (e) {
+    console.warn('Error fetching from employees table in getEmployeesMaster:', e.message);
+  }
 
-  // 2. Fallback to simple select
-  try {
-    const { data: simpleData } = await adminClient
-      .from('employees')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
-
-    if (simpleData) return simpleData;
-  } catch (e) { console.warn('Simple fetch fallback:', e.message); }
-
-  return [];
+  const list = Array.from(employeeMap.values());
+  // Sort alphabetically by employee name
+  list.sort((a, b) => (a.name || a.emp_name || '').localeCompare(b.name || b.emp_name || ''));
+  return list;
 }
 
 export async function createEmployeeMaster(employeeData, tenantId = DEFAULT_TENANT_ID) {

@@ -381,28 +381,81 @@ async function executeTool(toolCall, userId, isAdmin) {
     
     if (name === 'search_leads' || name === 'search_my_leads') {
       let q = (args.query || '').trim();
+      const cleanDigits = q.replace(/[^0-9]/g, '');
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
       const is15Digit = /^\d{15}$/.test(q);
 
       let query = supabase
         .from('leads')
-        .select('lead_ref_id, name, company, phone, status, assigned_to, follow_up_date, requirement');
+        .select('id, lead_ref_id, name, company, phone, business_contact_1, business_contact_2, business_alt_1, cp1_name, cp1_mobile_2, cp2_name, cp2_mobile_1, city_name, district_name, state_name, status, assigned_to, follow_up_date, requirement');
         
       if (isUUID) {
         query = query.eq('id', q);
       } else if (is15Digit) {
         query = query.eq('lead_ref_id', q);
       } else {
-        query = query.or(`name.ilike.%${q}%,company.ilike.%${q}%,phone.ilike.%${q}%,business_contact_1.ilike.%${q}%,business_contact_2.ilike.%${q}%,lead_ref_id.ilike.%${q}%`);
+        const orConditions = [
+          `name.ilike.%${q}%`,
+          `company.ilike.%${q}%`,
+          `lead_ref_id.ilike.%${q}%`,
+          `phone.ilike.%${q}%`,
+          `business_contact_1.ilike.%${q}%`,
+          `business_contact_2.ilike.%${q}%`,
+          `business_alt_1.ilike.%${q}%`,
+          `cp1_name.ilike.%${q}%`,
+          `cp1_mobile_2.ilike.%${q}%`,
+          `cp2_name.ilike.%${q}%`,
+          `cp2_mobile_1.ilike.%${q}%`,
+          `cp3_name.ilike.%${q}%`,
+          `cp3_mobile_1.ilike.%${q}%`,
+          `city_name.ilike.%${q}%`,
+          `district_name.ilike.%${q}%`
+        ];
+
+        if (cleanDigits.length >= 4 && cleanDigits !== q) {
+          orConditions.push(
+            `phone.ilike.%${cleanDigits}%`,
+            `business_contact_1.ilike.%${cleanDigits}%`,
+            `business_contact_2.ilike.%${cleanDigits}%`,
+            `cp1_mobile_2.ilike.%${cleanDigits}%`,
+            `cp2_mobile_1.ilike.%${cleanDigits}%`
+          );
+        }
+
+        query = query.or(orConditions.join(','));
       }
         
       if (scope === 'me') query = query.eq('assigned_to', userId);
       query = query.limit(10);
         
-      const { data, error } = await query;
+      let { data, error } = await query;
       if (error) throw error;
 
-      return JSON.stringify({ results: data, scope_applied: scope });
+      // If no exact match found and user typed a phone number, attempt partial matching (last 7-8 digits)
+      if ((!data || data.length === 0) && cleanDigits.length >= 7) {
+        const partialDigits = cleanDigits.slice(-7);
+        const partialOr = [
+          `phone.ilike.%${partialDigits}%`,
+          `business_contact_1.ilike.%${partialDigits}%`,
+          `business_contact_2.ilike.%${partialDigits}%`,
+          `cp1_mobile_2.ilike.%${partialDigits}%`,
+          `cp2_mobile_1.ilike.%${partialDigits}%`
+        ].join(',');
+
+        let fallbackQuery = supabase
+          .from('leads')
+          .select('id, lead_ref_id, name, company, phone, business_contact_1, business_contact_2, cp1_name, cp2_name, cp2_mobile_1, city_name, district_name, status, assigned_to, follow_up_date, requirement')
+          .or(partialOr)
+          .limit(5);
+
+        if (scope === 'me') fallbackQuery = fallbackQuery.eq('assigned_to', userId);
+        const { data: fallbackData } = await fallbackQuery;
+        if (fallbackData && fallbackData.length > 0) {
+          data = fallbackData;
+        }
+      }
+
+      return JSON.stringify({ results: data || [], scope_applied: scope });
     }
     
     if (name === 'get_users_summary') {

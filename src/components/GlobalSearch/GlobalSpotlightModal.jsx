@@ -6,6 +6,7 @@ import {
   CornerDownLeft, Shield, Sparkles, Building2, MapPin, 
   Palette, Phone, User, Tag
 } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client';
 
 export default function GlobalSpotlightModal({
   isOpen,
@@ -19,6 +20,8 @@ export default function GlobalSpotlightModal({
 }) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [remoteLeads, setRemoteLeads] = useState([]);
+  const [isSearchingRemote, setIsSearchingRemote] = useState(false);
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
@@ -28,12 +31,78 @@ export default function GlobalSpotlightModal({
   useEffect(() => {
     if (isOpen) {
       setQuery('');
+      setRemoteLeads([]);
       setSelectedIndex(0);
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
     }
   }, [isOpen]);
+
+  // Live real-time database search across 50,000+ leads in Supabase
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2 || (!isAdmin && !moduleAccess?.leads?.view)) {
+      setRemoteLeads([]);
+      setIsSearchingRemote(false);
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingRemote(true);
+        const supabase = createClient();
+        const cleanDigits = q.replace(/[^0-9]/g, '');
+
+        const orConditions = [
+          `name.ilike.%${q}%`,
+          `company.ilike.%${q}%`,
+          `lead_ref_id.ilike.%${q}%`,
+          `phone.ilike.%${q}%`,
+          `business_contact_1.ilike.%${q}%`,
+          `business_contact_2.ilike.%${q}%`,
+          `cp1_name.ilike.%${q}%`,
+          `cp1_mobile_2.ilike.%${q}%`,
+          `cp2_name.ilike.%${q}%`,
+          `cp2_mobile_1.ilike.%${q}%`,
+          `cp3_name.ilike.%${q}%`,
+          `cp3_mobile_1.ilike.%${q}%`,
+          `city_name.ilike.%${q}%`,
+          `district_name.ilike.%${q}%`
+        ];
+
+        if (cleanDigits.length >= 4 && cleanDigits !== q) {
+          orConditions.push(
+            `phone.ilike.%${cleanDigits}%`,
+            `business_contact_1.ilike.%${cleanDigits}%`,
+            `business_contact_2.ilike.%${cleanDigits}%`,
+            `cp1_mobile_2.ilike.%${cleanDigits}%`,
+            `cp2_mobile_1.ilike.%${cleanDigits}%`
+          );
+        }
+
+        const { data, error } = await supabase
+          .from('leads')
+          .select('id, lead_ref_id, name, company, phone, business_contact_1, business_contact_2, cp1_name, cp1_mobile_2, cp2_name, cp2_mobile_1, city_name, district_name, status')
+          .or(orConditions.join(','))
+          .limit(15);
+
+        if (isMounted && data) {
+          setRemoteLeads(data);
+        }
+      } catch (err) {
+        console.error('Error searching remote leads:', err);
+      } finally {
+        if (isMounted) setIsSearchingRemote(false);
+      }
+    }, 120);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [query, isAdmin, moduleAccess]);
 
   // Define All Available Modules with their permission checks
   const allModules = useMemo(() => {
@@ -248,29 +317,62 @@ export default function GlobalSpotlightModal({
       }
     });
 
-    // 5. Leads & Contacts Search (Fuzzy across memory leads)
+    // 5. Leads & Contacts Search (Database + Memory, all fields covered)
     if (q && (isAdmin || moduleAccess?.leads?.view)) {
-      const matchingLeads = leads.filter(lead => {
-        const name = (lead.name || '').toLowerCase();
-        const phone = (lead.phone || '').toLowerCase();
-        const company = (lead.company || '').toLowerCase();
-        const refId = (lead.lead_ref_id || '').toLowerCase();
-        const stage = (lead.stage || '').toLowerCase();
-        const city = (lead.city || '').toLowerCase();
+      const combinedMap = new Map();
+      const cleanDigits = q.replace(/[^0-9]/g, '');
 
-        return name.includes(q) || phone.includes(q) || company.includes(q) || refId.includes(q) || stage.includes(q) || city.includes(q);
-      }).slice(0, 15); // Top 15 matching leads
+      // Normalize memory leads
+      leads.forEach(lead => {
+        const name = (lead.name || lead.business_name || lead['Business Name'] || lead.cp1_name || lead.cp_name_in_aio || lead['CP Name in AIO'] || '').toLowerCase();
+        const phone = (lead.phone || lead.business_contact_1 || lead.business_contact_in_aio || lead['Business Contact in AIO'] || lead.cp2_mobile_1 || lead.cp_mobile_in_aio || lead['CP Mobile in AIO'] || '').toLowerCase();
+        const company = (lead.company || lead['Company'] || '').toLowerCase();
+        const refId = (lead.lead_ref_id || lead.lead_id || lead['Lead ID'] || '').toLowerCase();
+        const stage = (lead.stage || lead.status || '').toLowerCase();
+        const city = (lead.city || lead.city_name || '').toLowerCase();
 
-      matchingLeads.forEach(lead => {
+        const matches = name.includes(q) || phone.includes(q) || company.includes(q) || refId.includes(q) || stage.includes(q) || city.includes(q) ||
+          (cleanDigits.length >= 4 && phone.replace(/[^0-9]/g, '').includes(cleanDigits));
+
+        if (matches) {
+          const key = lead.id || lead.lead_ref_id || lead.lead_id || name;
+          combinedMap.set(key, {
+            id: lead.id,
+            name: lead.name || lead.business_name || lead['Business Name'] || lead.cp1_name || 'Lead',
+            phone: lead.phone || lead.business_contact_1 || lead['Business Contact in AIO'] || lead.cp2_mobile_1 || lead['CP Mobile in AIO'] || '',
+            company: lead.company || lead['Company'] || lead.city_name || '',
+            lead_ref_id: lead.lead_ref_id || lead.lead_id || lead['Lead ID'] || '',
+            stage: lead.stage || lead.status || ''
+          });
+        }
+      });
+
+      // Merge remote database leads
+      remoteLeads.forEach(r => {
+        const key = r.id || r.lead_ref_id || r.name;
+        if (!combinedMap.has(key)) {
+          combinedMap.set(key, {
+            id: r.id,
+            name: r.name || r.company || r.cp1_name || 'Lead',
+            phone: r.phone || r.business_contact_1 || r.cp2_mobile_1 || r.business_contact_2 || '',
+            company: r.company || r.city_name || r.district_name || '',
+            lead_ref_id: r.lead_ref_id || '',
+            stage: r.status || ''
+          });
+        }
+      });
+
+      const list = Array.from(combinedMap.values()).slice(0, 15);
+      list.forEach(lead => {
         results.push({
           type: 'lead',
           category: 'Leads & Contacts',
-          title: lead.name || 'Unnamed Lead',
-          subtitle: `${lead.phone || 'No phone'} • ${lead.company || lead.city || 'Individual'} • ${lead.stage || 'No stage'}`,
+          title: lead.name,
+          subtitle: `${lead.phone || 'No phone'} • ${lead.company || 'Individual'} • ${lead.stage || 'No stage'}`,
           icon: User,
           badge: lead.lead_ref_id || 'LEAD',
           action: () => {
-            onNavigate('leads', lead.stage || null, lead.lead_ref_id || lead.name);
+            onNavigate('leads', lead.stage || null, lead.lead_ref_id || lead.phone || lead.name);
             onClose();
           }
         });
@@ -305,7 +407,7 @@ export default function GlobalSpotlightModal({
     }
 
     return results;
-  }, [query, allModules, leadStages, recruiterStages, leads, teamMembers, isAdmin, moduleAccess, onNavigate, onAction, onClose]);
+  }, [query, allModules, leadStages, recruiterStages, leads, remoteLeads, teamMembers, isAdmin, moduleAccess, onNavigate, onAction, onClose]);
 
   // Keyboard navigation inside search results
   useEffect(() => {

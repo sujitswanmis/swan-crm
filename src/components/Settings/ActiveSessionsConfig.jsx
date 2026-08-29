@@ -327,6 +327,8 @@ export default function ActiveSessionsConfig() {
     }
   };
 
+  const handleForceLogoutAll = handleForceLogoutAllOthers;
+
   // Break Types Editor Handlers in Tab 3
   const handleUpdateBreakRule = (idx, field, value) => {
     const updated = [...(settings.breakRules || [])];

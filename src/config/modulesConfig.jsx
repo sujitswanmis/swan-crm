@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock } from 'lucide-react';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -19,6 +19,32 @@ export const MODULES_CONFIG = [
       { id: 'regularization', label: 'Missing Punch / Regularize' },
       { id: 'hod_approvals', label: 'HOD Approvals' },
       { id: 'team_report', label: 'Team Attendance Report' }
+    ]
+  },
+  {
+    id: 'checklist',
+    path: 'checklist',
+    label: 'Smart Checklist',
+    category: 'General',
+    icon: <CheckSquare size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'my_checklists', label: '📋 My Checklists' },
+      { id: 'templates', label: '📑 Templates Master' },
+      { id: 'compliance', label: '📊 Compliance & Audit' }
+    ]
+  },
+  {
+    id: 'delegation',
+    path: 'delegation',
+    label: 'Delegation Tasks',
+    category: 'General',
+    icon: <Users size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'to_me', label: '📥 Tasks To Me' },
+      { id: 'by_me', label: '📤 Tasks By Me' },
+      { id: 'all', label: '👥 Team Task Board' }
     ]
   },
 
