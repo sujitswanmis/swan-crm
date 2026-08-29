@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
   Trash2, Edit3, ShieldCheck, Filter, Search, RefreshCw, Eye,
-  Sparkles, Check, ChevronRight, X, AlertTriangle, FileSpreadsheet,
+  Sparkles, Check, ChevronRight, ChevronLeft, X, AlertTriangle, FileSpreadsheet,
   Award, TrendingUp, HelpCircle, Layers, User, Building, ExternalLink, Lock, Copy,
   LayoutGrid, List
 } from 'lucide-react';
@@ -61,11 +61,60 @@ export default function ChecklistModule({
   // View Mode for My Checklists: 'tiles' | 'table'
   const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
 
+  // Date selection for My Checklists Dashboard (Defaults to Today)
+  const todayDateStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const [dashboardDate, setDashboardDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+
+  const isPastDate = dashboardDate < todayDateStr;
+  const isFutureDate = dashboardDate > todayDateStr;
+  const isToday = dashboardDate === todayDateStr;
+
+  const handleShiftDate = (days) => {
+    const cur = new Date(`${dashboardDate}T12:00:00`);
+    cur.setDate(cur.getDate() + days);
+    const nextStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    setDashboardDate(nextStr);
+  };
+
+  const handleSetToday = () => {
+    setDashboardDate(todayDateStr);
+  };
+
   // Data states
   const [dashboardChecklists, setDashboardChecklists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [complianceLogs, setComplianceLogs] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
+
+  // Computed Checklist Dashboard KPI Metrics
+  const dashboardMetrics = useMemo(() => {
+    const total = dashboardChecklists.length;
+    const completed = dashboardChecklists.filter(i => i.status === 'COMPLETED').length;
+    const completedOnTime = dashboardChecklists.filter(i => i.status === 'COMPLETED' && !i.delayInfo?.isDelayed).length;
+    const completedLate = dashboardChecklists.filter(i => i.status === 'COMPLETED' && i.delayInfo?.isDelayed).length;
+    const active = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isActive).length;
+    const locked = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isBeforeStart).length;
+    const expired = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isExpired).length;
+    const complianceRate = total > 0 ? Math.round((completed / total) * 100) : (isFutureDate ? 0 : 100);
+
+    return {
+      total,
+      completed,
+      completedOnTime,
+      completedLate,
+      active,
+      locked,
+      expired,
+      complianceRate
+    };
+  }, [dashboardChecklists, isFutureDate]);
 
   // Manual Holidays State
   const [holidaysList, setHolidaysList] = useState([]);
@@ -132,7 +181,7 @@ export default function ChecklistModule({
 
   useEffect(() => {
     if (activeTab === 'my_checklists') {
-      loadEmployeeDashboard();
+      loadEmployeeDashboard(dashboardDate);
     } else if (activeTab === 'templates') {
       loadTemplates();
     } else if (activeTab === 'compliance') {
@@ -140,7 +189,7 @@ export default function ChecklistModule({
     } else if (activeTab === 'holidays') {
       loadHolidays();
     }
-  }, [activeTab, selectedFrequency, userEmail]);
+  }, [activeTab, selectedFrequency, userEmail, dashboardDate]);
 
   const showNotification = (msg, isError = false) => {
     if (isError) {
@@ -161,13 +210,14 @@ export default function ChecklistModule({
     }
   };
 
-  const loadEmployeeDashboard = async () => {
+  const loadEmployeeDashboard = async (targetDateStr = dashboardDate) => {
     setLoading(true);
     try {
+      const targetObj = targetDateStr ? new Date(`${targetDateStr}T12:00:00`) : new Date();
       const res = await getEmployeeChecklistDashboard({
         employeeEmail: userEmail,
         frequency: selectedFrequency,
-        targetDate: new Date()
+        targetDate: targetObj
       });
       if (res.success) {
         setDashboardChecklists(res.data || []);
@@ -843,7 +893,285 @@ export default function ChecklistModule({
       {/* TAB 1: MY CHECKLISTS (EMPLOYEE EXECUTION STATION)                         */}
       {/* ========================================================================= */}
       {activeTab === 'my_checklists' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* ========================================================================= */}
+          {/* 1. TOP SECTION: CHECKLIST DASHBOARD & DATE NAVIGATOR                      */}
+          {/* ========================================================================= */}
+          <div style={{
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            borderRadius: '14px',
+            padding: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.03)'
+          }}>
+            {/* Row 1: Title + Quick Date Navigation Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <span>📊</span> Checklist Execution Dashboard
+                </h2>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Live time-window schedule monitoring & daily compliance rate for {userName}
+                </p>
+              </div>
+
+              {/* Date Navigator Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleShiftDate(-1)}
+                  style={{
+                    background: 'var(--bg-secondary, #f1f5f9)',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    color: 'var(--text-primary, #1e293b)',
+                    borderRadius: '8px',
+                    padding: '0.4rem 0.65rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}
+                  title="Previous Day"
+                >
+                  <ChevronLeft size={14} /> Yesterday
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSetToday}
+                  style={{
+                    background: isToday ? '#16a34a' : 'var(--bg-secondary, #f1f5f9)',
+                    color: isToday ? '#ffffff' : 'var(--text-primary, #1e293b)',
+                    border: isToday ? '1px solid #15803d' : '1px solid var(--border-color, #cbd5e1)',
+                    borderRadius: '8px',
+                    padding: '0.4rem 0.8rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}
+                >
+                  <Calendar size={13} /> Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleShiftDate(1)}
+                  style={{
+                    background: 'var(--bg-secondary, #f1f5f9)',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    color: 'var(--text-primary, #1e293b)',
+                    borderRadius: '8px',
+                    padding: '0.4rem 0.65rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}
+                  title="Next Day"
+                >
+                  Tomorrow <ChevronRight size={14} />
+                </button>
+
+                {/* Calendar Date Picker Input */}
+                <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+                  <input
+                    type="date"
+                    value={dashboardDate}
+                    onChange={(e) => setDashboardDate(e.target.value)}
+                    style={{
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: 'var(--text-primary, #0f172a)',
+                      background: 'var(--bg-secondary, #f8fafc)',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Status Notice Banner (if past date, future date, Sunday or Holiday) */}
+            {isPastDate && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                padding: '0.55rem 0.85rem',
+                fontSize: '0.82rem',
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <span>📜</span>
+                <span>
+                  <strong>Historical View ({new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}):</strong> Showing past checklist records in <strong>View-Only Mode</strong>. Past expired slots are closed for submissions.
+                </span>
+              </div>
+            )}
+
+            {isFutureDate && (
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '0.55rem 0.85rem',
+                fontSize: '0.82rem',
+                color: '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <Lock size={15} />
+                <span>
+                  <strong>Upcoming Schedule ({new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}):</strong> Checklists will unlock and become fillable on this scheduled date.
+                </span>
+              </div>
+            )}
+
+            {/* Row 3: 6 High-Impact KPI Metric Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+              {/* Card 1: Total */}
+              <div style={{
+                background: 'var(--bg-secondary, #f8fafc)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span>📋</span> TOTAL SLOTS
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                  {dashboardMetrics.total}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Scheduled slots
+                </div>
+              </div>
+
+              {/* Card 2: Open Now (Active) */}
+              <div style={{
+                background: dashboardMetrics.active > 0 ? '#f0fdf4' : 'var(--bg-secondary, #f8fafc)',
+                border: dashboardMetrics.active > 0 ? '1.5px solid #86efac' : '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span>🟢</span> OPEN NOW
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a' }}>
+                  {dashboardMetrics.active}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600 }}>
+                  In buffer window
+                </div>
+              </div>
+
+              {/* Card 3: Completed */}
+              <div style={{
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span>✓</span> COMPLETED
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a' }}>
+                  {dashboardMetrics.completed}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#166534' }}>
+                  Submitted on time
+                </div>
+              </div>
+
+              {/* Card 4: Upcoming / Locked */}
+              <div style={{
+                background: 'var(--bg-secondary, #f8fafc)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Lock size={12} /> UPCOMING
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary, #334155)' }}>
+                  {dashboardMetrics.locked}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                  Opens at slot time
+                </div>
+              </div>
+
+              {/* Card 5: Missed / Expired */}
+              <div style={{
+                background: dashboardMetrics.expired > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
+                border: dashboardMetrics.expired > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span>❌</span> MISSED / EXPIRED
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#dc2626' }}>
+                  {dashboardMetrics.expired}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#b91c1c' }}>
+                  Window closed
+                </div>
+              </div>
+
+              {/* Card 6: Compliance Rate */}
+              <div style={{
+                background: '#faf5ff',
+                border: '1px solid #e9d5ff',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7e22ce', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Award size={13} /> COMPLIANCE
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#9333ea' }}>
+                  {dashboardMetrics.complianceRate}%
+                </div>
+                <div style={{ width: '100%', height: '5px', background: '#e9d5ff', borderRadius: '3px', overflow: 'hidden', marginTop: '0.15rem' }}>
+                  <div style={{ width: `${dashboardMetrics.complianceRate}%`, height: '100%', background: '#9333ea', transition: 'width 0.3s ease' }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
           {loading && (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
               <RefreshCw className="spin" size={32} style={{ margin: '0 auto 1rem' }} />
@@ -861,9 +1189,9 @@ export default function ChecklistModule({
               color: 'var(--text-secondary, #64748b)'
             }}>
               <CheckSquare size={48} style={{ opacity: 0.4, margin: '0 auto 1rem' }} />
-              <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Checklists Assigned</h3>
+              <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Checklists Scheduled for this Date</h3>
               <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                No active {selectedFrequency.toLowerCase()} checklists found for your profile in the current period.
+                No active {selectedFrequency.toLowerCase()} checklists found for {new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}.
               </p>
               {isManager && (
                 <button
