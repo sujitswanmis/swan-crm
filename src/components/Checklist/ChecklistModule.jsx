@@ -2210,8 +2210,8 @@ export default function ChecklistModule({
                       </p>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map(count => {
+                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', maxWidth: '650px' }}>
+                      {Array.from({ length: 18 }, (_, i) => i + 1).map(count => {
                         const isChosen = (templateForm.daily_repetition_count || 1) === count;
                         return (
                           <button
@@ -2227,9 +2227,9 @@ export default function ChecklistModule({
                               }));
                             }}
                             style={{
-                              padding: '0.35rem 0.65rem',
+                              padding: '0.3rem 0.55rem',
                               borderRadius: '6px',
-                              fontSize: '0.82rem',
+                              fontSize: '0.8rem',
                               fontWeight: 700,
                               cursor: 'pointer',
                               border: isChosen ? '2px solid #0284c7' : '1px solid #cbd5e1',
@@ -2238,7 +2238,7 @@ export default function ChecklistModule({
                               transition: 'all 0.15s ease'
                             }}
                           >
-                            {count} {count === 1 ? 'Time' : 'Times'}
+                            {count}
                           </button>
                         );
                       })}

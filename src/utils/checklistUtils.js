@@ -99,7 +99,7 @@ export function isDateSunday(dateInput = new Date()) {
 }
 
 export function generateDefaultDailySlots(count = 1) {
-  const n = Math.max(1, Math.min(12, parseInt(count, 10) || 1));
+  const n = Math.max(1, Math.min(24, parseInt(count, 10) || 1));
   if (n === 1) {
     return [{ slot_id: 'S1', label: 'Daily Cutoff', due_time: '18:00' }];
   }
@@ -134,9 +134,9 @@ export function generateDefaultDailySlots(count = 1) {
     ];
   }
 
-  // For 6, 7, 8... distribute evenly across operational hours (09:00 - 21:00)
+  // For 6 to 18+ distribute evenly across operational hours (09:00 AM - 09:30 PM)
   const startMins = 9 * 60; // 09:00 AM
-  const endMins = 21 * 60; // 09:00 PM
+  const endMins = 21 * 60 + 30; // 09:30 PM
   const step = Math.floor((endMins - startMins) / (n - 1));
 
   const slots = [];
