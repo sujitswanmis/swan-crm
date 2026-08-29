@@ -641,6 +641,11 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
     if (tmplDoc) {
       const { scheduleMeta } = parseTemplateDescription(tmplDoc.description);
       const bufferMins = parseInt(tmplDoc.buffer_minutes || scheduleMeta.buffer_minutes || tmplDoc.schedule_config?.buffer_minutes, 10) || 20;
+      const allowDelayedSubmission = tmplDoc.allow_delayed_submission !== undefined
+        ? Boolean(tmplDoc.allow_delayed_submission)
+        : (scheduleMeta.allow_delayed_submission !== undefined
+          ? Boolean(scheduleMeta.allow_delayed_submission)
+          : (tmplDoc.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmplDoc.schedule_config.allow_delayed_submission) : false));
 
       let slotDueTime = tmplDoc.due_time || '18:00';
       if (period_key && period_key.includes('_S')) {
@@ -658,6 +663,7 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         dueTime: slotDueTime,
         bufferMinutes: bufferMins,
         dayOfMonth: tmplDoc.day_of_month || 1,
+        allowDelayedSubmission,
         now: new Date()
       });
 
@@ -777,20 +783,43 @@ export async function getChecklistComplianceReport({
     // Enrich with templates for cutoff check
     const { data: templates } = await adminClient
       .from('checklist_templates')
-      .select('id, due_time, day_of_month, frequency')
+      .select('id, due_time, day_of_month, frequency, buffer_minutes, allow_delayed_submission, description, daily_slots')
       .eq('tenant_id', tenantId);
 
     const tmplMap = new Map((templates || []).map(t => [t.id, t]));
 
     const enriched = (data || []).map(sub => {
       const tmpl = tmplMap.get(sub.template_id);
+      let bufferMins = 20;
+      let slotDueTime = tmpl?.due_time || '18:00';
+      let allowDelayed = false;
+
+      if (tmpl) {
+        const { scheduleMeta } = parseTemplateDescription(tmpl.description);
+        bufferMins = parseInt(tmpl.buffer_minutes || scheduleMeta.buffer_minutes || 20, 10);
+        allowDelayed = tmpl.allow_delayed_submission !== undefined
+          ? Boolean(tmpl.allow_delayed_submission)
+          : (scheduleMeta.allow_delayed_submission !== undefined ? Boolean(scheduleMeta.allow_delayed_submission) : false);
+
+        if (sub.period_key && sub.period_key.includes('_S')) {
+          const slotId = sub.period_key.split('_')[1];
+          const slots = Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0
+            ? tmpl.daily_slots
+            : (scheduleMeta.daily_slots || []);
+          const matched = slots.find(s => s.slot_id === slotId);
+          if (matched?.due_time) slotDueTime = matched.due_time;
+        }
+      }
+
       const delayInfo = calculateDelayStatus({
         frequency: sub.frequency || tmpl?.frequency || 'DAILY',
         periodKey: sub.period_key,
-        dueTime: tmpl?.due_time || '18:00',
+        dueTime: slotDueTime,
+        bufferMinutes: bufferMins,
         dayOfMonth: tmpl?.day_of_month || 1,
         submittedAt: sub.submitted_at,
-        isCompleted: sub.status === 'COMPLETED'
+        isCompleted: sub.status === 'COMPLETED',
+        allowDelayedSubmission: allowDelayed
       });
 
       return {
