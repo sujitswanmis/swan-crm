@@ -474,6 +474,9 @@ export default function ChecklistModule({
     due_time: '18:00',
     days_of_week: ['Monday'],
     day_of_month: 1,
+    quarter_month: 3,
+    half_yearly_month: 6,
+    month_of_year: 12,
     items: [
       { id: 'item_1', title: 'Task 1 check', type: 'checkbox', is_required: true, standard_guideline: '' }
     ],
@@ -766,6 +769,9 @@ export default function ChecklistModule({
       allow_delayed_submission: false,
       days_of_week: ['Monday'],
       day_of_month: 1,
+      quarter_month: 3,
+      half_yearly_month: 6,
+      month_of_year: 12,
       include_sundays: true,
       include_holidays: false,
       items: [
@@ -798,6 +804,9 @@ export default function ChecklistModule({
 
     const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
+    const quarterMonth = tmpl.quarter_month || scheduleConfig.quarter_month || 3;
+    const halfYearlyMonth = tmpl.half_yearly_month || scheduleConfig.half_yearly_month || 6;
+    const monthOfYear = tmpl.month_of_year || scheduleConfig.month_of_year || 12;
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
     const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
@@ -821,6 +830,9 @@ export default function ChecklistModule({
       allow_delayed_submission: allowDelayedSubmission,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
+      quarter_month: quarterMonth,
+      half_yearly_month: halfYearlyMonth,
+      month_of_year: monthOfYear,
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
       items: tmpl.items && tmpl.items.length > 0 ? tmpl.items : [
@@ -883,6 +895,9 @@ export default function ChecklistModule({
 
     const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
+    const quarterMonth = tmpl.quarter_month || scheduleConfig.quarter_month || 3;
+    const halfYearlyMonth = tmpl.half_yearly_month || scheduleConfig.half_yearly_month || 6;
+    const monthOfYear = tmpl.month_of_year || scheduleConfig.month_of_year || 12;
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
     const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
@@ -905,6 +920,9 @@ export default function ChecklistModule({
       allow_delayed_submission: allowDelayedSubmission,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
+      quarter_month: quarterMonth,
+      half_yearly_month: halfYearlyMonth,
+      month_of_year: monthOfYear,
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
       items: (tmpl.items || []).map((it, idx) => ({
@@ -3226,10 +3244,50 @@ export default function ChecklistModule({
                                 <span>{tmpl.due_time || '18:00'}</span>
                               </div>
                             </div>
-                          ) : (
+                          ) : tmpl.frequency === 'MONTHLY' ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                               <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f59e0b' }}>
                                 Day {tmpl.day_of_month || 1} of Month
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : tmpl.frequency === 'QUARTERLY' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#be185d' }}>
+                                Month {tmpl.quarter_month || 3} • Day {tmpl.day_of_month || 1}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : tmpl.frequency === 'HALF_YEARLY' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0e7490' }}>
+                                Month {tmpl.half_yearly_month || 6} • Day {tmpl.day_of_month || 1}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : tmpl.frequency === 'YEARLY' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#4338ca' }}>
+                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(tmpl.month_of_year || 12) - 1]} • Day {tmpl.day_of_month || 1}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                <Clock size={12} />
+                                <span>{tmpl.due_time || '18:00'}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>
+                                Day {tmpl.day_of_month || 1}
                               </span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
                                 <Clock size={12} />
@@ -4606,15 +4664,169 @@ export default function ChecklistModule({
                 </div>
               )}
 
-              {['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(templateForm.frequency) && (
-                <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#475569' }}>Period Cutoff Time:</span>
-                  <input
-                    type="time"
-                    value={templateForm.due_time || '18:00'}
-                    onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
-                    style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
-                  />
+              {templateForm.frequency === 'QUARTERLY' && (
+                <div style={{ background: '#fdf2f8', padding: '1rem', borderRadius: '10px', border: '1px solid #fbcfe8', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#be185d' }}>
+                    📊 Quarterly Scheduling (Every 3 Months)
+                  </span>
+                  <p style={{ fontSize: '0.8rem', color: '#9d174d', margin: 0 }}>
+                    Triggers once every quarter (Q1: Jan-Mar, Q2: Apr-Jun, Q3: Jul-Sep, Q4: Oct-Dec). Select target month, due date & cutoff time:
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#9d174d' }}>Quarter Month:</span>
+                      <select
+                        value={templateForm.quarter_month || 3}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, quarter_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        <option value={1}>1st Month (Jan / Apr / Jul / Oct)</option>
+                        <option value={2}>2nd Month (Feb / May / Aug / Nov)</option>
+                        <option value={3}>3rd Month / Quarter-End (Mar / Jun / Sep / Dec)</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#9d174d' }}>Due on Day:</span>
+                      <select
+                        value={templateForm.day_of_month || 1}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, day_of_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <option key={day} value={day}>
+                            {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of month
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#9d174d' }}>Cutoff Time:</span>
+                      <input
+                        type="time"
+                        value={templateForm.due_time || '18:00'}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                        style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {templateForm.frequency === 'HALF_YEARLY' && (
+                <div style={{ background: '#ecfeff', padding: '1rem', borderRadius: '10px', border: '1px solid #a5f3fc', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0e7490' }}>
+                    🏢 6 Months (Half-Yearly) Scheduling
+                  </span>
+                  <p style={{ fontSize: '0.8rem', color: '#155e75', margin: 0 }}>
+                    Triggers twice a year (1st Half: Jan-Jun, 2nd Half: Jul-Dec). Select target month, due date & cutoff time:
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#155e75' }}>Half-Year Month:</span>
+                      <select
+                        value={templateForm.half_yearly_month || 6}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, half_yearly_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        <option value={1}>1st Month (January & July)</option>
+                        <option value={2}>2nd Month (February & August)</option>
+                        <option value={3}>3rd Month (March & September)</option>
+                        <option value={4}>4th Month (April & October)</option>
+                        <option value={5}>5th Month (May & November)</option>
+                        <option value={6}>6th Month / Half-Year End (June & December)</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#155e75' }}>Due on Day:</span>
+                      <select
+                        value={templateForm.day_of_month || 1}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, day_of_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <option key={day} value={day}>
+                            {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of month
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#155e75' }}>Cutoff Time:</span>
+                      <input
+                        type="time"
+                        value={templateForm.due_time || '18:00'}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                        style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {templateForm.frequency === 'YEARLY' && (
+                <div style={{ background: '#eef2ff', padding: '1rem', borderRadius: '10px', border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#4338ca' }}>
+                    🏆 1 Year (Annual) Scheduling
+                  </span>
+                  <p style={{ fontSize: '0.8rem', color: '#3730a3', margin: 0 }}>
+                    Triggers once every year. Select the target month, due date and cutoff time:
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#3730a3' }}>Target Month:</span>
+                      <select
+                        value={templateForm.month_of_year || 12}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, month_of_year: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        {[
+                          { id: 1, name: 'January' },
+                          { id: 2, name: 'February' },
+                          { id: 3, name: 'March' },
+                          { id: 4, name: 'April' },
+                          { id: 5, name: 'May' },
+                          { id: 6, name: 'June' },
+                          { id: 7, name: 'July' },
+                          { id: 8, name: 'August' },
+                          { id: 9, name: 'September' },
+                          { id: 10, name: 'October' },
+                          { id: 11, name: 'November' },
+                          { id: 12, name: 'December' }
+                        ].map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#3730a3' }}>Due on Day:</span>
+                      <select
+                        value={templateForm.day_of_month || 1}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, day_of_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <option key={day} value={day}>
+                            {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of month
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#3730a3' }}>Cutoff Time:</span>
+                      <input
+                        type="time"
+                        value={templateForm.due_time || '18:00'}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                        style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

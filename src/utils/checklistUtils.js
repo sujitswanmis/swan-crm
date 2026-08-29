@@ -378,7 +378,8 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
     if (parts.length === 2) {
       const year = parseInt(parts[0], 10);
       const monthIndex = parseInt(parts[1], 10) - 1;
-      const targetDay = dayOfMonth && dayOfMonth > 1 ? dayOfMonth : new Date(year, monthIndex + 1, 0).getDate();
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
       return new Date(year, monthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
@@ -387,10 +388,13 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
     const parts = (periodKey || '').split('-');
     if (parts.length === 2) {
       const year = parseInt(parts[0], 10);
-      const q = parts[1];
-      const monthEnd = q === 'Q1' ? 2 : q === 'Q2' ? 5 : q === 'Q3' ? 8 : 11;
-      const lastDay = new Date(year, monthEnd + 1, 0).getDate();
-      return new Date(year, monthEnd, lastDay, hours || 18, minutes || 0, 0);
+      const q = parts[1]; // 'Q1', 'Q2', 'Q3', 'Q4'
+      const quarterStartMonth = q === 'Q1' ? 0 : q === 'Q2' ? 3 : q === 'Q3' ? 6 : 9;
+      const qOffset = Math.min(Math.max(1, parseInt(quarterMonth, 10) || 3), 3) - 1;
+      const targetMonthIndex = quarterStartMonth + qOffset;
+      const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
+      const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
+      return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
 
@@ -399,15 +403,21 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
     if (parts.length === 2) {
       const year = parseInt(parts[0], 10);
       const isH1 = parts[1] === 'H1';
-      const monthEnd = isH1 ? 5 : 11; // June or Dec
-      const lastDay = new Date(year, monthEnd + 1, 0).getDate();
-      return new Date(year, monthEnd, lastDay, hours || 18, minutes || 0, 0);
+      const halfStartMonth = isH1 ? 0 : 6;
+      const hOffset = Math.min(Math.max(1, parseInt(halfYearlyMonth, 10) || 6), 6) - 1;
+      const targetMonthIndex = halfStartMonth + hOffset;
+      const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
+      const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
+      return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
 
   if (freq === 'YEARLY') {
     const year = parseInt(periodKey, 10) || new Date().getFullYear();
-    return new Date(year, 11, 31, hours || 18, minutes || 0, 0);
+    const targetMonthIndex = Math.min(Math.max(1, parseInt(monthOfYear, 10) || 12), 12) - 1;
+    const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
+    const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
+    return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
   }
 
   const now = new Date();
@@ -420,6 +430,9 @@ export function calculateDelayStatus({
   dueTime = '18:00',
   bufferMinutes = 20,
   dayOfMonth = 1,
+  monthOfYear = 12,
+  quarterMonth = 3,
+  halfYearlyMonth = 6,
   submittedAt = null,
   isCompleted = false,
   allowDelayedSubmission = false,
@@ -444,7 +457,7 @@ export function calculateDelayStatus({
     const buffer = parseInt(bufferMinutes, 10) || 20;
     expireDateTime = new Date(startDateTime.getTime() + buffer * 60 * 1000);
   } else {
-    expireDateTime = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth);
+    expireDateTime = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth, monthOfYear, quarterMonth, halfYearlyMonth);
     startDateTime = new Date(expireDateTime);
     startDateTime.setHours(0, 0, 0, 0);
   }

@@ -78,19 +78,21 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
             ? t.schedule_config.days_of_week
             : ['Monday']));
 
-      const dayOfMonth = t.day_of_month || scheduleMeta.day_of_month || t.schedule_config?.day_of_month || 1;
-
+      const dayOfMonth = parseInt(t.day_of_month || scheduleMeta.day_of_month || t.schedule_config?.day_of_month, 10) || 1;
+      const monthOfYear = parseInt(t.month_of_year || scheduleMeta.month_of_year || t.schedule_config?.month_of_year, 10) || 12;
+      const quarterMonth = parseInt(t.quarter_month || scheduleMeta.quarter_month || t.schedule_config?.quarter_month, 10) || 3;
+      const halfYearlyMonth = parseInt(t.half_yearly_month || scheduleMeta.half_yearly_month || t.schedule_config?.half_yearly_month, 10) || 6;
       const includeSundays = t.include_sundays !== undefined
-        ? Boolean(t.include_sundays)
+        ? (t.include_sundays === true || t.include_sundays === 'true')
         : (scheduleMeta.include_sundays !== undefined
-          ? Boolean(scheduleMeta.include_sundays)
-          : (t.schedule_config?.include_sundays !== undefined ? Boolean(t.schedule_config.include_sundays) : true));
+          ? (scheduleMeta.include_sundays === true || scheduleMeta.include_sundays === 'true')
+          : (t.schedule_config?.include_sundays !== undefined ? (t.schedule_config.include_sundays === true || t.schedule_config.include_sundays === 'true') : true));
 
       const includeHolidays = t.include_holidays !== undefined
-        ? Boolean(t.include_holidays)
+        ? (t.include_holidays === true || t.include_holidays === 'true')
         : (scheduleMeta.include_holidays !== undefined
-          ? Boolean(scheduleMeta.include_holidays)
-          : (t.schedule_config?.include_holidays !== undefined ? Boolean(t.schedule_config.include_holidays) : false));
+          ? (scheduleMeta.include_holidays === true || scheduleMeta.include_holidays === 'true')
+          : (t.schedule_config?.include_holidays !== undefined ? (t.schedule_config.include_holidays === true || t.schedule_config.include_holidays === 'true') : false));
 
       const bufferMinutes = parseInt(t.buffer_minutes || scheduleMeta.buffer_minutes || t.schedule_config?.buffer_minutes, 10) || 20;
 
@@ -105,6 +107,9 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         daily_slots: dailySlots,
         days_of_week: daysOfWeek,
         day_of_month: dayOfMonth,
+        month_of_year: monthOfYear,
+        quarter_month: quarterMonth,
+        half_yearly_month: halfYearlyMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
         buffer_minutes: bufferMinutes,
@@ -120,6 +125,9 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         daily_slots: dailySlots,
         days_of_week: daysOfWeek,
         day_of_month: dayOfMonth,
+        month_of_year: monthOfYear,
+        quarter_month: quarterMonth,
+        half_yearly_month: halfYearlyMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
         buffer_minutes: bufferMinutes,
@@ -152,6 +160,9 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       : ['Monday'];
 
     const dayOfMonth = parseInt(templateData.day_of_month, 10) || 1;
+    const monthOfYear = parseInt(templateData.month_of_year, 10) || 12;
+    const quarterMonth = parseInt(templateData.quarter_month, 10) || 3;
+    const halfYearlyMonth = parseInt(templateData.half_yearly_month, 10) || 6;
     const includeSundays = templateData.include_sundays !== undefined ? Boolean(templateData.include_sundays) : true;
     const includeHolidays = templateData.include_holidays !== undefined ? Boolean(templateData.include_holidays) : false;
     const bufferMinutes = parseInt(templateData.buffer_minutes, 10) || 20;
@@ -163,6 +174,9 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       daily_slots: dailySlots,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
+      month_of_year: monthOfYear,
+      quarter_month: quarterMonth,
+      half_yearly_month: halfYearlyMonth,
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
       buffer_minutes: bufferMinutes,
@@ -189,10 +203,6 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       day_of_month: dayOfMonth,
       items: Array.isArray(templateData.items) ? templateData.items : [],
       is_active: isActive,
-      status: resolvedStatus,
-      daily_repetition_count: repCount,
-      daily_slots: dailySlots,
-      include_sundays: includeSundays,
       include_holidays: includeHolidays,
       buffer_minutes: bufferMinutes,
       schedule_config: scheduleConfig,
@@ -577,7 +587,10 @@ export async function getEmployeeChecklistDashboard({
         periodKey: currentKey,
         dueTime: tmpl.due_time || '18:00',
         bufferMinutes: bufferMins,
-        dayOfMonth: tmpl.day_of_month || 1,
+        dayOfMonth: tmpl.day_of_month || scheduleConfig.day_of_month || 1,
+        monthOfYear: tmpl.month_of_year || scheduleConfig.month_of_year || 12,
+        quarterMonth: tmpl.quarter_month || scheduleConfig.quarter_month || 3,
+        halfYearlyMonth: tmpl.half_yearly_month || scheduleConfig.half_yearly_month || 6,
         submittedAt: sub?.submitted_at || null,
         isCompleted: isDone,
         allowDelayedSubmission: tmpl.allow_delayed_submission,
@@ -662,7 +675,10 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         periodKey: period_key,
         dueTime: slotDueTime,
         bufferMinutes: bufferMins,
-        dayOfMonth: tmplDoc.day_of_month || 1,
+        dayOfMonth: tmplDoc.day_of_month || scheduleMeta.day_of_month || 1,
+        monthOfYear: tmplDoc.month_of_year || scheduleMeta.month_of_year || 12,
+        quarterMonth: tmplDoc.quarter_month || scheduleMeta.quarter_month || 3,
+        halfYearlyMonth: tmplDoc.half_yearly_month || scheduleMeta.half_yearly_month || 6,
         allowDelayedSubmission,
         now: new Date()
       });
@@ -706,14 +722,14 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await adminClient
+    const { data: saved, error: saveErr } = await adminClient
       .from('checklist_submissions')
       .upsert(payload, { onConflict: 'template_id,employee_email,period_key' })
       .select()
       .single();
 
-    if (error) throw error;
-    return { success: true, data };
+    if (saveErr) throw saveErr;
+    return { success: true, data: saved };
   } catch (err) {
     console.error('Error submitting checklist response:', err.message);
     return { success: false, error: err.message };
@@ -783,7 +799,7 @@ export async function getChecklistComplianceReport({
     // Enrich with templates for cutoff check
     const { data: templates } = await adminClient
       .from('checklist_templates')
-      .select('id, due_time, day_of_month, frequency, buffer_minutes, allow_delayed_submission, description, daily_slots')
+      .select('id, due_time, day_of_month, frequency, buffer_minutes, allow_delayed_submission, description, daily_slots, month_of_year, quarter_month, half_yearly_month')
       .eq('tenant_id', tenantId);
 
     const tmplMap = new Map((templates || []).map(t => [t.id, t]));
@@ -793,6 +809,10 @@ export async function getChecklistComplianceReport({
       let bufferMins = 20;
       let slotDueTime = tmpl?.due_time || '18:00';
       let allowDelayed = false;
+      let dMonth = 1;
+      let mYear = 12;
+      let qMonth = 3;
+      let hMonth = 6;
 
       if (tmpl) {
         const { scheduleMeta } = parseTemplateDescription(tmpl.description);
@@ -800,6 +820,11 @@ export async function getChecklistComplianceReport({
         allowDelayed = tmpl.allow_delayed_submission !== undefined
           ? Boolean(tmpl.allow_delayed_submission)
           : (scheduleMeta.allow_delayed_submission !== undefined ? Boolean(scheduleMeta.allow_delayed_submission) : false);
+
+        dMonth = tmpl.day_of_month || scheduleMeta.day_of_month || 1;
+        mYear = tmpl.month_of_year || scheduleMeta.month_of_year || 12;
+        qMonth = tmpl.quarter_month || scheduleMeta.quarter_month || 3;
+        hMonth = tmpl.half_yearly_month || scheduleMeta.half_yearly_month || 6;
 
         if (sub.period_key && sub.period_key.includes('_S')) {
           const slotId = sub.period_key.split('_')[1];
@@ -816,7 +841,10 @@ export async function getChecklistComplianceReport({
         periodKey: sub.period_key,
         dueTime: slotDueTime,
         bufferMinutes: bufferMins,
-        dayOfMonth: tmpl?.day_of_month || 1,
+        dayOfMonth: dMonth,
+        monthOfYear: mYear,
+        quarterMonth: qMonth,
+        halfYearlyMonth: hMonth,
         submittedAt: sub.submitted_at,
         isCompleted: sub.status === 'COMPLETED',
         allowDelayedSubmission: allowDelayed
