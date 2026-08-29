@@ -1,7 +1,16 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { getCurrentPeriodKey, calculateChecklistCompletion, calculateDelayStatus, getPeriodCutoffDateTime } from '@/utils/checklistUtils';
+import {
+  getCurrentPeriodKey,
+  calculateChecklistCompletion,
+  calculateDelayStatus,
+  getPeriodCutoffDateTime,
+  isDateSunday,
+  isDateHoliday,
+  generateDefaultDailySlots,
+  DEFAULT_HOLIDAYS_LIST
+} from '@/utils/checklistUtils';
 import crypto from 'crypto';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -44,9 +53,32 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
       if (!status) {
         status = t.is_active ? 'ACTIVE' : 'INACTIVE';
       }
+
+      const scheduleConfig = t.schedule_config || {};
+      const repCount = t.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
+      const dailySlots = t.daily_slots || scheduleConfig.daily_slots || generateDefaultDailySlots(repCount);
+      const daysOfWeek = t.days_of_week || scheduleConfig.days_of_week || ['Monday'];
+      const dayOfMonth = t.day_of_month || scheduleConfig.day_of_month || 1;
+      const includeSundays = t.include_sundays !== undefined ? t.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
+      const includeHolidays = t.include_holidays !== undefined ? t.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+
       return {
         ...t,
-        status: status.toUpperCase()
+        status: status.toUpperCase(),
+        daily_repetition_count: repCount,
+        daily_slots: dailySlots,
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        include_sundays: includeSundays,
+        include_holidays: includeHolidays,
+        schedule_config: {
+          daily_repetition_count: repCount,
+          daily_slots: dailySlots,
+          days_of_week: daysOfWeek,
+          day_of_month: dayOfMonth,
+          include_sundays: includeSundays,
+          include_holidays: includeHolidays
+        }
       };
     });
 
@@ -64,6 +96,28 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
     const resolvedStatus = (templateData.status || (templateData.is_active === false ? 'INACTIVE' : 'ACTIVE')).toUpperCase();
     const isActive = resolvedStatus === 'ACTIVE';
 
+    const repCount = Math.max(1, parseInt(templateData.daily_repetition_count, 10) || 1);
+    const dailySlots = Array.isArray(templateData.daily_slots) && templateData.daily_slots.length > 0
+      ? templateData.daily_slots
+      : generateDefaultDailySlots(repCount);
+
+    const daysOfWeek = Array.isArray(templateData.days_of_week) && templateData.days_of_week.length > 0
+      ? templateData.days_of_week
+      : ['Monday'];
+
+    const dayOfMonth = parseInt(templateData.day_of_month, 10) || 1;
+    const includeSundays = templateData.include_sundays !== undefined ? Boolean(templateData.include_sundays) : true;
+    const includeHolidays = templateData.include_holidays !== undefined ? Boolean(templateData.include_holidays) : false;
+
+    const scheduleConfig = {
+      daily_repetition_count: repCount,
+      daily_slots: dailySlots,
+      days_of_week: daysOfWeek,
+      day_of_month: dayOfMonth,
+      include_sundays: includeSundays,
+      include_holidays: includeHolidays
+    };
+
     const payload = {
       id,
       tenant_id: tenantId,
@@ -76,12 +130,17 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       assigned_employee_id: templateData.assigned_employee_id || null,
       assigned_employee_name: templateData.assigned_employee_name || 'All Staff',
       assigned_employee_email: (templateData.assigned_employee_email || '').trim().toLowerCase(),
-      due_time: templateData.due_time || '18:00',
-      days_of_week: templateData.days_of_week || [],
-      day_of_month: templateData.day_of_month || 1,
+      due_time: templateData.due_time || (dailySlots[0]?.due_time || '18:00'),
+      days_of_week: daysOfWeek,
+      day_of_month: dayOfMonth,
       items: Array.isArray(templateData.items) ? templateData.items : [],
       is_active: isActive,
       status: resolvedStatus,
+      daily_repetition_count: repCount,
+      daily_slots: dailySlots,
+      include_sundays: includeSundays,
+      include_holidays: includeHolidays,
+      schedule_config: scheduleConfig,
       created_by: templateData.created_by || 'Admin',
       updated_at: new Date().toISOString()
     };
@@ -93,10 +152,31 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       .single();
 
     if (error) {
-      delete payload.status;
+      // Graceful fallback if certain columns are not present in Supabase table
+      const safePayload = {
+        id,
+        tenant_id: tenantId,
+        title: (templateData.title || '').trim(),
+        description: templateData.description || '',
+        frequency: (templateData.frequency || 'DAILY').toUpperCase(),
+        department: templateData.department || 'General',
+        category: templateData.category || 'OPERATIONS',
+        assigned_type: templateData.assigned_type || 'EMPLOYEE',
+        assigned_employee_id: templateData.assigned_employee_id || null,
+        assigned_employee_name: templateData.assigned_employee_name || 'All Staff',
+        assigned_employee_email: (templateData.assigned_employee_email || '').trim().toLowerCase(),
+        due_time: templateData.due_time || (dailySlots[0]?.due_time || '18:00'),
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        items: Array.isArray(templateData.items) ? templateData.items : [],
+        is_active: isActive,
+        created_by: templateData.created_by || 'Admin',
+        updated_at: new Date().toISOString()
+      };
+
       const res = await adminClient
         .from('checklist_templates')
-        .upsert(payload)
+        .upsert(safePayload)
         .select()
         .single();
       data = res.data;
@@ -104,7 +184,20 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
     }
 
     if (error) throw error;
-    return { success: true, data: { ...data, status: resolvedStatus } };
+    return {
+      success: true,
+      data: {
+        ...data,
+        status: resolvedStatus,
+        daily_repetition_count: repCount,
+        daily_slots: dailySlots,
+        days_of_week: daysOfWeek,
+        day_of_month: dayOfMonth,
+        include_sundays: includeSundays,
+        include_holidays: includeHolidays,
+        schedule_config: scheduleConfig
+      }
+    };
   } catch (err) {
     console.error('Error saving checklist template:', err.message);
     return { success: false, error: err.message };
@@ -180,7 +273,10 @@ export async function getEmployeeChecklistDashboard({
 }) {
   const adminClient = getAdminClient();
   const emailClean = (employeeEmail || '').trim().toLowerCase();
-  const periodKey = getCurrentPeriodKey(frequency, targetDate);
+  const targetObj = new Date(targetDate);
+  const isSunday = isDateSunday(targetObj);
+  const holidayInfo = isDateHoliday(targetObj);
+  const todayDayName = targetObj.toLocaleDateString('en-US', { weekday: 'long' });
 
   try {
     // 1. Fetch active templates applicable to this employee or ALL
@@ -197,22 +293,46 @@ export async function getEmployeeChecklistDashboard({
     const { data: templates, error: tmplErr } = await templatesQuery;
     if (tmplErr) throw tmplErr;
 
+    // Filter by assigned employee, Sunday rule, and Holiday rule
     const filteredTemplates = (templates || []).filter(tmpl => {
-      if (tmpl.assigned_type === 'ALL') return true;
-      if (!emailClean) return true;
-      const assignedEmails = (tmpl.assigned_employee_email || '')
-        .toLowerCase()
-        .split(',')
-        .map(e => e.trim())
-        .filter(Boolean);
-      return assignedEmails.includes(emailClean);
+      // 1. Assignment check
+      if (tmpl.assigned_type !== 'ALL' && emailClean) {
+        const assignedEmails = (tmpl.assigned_employee_email || '')
+          .toLowerCase()
+          .split(',')
+          .map(e => e.trim())
+          .filter(Boolean);
+        if (!assignedEmails.includes(emailClean)) return false;
+      }
+
+      const scheduleConfig = tmpl.schedule_config || {};
+      const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
+      const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+
+      // 2. Sunday exclusion check
+      if (isSunday && includeSundays === false) {
+        return false;
+      }
+
+      // 3. Holiday exclusion check
+      if (holidayInfo && includeHolidays === false) {
+        return false;
+      }
+
+      return true;
     });
 
     if (filteredTemplates.length === 0) {
-      return { success: true, data: [], periodKey };
+      return {
+        success: true,
+        data: [],
+        periodKey: getCurrentPeriodKey(frequency, targetObj),
+        isSunday,
+        holidayInfo
+      };
     }
 
-    // 2. Fetch existing submissions for this period and employee
+    // 2. Fetch existing submissions for this employee
     const templateIds = filteredTemplates.map(t => t.id);
     let subQuery = adminClient
       .from('checklist_submissions')
@@ -220,9 +340,6 @@ export async function getEmployeeChecklistDashboard({
       .eq('tenant_id', tenantId)
       .in('template_id', templateIds);
 
-    if (frequency && frequency !== 'ALL') {
-      subQuery = subQuery.eq('period_key', periodKey);
-    }
     if (emailClean) {
       subQuery = subQuery.eq('employee_email', emailClean);
     }
@@ -236,23 +353,79 @@ export async function getEmployeeChecklistDashboard({
       submissionMap.set(key, sub);
     });
 
-    // 3. Merge templates with their current period submission status
-    const result = filteredTemplates.map(tmpl => {
-      const currentKey = getCurrentPeriodKey(tmpl.frequency, targetDate);
+    // 3. Expand templates (e.g. Daily Multi-Slots) and merge with submission state
+    const result = [];
+
+    filteredTemplates.forEach(tmpl => {
+      const items = Array.isArray(tmpl.items) ? tmpl.items : [];
+      const scheduleConfig = tmpl.schedule_config || {};
+      const freq = (tmpl.frequency || 'DAILY').toUpperCase();
+
+      if (freq === 'DAILY') {
+        const repCount = tmpl.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
+        const dailySlots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
+          ? tmpl.daily_slots
+          : (Array.isArray(scheduleConfig.daily_slots) && scheduleConfig.daily_slots.length > 0
+            ? scheduleConfig.daily_slots
+            : generateDefaultDailySlots(repCount));
+
+        if (repCount > 1 || dailySlots.length > 1) {
+          // Multiple Daily Repetitions (e.g. 8 slots)
+          dailySlots.forEach((slot, sIdx) => {
+            const slotPeriodKey = getCurrentPeriodKey('DAILY', targetObj, slot.slot_id);
+            const subKey = `${tmpl.id}_${slotPeriodKey}`;
+            const sub = submissionMap.get(subKey) || null;
+
+            const responses = sub?.responses || {};
+            const stats = calculateChecklistCompletion(items, responses);
+            const isDone = sub && sub.status === 'COMPLETED';
+            const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
+            const slotDueTime = slot.due_time || tmpl.due_time || '18:00';
+
+            const delayInfo = calculateDelayStatus({
+              frequency: 'DAILY',
+              periodKey: slotPeriodKey,
+              dueTime: slotDueTime,
+              dayOfMonth: tmpl.day_of_month || 1,
+              submittedAt: sub?.submitted_at || null,
+              isCompleted: isDone,
+              now: targetObj
+            });
+
+            result.push({
+              template: {
+                ...tmpl,
+                title: `${tmpl.title} (${slot.label || `Slot ${sIdx + 1}`} - ${slotDueTime})`,
+                base_title: tmpl.title,
+                slot_label: slot.label || `Slot ${sIdx + 1}`,
+                slot_id: slot.slot_id,
+                due_time: slotDueTime
+              },
+              slotInfo: slot,
+              slotIndex: sIdx + 1,
+              totalSlots: dailySlots.length,
+              currentPeriodKey: slotPeriodKey,
+              submission: sub,
+              items,
+              responses,
+              stats,
+              status,
+              delayInfo
+            });
+          });
+          return;
+        }
+      }
+
+      // Single slot (DAILY 1 time, WEEKLY, FORTNIGHTLY, MONTHLY, etc.)
+      const currentKey = getCurrentPeriodKey(tmpl.frequency, targetObj);
       const subKey = `${tmpl.id}_${currentKey}`;
       const sub = submissionMap.get(subKey) || null;
 
-      const items = Array.isArray(tmpl.items) ? tmpl.items : [];
       const responses = sub?.responses || {};
       const stats = calculateChecklistCompletion(items, responses);
-
-      let status = 'PENDING';
       const isDone = sub && sub.status === 'COMPLETED';
-      if (isDone) {
-        status = 'COMPLETED';
-      } else if (stats.completedCount > 0) {
-        status = 'PARTIAL';
-      }
+      const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
 
       const delayInfo = calculateDelayStatus({
         frequency: tmpl.frequency,
@@ -261,10 +434,10 @@ export async function getEmployeeChecklistDashboard({
         dayOfMonth: tmpl.day_of_month || 1,
         submittedAt: sub?.submitted_at || null,
         isCompleted: isDone,
-        now: targetDate
+        now: targetObj
       });
 
-      return {
+      result.push({
         template: tmpl,
         currentPeriodKey: currentKey,
         submission: sub,
@@ -273,13 +446,19 @@ export async function getEmployeeChecklistDashboard({
         stats,
         status,
         delayInfo
-      };
+      });
     });
 
-    return { success: true, data: result, periodKey };
+    return {
+      success: true,
+      data: result,
+      periodKey: getCurrentPeriodKey(frequency, targetObj),
+      isSunday,
+      holidayInfo
+    };
   } catch (err) {
     console.warn('Error fetching checklist dashboard:', err.message);
-    return { success: true, data: [], periodKey };
+    return { success: true, data: [], periodKey: getCurrentPeriodKey(frequency, targetObj) };
   }
 }
 

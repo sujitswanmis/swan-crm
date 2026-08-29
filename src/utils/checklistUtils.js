@@ -62,6 +62,99 @@ export const FREQUENCIES_CONFIG = [
   }
 ];
 
+export const DEFAULT_HOLIDAYS_LIST = [
+  { date: '2026-01-26', name: 'Republic Day' },
+  { date: '2026-03-03', name: 'Holi' },
+  { date: '2026-03-21', name: 'Eid-ul-Fitr' },
+  { date: '2026-04-03', name: 'Good Friday' },
+  { date: '2026-04-14', name: 'Dr. Ambedkar Jayanti' },
+  { date: '2026-05-01', name: 'May Day / Labor Day' },
+  { date: '2026-05-27', name: 'Bakrid / Eid-ul-Adha' },
+  { date: '2026-08-15', name: 'Independence Day' },
+  { date: '2026-09-04', name: 'Janmashtami' },
+  { date: '2026-10-02', name: 'Mahatma Gandhi Jayanti' },
+  { date: '2026-10-20', name: 'Dussehra / Vijayadashami' },
+  { date: '2026-11-08', name: 'Diwali / Deepavali' },
+  { date: '2026-11-09', name: 'Govardhan Puja' },
+  { date: '2026-11-10', name: 'Bhai Dooj' },
+  { date: '2026-11-24', name: 'Guru Nanak Jayanti' },
+  { date: '2026-12-25', name: 'Christmas Day' },
+  { date: '2027-01-26', name: 'Republic Day' },
+  { date: '2027-08-15', name: 'Independence Day' },
+  { date: '2027-10-02', name: 'Mahatma Gandhi Jayanti' },
+  { date: '2027-12-25', name: 'Christmas Day' }
+];
+
+export function isDateHoliday(dateInput = new Date(), customHolidays = []) {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return null;
+  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const allHolidays = [...(customHolidays || []), ...DEFAULT_HOLIDAYS_LIST];
+  return allHolidays.find(h => h.date === dateStr) || null;
+}
+
+export function isDateSunday(dateInput = new Date()) {
+  const d = new Date(dateInput);
+  return d.getDay() === 0;
+}
+
+export function generateDefaultDailySlots(count = 1) {
+  const n = Math.max(1, Math.min(12, parseInt(count, 10) || 1));
+  if (n === 1) {
+    return [{ slot_id: 'S1', label: 'Daily Cutoff', due_time: '18:00' }];
+  }
+  if (n === 2) {
+    return [
+      { slot_id: 'S1', label: 'Morning Slot', due_time: '10:30' },
+      { slot_id: 'S2', label: 'Evening Slot', due_time: '20:00' }
+    ];
+  }
+  if (n === 3) {
+    return [
+      { slot_id: 'S1', label: 'Morning Opening', due_time: '10:00' },
+      { slot_id: 'S2', label: 'Mid-Day Audit', due_time: '14:30' },
+      { slot_id: 'S3', label: 'Evening Closing', due_time: '20:30' }
+    ];
+  }
+  if (n === 4) {
+    return [
+      { slot_id: 'S1', label: 'Morning Opening', due_time: '09:30' },
+      { slot_id: 'S2', label: 'Noon Check', due_time: '12:30' },
+      { slot_id: 'S3', label: 'Tea Time Audit', due_time: '16:00' },
+      { slot_id: 'S4', label: 'Evening Closing', due_time: '20:30' }
+    ];
+  }
+  if (n === 5) {
+    return [
+      { slot_id: 'S1', label: 'Slot 1 (Opening)', due_time: '09:30' },
+      { slot_id: 'S2', label: 'Slot 2 (Mid-Morning)', due_time: '12:00' },
+      { slot_id: 'S3', label: 'Slot 3 (Afternoon)', due_time: '14:30' },
+      { slot_id: 'S4', label: 'Slot 4 (Evening)', due_time: '17:30' },
+      { slot_id: 'S5', label: 'Slot 5 (Closing)', due_time: '20:30' }
+    ];
+  }
+
+  // For 6, 7, 8... distribute evenly across operational hours (09:00 - 21:00)
+  const startMins = 9 * 60; // 09:00 AM
+  const endMins = 21 * 60; // 09:00 PM
+  const step = Math.floor((endMins - startMins) / (n - 1));
+
+  const slots = [];
+  for (let i = 0; i < n; i++) {
+    const currentMins = startMins + (i * step);
+    const h = String(Math.floor(currentMins / 60)).padStart(2, '0');
+    const m = String(currentMins % 60).padStart(2, '0');
+    const slotNum = i + 1;
+    const label = i === 0 ? 'Slot 1 (Opening)' : i === n - 1 ? `Slot ${slotNum} (Closing)` : `Slot ${slotNum}`;
+    slots.push({
+      slot_id: `S${slotNum}`,
+      label,
+      due_time: `${h}:${m}`
+    });
+  }
+  return slots;
+}
+
 export function getISOWeekNumber(date = new Date()) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -70,7 +163,7 @@ export function getISOWeekNumber(date = new Date()) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
-export function getCurrentPeriodKey(frequency = 'DAILY', dateInput = new Date()) {
+export function getCurrentPeriodKey(frequency = 'DAILY', dateInput = new Date(), slotId = null) {
   const d = new Date(dateInput);
   if (isNaN(d.getTime())) return '';
 
@@ -80,7 +173,7 @@ export function getCurrentPeriodKey(frequency = 'DAILY', dateInput = new Date())
 
   switch (frequency?.toUpperCase()) {
     case 'DAILY':
-      return `${year}-${month}-${day}`;
+      return slotId ? `${year}-${month}-${day}_${slotId}` : `${year}-${month}-${day}`;
     case 'WEEKLY': {
       const week = String(getISOWeekNumber(d)).padStart(2, '0');
       return `${year}-W${week}`;
@@ -103,21 +196,29 @@ export function getCurrentPeriodKey(frequency = 'DAILY', dateInput = new Date())
     case 'YEARLY':
       return `${year}`;
     default:
-      return `${year}-${month}-${day}`;
+      return slotId ? `${year}-${month}-${day}_${slotId}` : `${year}-${month}-${day}`;
   }
 }
 
-export function getHumanPeriodLabel(frequency = 'DAILY', periodKey = '') {
+export function getHumanPeriodLabel(frequency = 'DAILY', periodKey = '', slotLabel = '') {
   if (!periodKey) return '';
   const freq = frequency?.toUpperCase();
 
   if (freq === 'DAILY') {
-    const parts = periodKey.split('-');
+    const [rawDate, slotId] = periodKey.split('_');
+    const parts = (rawDate || '').split('-');
+    let dateStr = periodKey;
     if (parts.length === 3) {
       const d = new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2]);
-      return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' });
+      dateStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' });
     }
-    return periodKey;
+    if (slotLabel) {
+      return `${dateStr} (${slotLabel})`;
+    }
+    if (slotId) {
+      return `${dateStr} (Slot ${slotId.replace('S', '')})`;
+    }
+    return dateStr;
   }
 
   if (freq === 'WEEKLY') {
@@ -233,9 +334,10 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
   const freq = frequency?.toUpperCase();
 
   if (freq === 'DAILY') {
-    const parts = (periodKey || '').split('-');
+    const rawDate = (periodKey || '').split('_')[0];
+    const parts = (rawDate || '').split('-');
     if (parts.length === 3) {
-      return new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2], hours || 18, minutes || 0, 0);
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 18, minutes || 0, 0);
     }
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours || 18, minutes || 0, 0);

@@ -12,7 +12,11 @@ import {
   CHECKLIST_ITEM_TYPES,
   getCurrentPeriodKey,
   getHumanPeriodLabel,
-  calculateChecklistCompletion
+  calculateChecklistCompletion,
+  generateDefaultDailySlots,
+  DEFAULT_HOLIDAYS_LIST,
+  isDateHoliday,
+  isDateSunday
 } from '@/utils/checklistUtils';
 import {
   getChecklistTemplates,
@@ -249,19 +253,24 @@ export default function ChecklistModule({
 
   const handleOpenNewTemplate = () => {
     setEditingTemplate(null);
+    const initialFreq = selectedFrequency === 'ALL' ? 'DAILY' : selectedFrequency;
     setTemplateForm({
       title: '',
       description: '',
-      frequency: selectedFrequency === 'ALL' ? 'DAILY' : selectedFrequency,
+      frequency: initialFreq,
       department: 'General',
       category: 'OPERATIONS',
       assignment_mode: 'SINGLE',
       assigned_type: 'EMPLOYEE',
       assigned_employee_email: userEmail || '',
       assigned_employee_name: userName || '',
+      daily_repetition_count: 1,
+      daily_slots: generateDefaultDailySlots(1),
       due_time: '18:00',
       days_of_week: ['Monday'],
       day_of_month: 1,
+      include_sundays: true,
+      include_holidays: false,
       items: [
         { id: `item_${Date.now()}_1`, title: 'Check equipment status', type: 'done_not_done', is_required: true, standard_guideline: '' },
         { id: `item_${Date.now()}_2`, title: 'Upload cleanliness photo', type: 'photo', is_required: false, standard_guideline: '' }
@@ -282,6 +291,18 @@ export default function ChecklistModule({
     }
 
     const currentStatus = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
+    const scheduleConfig = tmpl.schedule_config || {};
+    const repCount = tmpl.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
+    const dailySlots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
+      ? tmpl.daily_slots
+      : (Array.isArray(scheduleConfig.daily_slots) && scheduleConfig.daily_slots.length > 0
+        ? scheduleConfig.daily_slots
+        : generateDefaultDailySlots(repCount));
+
+    const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
+    const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
+    const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
+    const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
 
     setTemplateForm({
       id: tmpl.id,
@@ -294,9 +315,13 @@ export default function ChecklistModule({
       assigned_type: tmpl.assigned_type || 'EMPLOYEE',
       assigned_employee_email: tmpl.assigned_employee_email || '',
       assigned_employee_name: tmpl.assigned_employee_name || '',
-      due_time: tmpl.due_time || '18:00',
-      days_of_week: tmpl.days_of_week || ['Monday'],
-      day_of_month: tmpl.day_of_month || 1,
+      daily_repetition_count: repCount,
+      daily_slots: dailySlots,
+      due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
+      days_of_week: daysOfWeek,
+      day_of_month: dayOfMonth,
+      include_sundays: includeSundays,
+      include_holidays: includeHolidays,
       items: tmpl.items && tmpl.items.length > 0 ? tmpl.items : [
         { id: `item_${Date.now()}_1`, title: 'Check item', type: 'done_not_done', is_required: true, standard_guideline: '' }
       ],
@@ -346,6 +371,19 @@ export default function ChecklistModule({
       assignmentMode = 'MULTI';
     }
 
+    const scheduleConfig = tmpl.schedule_config || {};
+    const repCount = tmpl.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
+    const dailySlots = (Array.isArray(tmpl.daily_slots) && tmpl.daily_slots.length > 0)
+      ? tmpl.daily_slots
+      : (Array.isArray(scheduleConfig.daily_slots) && scheduleConfig.daily_slots.length > 0
+        ? scheduleConfig.daily_slots
+        : generateDefaultDailySlots(repCount));
+
+    const daysOfWeek = tmpl.days_of_week || scheduleConfig.days_of_week || ['Monday'];
+    const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
+    const includeSundays = tmpl.include_sundays !== undefined ? tmpl.include_sundays : (scheduleConfig.include_sundays !== undefined ? scheduleConfig.include_sundays : true);
+    const includeHolidays = tmpl.include_holidays !== undefined ? tmpl.include_holidays : (scheduleConfig.include_holidays !== undefined ? scheduleConfig.include_holidays : false);
+
     setTemplateForm({
       title: `${tmpl.title} (Copy)`,
       description: tmpl.description || '',
@@ -356,9 +394,13 @@ export default function ChecklistModule({
       assigned_type: tmpl.assigned_type || 'EMPLOYEE',
       assigned_employee_email: tmpl.assigned_employee_email || '',
       assigned_employee_name: tmpl.assigned_employee_name || '',
-      due_time: tmpl.due_time || '18:00',
-      days_of_week: tmpl.days_of_week || ['Monday'],
-      day_of_month: tmpl.day_of_month || 1,
+      daily_repetition_count: repCount,
+      daily_slots: dailySlots,
+      due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
+      days_of_week: daysOfWeek,
+      day_of_month: dayOfMonth,
+      include_sundays: includeSundays,
+      include_holidays: includeHolidays,
       items: (tmpl.items || []).map((it, idx) => ({
         ...it,
         id: `item_${Date.now()}_${idx + 1}`
@@ -366,7 +408,7 @@ export default function ChecklistModule({
       status: 'ACTIVE',
       is_active: true
     });
-    showNotification(`📋 Template cloned! Modify Title, Cutoff Time or Questions and save.`);
+    showNotification(`📋 Template cloned! Modify Title, Schedule, Cutoff Time or Questions and save.`);
     setTemplateModalOpen(true);
   };
 
@@ -615,6 +657,25 @@ export default function ChecklistModule({
             <ShieldCheck size={18} /> Compliance & Verification
           </button>
         )}
+
+        <button
+          onClick={() => setActiveTab('holidays')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '0.6rem 1.2rem',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'holidays' ? '3px solid #f59e0b' : '3px solid transparent',
+            color: activeTab === 'holidays' ? '#f59e0b' : 'var(--text-secondary, #64748b)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <span>🎉</span> Holidays Calendar
+        </button>
       </div>
 
       {/* Frequency Pill Bar */}
@@ -1254,6 +1315,65 @@ export default function ChecklistModule({
       })()}
 
       {/* ========================================================================= */}
+      {/* TAB 4: COMPANY & NATIONAL HOLIDAYS CALENDAR                              */}
+      {/* ========================================================================= */}
+      {activeTab === 'holidays' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>🎉 Company & National Holidays Calendar</h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
+                Checklists configured with "Skip Holidays" will be automatically exempt on these scheduled dates.
+              </p>
+            </div>
+            <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.35rem 0.85rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 700 }}>
+              {DEFAULT_HOLIDAYS_LIST.length} Registered Holidays
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+            {DEFAULT_HOLIDAYS_LIST.map((h, hIdx) => {
+              const d = new Date(h.date);
+              const isPast = d.getTime() < new Date().setHours(0, 0, 0, 0);
+              return (
+                <div
+                  key={h.date + hIdx}
+                  style={{
+                    background: isPast ? 'var(--bg-secondary, #f8fafc)' : 'var(--card-bg, #ffffff)',
+                    border: isPast ? '1px solid var(--border-color, #e2e8f0)' : '1.5px solid #fed7aa',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    opacity: isPast ? 0.75 : 1,
+                    boxShadow: isPast ? 'none' : '0 2px 4px rgba(251, 146, 60, 0.08)'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>{h.name}</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.2rem' }}>
+                      {d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <span style={{
+                    background: isPast ? '#e2e8f0' : '#ffedd5',
+                    color: isPast ? '#64748b' : '#c2410c',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '12px'
+                  }}>
+                    {isPast ? 'Passed' : 'Upcoming'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL 1: CHECKLIST EXECUTION (FILL & SUBMIT)                               */}
       {/* ========================================================================= */}
       {executingChecklist && (
@@ -1716,7 +1836,7 @@ export default function ChecklistModule({
 
             {/* Template Form Body */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Row 1: Title & Frequency */}
+              {/* Row 1: Title & Department */}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
@@ -1724,31 +1844,13 @@ export default function ChecklistModule({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Daily Morning Store Opening Checklist"
+                    placeholder="e.g. Daily Store Opening & Cleanliness Audit"
                     value={templateForm.title}
                     onChange={(e) => setTemplateForm(prev => ({ ...prev, title: e.target.value }))}
                     style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', width: '100%' }}
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Recurrence Frequency *
-                  </label>
-                  <select
-                    value={templateForm.frequency}
-                    onChange={(e) => setTemplateForm(prev => ({ ...prev, frequency: e.target.value }))}
-                    style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', width: '100%' }}
-                  >
-                    {FREQUENCIES_CONFIG.map(f => (
-                      <option key={f.id} value={f.id}>{f.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 2: Department & Cutoff Time */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                     Department
@@ -1761,17 +1863,388 @@ export default function ChecklistModule({
                     style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', width: '100%' }}
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Daily / Period Cutoff Time
-                  </label>
+              {/* Row 2: Recurrence Frequency Selector */}
+              <div>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', display: 'block', marginBottom: '0.4rem', color: 'var(--text-primary, #1e293b)' }}>
+                  🔄 Recurrence Frequency *
+                </label>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  {FREQUENCIES_CONFIG.map(freq => {
+                    const isSelected = templateForm.frequency === freq.id;
+                    return (
+                      <button
+                        key={freq.id}
+                        type="button"
+                        onClick={() => {
+                          const repCount = freq.id === 'DAILY' ? (templateForm.daily_repetition_count || 1) : 1;
+                          const slots = freq.id === 'DAILY'
+                            ? (templateForm.daily_slots?.length ? templateForm.daily_slots : generateDefaultDailySlots(repCount))
+                            : [{ slot_id: 'S1', label: 'Cutoff Time', due_time: templateForm.due_time || '18:00' }];
+                          setTemplateForm(prev => ({
+                            ...prev,
+                            frequency: freq.id,
+                            daily_slots: slots,
+                            due_time: slots[0]?.due_time || prev.due_time || '18:00'
+                          }));
+                        }}
+                        style={{
+                          padding: '0.4rem 0.85rem',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: isSelected ? `2px solid ${freq.badgeColor}` : '1px solid var(--border-color, #cbd5e1)',
+                          background: isSelected ? `${freq.badgeColor}15` : 'var(--card-bg, #ffffff)',
+                          color: isSelected ? freq.badgeColor : 'var(--text-secondary, #64748b)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span>{freq.icon}</span>
+                        <span>{freq.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dynamic Frequency Settings Box */}
+              {templateForm.frequency === 'DAILY' && (
+                <div style={{ background: '#f0f9ff', padding: '1rem', borderRadius: '10px', border: '1px solid #bae6fd', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        ☀️ Daily Repetition (1 Din Me Kitni Bar?)
+                      </span>
+                      <p style={{ fontSize: '0.78rem', color: '#0284c7', margin: 0 }}>
+                        Select how many times per day this checklist must be performed and submitted.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map(count => {
+                        const isChosen = (templateForm.daily_repetition_count || 1) === count;
+                        return (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => {
+                              const newSlots = generateDefaultDailySlots(count);
+                              setTemplateForm(prev => ({
+                                ...prev,
+                                daily_repetition_count: count,
+                                daily_slots: newSlots,
+                                due_time: newSlots[0]?.due_time || prev.due_time || '18:00'
+                              }));
+                            }}
+                            style={{
+                              padding: '0.35rem 0.65rem',
+                              borderRadius: '6px',
+                              fontSize: '0.82rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: isChosen ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                              background: isChosen ? '#0284c7' : '#ffffff',
+                              color: isChosen ? '#ffffff' : '#334155',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {count} {count === 1 ? 'Time' : 'Times'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* If repetition == 1, show standard single Cutoff Time picker */}
+                  {(templateForm.daily_repetition_count || 1) === 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.2rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0369a1' }}>Daily Cutoff Time:</span>
+                      <input
+                        type="time"
+                        value={templateForm.due_time || '18:00'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTemplateForm(prev => ({
+                            ...prev,
+                            due_time: val,
+                            daily_slots: [{ slot_id: 'S1', label: 'Daily Cutoff', due_time: val }]
+                          }));
+                        }}
+                        style={{ padding: '0.4rem 0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  )}
+
+                  {/* If repetition > 1, show individual slot cards */}
+                  {(templateForm.daily_repetition_count || 1) > 1 && (
+                    <div style={{ background: '#ffffff', borderRadius: '8px', padding: '0.75rem', border: '1px solid #e0f2fe', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0369a1' }}>
+                          ⏰ Execution Time Slots ({templateForm.daily_slots?.length || templateForm.daily_repetition_count} Separate Checklists / Day)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const resetSlots = generateDefaultDailySlots(templateForm.daily_repetition_count || 1);
+                            setTemplateForm(prev => ({
+                              ...prev,
+                              daily_slots: resetSlots,
+                              due_time: resetSlots[0]?.due_time || prev.due_time
+                            }));
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          ⚡ Auto-distribute evenly (09:00 AM - 09:00 PM)
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.5rem' }}>
+                        {(templateForm.daily_slots || []).map((slot, sIdx) => (
+                          <div key={slot.slot_id || sIdx} style={{ background: '#f8fafc', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+                                Slot #{sIdx + 1} ({slot.slot_id})
+                              </span>
+                              <input
+                                type="time"
+                                value={slot.due_time || '18:00'}
+                                onChange={(e) => {
+                                  const updated = [...(templateForm.daily_slots || [])];
+                                  updated[sIdx] = { ...updated[sIdx], due_time: e.target.value };
+                                  setTemplateForm(prev => ({ ...prev, daily_slots: updated }));
+                                }}
+                                style={{ padding: '0.25rem 0.45rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.8rem', fontWeight: 700 }}
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              placeholder={`Slot ${sIdx + 1} Label (e.g. Opening, Mid-Day, Closing)`}
+                              value={slot.label || ''}
+                              onChange={(e) => {
+                                const updated = [...(templateForm.daily_slots || [])];
+                                updated[sIdx] = { ...updated[sIdx], label: e.target.value };
+                                setTemplateForm(prev => ({ ...prev, daily_slots: updated }));
+                              }}
+                              style={{ padding: '0.3rem 0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {templateForm.frequency === 'WEEKLY' && (
+                <div style={{ background: '#f0fdf4', padding: '1rem', borderRadius: '10px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#166534' }}>
+                    🗓️ Weekly Scheduling (Select Active Days & Cutoff Time)
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(dayName => {
+                      const isSelected = (templateForm.days_of_week || ['Monday']).includes(dayName);
+                      return (
+                        <button
+                          key={dayName}
+                          type="button"
+                          onClick={() => {
+                            setTemplateForm(prev => {
+                              const cur = prev.days_of_week || ['Monday'];
+                              const next = isSelected ? cur.filter(d => d !== dayName) : [...cur, dayName];
+                              return { ...prev, days_of_week: next.length > 0 ? next : [dayName] };
+                            });
+                          }}
+                          style={{
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            border: isSelected ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                            background: isSelected ? '#16a34a' : '#ffffff',
+                            color: isSelected ? '#ffffff' : '#334155'
+                          }}
+                        >
+                          {dayName.slice(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#166534' }}>Weekly Cutoff Time:</span>
+                    <input
+                      type="time"
+                      value={templateForm.due_time || '18:00'}
+                      onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                      style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {templateForm.frequency === 'FORTNIGHTLY' && (
+                <div style={{ background: '#faf5ff', padding: '1rem', borderRadius: '10px', border: '1px solid #e9d5ff', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#6b21a8' }}>
+                    🌓 15 Days (Fortnightly) Scheduling
+                  </span>
+                  <p style={{ fontSize: '0.8rem', color: '#7e22ce', margin: 0 }}>
+                    This checklist triggers twice a month (Period 1: 1st - 15th, Period 2: 16th - Month End).
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#6b21a8' }}>Period Cutoff Time:</span>
+                    <input
+                      type="time"
+                      value={templateForm.due_time || '18:00'}
+                      onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                      style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {templateForm.frequency === 'MONTHLY' && (
+                <div style={{ background: '#fffbeb', padding: '1rem', borderRadius: '10px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#b45309' }}>
+                    📆 Monthly Scheduling (Select Target Date & Cutoff Time)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400e' }}>Due on Day:</span>
+                      <select
+                        value={templateForm.day_of_month || 1}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, day_of_month: parseInt(e.target.value, 10) }))}
+                        style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.85rem' }}
+                      >
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <option key={day} value={day}>
+                            {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of every month
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400e' }}>Cutoff Time:</span>
+                      <input
+                        type="time"
+                        value={templateForm.due_time || '18:00'}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
+                        style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(templateForm.frequency) && (
+                <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#475569' }}>Period Cutoff Time:</span>
                   <input
                     type="time"
-                    value={templateForm.due_time}
+                    value={templateForm.due_time || '18:00'}
                     onChange={(e) => setTemplateForm(prev => ({ ...prev, due_time: e.target.value }))}
-                    style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', width: '100%' }}
+                    style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
                   />
+                </div>
+              )}
+
+              {/* Sunday & Holiday Scheduling Rules */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                {/* Sunday Rule */}
+                <div style={{ background: 'var(--bg-secondary, #f8fafc)', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
+                    📅 Sunday Checklist Rule
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                    Should this checklist be required on Sundays?
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateForm(prev => ({ ...prev, include_sundays: true }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: templateForm.include_sundays !== false ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                        background: templateForm.include_sundays !== false ? '#dcfce7' : '#ffffff',
+                        color: templateForm.include_sundays !== false ? '#166534' : '#64748b'
+                      }}
+                    >
+                      ✅ Yes (Include)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateForm(prev => ({ ...prev, include_sundays: false }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: templateForm.include_sundays === false ? '2px solid #dc2626' : '1px solid #cbd5e1',
+                        background: templateForm.include_sundays === false ? '#fee2e2' : '#ffffff',
+                        color: templateForm.include_sundays === false ? '#991b1b' : '#64748b'
+                      }}
+                    >
+                      ❌ No (Skip Sundays)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Holiday Rule */}
+                <div style={{ background: 'var(--bg-secondary, #f8fafc)', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
+                    🎉 Public / Company Holidays Rule
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                    Should this checklist run on national & company holidays?
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateForm(prev => ({ ...prev, include_holidays: true }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: templateForm.include_holidays === true ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                        background: templateForm.include_holidays === true ? '#dcfce7' : '#ffffff',
+                        color: templateForm.include_holidays === true ? '#166534' : '#64748b'
+                      }}
+                    >
+                      ✅ Yes (Include)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateForm(prev => ({ ...prev, include_holidays: false }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: templateForm.include_holidays !== true ? '2px solid #dc2626' : '1px solid #cbd5e1',
+                        background: templateForm.include_holidays !== true ? '#fee2e2' : '#ffffff',
+                        color: templateForm.include_holidays !== true ? '#991b1b' : '#64748b'
+                      }}
+                    >
+                      ❌ No (Skip Holidays)
+                    </button>
+                  </div>
                 </div>
               </div>
 
