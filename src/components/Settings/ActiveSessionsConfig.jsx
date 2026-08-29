@@ -7,6 +7,48 @@ import { getSessionSecuritySettings, saveSessionSecuritySettings, getEmployeeDai
 import { createClient } from '@/utils/supabase/client';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
+function parseDeviceInfo(deviceStr = '') {
+  if (!deviceStr) return { os: 'Unknown OS', browser: 'Web Browser', icon: '🌐', label: 'Web Browser' };
+  const d = deviceStr.toLowerCase();
+
+  let os = 'Windows';
+  let icon = '🖥️';
+  if (d.includes('android')) {
+    os = 'Android';
+    icon = '📱';
+  } else if (d.includes('iphone') || d.includes('ipad') || d.includes('ios')) {
+    os = 'iOS';
+    icon = '📱';
+  } else if (d.includes('macintosh') || d.includes('mac os')) {
+    os = 'macOS';
+    icon = '🍎';
+  } else if (d.includes('linux')) {
+    os = 'Linux';
+    icon = '🐧';
+  }
+
+  let browser = 'Chrome';
+  if (d.includes('edg/')) {
+    browser = 'Edge';
+  } else if (d.includes('chrome') && !d.includes('edg/')) {
+    browser = 'Chrome';
+  } else if (d.includes('safari') && !d.includes('chrome')) {
+    browser = 'Safari';
+  } else if (d.includes('firefox')) {
+    browser = 'Firefox';
+  } else if (d.includes('opera') || d.includes('opr/')) {
+    browser = 'Opera';
+  }
+
+  return {
+    os,
+    browser,
+    icon,
+    label: `${browser} on ${os}`,
+    raw: deviceStr
+  };
+}
+
 export default function ActiveSessionsConfig() {
   const [activeTab, setActiveTab] = useState('report'); // 'report' | 'breakdown' | 'live' | 'inactivity' | 'breaks'
 
