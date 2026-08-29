@@ -394,13 +394,16 @@ export async function getEmployeeChecklistDashboard({
           ? Boolean(scheduleMeta.include_holidays)
           : (tmpl.schedule_config?.include_holidays !== undefined ? Boolean(tmpl.schedule_config.include_holidays) : false));
 
+      const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleMeta.buffer_minutes || tmpl.schedule_config?.buffer_minutes, 10) || 20;
+
       const scheduleConfig = {
         daily_repetition_count: repCount,
         daily_slots: dailySlots,
         days_of_week: daysOfWeek,
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
-        include_holidays: includeHolidays
+        include_holidays: includeHolidays,
+        buffer_minutes: bufferMinutes
       };
 
       return {
@@ -412,6 +415,7 @@ export async function getEmployeeChecklistDashboard({
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
+        buffer_minutes: bufferMinutes,
         schedule_config: scheduleConfig
       };
     });
@@ -451,8 +455,9 @@ export async function getEmployeeChecklistDashboard({
       };
     }
 
-    // 2. Fetch existing submissions for this employee
+    // 2. Fetch existing submissions for these templates in the current period
     const templateIds = filteredTemplates.map(t => t.id);
+
     let subQuery = adminClient
       .from('checklist_submissions')
       .select('*')
@@ -479,6 +484,7 @@ export async function getEmployeeChecklistDashboard({
       const items = Array.isArray(tmpl.items) ? tmpl.items : [];
       const scheduleConfig = tmpl.schedule_config || {};
       const freq = (tmpl.frequency || 'DAILY').toUpperCase();
+      const bufferMins = tmpl.buffer_minutes || scheduleConfig.buffer_minutes || 20;
 
       if (freq === 'DAILY') {
         const repCount = tmpl.daily_repetition_count || scheduleConfig.daily_repetition_count || 1;
@@ -500,7 +506,6 @@ export async function getEmployeeChecklistDashboard({
             const isDone = sub && sub.status === 'COMPLETED';
             const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
             const slotDueTime = slot.due_time || tmpl.due_time || '18:00';
-            const bufferMins = tmpl.buffer_minutes || scheduleMeta.buffer_minutes || scheduleConfig.buffer_minutes || 20;
 
             const delayInfo = calculateDelayStatus({
               frequency: 'DAILY',
@@ -548,7 +553,6 @@ export async function getEmployeeChecklistDashboard({
       const stats = calculateChecklistCompletion(items, responses);
       const isDone = sub && sub.status === 'COMPLETED';
       const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
-      const bufferMins = tmpl.buffer_minutes || scheduleMeta.buffer_minutes || scheduleConfig.buffer_minutes || 20;
 
       const delayInfo = calculateDelayStatus({
         frequency: tmpl.frequency,

@@ -537,6 +537,7 @@ export default function ChecklistModule({
       const res = await setChecklistTemplateStatus(tmpl.id, statusClean);
       if (res.success) {
         showNotification(`Template set to ${statusClean === 'ACTIVE' ? '🟢 Active' : statusClean === 'DRAFT' ? '📝 Draft' : '🔴 Inactive'}`);
+        loadEmployeeDashboard();
       } else {
         // Revert
         setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, status: tmpl.status, is_active: tmpl.is_active } : t));
@@ -577,6 +578,7 @@ export default function ChecklistModule({
         showNotification(statusMsg);
         setTemplateModalOpen(false);
         loadTemplates();
+        loadEmployeeDashboard();
       } else {
         showNotification(res.error || 'Failed to save template', true);
       }
@@ -592,6 +594,7 @@ export default function ChecklistModule({
       if (res.success) {
         showNotification('Template deleted');
         loadTemplates();
+        loadEmployeeDashboard();
       }
     } catch (e) {
       showNotification(e.message, true);
