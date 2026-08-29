@@ -56,6 +56,9 @@ export default function DelegationTaskModule({
   // Tabs: 'dashboard' (Delegation Dashboard) | 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
   const [viewMode, setViewMode] = useState('tiles'); // 'tiles' | 'table'
+  const [taskDateRange, setTaskDateRange] = useState('all'); // 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30_days' | 'custom'
+  const [taskCustomStartDate, setTaskCustomStartDate] = useState('');
+  const [taskCustomEndDate, setTaskCustomEndDate] = useState('');
   const [tasks, setTasks] = useState([]);
   const [allDashboardTasks, setAllDashboardTasks] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -237,6 +240,43 @@ export default function DelegationTaskModule({
     (allDashboardTasks || []).forEach(t => { if (t.assigned_to_department) set.add(t.assigned_to_department); });
     return Array.from(set).sort();
   }, [employeesList, allDashboardTasks]);
+
+  // Filter tasks by selected Quick Date Range in task list view
+  const filteredTasks = useMemo(() => {
+    let list = [...tasks];
+    const now = new Date();
+
+    if (taskDateRange === 'today') {
+      const todayStr = now.toISOString().slice(0, 10);
+      list = list.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr || (t.start_date || '').slice(0, 10) === todayStr);
+    } else if (taskDateRange === 'yesterday') {
+      const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const yestStr = yest.toISOString().slice(0, 10);
+      list = list.filter(t => (t.created_at || '').slice(0, 10) === yestStr || (t.deadline || '').slice(0, 10) === yestStr || (t.start_date || '').slice(0, 10) === yestStr);
+    } else if (taskDateRange === 'this_week') {
+      const startOfWeek = new Date(now);
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      startOfWeek.setDate(diff);
+      startOfWeek.setHours(0, 0, 0, 0);
+      list = list.filter(t => new Date(t.created_at || t.deadline || t.start_date) >= startOfWeek);
+    } else if (taskDateRange === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      list = list.filter(t => new Date(t.created_at || t.deadline || t.start_date) >= startOfMonth);
+    } else if (taskDateRange === 'last_30_days') {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      list = list.filter(t => new Date(t.created_at || t.deadline || t.start_date) >= thirtyDaysAgo);
+    } else if (taskDateRange === 'custom') {
+      if (taskCustomStartDate) {
+        list = list.filter(t => (t.created_at || t.deadline || t.start_date || '').slice(0, 10) >= taskCustomStartDate);
+      }
+      if (taskCustomEndDate) {
+        list = list.filter(t => (t.created_at || t.deadline || t.start_date || '').slice(0, 10) <= taskCustomEndDate);
+      }
+    }
+
+    return list;
+  }, [tasks, taskDateRange, taskCustomStartDate, taskCustomEndDate]);
 
   // Executive Dashboard Analytics Calculation
   const dashboardAnalytics = useMemo(() => {
@@ -1553,105 +1593,174 @@ export default function DelegationTaskModule({
 
       {/* Filter Bar (Only for tasks list views) */}
       {activeTab !== 'dashboard' && (
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', padding: '0.45rem 0.75rem', flex: 1, minWidth: '220px' }}>
-            <Search size={16} style={{ color: '#94a3b8', marginRight: '0.5rem' }} />
-            <input
-              type="text"
-              placeholder="Search task title, code, employee, category..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
-            />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', padding: '0.45rem 0.75rem', flex: 1, minWidth: '220px' }}>
+              <Search size={16} style={{ color: '#94a3b8', marginRight: '0.5rem' }} />
+              <input
+                type="text"
+                placeholder="Search task title, code, employee, category..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            {activeTab === 'all' && myReportingTeam.length > 0 && (
+              <select
+                value={teamBoardFilter}
+                onChange={(e) => setTeamBoardFilter(e.target.value)}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1.5px solid #3b82f6',
+                  background: '#eff6ff',
+                  color: '#1d4ed8',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
+                {isAdmin && <option value="ALL">🏢 All Company Tasks</option>}
+              </select>
+            )}
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="PENDING">Pending (Not Started)</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="SUBMITTED">Submitted for Review</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="REOPENED">Reopened</option>
+            </select>
+
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
+            >
+              <option value="ALL">All Priorities</option>
+              <option value="URGENT">🔥 Urgent</option>
+              <option value="HIGH">⚡ High</option>
+              <option value="MEDIUM">📌 Medium</option>
+              <option value="LOW">☕ Low</option>
+            </select>
+
+            {/* View Mode Toggle: Tiles (Cards) vs Table */}
+            <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginLeft: 'auto' }}>
+              <button
+                onClick={() => setViewMode('tiles')}
+                title="Tiles / Cards View"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  border: 'none',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: viewMode === 'tiles' ? '#ffffff' : 'transparent',
+                  color: viewMode === 'tiles' ? '#1e293b' : '#64748b',
+                  boxShadow: viewMode === 'tiles' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                <LayoutGrid size={15} /> Tiles
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                title="Table View"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  border: 'none',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: viewMode === 'table' ? '#ffffff' : 'transparent',
+                  color: viewMode === 'table' ? '#1e293b' : '#64748b',
+                  boxShadow: viewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                <List size={15} /> Table
+              </button>
+            </div>
           </div>
 
-          {activeTab === 'all' && myReportingTeam.length > 0 && (
-            <select
-              value={teamBoardFilter}
-              onChange={(e) => setTeamBoardFilter(e.target.value)}
-              style={{
-                padding: '0.5rem 0.75rem',
-                borderRadius: '8px',
-                border: '1.5px solid #3b82f6',
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
-              {isAdmin && <option value="ALL">🏢 All Company Tasks</option>}
-            </select>
-          )}
+          {/* Quick Date Presets Row */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            flexWrap: 'wrap',
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            borderRadius: '8px',
+            padding: '0.5rem 0.75rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+          }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Calendar size={14} /> Quick Date:
+            </span>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
-          >
-            <option value="ALL">All Statuses</option>
-            <option value="PENDING">Pending (Not Started)</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="SUBMITTED">Submitted for Review</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="REOPENED">Reopened</option>
-          </select>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+              {[
+                { id: 'all', label: 'All Time' },
+                { id: 'today', label: 'Today' },
+                { id: 'yesterday', label: 'Yesterday' },
+                { id: 'this_week', label: 'This Week' },
+                { id: 'this_month', label: 'This Month' },
+                { id: 'last_30_days', label: 'Last 30 Days' },
+                { id: 'custom', label: 'Custom' }
+              ].map(preset => (
+                <button
+                  key={preset.id}
+                  onClick={() => setTaskDateRange(preset.id)}
+                  style={{
+                    border: '1px solid',
+                    borderColor: taskDateRange === preset.id ? '#3b82f6' : 'var(--border-color, #e2e8f0)',
+                    background: taskDateRange === preset.id ? '#eff6ff' : 'var(--bg-secondary, #f8fafc)',
+                    color: taskDateRange === preset.id ? '#1d4ed8' : 'var(--text-secondary, #64748b)',
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
 
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.85rem' }}
-          >
-            <option value="ALL">All Priorities</option>
-            <option value="URGENT">🔥 Urgent</option>
-            <option value="HIGH">⚡ High</option>
-            <option value="MEDIUM">📌 Medium</option>
-            <option value="LOW">☕ Low</option>
-          </select>
-
-          {/* View Mode Toggle: Tiles (Cards) vs Table */}
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginLeft: 'auto' }}>
-            <button
-              onClick={() => setViewMode('tiles')}
-              title="Tiles / Cards View"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                border: 'none',
-                padding: '0.35rem 0.75rem',
-                borderRadius: '6px',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: viewMode === 'tiles' ? '#ffffff' : 'transparent',
-                color: viewMode === 'tiles' ? '#1e293b' : '#64748b',
-                boxShadow: viewMode === 'tiles' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              <LayoutGrid size={15} /> Tiles
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              title="Table View"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                border: 'none',
-                padding: '0.35rem 0.75rem',
-                borderRadius: '6px',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: viewMode === 'table' ? '#ffffff' : 'transparent',
-                color: viewMode === 'table' ? '#1e293b' : '#64748b',
-                boxShadow: viewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              <List size={15} /> Table
-            </button>
+            {/* Custom Date Pickers */}
+            {taskDateRange === 'custom' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: 'auto' }}>
+                <input
+                  type="date"
+                  value={taskCustomStartDate}
+                  onChange={(e) => setTaskCustomStartDate(e.target.value)}
+                  style={{ padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>to</span>
+                <input
+                  type="date"
+                  value={taskCustomEndDate}
+                  onChange={(e) => setTaskCustomEndDate(e.target.value)}
+                  style={{ padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1665,7 +1774,7 @@ export default function DelegationTaskModule({
       )}
 
       {/* Empty state */}
-      {activeTab !== 'dashboard' && !loading && tasks.length === 0 && (
+      {activeTab !== 'dashboard' && !loading && filteredTasks.length === 0 && (
         <div style={{
           background: 'var(--bg-secondary, #f8fafc)',
           border: '1px dashed var(--border-color, #cbd5e1)',
@@ -1677,7 +1786,7 @@ export default function DelegationTaskModule({
           <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem' }}>🤝</span>
           <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Tasks Found</h3>
           <p style={{ margin: 0, fontSize: '0.9rem' }}>
-            {activeTab === 'to_me' ? 'You have no delegated tasks pending.' : 'You have not delegated any tasks matching this filter.'}
+            {activeTab === 'to_me' ? 'You have no delegated tasks matching this filter.' : 'You have not delegated any tasks matching this filter.'}
           </p>
           <button
             onClick={handleOpenCreateModal}
@@ -1700,9 +1809,9 @@ export default function DelegationTaskModule({
       {/* ==================================================== */}
       {/* 🗂️ TILES / CARDS VIEW                               */}
       {/* ==================================================== */}
-      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && viewMode === 'tiles' && (
+      {activeTab !== 'dashboard' && !loading && filteredTasks.length > 0 && viewMode === 'tiles' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
-          {tasks.map(task => {
+          {filteredTasks.map(task => {
             const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;
             const deadlineBadge = formatDeadlineBadge(task.deadline, task.status);
             const isAssignedToMe = (task.assigned_to_email || '').toLowerCase() === (userEmail || '').toLowerCase();
@@ -1928,7 +2037,7 @@ export default function DelegationTaskModule({
       {/* ==================================================== */}
       {/* 📊 TABLE VIEW                                       */}
       {/* ==================================================== */}
-      {activeTab !== 'dashboard' && !loading && tasks.length > 0 && viewMode === 'table' && (
+      {activeTab !== 'dashboard' && !loading && filteredTasks.length > 0 && viewMode === 'table' && (
         <div style={{
           background: 'var(--card-bg, #ffffff)',
           border: '1px solid var(--border-color, #e2e8f0)',
@@ -1952,7 +2061,7 @@ export default function DelegationTaskModule({
                 </tr>
               </thead>
               <tbody>
-                {tasks.map(task => {
+                {filteredTasks.map(task => {
                   const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.MEDIUM;
                   const deadlineBadge = formatDeadlineBadge(task.deadline, task.status);
                   const isAssignedToMe = (task.assigned_to_email || '').toLowerCase() === (userEmail || '').toLowerCase();
