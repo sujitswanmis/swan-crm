@@ -421,28 +421,33 @@ export default function AnalyticsDashboard({
 
   // Weighted Work Health Score
   const overallCompletionScore = useMemo(() => {
-    const taskScore = delegation.total > 0 ? Math.round((delegation.completed / delegation.total) * 100) : 100;
-    const checklistScore = checklists.totalSlots > 0 ? checklists.complianceRate : null;
+    const hasTasks = delegation.total > 0;
+    const taskScore = hasTasks ? Math.round((delegation.completed / delegation.total) * 100) : null;
     
-    // For leads: % of leads that are actively won or moved forward from fresh stage
-    const leadScore = assignedLeadStats.total > 0 
-      ? Math.min(100, Math.round(((assignedLeadStats.won * 10 + assignedLeadStats.inPipeline * 2 + (assignedLeadStats.total - assignedLeadStats.actionNeeded)) / assignedLeadStats.total) * 100))
+    const hasChecklists = checklists.totalSlots > 0;
+    const checklistScore = hasChecklists ? checklists.complianceRate : null;
+    
+    // For leads: % of assigned leads that are already handled / moved through pipeline vs pending fresh / follow-ups
+    const totalLeads = assignedLeadStats.total;
+    const pendingLeads = assignedLeadStats.actionNeeded;
+    const leadActionScore = totalLeads > 0 
+      ? Math.max(0, Math.min(100, Math.round(((totalLeads - pendingLeads) / totalLeads) * 100))) 
       : 100;
 
-    if (checklistScore !== null && delegation.total > 0) {
-      return Math.round((taskScore * 0.4) + (checklistScore * 0.4) + (leadScore * 0.2));
+    if (hasTasks && hasChecklists) {
+      return Math.round((taskScore * 0.4) + (checklistScore * 0.4) + (leadActionScore * 0.2));
     }
-    if (checklistScore !== null) {
-      return Math.round((checklistScore * 0.7) + (leadScore * 0.3));
+    if (hasTasks) {
+      return Math.round((taskScore * 0.6) + (leadActionScore * 0.4));
     }
-    if (delegation.total > 0) {
-      return Math.round((taskScore * 0.6) + (leadScore * 0.4));
+    if (hasChecklists) {
+      return Math.round((checklistScore * 0.7) + (leadActionScore * 0.3));
     }
-    return leadScore;
+    return leadActionScore;
   }, [delegation, checklists, assignedLeadStats]);
 
   const totalPendingActionItems = delegation.pending + delegation.inProgress + checklists.pending + assignedLeadStats.actionNeeded;
-  const totalOverdueAlerts = delegation.overdue + checklists.completedLate + assignedLeadStats.overdueFollowups;
+  const totalOverdueAlerts = Number(delegation.overdue || 0) + Number(checklists.completedLate || 0) + Number(assignedLeadStats.overdueFollowups || 0);
 
   // Filtered Delegation Tasks for Table View
   const filteredTasks = useMemo(() => {
@@ -660,7 +665,7 @@ export default function AnalyticsDashboard({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {totalOverdueAlerts > 0 && (
+            {Boolean(totalOverdueAlerts > 0) && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', fontWeight: 700, color: '#dc2626', backgroundColor: '#fee2e2', padding: '0.35rem 0.75rem', borderRadius: '20px', border: '1px solid #fca5a5' }}>
                 <AlertTriangle size={14} /> {totalOverdueAlerts} Overdue / Delayed Tasks
               </span>
