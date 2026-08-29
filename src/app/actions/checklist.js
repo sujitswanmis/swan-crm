@@ -611,6 +611,52 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
     } = submissionData;
 
     const emailClean = (employee_email || '').trim().toLowerCase();
+
+    // 1. Enforce Time-Window Expiration Check
+    const { data: tmplDoc } = await adminClient
+      .from('checklist_templates')
+      .select('*')
+      .eq('id', template_id)
+      .single();
+
+    if (tmplDoc) {
+      const { scheduleMeta } = parseTemplateDescription(tmplDoc.description);
+      const bufferMins = parseInt(tmplDoc.buffer_minutes || scheduleMeta.buffer_minutes || tmplDoc.schedule_config?.buffer_minutes, 10) || 20;
+
+      let slotDueTime = tmplDoc.due_time || '18:00';
+      if (period_key && period_key.includes('_S')) {
+        const slotId = period_key.split('_')[1];
+        const slots = Array.isArray(tmplDoc.daily_slots) && tmplDoc.daily_slots.length > 0
+          ? tmplDoc.daily_slots
+          : (scheduleMeta.daily_slots || []);
+        const matched = slots.find(s => s.slot_id === slotId);
+        if (matched?.due_time) slotDueTime = matched.due_time;
+      }
+
+      const delayCheck = calculateDelayStatus({
+        frequency: tmplDoc.frequency || frequency,
+        periodKey: period_key,
+        dueTime: slotDueTime,
+        bufferMinutes: bufferMins,
+        dayOfMonth: tmplDoc.day_of_month || 1,
+        now: new Date()
+      });
+
+      if (delayCheck.isExpired) {
+        return {
+          success: false,
+          error: `❌ Submission Window Closed: This checklist slot closed at ${delayCheck.formattedExpire}. Expired checklists cannot be submitted.`
+        };
+      }
+
+      if (delayCheck.isBeforeStart) {
+        return {
+          success: false,
+          error: `🔒 Checklist is Locked: This checklist slot opens at ${delayCheck.formattedStart}. Premature submissions are not permitted.`
+        };
+      }
+    }
+
     const stats = calculateChecklistCompletion(items, responses);
     const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
 

@@ -323,6 +323,17 @@ export default function ChecklistModule({
 
   const handleSubmitExecution = async () => {
     if (!executingChecklist) return;
+
+    const delayInfo = executingChecklist.delayInfo || {};
+    if (delayInfo.isExpired) {
+      showNotification(`❌ Submission Window Closed: This checklist slot closed at ${delayInfo.formattedExpire || 'deadline'}. Expired checklists cannot be submitted.`, true);
+      return;
+    }
+    if (delayInfo.isBeforeStart) {
+      showNotification(`🔒 Checklist is Locked: This checklist slot opens at ${delayInfo.formattedStart || 'start time'}.`, true);
+      return;
+    }
+
     setSavingSubmission(true);
 
     try {
@@ -2198,11 +2209,12 @@ export default function ChecklistModule({
 
             {/* Questions Body */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Completed Lock Banner or Cutoff/Delay Notice Banner */}
+              {/* Completed Lock Banner, Expired Banner, Locked Banner, or Active Banner */}
               {(() => {
                 const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
                 const delayInfo = executingChecklist.delayInfo || {};
-                const isOverdue = delayInfo.isPastCutoff && !isAlreadyCompleted;
+                const isLocked = delayInfo.isBeforeStart;
+                const isExpired = delayInfo.isExpired;
 
                 if (isAlreadyCompleted) {
                   return (
@@ -2227,40 +2239,65 @@ export default function ChecklistModule({
                   );
                 }
 
-                return isOverdue ? (
+                if (isExpired) {
+                  return (
+                    <div style={{
+                      padding: '0.85rem 1rem',
+                      background: '#fef2f2',
+                      color: '#991b1b',
+                      border: '1.5px solid #f87171',
+                      borderRadius: '8px',
+                      fontSize: '0.88rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem'
+                    }}>
+                      <AlertTriangle size={20} style={{ flexShrink: 0, color: '#dc2626' }} />
+                      <div>
+                        <strong>❌ Submission Window Expired (Missed):</strong> This checklist slot closed at <strong>{delayInfo.formattedExpire || 'Window End'}</strong>.
+                        The buffer window has expired. Submissions are strictly locked and no longer accepted.
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (isLocked) {
+                  return (
+                    <div style={{
+                      padding: '0.85rem 1rem',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      border: '1.5px solid #cbd5e1',
+                      borderRadius: '8px',
+                      fontSize: '0.88rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem'
+                    }}>
+                      <Lock size={18} style={{ flexShrink: 0 }} />
+                      <div>
+                        <strong>🔒 Checklist Locked:</strong> This checklist slot opens at <strong>{delayInfo.formattedStart}</strong>.
+                        You cannot submit before the scheduled slot time.
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
                   <div style={{
                     padding: '0.75rem 1rem',
-                    background: '#fef2f2',
-                    color: '#991b1b',
-                    border: '1px solid #fca5a5',
+                    background: '#f0fdf4',
+                    color: '#166534',
+                    border: '1.5px solid #86efac',
                     borderRadius: '8px',
                     fontSize: '0.85rem',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.6rem'
                   }}>
-                    <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                    <Clock size={16} style={{ flexShrink: 0, color: '#16a34a' }} />
                     <div>
-                      <strong>⚠️ Cutoff Time Missed:</strong> Scheduled cutoff was <strong>{executingChecklist.template.due_time || '18:00'}</strong>.
-                      This submission will be recorded as <strong>{delayInfo.delayText || 'Delayed'}</strong>.
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{
-                    padding: '0.65rem 1rem',
-                    background: '#eff6ff',
-                    color: '#1e40af',
-                    border: '1px solid #bfdbfe',
-                    borderRadius: '8px',
-                    fontSize: '0.85rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.6rem'
-                  }}>
-                    <Clock size={16} style={{ flexShrink: 0 }} />
-                    <div>
-                      <strong>Cutoff Deadline:</strong> Today at {executingChecklist.template.due_time || '18:00'}
-                      {delayInfo.delayText ? ` (${delayInfo.delayText})` : ''}
+                      <strong>🟢 Active Submission Window:</strong> Closes at <strong>{delayInfo.formattedExpire}</strong> ({delayInfo.delayText || 'Time remaining'}). Please complete all required items.
                     </div>
                   </div>
                 );
@@ -2268,6 +2305,9 @@ export default function ChecklistModule({
 
               {(() => {
                 const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
+                const delayInfo = executingChecklist.delayInfo || {};
+                const isBlocked = isAlreadyCompleted || delayInfo.isExpired || delayInfo.isBeforeStart;
+
                 return executingChecklist.items.map((item, idx) => {
                   const val = execResponses[item.id];
                   return (
@@ -2285,7 +2325,7 @@ export default function ChecklistModule({
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <label style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>
-                          {idx + 1}. {item.title} {item.is_required && !isAlreadyCompleted && <span style={{ color: '#ef4444' }}>*</span>}
+                          {idx + 1}. {item.title} {item.is_required && !isBlocked && <span style={{ color: '#ef4444' }}>*</span>}
                         </label>
                         <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 600, color: '#475569' }}>
                           {CHECKLIST_ITEM_TYPES.find(t => t.id === item.type)?.label || item.type || 'Done / Not Done'}
@@ -2337,7 +2377,7 @@ export default function ChecklistModule({
                           <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
                             <button
                               type="button"
-                              disabled={isAlreadyCompleted}
+                              disabled={isBlocked}
                               onClick={() => handleResponseChange(item.id, opt1Val)}
                               style={{
                                 flex: 1,
@@ -2346,7 +2386,7 @@ export default function ChecklistModule({
                                 borderRadius: '8px',
                                 fontWeight: 700,
                                 fontSize: '0.88rem',
-                                cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer',
+                                cursor: isBlocked ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -2356,7 +2396,7 @@ export default function ChecklistModule({
                                 background: isOpt1Selected ? '#dcfce7' : '#ffffff',
                                 color: isOpt1Selected ? '#15803d' : '#475569',
                                 boxShadow: isOpt1Selected ? '0 2px 4px rgba(22, 163, 74, 0.15)' : 'none',
-                                opacity: isAlreadyCompleted && !isOpt1Selected ? 0.45 : 1
+                                opacity: isBlocked && !isOpt1Selected ? 0.45 : 1
                               }}
                             >
                               <span>{icon1}</span> {opt1Label}
@@ -2364,7 +2404,7 @@ export default function ChecklistModule({
 
                             <button
                               type="button"
-                              disabled={isAlreadyCompleted}
+                              disabled={isBlocked}
                               onClick={() => handleResponseChange(item.id, opt2Val)}
                               style={{
                                 flex: 1,
@@ -2373,7 +2413,7 @@ export default function ChecklistModule({
                                 borderRadius: '8px',
                                 fontWeight: 700,
                                 fontSize: '0.88rem',
-                                cursor: isAlreadyCompleted ? 'not-allowed' : 'pointer',
+                                cursor: isBlocked ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -2383,7 +2423,7 @@ export default function ChecklistModule({
                                 background: isOpt2Selected ? '#fee2e2' : '#ffffff',
                                 color: isOpt2Selected ? '#b91c1c' : '#475569',
                                 boxShadow: isOpt2Selected ? '0 2px 4px rgba(220, 38, 38, 0.15)' : 'none',
-                                opacity: isAlreadyCompleted && !isOpt2Selected ? 0.45 : 1
+                                opacity: isBlocked && !isOpt2Selected ? 0.45 : 1
                               }}
                             >
                               <span>{icon2}</span> {opt2Label}
@@ -2395,7 +2435,7 @@ export default function ChecklistModule({
                       {item.type === 'number' && (
                         <input
                           type="number"
-                          disabled={isAlreadyCompleted}
+                          disabled={isBlocked}
                           placeholder="Enter measured reading / count..."
                           value={val || ''}
                           onChange={(e) => handleResponseChange(item.id, e.target.value)}
@@ -2405,8 +2445,8 @@ export default function ChecklistModule({
                             border: '1px solid var(--border-color, #cbd5e1)',
                             width: '100%',
                             fontSize: '0.9rem',
-                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
-                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                            background: isBlocked ? '#f1f5f9' : '#fff',
+                            cursor: isBlocked ? 'not-allowed' : 'text'
                           }}
                         />
                       )}
@@ -2414,7 +2454,7 @@ export default function ChecklistModule({
                       {(item.type === 'photo' || item.type === 'file') && (
                         <input
                           type="text"
-                          disabled={isAlreadyCompleted}
+                          disabled={isBlocked}
                           placeholder="Paste image / attachment link or notes..."
                           value={val || ''}
                           onChange={(e) => handleResponseChange(item.id, e.target.value)}
@@ -2424,15 +2464,15 @@ export default function ChecklistModule({
                             border: '1px solid var(--border-color, #cbd5e1)',
                             width: '100%',
                             fontSize: '0.9rem',
-                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
-                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                            background: isBlocked ? '#f1f5f9' : '#fff',
+                            cursor: isBlocked ? 'not-allowed' : 'text'
                           }}
                         />
                       )}
 
                       {item.type === 'text' && (
                         <textarea
-                          disabled={isAlreadyCompleted}
+                          disabled={isBlocked}
                           placeholder="Enter remarks or details..."
                           rows={2}
                           value={val || ''}
@@ -2443,8 +2483,8 @@ export default function ChecklistModule({
                             border: '1px solid var(--border-color, #cbd5e1)',
                             width: '100%',
                             fontSize: '0.9rem',
-                            background: isAlreadyCompleted ? '#f1f5f9' : '#fff',
-                            cursor: isAlreadyCompleted ? 'not-allowed' : 'text'
+                            background: isBlocked ? '#f1f5f9' : '#fff',
+                            cursor: isBlocked ? 'not-allowed' : 'text'
                           }}
                         />
                       )}
@@ -2459,7 +2499,11 @@ export default function ChecklistModule({
                   Overall Remarks / Notes:
                 </label>
                 <textarea
-                  disabled={executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED'}
+                  disabled={(() => {
+                    const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
+                    const delayInfo = executingChecklist.delayInfo || {};
+                    return isAlreadyCompleted || delayInfo.isExpired || delayInfo.isBeforeStart;
+                  })()}
                   placeholder="Any general comments, observations or issues..."
                   rows={2}
                   value={execNotes}
@@ -2470,8 +2514,8 @@ export default function ChecklistModule({
                     border: '1px solid var(--border-color, #cbd5e1)',
                     width: '100%',
                     fontSize: '0.9rem',
-                    background: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED') ? '#f1f5f9' : '#fff',
-                    cursor: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED') ? 'not-allowed' : 'text'
+                    background: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED' || executingChecklist.delayInfo?.isExpired || executingChecklist.delayInfo?.isBeforeStart) ? '#f1f5f9' : '#fff',
+                    cursor: (executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED' || executingChecklist.delayInfo?.isExpired || executingChecklist.delayInfo?.isBeforeStart) ? 'not-allowed' : 'text'
                   }}
                 />
               </div>
@@ -2480,6 +2524,9 @@ export default function ChecklistModule({
             {/* Modal Footer */}
             {(() => {
               const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
+              const delayInfo = executingChecklist.delayInfo || {};
+              const isLocked = delayInfo.isBeforeStart;
+              const isExpired = delayInfo.isExpired;
 
               if (isAlreadyCompleted) {
                 return (
@@ -2491,6 +2538,54 @@ export default function ChecklistModule({
                       onClick={() => setExecutingChecklist(null)}
                       style={{
                         background: '#3b82f6',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '0.55rem 1.5rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                );
+              }
+
+              if (isExpired) {
+                return (
+                  <div style={{ padding: '1rem 1.5rem', background: '#fef2f2', borderTop: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#991b1b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Window Closed at {delayInfo.formattedExpire} (Missed)
+                    </span>
+                    <button
+                      onClick={() => setExecutingChecklist(null)}
+                      style={{
+                        background: '#dc2626',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '0.55rem 1.5rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                );
+              }
+
+              if (isLocked) {
+                return (
+                  <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Lock size={16} /> Locked until {delayInfo.formattedStart}
+                    </span>
+                    <button
+                      onClick={() => setExecutingChecklist(null)}
+                      style={{
+                        background: '#64748b',
                         color: '#ffffff',
                         border: 'none',
                         padding: '0.55rem 1.5rem',
@@ -2524,7 +2619,7 @@ export default function ChecklistModule({
                     onClick={handleSubmitExecution}
                     disabled={savingSubmission}
                     style={{
-                      background: '#22c55e',
+                      background: '#16a34a',
                       color: '#ffffff',
                       border: 'none',
                       padding: '0.55rem 1.5rem',
