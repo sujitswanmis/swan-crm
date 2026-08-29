@@ -536,11 +536,20 @@ export default function DelegationTaskModule({
       const onTimePct = e.assignedCompleted > 0 ? Math.round((e.assignedCompletedOnTime / e.assignedCompleted) * 100) : null;
       const avg = e.ratings.length > 0 ? (e.ratings.reduce((a, b) => a + b, 0) / e.ratings.length).toFixed(1) : '-';
 
-      let badge = 'NO_TASKS'; // 'STAR' | 'RELIABLE' | 'AT_RISK' | 'DELEGATOR' | 'NO_TASKS'
+      let badge = 'NO_TASKS'; // 'STAR' | 'RELIABLE' | 'ON_TRACK' | 'AT_RISK' | 'DELEGATOR' | 'NO_TASKS'
       if (hasAssigned) {
-        if (rate >= 90) badge = 'STAR';
-        else if (rate >= 75) badge = 'RELIABLE';
-        else badge = 'AT_RISK';
+        if (e.assignedOverdue > 0) {
+          badge = 'AT_RISK';
+        } else if (e.assignedCompleted > 0 && rate >= 90) {
+          badge = 'STAR';
+        } else if (e.assignedCompleted > 0 && rate >= 75) {
+          badge = 'RELIABLE';
+        } else if (e.assignedCompleted > 0 && rate < 75) {
+          badge = 'AT_RISK';
+        } else {
+          // Has tasks in progress / pending start, and 0 overdue!
+          badge = 'ON_TRACK';
+        }
       } else if (hasDelegated) {
         badge = 'DELEGATOR';
       } else {
@@ -1567,7 +1576,8 @@ export default function DelegationTaskModule({
                     { id: 'ACTIVE', label: '⚡ Active' },
                     { id: 'STAR', label: '🌟 Star (≥90%)' },
                     { id: 'RELIABLE', label: '👍 Reliable (75-89%)' },
-                    { id: 'AT_RISK', label: '🚨 At Risk (<75%)' },
+                    { id: 'ON_TRACK', label: '⚡ On Track' },
+                    { id: 'AT_RISK', label: '🚨 At Risk' },
                     { id: 'NO_TASKS', label: '⚪ No Tasks' }
                   ].map(tier => (
                     <button
@@ -1792,7 +1802,7 @@ export default function DelegationTaskModule({
                                   <div style={{
                                     width: `${emp.completionRate}%`,
                                     height: '100%',
-                                    background: emp.completionRate >= 90 ? '#10b981' : emp.completionRate >= 75 ? '#f59e0b' : '#ef4444',
+                                    background: emp.completionRate >= 90 ? '#10b981' : emp.completionRate >= 75 ? '#f59e0b' : emp.overdue > 0 ? '#ef4444' : '#3b82f6',
                                     borderRadius: '3px'
                                   }} />
                                 </div>
@@ -1815,6 +1825,11 @@ export default function DelegationTaskModule({
                             {emp.badge === 'RELIABLE' && (
                               <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>
                                 👍 Reliable
+                              </span>
+                            )}
+                            {emp.badge === 'ON_TRACK' && (
+                              <span style={{ padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>
+                                ⚡ On Track
                               </span>
                             )}
                             {emp.badge === 'AT_RISK' && (
