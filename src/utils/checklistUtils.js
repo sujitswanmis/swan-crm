@@ -418,59 +418,145 @@ export function calculateDelayStatus({
   frequency = 'DAILY',
   periodKey = '',
   dueTime = '18:00',
+  bufferMinutes = 20,
   dayOfMonth = 1,
   submittedAt = null,
   isCompleted = false,
   now = new Date()
 }) {
-  const cutoffDate = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth);
+  const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
   const currentTime = new Date(now);
-  const isPastCutoff = currentTime.getTime() > cutoffDate.getTime();
+  const freq = frequency?.toUpperCase();
 
-  // If submitted already:
+  let startDateTime;
+  let expireDateTime;
+
+  if (freq === 'DAILY') {
+    const rawDate = (periodKey || '').split('_')[0];
+    const parts = (rawDate || '').split('-');
+    if (parts.length === 3) {
+      startDateTime = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 0, minutes || 0, 0);
+    } else {
+      const today = new Date();
+      startDateTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours || 0, minutes || 0, 0);
+    }
+    const buffer = parseInt(bufferMinutes, 10) || 20;
+    expireDateTime = new Date(startDateTime.getTime() + buffer * 60 * 1000);
+  } else {
+    expireDateTime = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth);
+    startDateTime = new Date(expireDateTime);
+    startDateTime.setHours(0, 0, 0, 0);
+  }
+
+  const isBeforeStart = currentTime.getTime() < startDateTime.getTime();
+  const isPastExpire = currentTime.getTime() > expireDateTime.getTime();
+  const isInWindow = !isBeforeStart && !isPastExpire;
+
+  const formattedStart = startDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const formattedExpire = expireDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  // 1. If submitted already:
   if (isCompleted && submittedAt) {
     const submitTime = new Date(submittedAt);
-    const wasLate = submitTime.getTime() > cutoffDate.getTime();
-    const delayMs = wasLate ? submitTime.getTime() - cutoffDate.getTime() : 0;
+    const wasLate = submitTime.getTime() > expireDateTime.getTime();
+    const delayMs = wasLate ? submitTime.getTime() - expireDateTime.getTime() : 0;
 
     return {
-      cutoffDate,
-      isPastCutoff,
+      startDateTime,
+      cutoffDate: expireDateTime,
+      expireDateTime,
+      isBeforeStart: false,
+      isLocked: false,
+      isActive: false,
+      isPastCutoff: wasLate,
       isCompleted: true,
       isDelayed: wasLate,
+      isExpired: false,
+      canExecute: false,
       delayMinutes: Math.floor(delayMs / 60000),
-      delayText: wasLate ? `Delayed by ${formatDurationHuman(delayMs)}` : 'On Time',
+      delayText: wasLate ? `Completed Late (${formatDurationHuman(delayMs)} delay)` : 'Completed On Time',
       badgeStatus: wasLate ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME',
-      formattedCutoff: cutoffDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      formattedStart,
+      formattedCutoff: formattedExpire,
+      formattedExpire,
+      windowState: 'COMPLETED'
     };
   }
 
-  // If not completed yet:
-  if (isPastCutoff) {
-    const overdueMs = currentTime.getTime() - cutoffDate.getTime();
+  // 2. If before slot start time: LOCKED (taye samay se pehle: Lock)
+  if (isBeforeStart) {
+    const lockMs = startDateTime.getTime() - currentTime.getTime();
     return {
-      cutoffDate,
-      isPastCutoff: true,
+      startDateTime,
+      cutoffDate: expireDateTime,
+      expireDateTime,
+      isBeforeStart: true,
+      isLocked: true,
+      isActive: false,
+      isPastCutoff: false,
       isCompleted: false,
-      isDelayed: true,
-      delayMinutes: Math.floor(overdueMs / 60000),
-      delayText: `Overdue (Delayed by ${formatDurationHuman(overdueMs)})`,
-      badgeStatus: 'OVERDUE',
-      formattedCutoff: cutoffDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      isDelayed: false,
+      isExpired: false,
+      canExecute: false,
+      delayMinutes: 0,
+      delayText: `🔒 Locked (Opens at ${formattedStart} in ${formatDurationHuman(lockMs)})`,
+      badgeStatus: 'LOCKED',
+      formattedStart,
+      formattedCutoff: formattedExpire,
+      formattedExpire,
+      windowState: 'LOCKED',
+      remainingLockMs: lockMs
     };
   }
 
-  // On track, due soon:
-  const remainingMs = cutoffDate.getTime() - currentTime.getTime();
+  // 3. If within active buffer window: ACTIVE (taye samay par: Active with 15-20 min buffer)
+  if (isInWindow) {
+    const windowMs = expireDateTime.getTime() - currentTime.getTime();
+    return {
+      startDateTime,
+      cutoffDate: expireDateTime,
+      expireDateTime,
+      isBeforeStart: false,
+      isLocked: false,
+      isActive: true,
+      isPastCutoff: false,
+      isCompleted: false,
+      isDelayed: false,
+      isExpired: false,
+      canExecute: true,
+      delayMinutes: 0,
+      delayText: `🟢 Open Now (${formatDurationHuman(windowMs)} left)`,
+      badgeStatus: 'ACTIVE_WINDOW',
+      formattedStart,
+      formattedCutoff: formattedExpire,
+      formattedExpire,
+      windowState: 'ACTIVE',
+      remainingWindowMs: windowMs
+    };
+  }
+
+  // 4. If buffer window expired: EXPIRED / MISSED (buffer samay khatam hone ke baad: Expired)
+  const overdueMs = currentTime.getTime() - expireDateTime.getTime();
   return {
-    cutoffDate,
-    isPastCutoff: false,
+    startDateTime,
+    cutoffDate: expireDateTime,
+    expireDateTime,
+    isBeforeStart: false,
+    isLocked: true,
+    isActive: false,
+    isPastCutoff: true,
     isCompleted: false,
-    isDelayed: false,
-    delayMinutes: 0,
-    delayText: `Due in ${formatDurationHuman(remainingMs)}`,
-    badgeStatus: 'ON_TRACK',
-    formattedCutoff: cutoffDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    isDelayed: true,
+    isExpired: true,
+    canExecute: false,
+    delayMinutes: Math.floor(overdueMs / 60000),
+    delayText: `❌ Expired / Missed (Closed at ${formattedExpire})`,
+    badgeStatus: 'EXPIRED',
+    formattedStart,
+    formattedCutoff: formattedExpire,
+    formattedExpire,
+    windowState: 'EXPIRED',
+    overdueMs
   };
 }
 

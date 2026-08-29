@@ -375,6 +375,7 @@ export default function ChecklistModule({
       daily_repetition_count: 1,
       daily_slots: generateDefaultDailySlots(1),
       due_time: '18:00',
+      buffer_minutes: 20,
       days_of_week: ['Monday'],
       day_of_month: 1,
       include_sundays: true,
@@ -411,6 +412,7 @@ export default function ChecklistModule({
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
+    const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
 
     setTemplateForm({
       id: tmpl.id,
@@ -426,6 +428,7 @@ export default function ChecklistModule({
       daily_repetition_count: repCount,
       daily_slots: dailySlots,
       due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
+      buffer_minutes: bufferMinutes,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
@@ -443,21 +446,15 @@ export default function ChecklistModule({
     setTemplateForm(prev => ({
       ...prev,
       items: [
-        ...prev.items,
-        {
-          id: `item_${Date.now()}_${prev.items.length + 1}`,
-          title: '',
-          type: 'done_not_done',
-          is_required: true,
-          standard_guideline: ''
-        }
+        ...(prev.items || []),
+        { id: `item_${Date.now()}_${(prev.items || []).length + 1}`, title: '', type: 'done_not_done', is_required: true, standard_guideline: '' }
       ]
     }));
   };
 
   const handleUpdateTemplateItem = (index, field, value) => {
     setTemplateForm(prev => {
-      const updated = [...prev.items];
+      const updated = [...(prev.items || [])];
       updated[index] = { ...updated[index], [field]: value };
       return { ...prev, items: updated };
     });
@@ -466,7 +463,14 @@ export default function ChecklistModule({
   const handleRemoveTemplateItem = (index) => {
     setTemplateForm(prev => ({
       ...prev,
-      items: prev.items.filter((_, i) => i !== index)
+      items: (prev.items || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleRemoveItemFromTemplate = (itemId) => {
+    setTemplateForm(prev => ({
+      ...prev,
+      items: (prev.items || []).filter(it => it.id !== itemId)
     }));
   };
 
@@ -491,6 +495,7 @@ export default function ChecklistModule({
     const dayOfMonth = tmpl.day_of_month || scheduleConfig.day_of_month || 1;
     const includeSundays = tmpl.include_sundays !== undefined ? (tmpl.include_sundays === true || tmpl.include_sundays === 'true') : (scheduleConfig.include_sundays !== undefined ? (scheduleConfig.include_sundays === true || scheduleConfig.include_sundays === 'true') : true);
     const includeHolidays = tmpl.include_holidays !== undefined ? (tmpl.include_holidays === true || tmpl.include_holidays === 'true') : (scheduleConfig.include_holidays !== undefined ? (scheduleConfig.include_holidays === true || scheduleConfig.include_holidays === 'true') : false);
+    const bufferMinutes = parseInt(tmpl.buffer_minutes || scheduleConfig.buffer_minutes, 10) || 20;
 
     setTemplateForm({
       title: `${tmpl.title} (Copy)`,
@@ -505,6 +510,7 @@ export default function ChecklistModule({
       daily_repetition_count: repCount,
       daily_slots: dailySlots,
       due_time: tmpl.due_time || (dailySlots[0]?.due_time || '18:00'),
+      buffer_minutes: bufferMinutes,
       days_of_week: daysOfWeek,
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
@@ -929,16 +935,30 @@ export default function ChecklistModule({
                     const humanPeriod = getHumanPeriodLabel(tmpl.frequency, item.currentPeriodKey);
                     const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
                     const delayInfo = item.delayInfo || {};
-                    const isOverdue = delayInfo.isPastCutoff && !isCompleted;
+                    const isLocked = delayInfo.isBeforeStart;
+                    const isActive = delayInfo.isActive;
+                    const isExpired = delayInfo.isExpired;
                     const isDelayedCompleted = isCompleted && delayInfo.isDelayed;
 
                     return (
                       <div
                         key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
                         style={{
-                          background: isOverdue ? '#fff5f5' : 'var(--card-bg, #ffffff)',
-                          border: isOverdue
+                          background: isLocked
+                            ? '#f8fafc'
+                            : isExpired
+                            ? '#fff5f5'
+                            : isActive
+                            ? '#ffffff'
+                            : isCompleted
+                            ? '#f0fdf4'
+                            : 'var(--card-bg, #ffffff)',
+                          border: isLocked
+                            ? '1px dashed #cbd5e1'
+                            : isExpired
                             ? '1.5px solid #f87171'
+                            : isActive
+                            ? '2px solid #22c55e'
                             : isCompleted
                             ? '1px solid #86efac'
                             : '1px solid var(--border-color, #e2e8f0)',
@@ -947,7 +967,12 @@ export default function ChecklistModule({
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '1rem',
-                          boxShadow: isOverdue ? '0 4px 12px rgba(239,68,68,0.12)' : '0 2px 8px rgba(0,0,0,0.04)',
+                          boxShadow: isActive
+                            ? '0 4px 16px rgba(34,197,94,0.18)'
+                            : isExpired
+                            ? '0 4px 12px rgba(239,68,68,0.12)'
+                            : '0 2px 8px rgba(0,0,0,0.04)',
+                          opacity: isLocked ? 0.82 : 1,
                           position: 'relative'
                         }}
                       >
@@ -986,7 +1011,37 @@ export default function ChecklistModule({
                               }}>
                                 {isDelayedCompleted ? `⚠️ Done (${delayInfo.delayText || 'Delayed'})` : '✓ Completed (On Time)'}
                               </span>
-                            ) : isOverdue ? (
+                            ) : isLocked ? (
+                              <span style={{
+                                background: '#f1f5f9',
+                                color: '#475569',
+                                border: '1px solid #cbd5e1',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                <Lock size={12} /> Opens at {delayInfo.formattedStart}
+                              </span>
+                            ) : isActive ? (
+                              <span style={{
+                                background: '#dcfce7',
+                                color: '#166534',
+                                border: '1px solid #86efac',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                🟢 Open Now ({delayInfo.delayText})
+                              </span>
+                            ) : isExpired ? (
                               <span style={{
                                 background: '#fee2e2',
                                 color: '#991b1b',
@@ -999,7 +1054,7 @@ export default function ChecklistModule({
                                 alignItems: 'center',
                                 gap: '0.25rem'
                               }}>
-                                🚨 {delayInfo.delayText || 'Overdue'}
+                                ❌ Expired / Missed
                               </span>
                             ) : (
                               <span style={{
@@ -1030,9 +1085,9 @@ export default function ChecklistModule({
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           fontSize: '0.8rem',
-                          color: isOverdue ? '#991b1b' : 'var(--text-secondary, #64748b)',
-                          background: isOverdue ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
-                          border: isOverdue ? '1px solid #fecaca' : 'none',
+                          color: isExpired ? '#991b1b' : isActive ? '#166534' : isLocked ? '#64748b' : 'var(--text-secondary, #64748b)',
+                          background: isExpired ? '#fef2f2' : isActive ? '#f0fdf4' : isLocked ? '#f8fafc' : 'var(--bg-secondary, #f8fafc)',
+                          border: isExpired ? '1px solid #fecaca' : isActive ? '1px solid #bbf7d0' : '1px solid var(--border-color, #e2e8f0)',
                           padding: '0.6rem 0.75rem',
                           borderRadius: '8px'
                         }}>
@@ -1040,11 +1095,16 @@ export default function ChecklistModule({
                             <Calendar size={14} />
                             <span>{humanPeriod}</span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: isOverdue ? 700 : 500 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
                             <Clock size={14} />
-                            <span>Cutoff: {tmpl.due_time || '18:00'}</span>
-                            {!isCompleted && !isOverdue && delayInfo.delayText && (
-                              <span style={{ color: '#2563eb', fontSize: '0.75rem' }}>({delayInfo.delayText})</span>
+                            {isLocked ? (
+                              <span>Opens: {delayInfo.formattedStart}</span>
+                            ) : isActive ? (
+                              <span>Window Closes: {delayInfo.formattedExpire}</span>
+                            ) : isExpired ? (
+                              <span>Expired at: {delayInfo.formattedExpire}</span>
+                            ) : (
+                              <span>Cutoff: {tmpl.due_time || '18:00'}</span>
                             )}
                           </div>
                         </div>
@@ -1059,7 +1119,7 @@ export default function ChecklistModule({
                             <div style={{
                               width: `${percent}%`,
                               height: '100%',
-                              background: isCompleted ? '#22c55e' : isOverdue ? '#ef4444' : '#3b82f6',
+                              background: isCompleted ? '#22c55e' : isExpired ? '#ef4444' : isActive ? '#16a34a' : '#94a3b8',
                               transition: 'width 0.3s ease'
                             }} />
                           </div>
@@ -1067,30 +1127,55 @@ export default function ChecklistModule({
 
                         {/* Action Button */}
                         <button
-                          onClick={() => handleOpenExecution(item)}
+                          onClick={() => {
+                            if (isLocked) return;
+                            handleOpenExecution(item);
+                          }}
+                          disabled={isLocked}
                           style={{
-                            background: isCompleted ? '#f0fdf4' : isOverdue ? '#ef4444' : '#3b82f6',
-                            color: isCompleted ? '#166534' : '#ffffff',
-                            border: isCompleted ? '1px solid #bbf7d0' : 'none',
+                            background: isCompleted
+                              ? '#f0fdf4'
+                              : isLocked
+                              ? '#e2e8f0'
+                              : isExpired
+                              ? '#fee2e2'
+                              : '#16a34a',
+                            color: isCompleted
+                              ? '#166534'
+                              : isLocked
+                              ? '#64748b'
+                              : isExpired
+                              ? '#991b1b'
+                              : '#ffffff',
+                            border: isCompleted
+                              ? '1px solid #bbf7d0'
+                              : isExpired
+                              ? '1px solid #fca5a5'
+                              : 'none',
                             padding: '0.65rem 1rem',
                             borderRadius: '8px',
-                            fontWeight: 600,
+                            fontWeight: 700,
                             fontSize: '0.9rem',
-                            cursor: 'pointer',
+                            cursor: isLocked ? 'not-allowed' : 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '0.5rem',
-                            marginTop: 'auto'
+                            marginTop: 'auto',
+                            boxShadow: isActive ? '0 2px 8px rgba(22,163,74,0.3)' : 'none'
                           }}
                         >
                           {isCompleted ? (
                             <>
                               <Lock size={16} /> View Submitted Checklist (Locked)
                             </>
-                          ) : isOverdue ? (
+                          ) : isLocked ? (
                             <>
-                              <AlertTriangle size={16} /> Submit Delayed Checklist
+                              <Lock size={16} /> Locked (Opens at {delayInfo.formattedStart})
+                            </>
+                          ) : isExpired ? (
+                            <>
+                              <AlertTriangle size={16} /> Window Expired (Missed)
                             </>
                           ) : (
                             <>
@@ -1113,7 +1198,7 @@ export default function ChecklistModule({
                         <th style={{ padding: '0.75rem 1rem' }}>Checklist Title</th>
                         <th style={{ padding: '0.75rem 1rem' }}>Frequency & Department</th>
                         <th style={{ padding: '0.75rem 1rem' }}>Period / Date</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Cutoff Time</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Cutoff / Time Window</th>
                         <th style={{ padding: '0.75rem 1rem' }}>Progress</th>
                         <th style={{ padding: '0.75rem 1rem' }}>Status</th>
                         <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
@@ -1127,7 +1212,9 @@ export default function ChecklistModule({
                         const humanPeriod = getHumanPeriodLabel(tmpl.frequency, item.currentPeriodKey);
                         const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
                         const delayInfo = item.delayInfo || {};
-                        const isOverdue = delayInfo.isPastCutoff && !isCompleted;
+                        const isLocked = delayInfo.isBeforeStart;
+                        const isActive = delayInfo.isActive;
+                        const isExpired = delayInfo.isExpired;
                         const isDelayedCompleted = isCompleted && delayInfo.isDelayed;
 
                         return (
@@ -1135,7 +1222,16 @@ export default function ChecklistModule({
                             key={`${tmpl.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}`}
                             style={{
                               borderBottom: '1px solid var(--border-color, #e2e8f0)',
-                              background: isOverdue ? '#fff5f5' : isCompleted ? '#f0fdf4' : 'transparent'
+                              background: isLocked
+                                ? '#f8fafc'
+                                : isExpired
+                                ? '#fff5f5'
+                                : isActive
+                                ? '#f0fdf4'
+                                : isCompleted
+                                ? '#f0fdf4'
+                                : 'transparent',
+                              opacity: isLocked ? 0.82 : 1
                             }}
                           >
                             <td style={{ padding: '0.85rem 1rem' }}>
@@ -1171,18 +1267,26 @@ export default function ChecklistModule({
                             <td style={{
                               padding: '0.85rem 1rem',
                               fontSize: '0.85rem',
-                              fontWeight: isOverdue ? 700 : 600,
-                              color: isOverdue ? '#991b1b' : 'inherit'
+                              fontWeight: isExpired ? 700 : 600,
+                              color: isExpired ? '#991b1b' : isActive ? '#166534' : 'inherit'
                             }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                 <Clock size={13} />
-                                <span>{tmpl.due_time || '18:00'}</span>
+                                <span>{delayInfo.formattedStart || tmpl.due_time || '18:00'} - {delayInfo.formattedExpire || '18:20'}</span>
                               </div>
-                              {!isCompleted && delayInfo.delayText && (
-                                <div style={{ fontSize: '0.72rem', color: isOverdue ? '#dc2626' : '#2563eb', fontWeight: 600, marginTop: '0.15rem' }}>
-                                  {delayInfo.delayText}
+                              {isLocked ? (
+                                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, marginTop: '0.15rem' }}>
+                                  🔒 Opens in {formatDurationHuman(delayInfo.remainingLockMs)}
                                 </div>
-                              )}
+                              ) : isActive ? (
+                                <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700, marginTop: '0.15rem' }}>
+                                  🟢 {formatDurationHuman(delayInfo.remainingWindowMs)} left to submit
+                                </div>
+                              ) : isExpired ? (
+                                <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600, marginTop: '0.15rem' }}>
+                                  ❌ Window Closed at {delayInfo.formattedExpire}
+                                </div>
+                              ) : null}
                             </td>
                             <td style={{ padding: '0.85rem 1rem' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '130px' }}>
@@ -1194,7 +1298,7 @@ export default function ChecklistModule({
                                   <div style={{
                                     width: `${percent}%`,
                                     height: '100%',
-                                    background: isCompleted ? '#22c55e' : isOverdue ? '#ef4444' : '#3b82f6'
+                                    background: isCompleted ? '#22c55e' : isExpired ? '#ef4444' : isActive ? '#16a34a' : '#94a3b8'
                                   }} />
                                 </div>
                               </div>
@@ -1213,79 +1317,113 @@ export default function ChecklistModule({
                                   }}>
                                     {isDelayedCompleted ? `⚠️ Done (Delayed)` : '✓ Completed (On Time)'}
                                   </span>
-                                  {isDelayedCompleted && delayInfo.delayText && (
-                                    <span style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 600 }}>
-                                      {delayInfo.delayText}
-                                    </span>
-                                  )}
                                 </div>
-                              ) : isOverdue ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                                  <span style={{
-                                    background: '#fee2e2',
-                                    color: '#991b1b',
-                                    border: '1px solid #fca5a5',
-                                    padding: '0.2rem 0.55rem',
-                                    borderRadius: '10px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    🚨 {delayInfo.delayText || 'Overdue'}
-                                  </span>
-                                  {delayInfo.delayMinutes > 0 && !delayInfo.delayText?.includes('Delayed by') && (
-                                    <span style={{ fontSize: '0.72rem', color: '#b91c1c', fontWeight: 700 }}>
-                                      Delayed by {Math.floor(delayInfo.delayMinutes / 60)}h {delayInfo.delayMinutes % 60}m
-                                    </span>
-                                  )}
-                                </div>
+                              ) : isLocked ? (
+                                <span style={{
+                                  background: '#f1f5f9',
+                                  color: '#475569',
+                                  border: '1px solid #cbd5e1',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  <Lock size={11} /> Locked
+                                </span>
+                              ) : isActive ? (
+                                <span style={{
+                                  background: '#dcfce7',
+                                  color: '#166534',
+                                  border: '1px solid #86efac',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  🟢 Open Now
+                                </span>
+                              ) : isExpired ? (
+                                <span style={{
+                                  background: '#fee2e2',
+                                  color: '#991b1b',
+                                  border: '1px solid #fca5a5',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  ❌ Expired / Missed
+                                </span>
                               ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                                  <span style={{
-                                    background: percent > 0 ? '#fef3c7' : '#f1f5f9',
-                                    color: percent > 0 ? '#92400e' : '#475569',
-                                    padding: '0.2rem 0.55rem',
-                                    borderRadius: '10px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700
-                                  }}>
-                                    {percent > 0 ? 'In Progress' : 'Pending'}
-                                  </span>
-                                  {delayInfo.delayText && (
-                                    <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>
-                                      {delayInfo.delayText}
-                                    </span>
-                                  )}
-                                </div>
+                                <span style={{
+                                  background: '#f1f5f9',
+                                  color: '#475569',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700
+                                }}>
+                                  Pending
+                                </span>
                               )}
                             </td>
                             <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
                               <button
-                                onClick={() => handleOpenExecution(item)}
+                                onClick={() => {
+                                  if (isLocked) return;
+                                  handleOpenExecution(item);
+                                }}
+                                disabled={isLocked}
                                 style={{
-                                  background: isCompleted ? '#f0fdf4' : isOverdue ? '#ef4444' : '#3b82f6',
-                                  color: isCompleted ? '#166534' : '#ffffff',
-                                  border: isCompleted ? '1px solid #bbf7d0' : 'none',
+                                  background: isCompleted
+                                    ? '#f0fdf4'
+                                    : isLocked
+                                    ? '#e2e8f0'
+                                    : isExpired
+                                    ? '#fee2e2'
+                                    : '#16a34a',
+                                  color: isCompleted
+                                    ? '#166534'
+                                    : isLocked
+                                    ? '#64748b'
+                                    : isExpired
+                                    ? '#991b1b'
+                                    : '#ffffff',
+                                  border: isCompleted
+                                    ? '1px solid #bbf7d0'
+                                    : isExpired
+                                    ? '1px solid #fca5a5'
+                                    : 'none',
                                   padding: '0.4rem 0.9rem',
                                   borderRadius: '6px',
                                   fontWeight: 700,
                                   fontSize: '0.8rem',
-                                  cursor: 'pointer',
+                                  cursor: isLocked ? 'not-allowed' : 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '0.35rem',
-                                  boxShadow: isCompleted ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'
+                                  gap: '0.35rem'
                                 }}
                               >
                                 {isCompleted ? (
                                   <>
                                     <Lock size={13} /> View (Locked)
                                   </>
-                                ) : isOverdue ? (
+                                ) : isLocked ? (
                                   <>
-                                    <AlertTriangle size={13} /> Submit Delayed
+                                    <Lock size={13} /> Locked
+                                  </>
+                                ) : isExpired ? (
+                                  <>
+                                    <AlertTriangle size={13} /> Expired
                                   </>
                                 ) : (
                                   <>
@@ -2883,6 +3021,49 @@ export default function ChecklistModule({
                       ❌ No (Skip Holidays)
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Time Window Buffer Setting */}
+              <div style={{ background: 'var(--bg-secondary, #f8fafc)', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    ⏳ Submission Window Buffer Time (Checklist kitni der tak khuli rahegi?)
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                    Slot time par checklist unlock hogi. Buffer time ke baad agar submit nahi hui to automatically Expired / Missed mark ho jayegi.
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                  {[
+                    { mins: 15, label: '15 Mins' },
+                    { mins: 20, label: '20 Mins (Standard)' },
+                    { mins: 30, label: '30 Mins' },
+                    { mins: 45, label: '45 Mins' },
+                    { mins: 60, label: '60 Mins (1 Hour)' }
+                  ].map(buf => {
+                    const isSelected = (templateForm.buffer_minutes || 20) === buf.mins;
+                    return (
+                      <button
+                        key={buf.mins}
+                        type="button"
+                        onClick={() => setTemplateForm(prev => ({ ...prev, buffer_minutes: buf.mins }))}
+                        style={{
+                          padding: '0.4rem 0.8rem',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: isSelected ? '#eff6ff' : '#ffffff',
+                          color: isSelected ? '#1d4ed8' : '#475569'
+                        }}
+                      >
+                        {buf.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

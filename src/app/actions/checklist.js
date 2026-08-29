@@ -92,6 +92,8 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
           ? Boolean(scheduleMeta.include_holidays)
           : (t.schedule_config?.include_holidays !== undefined ? Boolean(t.schedule_config.include_holidays) : false));
 
+      const bufferMinutes = parseInt(t.buffer_minutes || scheduleMeta.buffer_minutes || t.schedule_config?.buffer_minutes, 10) || 20;
+
       const scheduleConfig = {
         daily_repetition_count: repCount,
         daily_slots: dailySlots,
@@ -99,6 +101,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
+        buffer_minutes: bufferMinutes,
         status: status.toUpperCase()
       };
 
@@ -112,6 +115,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
         day_of_month: dayOfMonth,
         include_sundays: includeSundays,
         include_holidays: includeHolidays,
+        buffer_minutes: bufferMinutes,
         schedule_config: scheduleConfig
       };
     });
@@ -142,6 +146,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
     const dayOfMonth = parseInt(templateData.day_of_month, 10) || 1;
     const includeSundays = templateData.include_sundays !== undefined ? Boolean(templateData.include_sundays) : true;
     const includeHolidays = templateData.include_holidays !== undefined ? Boolean(templateData.include_holidays) : false;
+    const bufferMinutes = parseInt(templateData.buffer_minutes, 10) || 20;
 
     const { userDescription } = parseTemplateDescription(templateData.description);
     const scheduleConfig = {
@@ -151,6 +156,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       day_of_month: dayOfMonth,
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
+      buffer_minutes: bufferMinutes,
       status: resolvedStatus
     };
 
@@ -178,6 +184,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       daily_slots: dailySlots,
       include_sundays: includeSundays,
       include_holidays: includeHolidays,
+      buffer_minutes: bufferMinutes,
       schedule_config: scheduleConfig,
       created_by: templateData.created_by || 'Admin',
       updated_at: new Date().toISOString()
@@ -493,15 +500,17 @@ export async function getEmployeeChecklistDashboard({
             const isDone = sub && sub.status === 'COMPLETED';
             const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
             const slotDueTime = slot.due_time || tmpl.due_time || '18:00';
+            const bufferMins = tmpl.buffer_minutes || scheduleMeta.buffer_minutes || scheduleConfig.buffer_minutes || 20;
 
             const delayInfo = calculateDelayStatus({
               frequency: 'DAILY',
               periodKey: slotPeriodKey,
               dueTime: slotDueTime,
+              bufferMinutes: bufferMins,
               dayOfMonth: tmpl.day_of_month || 1,
               submittedAt: sub?.submitted_at || null,
               isCompleted: isDone,
-              now: targetObj
+              now: new Date()
             });
 
             result.push({
@@ -511,7 +520,8 @@ export async function getEmployeeChecklistDashboard({
                 base_title: tmpl.title,
                 slot_label: slot.label || `Slot ${sIdx + 1}`,
                 slot_id: slot.slot_id,
-                due_time: slotDueTime
+                due_time: slotDueTime,
+                buffer_minutes: bufferMins
               },
               slotInfo: slot,
               slotIndex: sIdx + 1,
@@ -538,19 +548,24 @@ export async function getEmployeeChecklistDashboard({
       const stats = calculateChecklistCompletion(items, responses);
       const isDone = sub && sub.status === 'COMPLETED';
       const status = isDone ? 'COMPLETED' : stats.completedCount > 0 ? 'PARTIAL' : 'PENDING';
+      const bufferMins = tmpl.buffer_minutes || scheduleMeta.buffer_minutes || scheduleConfig.buffer_minutes || 20;
 
       const delayInfo = calculateDelayStatus({
         frequency: tmpl.frequency,
         periodKey: currentKey,
         dueTime: tmpl.due_time || '18:00',
+        bufferMinutes: bufferMins,
         dayOfMonth: tmpl.day_of_month || 1,
         submittedAt: sub?.submitted_at || null,
         isCompleted: isDone,
-        now: targetObj
+        now: new Date()
       });
 
       result.push({
-        template: tmpl,
+        template: {
+          ...tmpl,
+          buffer_minutes: bufferMins
+        },
         currentPeriodKey: currentKey,
         submission: sub,
         items,
