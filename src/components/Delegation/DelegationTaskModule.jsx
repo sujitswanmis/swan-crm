@@ -245,10 +245,20 @@ export default function DelegationTaskModule({
   const filteredTasks = useMemo(() => {
     let list = [...tasks];
     const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
 
     if (taskDateRange === 'today') {
-      const todayStr = now.toISOString().slice(0, 10);
       list = list.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr || (t.start_date || '').slice(0, 10) === todayStr);
+    } else if (taskDateRange === 'tomorrow') {
+      const tom = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const tomStr = tom.toISOString().slice(0, 10);
+      list = list.filter(t => (t.deadline || '').slice(0, 10) === tomStr || (t.start_date || '').slice(0, 10) === tomStr);
+    } else if (taskDateRange === 'upcoming') {
+      list = list.filter(t => {
+        const dStr = (t.deadline || '').slice(0, 10);
+        const sStr = (t.start_date || '').slice(0, 10);
+        return dStr > todayStr || sStr > todayStr;
+      });
     } else if (taskDateRange === 'yesterday') {
       const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const yestStr = yest.toISOString().slice(0, 10);
@@ -302,9 +312,20 @@ export default function DelegationTaskModule({
 
     // 2. Date Range Filter
     const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
     if (dashboardTimeRange === 'today') {
-      const todayStr = now.toISOString().slice(0, 10);
       baseTasks = baseTasks.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr);
+    } else if (dashboardTimeRange === 'tomorrow') {
+      const tom = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const tomStr = tom.toISOString().slice(0, 10);
+      baseTasks = baseTasks.filter(t => (t.deadline || '').slice(0, 10) === tomStr || (t.start_date || '').slice(0, 10) === tomStr);
+    } else if (dashboardTimeRange === 'upcoming') {
+      baseTasks = baseTasks.filter(t => {
+        const dStr = (t.deadline || '').slice(0, 10);
+        const sStr = (t.start_date || '').slice(0, 10);
+        return dStr > todayStr || sStr > todayStr;
+      });
     } else if (dashboardTimeRange === 'yesterday') {
       const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const yestStr = yest.toISOString().slice(0, 10);
@@ -1075,10 +1096,12 @@ export default function DelegationTaskModule({
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
               {[
                 { id: 'today', label: 'Today' },
-                { id: 'yesterday', label: 'Yesterday' },
+                { id: 'tomorrow', label: 'Tomorrow' },
+                { id: 'upcoming', label: '⏳ Upcoming' },
                 { id: 'this_week', label: 'This Week' },
                 { id: 'this_month', label: 'This Month' },
                 { id: 'last_30_days', label: 'Last 30 Days' },
+                { id: 'yesterday', label: 'Yesterday' },
                 { id: 'all', label: 'All Time' },
                 { id: 'custom', label: 'Custom' }
               ].map(preset => (
@@ -1716,10 +1739,12 @@ export default function DelegationTaskModule({
               {[
                 { id: 'all', label: 'All Time' },
                 { id: 'today', label: 'Today' },
-                { id: 'yesterday', label: 'Yesterday' },
+                { id: 'tomorrow', label: 'Tomorrow' },
+                { id: 'upcoming', label: '⏳ Upcoming' },
                 { id: 'this_week', label: 'This Week' },
                 { id: 'this_month', label: 'This Month' },
                 { id: 'last_30_days', label: 'Last 30 Days' },
+                { id: 'yesterday', label: 'Yesterday' },
                 { id: 'custom', label: 'Custom' }
               ].map(preset => (
                 <button
