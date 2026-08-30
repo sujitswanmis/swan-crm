@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, ChevronDown, Plus, Trash2, Edit3 } from 'lucide-react';
+import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, ChevronDown, Plus, Trash2, Edit3, Timer, ArrowRight, AlertTriangle, Sparkles, TrendingUp, Info } from 'lucide-react';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
 import { getSessionSecuritySettings, saveSessionSecuritySettings, getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
 import { createClient } from '@/utils/supabase/client';
@@ -95,8 +95,55 @@ function isBreakMatchingRule(breakItemOrType, rule) {
   return false;
 }
 
+function getInitialSessionTab() {
+  if (typeof window === 'undefined') return 'report';
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('sessionTab') || params.get('tab') || params.get('subtab') || params.get('view');
+  if (!tabParam) return 'report';
+  const t = tabParam.toLowerCase();
+  if (['report', 'breakdown', 'live', 'inactivity', 'breaks'].includes(t)) return t;
+  if (t === 'work_report' || t === 'daily_report' || t === 'work-report' || t === 'daily') return 'report';
+  if (t === 'break_breakdown' || t === 'break_usage' || t === 'employee_breaks' || t === 'break') return 'breakdown';
+  if (t === 'active_sessions' || t === 'live_sessions' || t === 'active' || t === 'sessions') return 'live';
+  if (t === 'inactivity_rules' || t === 'idle_rules' || t === 'timeout' || t === 'rules') return 'inactivity';
+  if (t === 'break_rules' || t === 'custom_breaks' || t === 'custom_rules' || t === 'custom') return 'breaks';
+  return 'report';
+}
+
 export default function ActiveSessionsConfig() {
-  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'breakdown' | 'live' | 'inactivity' | 'breaks'
+  const [activeTab, setActiveTab] = useState(getInitialSessionTab);
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('setting', 'sessions');
+      params.set('sessionTab', newTab);
+      window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const currentTab = getInitialSessionTab();
+      if (currentTab && currentTab !== activeTab) {
+        setActiveTab(currentTab);
+      }
+    };
+
+    const handleExternalChange = (e) => {
+      if (e.detail && ['report', 'breakdown', 'live', 'inactivity', 'breaks'].includes(e.detail)) {
+        setActiveTab(e.detail);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('session_subtab_change', handleExternalChange);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('session_subtab_change', handleExternalChange);
+    };
+  }, [activeTab]);
 
   // Sessions State
   const [allSessions, setAllSessions] = useState([]);
@@ -611,18 +658,28 @@ export default function ActiveSessionsConfig() {
       
       // Check if any quota or limit exceeded
       let isOverQuota = false;
-      if (settings.breakRules && settings.breakRules.length > 0) {
-        settings.breakRules.forEach(rule => {
-          const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
-          const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
-          if (maxLimit > 0 && count > maxLimit) {
-            isOverQuota = true;
-          }
-        });
-      }
+      const activeRules = (settings.breakRules && settings.breakRules.length > 0)
+        ? settings.breakRules
+        : [
+            { id: 'tea', label: 'Tea / Coffee Break', maxPerDay: 2 },
+            { id: 'lunch', label: 'Lunch Break', maxPerDay: 1 },
+            { id: 'washroom', label: 'Washroom Break', maxPerDay: 4 },
+            { id: 'water', label: 'Drinking Water', maxPerDay: 4 },
+            { id: 'rest', label: 'Rest / Short Break', maxPerDay: 1 },
+            { id: 'custom_1787827858042', label: 'Breakfast', maxPerDay: 1 },
+            { id: 'custom_1787827866658', label: 'Snacks', maxPerDay: 2 }
+          ];
 
-      if (breakdownFilter === 'with_breaks' && !hasBreaks) return false;
-      if (breakdownFilter === 'over_quota' && !isOverQuota) return false;
+      activeRules.forEach(rule => {
+        const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
+        const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
+        if (maxLimit > 0 && count > maxLimit) {
+          isOverQuota = true;
+        }
+      });
+
+      if ((breakdownFilter === 'with_breaks' || breakdownFilter === 'took_breaks') && !hasBreaks) return false;
+      if ((breakdownFilter === 'over_quota' || breakdownFilter === 'violations') && !isOverQuota) return false;
 
       if (breakdownSearchQuery.trim()) {
         const q = breakdownSearchQuery.toLowerCase();
@@ -655,9 +712,21 @@ export default function ActiveSessionsConfig() {
 
   const totalCompanyViolationsCount = useMemo(() => {
     let violations = 0;
+    const activeRules = (settings.breakRules && settings.breakRules.length > 0)
+      ? settings.breakRules
+      : [
+          { id: 'tea', label: 'Tea / Coffee Break', maxPerDay: 2 },
+          { id: 'lunch', label: 'Lunch Break', maxPerDay: 1 },
+          { id: 'washroom', label: 'Washroom Break', maxPerDay: 4 },
+          { id: 'water', label: 'Drinking Water', maxPerDay: 4 },
+          { id: 'rest', label: 'Rest / Short Break', maxPerDay: 1 },
+          { id: 'custom_1787827858042', label: 'Breakfast', maxPerDay: 1 },
+          { id: 'custom_1787827866658', label: 'Snacks', maxPerDay: 2 }
+        ];
+
     dailyEmployees.forEach(e => {
       const breaks = e.breaks || [];
-      (settings.breakRules || []).forEach(rule => {
+      activeRules.forEach(rule => {
         const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
         const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
         if (maxLimit > 0 && count > maxLimit) violations++;
@@ -738,7 +807,7 @@ export default function ActiveSessionsConfig() {
       }}>
         <button
           type="button"
-          onClick={() => setActiveTab('report')}
+          onClick={() => handleTabChange('report')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -764,7 +833,7 @@ export default function ActiveSessionsConfig() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('breakdown')}
+          onClick={() => handleTabChange('breakdown')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -790,7 +859,7 @@ export default function ActiveSessionsConfig() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('live')}
+          onClick={() => handleTabChange('live')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -813,7 +882,7 @@ export default function ActiveSessionsConfig() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('inactivity')}
+          onClick={() => handleTabChange('inactivity')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -836,7 +905,7 @@ export default function ActiveSessionsConfig() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('breaks')}
+          onClick={() => handleTabChange('breaks')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -1677,10 +1746,14 @@ export default function ActiveSessionsConfig() {
       )}
 
       {/* ========================================================================= */}
-      {/* BREAK DETAILS MODAL FOR SELECTED EMPLOYEE */}
+      {/* BREAK DETAILS MODAL FOR SELECTED EMPLOYEE (RICH TIMELINE DASHBOARD) */}
       {/* ========================================================================= */}
       {selectedEmployeeBreaks && (() => {
         const breaksList = selectedEmployeeBreaks.breaks || [];
+        const breakRulesList = (settings?.breakRules && settings.breakRules.length > 0)
+          ? settings.breakRules.filter(b => b.enabled !== false)
+          : [];
+
         let totalUsedSec = 0;
         let totalAllowedSec = 0;
         let exceededCount = 0;
@@ -1690,8 +1763,7 @@ export default function ActiveSessionsConfig() {
           const used = b.durationSeconds || 0;
           totalUsedSec += used;
           
-          const rule = (settings?.breakRules || []).find(r => isBreakMatchingRule(b, r));
-          
+          const rule = breakRulesList.find(r => isBreakMatchingRule(b, r));
           const allowedMins = rule?.defaultMins || (
             b.type?.toLowerCase().includes('lunch') ? 30 :
             b.type?.toLowerCase().includes('washroom') ? 5 :
@@ -1708,6 +1780,24 @@ export default function ActiveSessionsConfig() {
           }
         });
 
+        // Category usage summary
+        const categorySummary = breakRulesList.map(rule => {
+          const matching = breaksList.filter(b => isBreakMatchingRule(b, rule));
+          const count = matching.length;
+          const durSec = matching.reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
+          const maxQuota = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
+          const isOver = maxQuota > 0 && count > maxQuota;
+          return {
+            rule,
+            count,
+            durSec,
+            maxQuota,
+            isOver
+          };
+        }).filter(c => c.count > 0);
+
+        const totalViolations = categorySummary.filter(c => c.isOver).length;
+
         const formatSecDisplay = (sec) => {
           const m = Math.floor(sec / 60);
           const s = sec % 60;
@@ -1715,6 +1805,11 @@ export default function ActiveSessionsConfig() {
           if (s === 0) return `${m}m`;
           return `${m}m ${s < 10 ? '0' : ''}${s}s`;
         };
+
+        const activeSec = selectedEmployeeBreaks.activeSeconds || 0;
+        const totalShiftSec = (selectedEmployeeBreaks.shiftSpanSeconds || (activeSec + totalUsedSec)) || 1;
+        const breakPercentage = Math.min(100, Math.round((totalUsedSec / totalShiftSec) * 100));
+        const activePercentage = Math.max(0, 100 - breakPercentage);
 
         return (
           <div style={{
@@ -1724,184 +1819,481 @@ export default function ActiveSessionsConfig() {
             right: 0,
             bottom: 0,
             backgroundColor: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(5px)',
+            backdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 99999,
-            padding: '1rem'
+            padding: '1rem',
+            boxSizing: 'border-box'
           }}>
             <div style={{
               backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              maxWidth: '580px',
+              borderRadius: '20px',
+              maxWidth: '960px',
               width: '100%',
-              padding: '1.5rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-              animation: 'scaleIn 0.2s ease-out'
+              maxHeight: '94vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+              overflow: 'hidden',
+              animation: 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
             }}>
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#0f172a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Coffee size={22} color="#ea580c" />
-                    <span>Break History: {selectedEmployeeBreaks.empName}</span>
-                  </h3>
-                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>
-                    Period: <b>{startDate === endDate ? startDate : `${startDate} to ${endDate}`}</b> • Total Breaks Taken: <b>{breaksList.length}</b>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEmployeeBreaks(null)}
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {/* Summary KPIs Banner (Allowed vs Used vs Status) */}
+              {/* 1. Header & Employee Profile Banner (Compact) */}
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '0.65rem',
-                marginBottom: '1rem'
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)',
+                color: '#ffffff',
+                padding: '0.9rem 1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
               }}>
-                <div style={{ backgroundColor: '#f8fafc', padding: '0.65rem', borderRadius: '10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Allowed Time</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#334155', marginTop: '0.15rem' }}>
-                    {formatSecDisplay(totalAllowedSec)}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    fontSize: '1.15rem',
+                    boxShadow: '0 4px 12px rgba(234, 88, 12, 0.35)',
+                    border: '2px solid rgba(255, 255, 255, 0.2)'
+                  }}>
+                    {(selectedEmployeeBreaks.empName || 'U')[0].toUpperCase()}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#ffffff', fontWeight: 800, letterSpacing: '-0.02em' }}>
+                        {selectedEmployeeBreaks.empName}
+                      </h3>
+                      {selectedEmployeeBreaks.empId && (
+                        <span style={{
+                          padding: '0.1rem 0.45rem',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                          color: '#f8fafc',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          fontFamily: 'monospace'
+                        }}>
+                          ID: {selectedEmployeeBreaks.empId}
+                        </span>
+                      )}
+                      <span style={{
+                        padding: '0.1rem 0.5rem',
+                        borderRadius: '6px',
+                        backgroundColor: selectedEmployeeBreaks.liveStatus === 'working' ? 'rgba(34, 197, 94, 0.2)' : selectedEmployeeBreaks.liveStatus === 'on_break' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(148, 163, 184, 0.2)',
+                        color: selectedEmployeeBreaks.liveStatus === 'working' ? '#4ade80' : selectedEmployeeBreaks.liveStatus === 'on_break' ? '#fb923c' : '#cbd5e1',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        border: `1px solid ${selectedEmployeeBreaks.liveStatus === 'working' ? 'rgba(34, 197, 94, 0.4)' : selectedEmployeeBreaks.liveStatus === 'on_break' ? 'rgba(249, 115, 22, 0.4)' : 'rgba(148, 163, 184, 0.3)'}`,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: selectedEmployeeBreaks.liveStatus === 'working' ? '#4ade80' : selectedEmployeeBreaks.liveStatus === 'on_break' ? '#fb923c' : '#94a3b8' }} />
+                        {selectedEmployeeBreaks.liveStatus === 'working' ? 'Active Now' : selectedEmployeeBreaks.liveStatus === 'on_break' ? 'On Break' : 'Offline'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginTop: '0.2rem', fontSize: '0.75rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+                      <span>📧 {selectedEmployeeBreaks.email}</span>
+                      {selectedEmployeeBreaks.department && <span>🏢 {selectedEmployeeBreaks.department}</span>}
+                      {selectedEmployeeBreaks.designation && <span>💼 {selectedEmployeeBreaks.designation}</span>}
+                      <span>📅 Period: <b style={{ color: '#f1f5f9' }}>{startDate === endDate ? startDate : `${startDate} to ${endDate}`}</b></span>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ backgroundColor: '#fff7ed', padding: '0.65rem', borderRadius: '10px', border: '1px solid #fed7aa', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#c2410c', fontWeight: 600, textTransform: 'uppercase' }}>Actual Used</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ea580c', marginTop: '0.15rem' }}>
-                    {formatSecDisplay(totalUsedSec)}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {selectedEmployeeBreaks.firstSeenFormatted && selectedEmployeeBreaks.firstSeenFormatted !== '--:--' && (
+                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1', textAlign: 'right' }}>
+                      <div>First In: <b style={{ color: '#ffffff' }}>{selectedEmployeeBreaks.firstSeenFormatted}</b></div>
+                      {selectedEmployeeBreaks.lastSeenFormatted && selectedEmployeeBreaks.lastSeenFormatted !== '--:--' && (
+                        <div>Last Active: <b style={{ color: '#ffffff' }}>{selectedEmployeeBreaks.lastSeenFormatted}</b></div>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEmployeeBreaks(null)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: '8px',
+                      padding: '0.4rem',
+                      cursor: 'pointer',
+                      color: '#e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
+                      e.currentTarget.style.color = '#ffffff';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                      e.currentTarget.style.color = '#e2e8f0';
+                    }}
+                    title="Close Modal"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Compact 4 KPI Stats Row */}
+              <div style={{
+                backgroundColor: '#f8fafc',
+                padding: '0.65rem 1.25rem',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: '0.65rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #fed7aa' }}>
+                  <span style={{ fontSize: '1.3rem' }}>☕</span>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: '#9a3412', fontWeight: 700, textTransform: 'uppercase' }}>Total Breaks</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#c2410c' }}>
+                      {breaksList.length} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>({categorySummary.length} types)</span>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ 
-                  backgroundColor: exceededCount === 0 ? '#f0fdf4' : '#fef2f2', 
-                  padding: '0.65rem', 
-                  borderRadius: '10px', 
-                  border: `1px solid ${exceededCount === 0 ? '#bbf7d0' : '#fecaca'}`, 
-                  textAlign: 'center' 
-                }}>
-                  <div style={{ fontSize: '0.72rem', color: exceededCount === 0 ? '#166534' : '#dc2626', fontWeight: 600, textTransform: 'uppercase' }}>
-                    {exceededCount === 0 ? 'Policy Status' : 'Over Limit'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
+                  <Clock size={20} color="#2563eb" />
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: '#1e40af', fontWeight: 700, textTransform: 'uppercase' }}>Break Duration</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
+                      {formatSecDisplay(totalUsedSec)} <span style={{ fontSize: '0.72rem', color: '#64748b' }}>/ {formatSecDisplay(totalAllowedSec)}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: exceededCount === 0 ? '#16a34a' : '#dc2626', marginTop: '0.15rem' }}>
-                    {exceededCount === 0 ? `✅ Within Policy` : `⚠️ +${formatSecDisplay(totalExcessSec)} Extra`}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                  <Activity size={20} color="#16a34a" />
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Shift Active Ratio</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#15803d' }}>
+                      {activePercentage}% <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Active</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', backgroundColor: totalViolations === 0 ? '#ffffff' : '#fff5f5', borderRadius: '10px', border: `1px solid ${totalViolations === 0 ? '#86efac' : '#fca5a5'}` }}>
+                  {totalViolations === 0 ? <CheckCircle2 size={20} color="#16a34a" /> : <AlertTriangle size={20} color="#dc2626" />}
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: totalViolations === 0 ? '#166534' : '#991b1b', fontWeight: 700, textTransform: 'uppercase' }}>Policy Status</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalViolations === 0 ? '#15803d' : '#dc2626' }}>
+                      {totalViolations === 0 ? 'Within Quota' : `${totalViolations} Over Quota`}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Breaks List with Allowed, Used, and Remaining Status */}
-              {breaksList.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
-                  No recorded breaks for this employee today.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {breaksList.map((b, idx) => {
-                    const used = b.durationSeconds || 0;
-                    const rule = (settings?.breakRules || []).find(r => 
-                      r.label?.toLowerCase() === b.type?.toLowerCase() ||
-                      r.id?.toLowerCase() === b.type?.toLowerCase() ||
-                      b.type?.toLowerCase().includes(r.label?.toLowerCase()) ||
-                      r.label?.toLowerCase().includes(b.type?.toLowerCase())
-                    );
-                    const allowedMins = rule?.defaultMins || (
-                      b.type?.toLowerCase().includes('lunch') ? 30 :
-                      b.type?.toLowerCase().includes('washroom') ? 5 :
-                      b.type?.toLowerCase().includes('water') ? 3 :
-                      b.type?.toLowerCase().includes('smoking') ? 8 :
-                      b.type?.toLowerCase().includes('meeting') ? 60 : 5
-                    );
-                    const allowedSec = allowedMins * 60;
-                    const isOver = used > allowedSec;
-                    const diffSec = Math.abs(used - allowedSec);
-
-                    return (
-                      <div 
-                        key={b.id || idx}
-                        style={{
-                          padding: '0.75rem 1rem',
-                          borderRadius: '10px',
-                          backgroundColor: isOver ? '#fff5f5' : '#f8fafc',
-                          border: isOver ? '1px solid #fecaca' : '1px solid #e2e8f0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '0.75rem'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <span style={{ fontSize: '1.4rem' }}>{b.icon || '☕'}</span>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{b.type}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.1rem' }}>
-                              Time: <b style={{ color: '#0f172a' }}>{b.startTimeFormatted}</b> to <b style={{ color: '#0f172a' }}>{b.endTimeFormatted || 'In Progress'}</b>
-                            </div>
-                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.1rem' }}>
-                              Allowed Policy: <b>{allowedMins} mins</b> ({formatSecDisplay(allowedSec)})
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
-                          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: isOver ? '#dc2626' : '#ea580c', fontFamily: 'monospace' }}>
-                            {formatSecDisplay(used)}
-                          </div>
-                          {isOver ? (
-                            <span style={{
-                              padding: '0.2rem 0.5rem',
-                              borderRadius: '6px',
-                              backgroundColor: '#fee2e2',
-                              color: '#dc2626',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              border: '1px solid #fca5a5'
-                            }}>
-                              ⚠️ Exceeded by +{formatSecDisplay(diffSec)}
-                            </span>
-                          ) : (
-                            <span style={{
-                              padding: '0.2rem 0.5rem',
-                              borderRadius: '6px',
-                              backgroundColor: '#dcfce7',
-                              color: '#166534',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              border: '1px solid #bbf7d0'
-                            }}>
-                              ✅ {formatSecDisplay(diffSec)} remaining
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* 3. Category Quota Chips (Inline Ribbon) */}
+              {categorySummary.length > 0 && (
+                <div style={{
+                  backgroundColor: '#ffffff',
+                  padding: '0.45rem 1.25rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', marginRight: '0.2rem' }}>Categories:</span>
+                  {categorySummary.map(cat => (
+                    <div
+                      key={cat.rule.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '8px',
+                        backgroundColor: cat.isOver ? '#fee2e2' : '#f8fafc',
+                        border: `1px solid ${cat.isOver ? '#fca5a5' : '#cbd5e1'}`,
+                        fontSize: '0.74rem'
+                      }}
+                    >
+                      <span>{cat.rule.icon || '☕'}</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{cat.rule.label}:</span>
+                      <span style={{
+                        padding: '0.05rem 0.35rem',
+                        borderRadius: '4px',
+                        backgroundColor: cat.isOver ? '#dc2626' : '#16a34a',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '0.7rem'
+                      }}>
+                        {cat.count}{cat.maxQuota > 0 ? `/${cat.maxQuota}` : ''}
+                      </span>
+                      <span style={{ color: '#64748b', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                        ({formatSecDisplay(cat.durSec)})
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+              {/* 4. Large Scrollable Table Area with Frozen Sticky Headers */}
+              <div style={{ flex: 1, minHeight: '380px', maxHeight: '62vh', overflowY: 'auto', position: 'relative' }}>
+                {breaksList.length === 0 ? (
+                  <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                    <Coffee size={36} style={{ margin: '0 auto 0.5rem auto', color: '#cbd5e1' }} />
+                    <div style={{ fontWeight: 700, color: '#475569', fontSize: '0.95rem' }}>No Breaks Recorded Today</div>
+                    <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      This employee has maintained active working status without logging break intervals.
+                    </div>
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem', textAlign: 'left' }}>
+                    {/* Sticky Freeze Table Header */}
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 30 }}>
+                      <tr style={{
+                        backgroundColor: '#f1f5f9',
+                        color: '#1e293b',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.08)'
+                      }}>
+                        <th style={{ padding: '0.7rem 0.85rem', width: '45px', textAlign: 'center', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>#</th>
+                        <th style={{ padding: '0.7rem 0.85rem', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>Break Type</th>
+                        <th style={{ padding: '0.7rem 0.85rem', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>Time Window (IST)</th>
+                        <th style={{ padding: '0.7rem 0.85rem', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>Prior Work Interval</th>
+                        <th style={{ padding: '0.7rem 0.85rem', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>Duration vs Policy</th>
+                        <th style={{ padding: '0.7rem 0.85rem', textAlign: 'right', fontWeight: 800, borderBottom: '2px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>Policy Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {breaksList.map((b, idx) => {
+                        const used = b.durationSeconds || 0;
+                        const rule = breakRulesList.find(r => isBreakMatchingRule(b, r));
+                        const allowedMins = rule?.defaultMins || (
+                          b.type?.toLowerCase().includes('lunch') ? 30 :
+                          b.type?.toLowerCase().includes('washroom') ? 5 :
+                          b.type?.toLowerCase().includes('water') ? 3 :
+                          b.type?.toLowerCase().includes('smoking') ? 8 :
+                          b.type?.toLowerCase().includes('meeting') ? 60 : 5
+                        );
+                        const allowedSec = allowedMins * 60;
+                        const isOver = used > allowedSec;
+                        const diffSec = Math.abs(used - allowedSec);
+                        const percentUsed = Math.min(100, Math.round((used / allowedSec) * 100));
+
+                        // Calculate working gap between breaks
+                        const prevBreak = idx > 0 ? breaksList[idx - 1] : null;
+                        let workIntervalFormatted = null;
+                        if (prevBreak && prevBreak.endTime && b.startTime) {
+                          const gapSec = Math.max(0, Math.round((new Date(b.startTime).getTime() - new Date(prevBreak.endTime).getTime()) / 1000));
+                          if (gapSec >= 60) {
+                            const gh = Math.floor(gapSec / 3600);
+                            const gm = Math.floor((gapSec % 3600) / 60);
+                            workIntervalFormatted = gh > 0 ? `${gh}h ${String(gm).padStart(2, '0')}m` : `${gm}m`;
+                          }
+                        }
+
+                        return (
+                          <tr
+                            key={b.id || idx}
+                            style={{
+                              borderBottom: '1px solid #f1f5f9',
+                              backgroundColor: isOver ? '#fffbfb' : (idx % 2 === 0 ? '#ffffff' : '#f8fafc'),
+                              transition: 'background-color 0.15s'
+                            }}
+                          >
+                            {/* Column 1: # Step Badge */}
+                            <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                backgroundColor: isOver ? '#fee2e2' : '#ffedd5',
+                                color: isOver ? '#dc2626' : '#c2410c',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                border: `1px solid ${isOver ? '#fca5a5' : '#fed7aa'}`
+                              }}>
+                                {idx + 1}
+                              </span>
+                            </td>
+
+                            {/* Column 2: Break Type + Icon */}
+                            <td style={{ padding: '0.65rem 0.85rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ fontSize: '1.25rem' }}>{b.icon || '☕'}</span>
+                                <div>
+                                  <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
+                                    {b.type}
+                                  </div>
+                                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                    Break #{idx + 1}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Column 3: Time Window */}
+                            <td style={{ padding: '0.65rem 0.85rem' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: '#334155', fontSize: '0.82rem', fontWeight: 600 }}>
+                                <Clock size={13} color="#64748b" />
+                                <span>{b.startTimeFormatted}</span>
+                                <span style={{ color: '#cbd5e1' }}>➔</span>
+                                <span>{b.endTimeFormatted || 'In Progress'}</span>
+                              </div>
+                            </td>
+
+                            {/* Column 4: Prior Work Interval */}
+                            <td style={{ padding: '0.65rem 0.85rem' }}>
+                              {workIntervalFormatted ? (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem',
+                                  padding: '0.15rem 0.5rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#f1f5f9',
+                                  color: '#475569',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 600,
+                                  border: '1px solid #e2e8f0'
+                                }}>
+                                  <Briefcase size={12} color="#64748b" />
+                                  <span>Worked <b>{workIntervalFormatted}</b></span>
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                  {idx === 0 ? '🏁 Shift In-Time' : '--'}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Column 5: Duration vs Allowed with Micro Bar */}
+                            <td style={{ padding: '0.65rem 0.85rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: '130px' }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                                  <span style={{
+                                    fontWeight: 800,
+                                    fontSize: '0.9rem',
+                                    color: isOver ? '#dc2626' : '#0f172a',
+                                    fontFamily: 'monospace'
+                                  }}>
+                                    {formatSecDisplay(used)}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                    (Allowed: {allowedMins}m)
+                                  </span>
+                                </div>
+
+                                {/* Progress track */}
+                                <div style={{ width: '100%', height: '4px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    width: `${Math.min(100, percentUsed)}%`,
+                                    height: '100%',
+                                    backgroundColor: isOver ? '#dc2626' : '#16a34a',
+                                    borderRadius: '3px'
+                                  }} />
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Column 6: Policy Status Badge */}
+                            <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>
+                              {isOver ? (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#fee2e2',
+                                  color: '#dc2626',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  border: '1px solid #fca5a5'
+                                }}>
+                                  <AlertTriangle size={12} />
+                                  <span>Exceeded +{formatSecDisplay(diffSec)}</span>
+                                </span>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#dcfce7',
+                                  color: '#166534',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  border: '1px solid #bbf7d0'
+                                }}>
+                                  <Check size={12} />
+                                  <span>Within Policy ({formatSecDisplay(diffSec)} left)</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* 5. Modal Footer */}
+              <div style={{
+                backgroundColor: '#f8fafc',
+                padding: '0.75rem 1.25rem',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div style={{ fontSize: '0.74rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Info size={14} color="#94a3b8" />
+                  <span>All break timestamps are synchronized from audit logs in IST.</span>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedEmployeeBreaks(null)}
                   style={{
-                    padding: '0.55rem 1.4rem',
+                    padding: '0.45rem 1.25rem',
                     borderRadius: '8px',
                     border: 'none',
-                    backgroundColor: 'var(--accent-color, #4338ca)',
+                    backgroundColor: '#0f172a',
                     color: '#ffffff',
                     fontWeight: 700,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer'
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(15, 23, 42, 0.2)',
+                    transition: 'all 0.15s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#1e293b';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#0f172a';
                   }}
                 >
-                  Close
+                  Close Timeline
                 </button>
               </div>
             </div>

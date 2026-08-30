@@ -1177,9 +1177,18 @@ export default function CRMContainer({
     setIsSidebarCollapsed(collapsed);
 
     // Sync initial route path and parameters on mount
-    const path = window.location.pathname.replace('/', '');
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
     const params = new URLSearchParams(window.location.search);
     let tab = path || params.get('tab');
+    if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
+      tab = 'settings';
+      setCurrentSettingSubTab('sessions');
+    } else if (tab === 'settings') {
+      const settingParam = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null);
+      if (settingParam) {
+        setCurrentSettingSubTab(settingParam);
+      }
+    }
     if (tab) {
       setActiveTab(tab);
       let stage = params.get('stage');
@@ -1206,9 +1215,18 @@ export default function CRMContainer({
   // Listen for browser back/forward popstate events
   useEffect(() => {
     const handlePopState = () => {
-      let tab = window.location.pathname.replace('/', '');
+      let tab = window.location.pathname.replace(/^\/+|\/+$/g, '');
       const params = new URLSearchParams(window.location.search);
       if (!tab) tab = params.get('tab');
+      if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
+        tab = 'settings';
+        setCurrentSettingSubTab('sessions');
+      } else if (tab === 'settings') {
+        const settingParam = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null);
+        if (settingParam) {
+          setCurrentSettingSubTab(settingParam);
+        }
+      }
       
       if (!tab) {
         const isAdmin = userRole === 'admin' || userRole === 'Admin';

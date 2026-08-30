@@ -41,9 +41,14 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
   // Sync with URL param after mount (prevents SSR hydration mismatch)
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      const param = new URLSearchParams(window.location.search).get('setting');
+      const search = new URLSearchParams(window.location.search);
+      const param = search.get('setting') || search.get('subtab');
       if (param && visibleTabs.some(t => t.id === param)) {
         setActiveTab(param);
+        return;
+      }
+      if (search.get('sessionTab') && visibleTabs.some(t => t.id === 'sessions')) {
+        setActiveTab('sessions');
         return;
       }
     }
@@ -66,7 +71,8 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
     const handlePopState = () => {
-      const param = new URLSearchParams(window.location.search).get('setting');
+      const search = new URLSearchParams(window.location.search);
+      const param = search.get('setting') || (search.get('sessionTab') ? 'sessions' : null);
       if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
     };
     window.addEventListener('popstate', handlePopState);
@@ -77,6 +83,9 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
     setActiveTab(tabId);
     const params = new URLSearchParams(window.location.search);
     params.set('setting', tabId);
+    if (tabId !== 'sessions') {
+      params.delete('sessionTab');
+    }
     window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
     window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: tabId }));
   };
