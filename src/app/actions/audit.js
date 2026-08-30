@@ -57,6 +57,11 @@ export async function logAuditAction(action, target, details = {}) {
 
     const ipAddressVal = typeof detailsInfo === 'string' && detailsInfo ? detailsInfo : (detailsInfo?.ip || 'Web App');
 
+    // Build details object — preserve original object for break/audit parsing (e.g. breakType, breakId, durationSeconds)
+    const detailsPayload = (detailsInfo && typeof detailsInfo === 'object' && !Array.isArray(detailsInfo))
+      ? detailsInfo
+      : {};
+
     const payload = {
       user_id: userId,
       emp_name: empName,
@@ -64,6 +69,7 @@ export async function logAuditAction(action, target, details = {}) {
       action: String(actionStr || 'Action'),
       target: String(targetStr || ''),
       ip_address: String(ipAddressVal || 'Web App'),
+      details: detailsPayload,
       created_at: new Date().toISOString()
     };
 
