@@ -14,6 +14,52 @@ const BREAK_TYPES = [
   { id: 'meeting', label: 'Team Discussion / Meeting', icon: '👥', defaultMins: 30 }
 ];
 
+function isBreakMatchingRule(breakItemOrType, rule) {
+  if (!rule) return false;
+  const breakTypeStr = typeof breakItemOrType === 'string' ? breakItemOrType : (breakItemOrType?.type || '');
+  if (!breakTypeStr) return false;
+  
+  const bt = breakTypeStr.trim().toLowerCase();
+  const rl = (rule.label || '').trim().toLowerCase();
+  const rid = (rule.id || '').trim().toLowerCase();
+
+  if (bt === rl || bt === rid) return true;
+
+  const normBt = bt.replace(/\s+/g, ' ');
+  const normRl = rl.replace(/\s+/g, ' ');
+
+  if (normBt === normRl) return true;
+
+  if (normRl.includes('tea') || normRl.includes('coffee')) {
+    return normBt.includes('tea') || normBt.includes('coffee');
+  }
+  if (normRl.includes('lunch')) {
+    return normBt.includes('lunch');
+  }
+  if (normRl.includes('washroom') || normRl.includes('restroom') || normRl.includes('toilet')) {
+    return normBt.includes('washroom') || normBt.includes('restroom') || normBt.includes('toilet');
+  }
+  if (normRl.includes('breakfast')) {
+    return normBt.includes('breakfast');
+  }
+  if (normRl.includes('snacks') || normRl.includes('snack')) {
+    return normBt.includes('snacks') || normBt.includes('snack');
+  }
+  if (normRl.includes('water') || normRl.includes('hydration')) {
+    return normBt.includes('water') || normBt.includes('hydration');
+  }
+  if (normRl.includes('rest') || normRl.includes('short break')) {
+    return normBt.includes('rest') || normBt.includes('short break');
+  }
+  if (normRl.includes('meeting') || normRl.includes('discussion')) {
+    return normBt.includes('meeting') || normBt.includes('discussion');
+  }
+
+  if (normRl && normBt.includes(normRl)) return true;
+
+  return false;
+}
+
 export default function SessionExpiryTracker({ userEmail = '', userName = '', userRole = '' }) {
   const [settings, setSettings] = useState({
     inactivityTimeoutMinutes: 60,
@@ -49,6 +95,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
   const isLoggingOut = useRef(false);
   const currentBreakRef = useRef(null);
   currentBreakRef.current = currentBreak;
+  const breakActionLock = useRef(false);
 
   // Click Outside Listener for Dropdown
   useEffect(() => {
@@ -275,8 +322,12 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     return () => clearInterval(interval);
   }, []);
 
-  // 5. Break Handlers
+  // 5. Break Handlers (with double-click protection & lock)
   const handleStartBreak = async (breakTypeObj) => {
+    if (breakActionLock.current) return;
+    breakActionLock.current = true;
+    setActionLoading(true);
+
     const nowIso = new Date().toISOString();
     const localBreak = {
       id: `brk_${Date.now()}`,
@@ -310,10 +361,19 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       }
     } catch (err) {
       console.error('Failed to sync start break with server:', err);
+    } finally {
+      setTimeout(() => {
+        breakActionLock.current = false;
+        setActionLoading(false);
+      }, 1000);
     }
   };
 
   const handleEndBreak = async () => {
+    if (breakActionLock.current) return;
+    breakActionLock.current = true;
+    setActionLoading(true);
+
     // Instant local state resume
     setCurrentBreak(null);
     setBreakElapsedSec(0);
@@ -330,6 +390,11 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       await endEmployeeBreak({ userEmail });
     } catch (err) {
       console.error('Failed to sync end break with server:', err);
+    } finally {
+      setTimeout(() => {
+        breakActionLock.current = false;
+        setActionLoading(false);
+      }, 1000);
     }
   };
 
@@ -668,10 +733,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
                 : BREAK_TYPES
               ).map(b => {
                 const timesTaken = (todayBreaksList || []).filter(item => {
-                  const isMatch = item.type?.toLowerCase() === b.label?.toLowerCase() ||
-                    item.type?.toLowerCase() === b.id?.toLowerCase() ||
-                    item.type?.toLowerCase().includes(b.label?.toLowerCase()) ||
-                    b.label?.toLowerCase().includes(item.type?.toLowerCase());
+                  const isMatch = isBreakMatchingRule(item, b);
                   if (!isMatch) return false;
 
                   // Strict Daily Date Check: Ignore past days' breaks

@@ -49,6 +49,52 @@ function parseDeviceInfo(deviceStr = '') {
   };
 }
 
+function isBreakMatchingRule(breakItemOrType, rule) {
+  if (!rule) return false;
+  const breakTypeStr = typeof breakItemOrType === 'string' ? breakItemOrType : (breakItemOrType?.type || '');
+  if (!breakTypeStr) return false;
+  
+  const bt = breakTypeStr.trim().toLowerCase();
+  const rl = (rule.label || '').trim().toLowerCase();
+  const rid = (rule.id || '').trim().toLowerCase();
+
+  if (bt === rl || bt === rid) return true;
+
+  const normBt = bt.replace(/\s+/g, ' ');
+  const normRl = rl.replace(/\s+/g, ' ');
+
+  if (normBt === normRl) return true;
+
+  if (normRl.includes('tea') || normRl.includes('coffee')) {
+    return normBt.includes('tea') || normBt.includes('coffee');
+  }
+  if (normRl.includes('lunch')) {
+    return normBt.includes('lunch');
+  }
+  if (normRl.includes('washroom') || normRl.includes('restroom') || normRl.includes('toilet')) {
+    return normBt.includes('washroom') || normBt.includes('restroom') || normBt.includes('toilet');
+  }
+  if (normRl.includes('breakfast')) {
+    return normBt.includes('breakfast');
+  }
+  if (normRl.includes('snacks') || normRl.includes('snack')) {
+    return normBt.includes('snacks') || normBt.includes('snack');
+  }
+  if (normRl.includes('water') || normRl.includes('hydration')) {
+    return normBt.includes('water') || normBt.includes('hydration');
+  }
+  if (normRl.includes('rest') || normRl.includes('short break')) {
+    return normBt.includes('rest') || normBt.includes('short break');
+  }
+  if (normRl.includes('meeting') || normRl.includes('discussion')) {
+    return normBt.includes('meeting') || normBt.includes('discussion');
+  }
+
+  if (normRl && normBt.includes(normRl)) return true;
+
+  return false;
+}
+
 export default function ActiveSessionsConfig() {
   const [activeTab, setActiveTab] = useState('report'); // 'report' | 'breakdown' | 'live' | 'inactivity' | 'breaks'
 
@@ -524,21 +570,11 @@ export default function ActiveSessionsConfig() {
       const totalBreakSec = breaks.reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
       
       const counts = breakRulesList.map(r => {
-        return breaks.filter(b => 
-          b.type?.toLowerCase() === r.label?.toLowerCase() ||
-          b.type?.toLowerCase() === r.id?.toLowerCase() ||
-          b.type?.toLowerCase().includes(r.label?.toLowerCase()) ||
-          r.label?.toLowerCase().includes(b.type?.toLowerCase())
-        ).length;
+        return breaks.filter(b => isBreakMatchingRule(b, r)).length;
       });
 
       const durations = breakRulesList.map(r => {
-        const sec = breaks.filter(b => 
-          b.type?.toLowerCase() === r.label?.toLowerCase() ||
-          b.type?.toLowerCase() === r.id?.toLowerCase() ||
-          b.type?.toLowerCase().includes(r.label?.toLowerCase()) ||
-          r.label?.toLowerCase().includes(b.type?.toLowerCase())
-        ).reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
+        const sec = breaks.filter(b => isBreakMatchingRule(b, r)).reduce((acc, b) => acc + (b.durationSeconds || 0), 0);
         return formatSec(sec);
       });
 
@@ -578,12 +614,7 @@ export default function ActiveSessionsConfig() {
       if (settings.breakRules && settings.breakRules.length > 0) {
         settings.breakRules.forEach(rule => {
           const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
-          const count = breaks.filter(b => 
-            b.type?.toLowerCase() === rule.label?.toLowerCase() ||
-            b.type?.toLowerCase() === rule.id?.toLowerCase() ||
-            b.type?.toLowerCase().includes(rule.label?.toLowerCase()) ||
-            rule.label?.toLowerCase().includes(b.type?.toLowerCase())
-          ).length;
+          const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
           if (maxLimit > 0 && count > maxLimit) {
             isOverQuota = true;
           }
@@ -628,12 +659,7 @@ export default function ActiveSessionsConfig() {
       const breaks = e.breaks || [];
       (settings.breakRules || []).forEach(rule => {
         const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
-        const count = breaks.filter(b => 
-          b.type?.toLowerCase() === rule.label?.toLowerCase() ||
-          b.type?.toLowerCase() === rule.id?.toLowerCase() ||
-          b.type?.toLowerCase().includes(rule.label?.toLowerCase()) ||
-          rule.label?.toLowerCase().includes(b.type?.toLowerCase())
-        ).length;
+        const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
         if (maxLimit > 0 && count > maxLimit) violations++;
       });
     });
@@ -1480,12 +1506,7 @@ export default function ActiveSessionsConfig() {
                       let employeeViolations = 0;
                       breakRulesList.forEach(rule => {
                         const maxLimit = rule.maxPerDay !== undefined ? Number(rule.maxPerDay) : 2;
-                        const count = breaks.filter(b => 
-                          b.type?.toLowerCase() === rule.label?.toLowerCase() ||
-                          b.type?.toLowerCase() === rule.id?.toLowerCase() ||
-                          b.type?.toLowerCase().includes(rule.label?.toLowerCase()) ||
-                          rule.label?.toLowerCase().includes(b.type?.toLowerCase())
-                        ).length;
+                        const count = breaks.filter(b => isBreakMatchingRule(b, rule)).length;
                         if (maxLimit > 0 && count > maxLimit) employeeViolations++;
                       });
 
@@ -1562,12 +1583,7 @@ export default function ActiveSessionsConfig() {
                             ) : (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                                 {breakRulesList.map(rule => {
-                                  const matchingBreaks = breaks.filter(b => 
-                                    b.type?.toLowerCase() === rule.label?.toLowerCase() ||
-                                    b.type?.toLowerCase() === rule.id?.toLowerCase() ||
-                                    b.type?.toLowerCase().includes(rule.label?.toLowerCase()) ||
-                                    rule.label?.toLowerCase().includes(b.type?.toLowerCase())
-                                  );
+                                  const matchingBreaks = breaks.filter(b => isBreakMatchingRule(b, rule));
                                   const count = matchingBreaks.length;
                                   if (count === 0) return null;
 
@@ -1674,12 +1690,7 @@ export default function ActiveSessionsConfig() {
           const used = b.durationSeconds || 0;
           totalUsedSec += used;
           
-          const rule = (settings?.breakRules || []).find(r => 
-            r.label?.toLowerCase() === b.type?.toLowerCase() ||
-            r.id?.toLowerCase() === b.type?.toLowerCase() ||
-            b.type?.toLowerCase().includes(r.label?.toLowerCase()) ||
-            r.label?.toLowerCase().includes(b.type?.toLowerCase())
-          );
+          const rule = (settings?.breakRules || []).find(r => isBreakMatchingRule(b, r));
           
           const allowedMins = rule?.defaultMins || (
             b.type?.toLowerCase().includes('lunch') ? 30 :

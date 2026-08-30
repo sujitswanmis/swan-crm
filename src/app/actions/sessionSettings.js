@@ -384,8 +384,26 @@ function parseBreaksFromAuditLogs(logs = []) {
     }
 
     const details = log.details || {};
-    const breakType = details.breakType || (log.target && log.target.includes('started ') ? log.target.split('started ')[1].split(' at ')[0] : 'Break');
-    const breakIcon = details.breakIcon || '☕';
+    let breakType = details.breakType;
+    if (!breakType && log.target) {
+      if (log.target.includes('started ')) {
+        breakType = log.target.split('started ')[1].split(' at ')[0];
+      } else if (log.target.includes('completed ')) {
+        breakType = log.target.split('completed ')[1].split(' (')[0];
+      }
+    }
+    if (!breakType) breakType = 'Break';
+
+    const breakIcon = details.breakIcon || (
+      breakType.toLowerCase().includes('tea') || breakType.toLowerCase().includes('coffee') ? '☕' :
+      breakType.toLowerCase().includes('lunch') ? '🍱' :
+      breakType.toLowerCase().includes('washroom') ? '🚻' :
+      breakType.toLowerCase().includes('water') ? '💧' :
+      breakType.toLowerCase().includes('rest') ? '🛌' :
+      breakType.toLowerCase().includes('breakfast') ? '🥪' :
+      breakType.toLowerCase().includes('snacks') ? '☕' : '☕'
+    );
+
     const timeIso = log.created_at;
     const timeFormatted = new Date(timeIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
@@ -399,21 +417,29 @@ function parseBreaksFromAuditLogs(logs = []) {
       };
     } else if (log.action === 'End Break') {
       const cur = userBreaksMap[email].currentBreak;
+      // If there is NO active start break and this is an orphan End Break with short duration, SKIP it to avoid false count
+      if (!cur && (!details.durationSeconds || details.durationSeconds <= 3) && (!details.startTime)) {
+        return;
+      }
+
       const startTime = cur?.startTime || details.startTime || timeIso;
       const endTime = details.endTime || timeIso;
       const durationSeconds = details.durationSeconds || Math.max(1, Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000));
+      const finalType = cur?.type || (breakType !== 'Break' ? breakType : 'Break');
 
-      userBreaksMap[email].breaks.push({
-        id: details.breakId || log.id,
-        type: details.breakType || cur?.type || breakType,
-        icon: details.breakIcon || cur?.icon || breakIcon,
-        startTime,
-        startTimeFormatted: cur?.startTimeFormatted || new Date(startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
-        endTime,
-        endTimeFormatted: details.endTimeFormatted || new Date(endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
-        durationSeconds,
-        durationFormatted: details.durationFormatted || formatDuration(durationSeconds)
-      });
+      if (cur || durationSeconds > 3) {
+        userBreaksMap[email].breaks.push({
+          id: details.breakId || log.id,
+          type: finalType,
+          icon: details.breakIcon || cur?.icon || breakIcon,
+          startTime,
+          startTimeFormatted: cur?.startTimeFormatted || new Date(startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+          endTime,
+          endTimeFormatted: details.endTimeFormatted || new Date(endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+          durationSeconds,
+          durationFormatted: details.durationFormatted || formatDuration(durationSeconds)
+        });
+      }
       userBreaksMap[email].currentBreak = null;
     }
   });
@@ -431,6 +457,22 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
 
     const today = getOfficeTodayDateStr();
     const nowIso = new Date().toISOString();
+
+    // Prevent duplicate start within 5 seconds
+    try {
+      const { data: recentLogs } = await adminClient
+        .from('audit_logs')
+        .select('*')
+        .in('action', ['Start Break', 'End Break'])
+        .eq('email', email)
+        .gte('created_at', `${today}T00:00:00.000Z`)
+        .order('created_at', { ascending: true });
+      const recentParsed = parseBreaksFromAuditLogs(recentLogs || []);
+      const curBreak = recentParsed[email.toLowerCase()]?.currentBreak;
+      if (curBreak && (Date.now() - new Date(curBreak.startTime).getTime()) < 5000) {
+        return { success: true, currentBreak: curBreak };
+      }
+    } catch (checkErr) {}
 
     let empName = user?.user_metadata?.full_name || (email ? email.split('@')[0] : 'Employee');
     try {
@@ -526,6 +568,11 @@ export async function endEmployeeBreak({ userEmail = '' } = {}) {
 
     const breaksMap = parseBreaksFromAuditLogs(breakLogs || []);
     const cur = breaksMap[email.toLowerCase()]?.currentBreak;
+
+    // If no active break exists (e.g. double click or already ended), safely return
+    if (!cur) {
+      return { success: true, message: 'Break already ended' };
+    }
 
     const startTime = cur?.startTime || nowIso;
     const durationSeconds = Math.max(1, Math.round((new Date(nowIso).getTime() - new Date(startTime).getTime()) / 1000));
