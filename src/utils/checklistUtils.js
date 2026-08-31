@@ -435,7 +435,7 @@ export function calculateDelayStatus({
   halfYearlyMonth = 6,
   submittedAt = null,
   isCompleted = false,
-  allowDelayedSubmission = false,
+  allowDelayedSubmission = true,
   now = new Date()
 }) {
   const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
@@ -443,21 +443,36 @@ export function calculateDelayStatus({
   const freq = frequency?.toUpperCase();
 
   let startDateTime;
+  let dueDateTime;
   let expireDateTime;
 
   if (freq === 'DAILY') {
     const rawDate = (periodKey || '').split('_')[0];
     const parts = (rawDate || '').split('-');
+    let year, month, day;
     if (parts.length === 3) {
-      startDateTime = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 0, minutes || 0, 0);
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      day = parseInt(parts[2], 10);
     } else {
       const today = new Date();
-      startDateTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours || 0, minutes || 0, 0);
+      year = today.getFullYear();
+      month = today.getMonth();
+      day = today.getDate();
     }
+
+    // Daily checklists open from the beginning of the scheduled day (00:00:00)
+    startDateTime = new Date(year, month, day, 0, 0, 0);
+
+    // dueDateTime is the target deadline (e.g. 09:00 AM or 18:00 PM)
+    dueDateTime = new Date(year, month, day, hours || 18, minutes || 0, 0);
+
+    // expireDateTime is dueDateTime + buffer (e.g. 09:00 AM + 20 mins = 09:20 AM)
     const buffer = parseInt(bufferMinutes, 10) || 20;
-    expireDateTime = new Date(startDateTime.getTime() + buffer * 60 * 1000);
+    expireDateTime = new Date(dueDateTime.getTime() + buffer * 60 * 1000);
   } else {
     expireDateTime = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth, monthOfYear, quarterMonth, halfYearlyMonth);
+    dueDateTime = new Date(expireDateTime.getTime() - (parseInt(bufferMinutes, 10) || 20) * 60 * 1000);
     startDateTime = new Date(expireDateTime);
     startDateTime.setHours(0, 0, 0, 0);
   }
@@ -467,6 +482,7 @@ export function calculateDelayStatus({
   const isInWindow = !isBeforeStart && !isPastExpire;
 
   const formattedStart = startDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const formattedDue = dueDateTime ? dueDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : dueTime;
   const formattedExpire = expireDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   // 1. If submitted already:
@@ -491,13 +507,14 @@ export function calculateDelayStatus({
       delayText: wasLate ? `Completed Late (${formatDurationHuman(delayMs)} delay)` : 'Completed On Time',
       badgeStatus: wasLate ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME',
       formattedStart,
+      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'COMPLETED'
     };
   }
 
-  // 2. If before slot start time: LOCKED (taye samay se pehle: Lock)
+  // 2. If before schedule start date/time (e.g. future date): LOCKED
   if (isBeforeStart) {
     const lockMs = startDateTime.getTime() - currentTime.getTime();
     return {
@@ -516,6 +533,7 @@ export function calculateDelayStatus({
       delayText: `🔒 Locked (Opens at ${formattedStart} in ${formatDurationHuman(lockMs)})`,
       badgeStatus: 'LOCKED',
       formattedStart,
+      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'LOCKED',
@@ -523,7 +541,7 @@ export function calculateDelayStatus({
     };
   }
 
-  // 3. If within active buffer window: ACTIVE (taye samay par: Active with 15-20 min buffer)
+  // 3. If within active window (between start of day and deadline + buffer): ACTIVE
   if (isInWindow) {
     const windowMs = expireDateTime.getTime() - currentTime.getTime();
     return {
@@ -539,9 +557,10 @@ export function calculateDelayStatus({
       isExpired: false,
       canExecute: true,
       delayMinutes: 0,
-      delayText: `🟢 Open Now (${formatDurationHuman(windowMs)} left)`,
+      delayText: `🟢 Open Now (Due by ${dueTime})`,
       badgeStatus: 'ACTIVE_WINDOW',
       formattedStart,
+      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'ACTIVE',
@@ -552,8 +571,10 @@ export function calculateDelayStatus({
   // 4. If buffer window expired:
   const overdueMs = currentTime.getTime() - expireDateTime.getTime();
 
-  // If delayed submission is allowed for this template:
-  if (allowDelayedSubmission) {
+  // Allow delayed submission (unless explicitly set to false)
+  const isDelayedAllowed = allowDelayedSubmission !== false;
+
+  if (isDelayedAllowed) {
     return {
       startDateTime,
       cutoffDate: expireDateTime,
@@ -570,6 +591,7 @@ export function calculateDelayStatus({
       delayText: `⚠️ Delayed Submission Open (${formatDurationHuman(overdueMs)} overdue)`,
       badgeStatus: 'DELAYED_OPEN',
       formattedStart,
+      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'DELAYED_OPEN',
@@ -577,7 +599,7 @@ export function calculateDelayStatus({
     };
   }
 
-  // Default: Strictly Expired / Missed
+  // Default: Strictly Expired only if allowDelayedSubmission is explicitly false
   return {
     startDateTime,
     cutoffDate: expireDateTime,
@@ -594,6 +616,7 @@ export function calculateDelayStatus({
     delayText: `❌ Expired / Missed (Closed at ${formattedExpire})`,
     badgeStatus: 'EXPIRED',
     formattedStart,
+    formattedDue,
     formattedCutoff: formattedExpire,
     formattedExpire,
     windowState: 'EXPIRED',
