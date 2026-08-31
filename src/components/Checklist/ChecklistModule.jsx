@@ -17,7 +17,8 @@ import {
   generateDefaultDailySlots,
   DEFAULT_HOLIDAYS_LIST,
   isDateHoliday,
-  isDateSunday
+  isDateSunday,
+  formatDurationHuman
 } from '@/utils/checklistUtils';
 import {
   getChecklistTemplates,
