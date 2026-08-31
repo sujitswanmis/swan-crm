@@ -16,3 +16,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Defensive Error Handling & Graceful Fallbacks**: Wrap new components, background hooks, and async server actions in try-catch blocks and error boundaries. If a new or secondary feature encounters an error or network lag, it must fail silently or gracefully without crashing the app, freezing the UI, or blocking other tabs.
 - **Non-Blocking Execution & Safe Caching**: Avoid heavy synchronous operations or unthrottled polling loops in new features that could block the main UI thread, exhaust network limits, or invalidate active lead/call caches.
 - **Additive Database Changes Only**: When introducing schema or database updates for new features, only use non-destructive, additive changes (e.g., optional columns with safe defaults or dedicated tables). Never alter, rename, or drop active columns used by live processes.
+
+# Strict IST (Asia/Kolkata, UTC+5:30) Timezone Enforcement Rule
+- **Always Indian Standard Time (IST)**: ALL dates, timestamps, slot times, deadlines, attendance times, delegation due dates, checklist schedules, logs, and period keys MUST ALWAYS be evaluated, parsed, constructed, and formatted strictly in **Indian Standard Time (IST / Asia/Kolkata / UTC+5:30)**.
+- **Never use Raw Server Local Time**: Server actions and serverless functions run in UTC (GMT+0). Never use bare `new Date(year, month, day, hours, minutes)` without explicit `+05:30` offset or `timeZone: 'Asia/Kolkata'`, because UTC will cause a 5.5 hour mismatch with Indian employees.
+- **Uniform IST Date Utilities**: Always use `createISTDate(...)`, `new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })`, or `toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })` across all client and server code.
+

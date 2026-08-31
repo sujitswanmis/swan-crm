@@ -85,17 +85,62 @@ export const DEFAULT_HOLIDAYS_LIST = [
   { date: '2027-12-25', name: 'Christmas Day' }
 ];
 
+export function getISTDateParts(dateInput = new Date()) {
+  try {
+    const d = typeof dateInput === 'string' && dateInput.includes('T') ? new Date(dateInput) : (dateInput instanceof Date ? dateInput : new Date(dateInput));
+    if (isNaN(d.getTime())) {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const [year, month, day] = formatter.format(now).split('-');
+      return { year: parseInt(year, 10), month: parseInt(month, 10), day: parseInt(day, 10), yearStr: year, monthStr: month, dayStr: day, dateStr: `${year}-${month}-${day}` };
+    }
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const dateStr = formatter.format(d);
+    const [year, month, day] = dateStr.split('-');
+    return {
+      year: parseInt(year, 10),
+      month: parseInt(month, 10),
+      day: parseInt(day, 10),
+      yearStr: year,
+      monthStr: month,
+      dayStr: day,
+      dateStr
+    };
+  } catch (e) {
+    const now = new Date();
+    return {
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      day: now.getDate(),
+      yearStr: String(now.getFullYear()),
+      monthStr: String(now.getMonth() + 1).padStart(2, '0'),
+      dayStr: String(now.getDate()).padStart(2, '0'),
+      dateStr: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    };
+  }
+}
+
 export function isDateHoliday(dateInput = new Date(), customHolidays = []) {
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const { dateStr } = getISTDateParts(dateInput);
+  if (!dateStr) return null;
   const allHolidays = [...(customHolidays || []), ...DEFAULT_HOLIDAYS_LIST];
   return allHolidays.find(h => h.date === dateStr) || null;
 }
 
 export function isDateSunday(dateInput = new Date()) {
-  const d = new Date(dateInput);
-  return d.getDay() === 0;
+  const { year, month, day } = getISTDateParts(dateInput);
+  const istDate = createISTDate(year, month - 1, day, 12, 0, 0);
+  return istDate.getDay() === 0;
 }
 
 export function generateDefaultDailySlots(count = 1) {
@@ -118,34 +163,22 @@ export function generateDefaultDailySlots(count = 1) {
   }
   if (n === 4) {
     return [
-      { slot_id: 'S1', label: 'Morning Opening', due_time: '09:30' },
-      { slot_id: 'S2', label: 'Noon Check', due_time: '12:30' },
-      { slot_id: 'S3', label: 'Tea Time Audit', due_time: '16:00' },
-      { slot_id: 'S4', label: 'Evening Closing', due_time: '20:30' }
+      { slot_id: 'S1', label: 'Morning Slot 1', due_time: '09:30' },
+      { slot_id: 'S2', label: 'Mid-Day Slot 2', due_time: '13:00' },
+      { slot_id: 'S3', label: 'Afternoon Slot 3', due_time: '16:30' },
+      { slot_id: 'S4', label: 'Evening Slot 4', due_time: '20:00' }
     ];
   }
-  if (n === 5) {
-    return [
-      { slot_id: 'S1', label: 'Slot 1 (Opening)', due_time: '09:30' },
-      { slot_id: 'S2', label: 'Slot 2 (Mid-Morning)', due_time: '12:00' },
-      { slot_id: 'S3', label: 'Slot 3 (Afternoon)', due_time: '14:30' },
-      { slot_id: 'S4', label: 'Slot 4 (Evening)', due_time: '17:30' },
-      { slot_id: 'S5', label: 'Slot 5 (Closing)', due_time: '20:30' }
-    ];
-  }
-
-  // For 6 to 18+ distribute evenly across operational hours (09:00 AM - 09:30 PM)
-  const startMins = 9 * 60; // 09:00 AM
-  const endMins = 21 * 60 + 30; // 09:30 PM
-  const step = Math.floor((endMins - startMins) / (n - 1));
-
   const slots = [];
+  const startHour = 9;
+  const endHour = 21;
+  const intervalHours = (endHour - startHour) / n;
   for (let i = 0; i < n; i++) {
-    const currentMins = startMins + (i * step);
-    const h = String(Math.floor(currentMins / 60)).padStart(2, '0');
-    const m = String(currentMins % 60).padStart(2, '0');
     const slotNum = i + 1;
-    const label = i === 0 ? 'Slot 1 (Opening)' : i === n - 1 ? `Slot ${slotNum} (Closing)` : `Slot ${slotNum}`;
+    const decimalHour = startHour + i * intervalHours;
+    const h = String(Math.floor(decimalHour)).padStart(2, '0');
+    const m = String(Math.floor((decimalHour % 1) * 60)).padStart(2, '0');
+    const label = `Slot ${slotNum} (${h}:${m})`;
     slots.push({
       slot_id: `S${slotNum}`,
       label,
@@ -164,39 +197,34 @@ export function getISOWeekNumber(date = new Date()) {
 }
 
 export function getCurrentPeriodKey(frequency = 'DAILY', dateInput = new Date(), slotId = null) {
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return '';
-
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const { year, month, day, yearStr, monthStr, dayStr, dateStr } = getISTDateParts(dateInput);
 
   switch (frequency?.toUpperCase()) {
     case 'DAILY':
-      return slotId ? `${year}-${month}-${day}_${slotId}` : `${year}-${month}-${day}`;
+      return slotId ? `${dateStr}_${slotId}` : dateStr;
     case 'WEEKLY': {
-      const week = String(getISOWeekNumber(d)).padStart(2, '0');
-      return `${year}-W${week}`;
+      const istDate = createISTDate(year, month - 1, day, 12, 0, 0);
+      const week = String(getISOWeekNumber(istDate)).padStart(2, '0');
+      return `${yearStr}-W${week}`;
     }
     case 'FORTNIGHTLY': {
-      const dayNum = d.getDate();
-      const period = dayNum <= 15 ? 'P1' : 'P2';
-      return `${year}-${month}-${period}`;
+      const period = day <= 15 ? 'P1' : 'P2';
+      return `${yearStr}-${monthStr}-${period}`;
     }
     case 'MONTHLY':
-      return `${year}-${month}`;
+      return `${yearStr}-${monthStr}`;
     case 'QUARTERLY': {
-      const quarter = Math.floor(d.getMonth() / 3) + 1;
-      return `${year}-Q${quarter}`;
+      const quarter = Math.floor((month - 1) / 3) + 1;
+      return `${yearStr}-Q${quarter}`;
     }
     case 'HALF_YEARLY': {
-      const half = d.getMonth() < 6 ? 'H1' : 'H2';
-      return `${year}-${half}`;
+      const half = month <= 6 ? 'H1' : 'H2';
+      return `${yearStr}-${half}`;
     }
     case 'YEARLY':
-      return `${year}`;
+      return `${yearStr}`;
     default:
-      return slotId ? `${year}-${month}-${day}_${slotId}` : `${year}-${month}-${day}`;
+      return slotId ? `${dateStr}_${slotId}` : dateStr;
   }
 }
 
