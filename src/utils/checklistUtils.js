@@ -329,7 +329,18 @@ export function formatDurationHuman(diffMs) {
   return remHours > 0 ? `${days}d ${remHours}h` : `${days} day${days === 1 ? '' : 's'}`;
 }
 
-export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', dueTime = '18:00', dayOfMonth = 1) {
+export function createISTDate(year, monthIndex, day, hours = 0, minutes = 0, seconds = 0) {
+  const y = String(year).padStart(4, '0');
+  const m = String(monthIndex + 1).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  const h = String(hours).padStart(2, '0');
+  const min = String(minutes).padStart(2, '0');
+  const s = String(seconds).padStart(2, '0');
+  // Explicit Indian Standard Time (+05:30) ISO construction for cross-environment consistency
+  return new Date(`${y}-${m}-${d}T${h}:${min}:${s}+05:30`);
+}
+
+export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', dueTime = '18:00', dayOfMonth = 1, monthOfYear = 12, quarterMonth = 3, halfYearlyMonth = 6) {
   const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
   const freq = frequency?.toUpperCase();
 
@@ -337,10 +348,10 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
     const rawDate = (periodKey || '').split('_')[0];
     const parts = (rawDate || '').split('-');
     if (parts.length === 3) {
-      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 18, minutes || 0, 0);
+      return createISTDate(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 18, minutes || 0, 0);
     }
     const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours || 18, minutes || 0, 0);
+    return createISTDate(today.getFullYear(), today.getMonth(), today.getDate(), hours || 18, minutes || 0, 0);
   }
 
   if (freq === 'WEEKLY') {
@@ -354,7 +365,7 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
       const isoSunday = new Date(simple);
       if (dow <= 4) isoSunday.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 7);
       else isoSunday.setUTCDate(simple.getUTCDate() + 7 - simple.getUTCDay());
-      return new Date(isoSunday.getFullYear(), isoSunday.getMonth(), isoSunday.getDate(), hours || 18, minutes || 0, 0);
+      return createISTDate(isoSunday.getFullYear(), isoSunday.getMonth(), isoSunday.getDate(), hours || 18, minutes || 0, 0);
     }
   }
 
@@ -365,10 +376,10 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
       const monthIndex = parseInt(parts[1], 10) - 1;
       const slot = parts[2];
       if (slot === 'P1') {
-        return new Date(year, monthIndex, 15, hours || 18, minutes || 0, 0);
+        return createISTDate(year, monthIndex, 15, hours || 18, minutes || 0, 0);
       } else {
         const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-        return new Date(year, monthIndex, lastDay, hours || 18, minutes || 0, 0);
+        return createISTDate(year, monthIndex, lastDay, hours || 18, minutes || 0, 0);
       }
     }
   }
@@ -380,7 +391,7 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
       const monthIndex = parseInt(parts[1], 10) - 1;
       const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
       const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
-      return new Date(year, monthIndex, targetDay, hours || 18, minutes || 0, 0);
+      return createISTDate(year, monthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
 
@@ -394,7 +405,7 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
       const targetMonthIndex = quarterStartMonth + qOffset;
       const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
       const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
-      return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
+      return createISTDate(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
 
@@ -408,7 +419,7 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
       const targetMonthIndex = halfStartMonth + hOffset;
       const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
       const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
-      return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
+      return createISTDate(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
     }
   }
 
@@ -417,11 +428,11 @@ export function getPeriodCutoffDateTime(frequency = 'DAILY', periodKey = '', due
     const targetMonthIndex = Math.min(Math.max(1, parseInt(monthOfYear, 10) || 12), 12) - 1;
     const daysInMonth = new Date(year, targetMonthIndex + 1, 0).getDate();
     const targetDay = dayOfMonth && dayOfMonth > 0 ? Math.min(dayOfMonth, daysInMonth) : daysInMonth;
-    return new Date(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
+    return createISTDate(year, targetMonthIndex, targetDay, hours || 18, minutes || 0, 0);
   }
 
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours || 18, minutes || 0, 0);
+  return createISTDate(now.getFullYear(), now.getMonth(), now.getDate(), hours || 18, minutes || 0, 0);
 }
 
 export function calculateDelayStatus({
@@ -435,7 +446,7 @@ export function calculateDelayStatus({
   halfYearlyMonth = 6,
   submittedAt = null,
   isCompleted = false,
-  allowDelayedSubmission = true,
+  allowDelayedSubmission = false,
   now = new Date()
 }) {
   const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
@@ -443,36 +454,21 @@ export function calculateDelayStatus({
   const freq = frequency?.toUpperCase();
 
   let startDateTime;
-  let dueDateTime;
   let expireDateTime;
 
   if (freq === 'DAILY') {
     const rawDate = (periodKey || '').split('_')[0];
     const parts = (rawDate || '').split('-');
-    let year, month, day;
     if (parts.length === 3) {
-      year = parseInt(parts[0], 10);
-      month = parseInt(parts[1], 10) - 1;
-      day = parseInt(parts[2], 10);
+      startDateTime = createISTDate(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), hours || 0, minutes || 0, 0);
     } else {
       const today = new Date();
-      year = today.getFullYear();
-      month = today.getMonth();
-      day = today.getDate();
+      startDateTime = createISTDate(today.getFullYear(), today.getMonth(), today.getDate(), hours || 0, minutes || 0, 0);
     }
-
-    // Daily checklists open from the beginning of the scheduled day (00:00:00)
-    startDateTime = new Date(year, month, day, 0, 0, 0);
-
-    // dueDateTime is the target deadline (e.g. 09:00 AM or 18:00 PM)
-    dueDateTime = new Date(year, month, day, hours || 18, minutes || 0, 0);
-
-    // expireDateTime is dueDateTime + buffer (e.g. 09:00 AM + 20 mins = 09:20 AM)
     const buffer = parseInt(bufferMinutes, 10) || 20;
-    expireDateTime = new Date(dueDateTime.getTime() + buffer * 60 * 1000);
+    expireDateTime = new Date(startDateTime.getTime() + buffer * 60 * 1000);
   } else {
     expireDateTime = getPeriodCutoffDateTime(frequency, periodKey, dueTime, dayOfMonth, monthOfYear, quarterMonth, halfYearlyMonth);
-    dueDateTime = new Date(expireDateTime.getTime() - (parseInt(bufferMinutes, 10) || 20) * 60 * 1000);
     startDateTime = new Date(expireDateTime);
     startDateTime.setHours(0, 0, 0, 0);
   }
@@ -481,9 +477,8 @@ export function calculateDelayStatus({
   const isPastExpire = currentTime.getTime() > expireDateTime.getTime();
   const isInWindow = !isBeforeStart && !isPastExpire;
 
-  const formattedStart = startDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  const formattedDue = dueDateTime ? dueDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : dueTime;
-  const formattedExpire = expireDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const formattedStart = startDateTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+  const formattedExpire = expireDateTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
   // 1. If submitted already:
   if (isCompleted && submittedAt) {
@@ -507,14 +502,13 @@ export function calculateDelayStatus({
       delayText: wasLate ? `Completed Late (${formatDurationHuman(delayMs)} delay)` : 'Completed On Time',
       badgeStatus: wasLate ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME',
       formattedStart,
-      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'COMPLETED'
     };
   }
 
-  // 2. If before schedule start date/time (e.g. future date): LOCKED
+  // 2. If before slot start time: LOCKED (taye samay se pehle: Lock)
   if (isBeforeStart) {
     const lockMs = startDateTime.getTime() - currentTime.getTime();
     return {
@@ -533,7 +527,6 @@ export function calculateDelayStatus({
       delayText: `🔒 Locked (Opens at ${formattedStart} in ${formatDurationHuman(lockMs)})`,
       badgeStatus: 'LOCKED',
       formattedStart,
-      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'LOCKED',
@@ -541,7 +534,7 @@ export function calculateDelayStatus({
     };
   }
 
-  // 3. If within active window (between start of day and deadline + buffer): ACTIVE
+  // 3. If within active buffer window: ACTIVE (taye samay par: Active with 15-20 min buffer)
   if (isInWindow) {
     const windowMs = expireDateTime.getTime() - currentTime.getTime();
     return {
@@ -557,10 +550,9 @@ export function calculateDelayStatus({
       isExpired: false,
       canExecute: true,
       delayMinutes: 0,
-      delayText: `🟢 Open Now (Due by ${dueTime})`,
+      delayText: `🟢 Open Now (${formatDurationHuman(windowMs)} left)`,
       badgeStatus: 'ACTIVE_WINDOW',
       formattedStart,
-      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'ACTIVE',
@@ -571,10 +563,8 @@ export function calculateDelayStatus({
   // 4. If buffer window expired:
   const overdueMs = currentTime.getTime() - expireDateTime.getTime();
 
-  // Allow delayed submission (unless explicitly set to false)
-  const isDelayedAllowed = allowDelayedSubmission !== false;
-
-  if (isDelayedAllowed) {
+  // If delayed submission is allowed for this template:
+  if (allowDelayedSubmission) {
     return {
       startDateTime,
       cutoffDate: expireDateTime,
@@ -591,7 +581,6 @@ export function calculateDelayStatus({
       delayText: `⚠️ Delayed Submission Open (${formatDurationHuman(overdueMs)} overdue)`,
       badgeStatus: 'DELAYED_OPEN',
       formattedStart,
-      formattedDue,
       formattedCutoff: formattedExpire,
       formattedExpire,
       windowState: 'DELAYED_OPEN',
@@ -599,7 +588,7 @@ export function calculateDelayStatus({
     };
   }
 
-  // Default: Strictly Expired only if allowDelayedSubmission is explicitly false
+  // Default: Strictly Expired / Missed
   return {
     startDateTime,
     cutoffDate: expireDateTime,
@@ -616,7 +605,6 @@ export function calculateDelayStatus({
     delayText: `❌ Expired / Missed (Closed at ${formattedExpire})`,
     badgeStatus: 'EXPIRED',
     formattedStart,
-    formattedDue,
     formattedCutoff: formattedExpire,
     formattedExpire,
     windowState: 'EXPIRED',

@@ -419,7 +419,7 @@ export async function getEmployeeChecklistDashboard({
         ? Boolean(tmpl.allow_delayed_submission)
         : (scheduleMeta.allow_delayed_submission !== undefined
           ? Boolean(scheduleMeta.allow_delayed_submission)
-          : (tmpl.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmpl.schedule_config.allow_delayed_submission) : true));
+          : (tmpl.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmpl.schedule_config.allow_delayed_submission) : false));
 
       const scheduleConfig = {
         daily_repetition_count: repCount,
@@ -658,7 +658,7 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         ? Boolean(tmplDoc.allow_delayed_submission)
         : (scheduleMeta.allow_delayed_submission !== undefined
           ? Boolean(scheduleMeta.allow_delayed_submission)
-          : (tmplDoc.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmplDoc.schedule_config.allow_delayed_submission) : true));
+          : (tmplDoc.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmplDoc.schedule_config.allow_delayed_submission) : false));
 
       let slotDueTime = tmplDoc.due_time || '18:00';
       if (period_key && period_key.includes('_S')) {

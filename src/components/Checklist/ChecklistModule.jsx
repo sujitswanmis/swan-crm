@@ -18,7 +18,8 @@ import {
   DEFAULT_HOLIDAYS_LIST,
   isDateHoliday,
   isDateSunday,
-  formatDurationHuman
+  formatDurationHuman,
+  calculateDelayStatus
 } from '@/utils/checklistUtils';
 import {
   getChecklistTemplates,
@@ -147,17 +148,53 @@ export default function ChecklistModule({
   const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
   const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
+  // Live ticking clock to recalculate lock/open/expire status in realtime every second
+  const [liveNow, setLiveNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveNow(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Live computed checklists with ticking delayInfo recalculated dynamically against liveNow
+  const liveDashboardChecklists = useMemo(() => {
+    return (dashboardChecklists || []).map(item => {
+      const tmpl = item.template;
+      if (!tmpl) return item;
+      const isCompleted = item.status === 'COMPLETED' || (item.submission && item.submission.status === 'COMPLETED');
+      const delayInfo = calculateDelayStatus({
+        frequency: tmpl.frequency,
+        periodKey: item.currentPeriodKey,
+        dueTime: item.slotInfo?.due_time || tmpl.due_time || '18:00',
+        bufferMinutes: item.slotInfo?.buffer_minutes || tmpl.buffer_minutes || 20,
+        dayOfMonth: tmpl.day_of_month || 1,
+        monthOfYear: tmpl.month_of_year || 12,
+        quarterMonth: tmpl.quarter_month || 3,
+        halfYearlyMonth: tmpl.half_yearly_month || 6,
+        submittedAt: item.submission?.submitted_at || null,
+        isCompleted: isCompleted,
+        allowDelayedSubmission: tmpl.allow_delayed_submission,
+        now: liveNow
+      });
+      return {
+        ...item,
+        delayInfo
+      };
+    });
+  }, [dashboardChecklists, liveNow]);
+
   // Computed Checklist Dashboard KPI Metrics
   const dashboardMetrics = useMemo(() => {
-    const total = dashboardChecklists.length;
-    const completed = dashboardChecklists.filter(i => i.status === 'COMPLETED').length;
-    const completedOnTime = dashboardChecklists.filter(i => i.status === 'COMPLETED' && !i.delayInfo?.isDelayed).length;
-    const completedLate = dashboardChecklists.filter(i => i.status === 'COMPLETED' && i.delayInfo?.isDelayed).length;
-    const openOnTime = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isActive && i.delayInfo?.badgeStatus !== 'DELAYED_OPEN').length;
-    const activeDelayed = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.badgeStatus === 'DELAYED_OPEN').length;
+    const total = liveDashboardChecklists.length;
+    const completed = liveDashboardChecklists.filter(i => i.status === 'COMPLETED').length;
+    const completedOnTime = liveDashboardChecklists.filter(i => i.status === 'COMPLETED' && !i.delayInfo?.isDelayed).length;
+    const completedLate = liveDashboardChecklists.filter(i => i.status === 'COMPLETED' && i.delayInfo?.isDelayed).length;
+    const openOnTime = liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isActive && i.delayInfo?.badgeStatus !== 'DELAYED_OPEN').length;
+    const activeDelayed = liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.badgeStatus === 'DELAYED_OPEN').length;
     const active = openOnTime + activeDelayed;
-    const locked = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isBeforeStart).length;
-    const expired = dashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isExpired).length;
+    const locked = liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isBeforeStart).length;
+    const expired = liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isExpired).length;
     const complianceRate = total > 0 ? Math.round((completed / total) * 100) : (isFutureDate ? 0 : 100);
 
     return {
@@ -172,7 +209,7 @@ export default function ChecklistModule({
       expired,
       complianceRate
     };
-  }, [dashboardChecklists, isFutureDate]);
+  }, [liveDashboardChecklists, isFutureDate]);
 
   // Available distinct departments (from Settings > Manage Departments + employee/template records)
   const availableDepartments = useMemo(() => {
@@ -741,13 +778,28 @@ export default function ChecklistModule({
   const handleSubmitExecution = async () => {
     if (!executingChecklist) return;
 
-    const delayInfo = executingChecklist.delayInfo || {};
-    if (delayInfo.isExpired) {
-      showNotification(`❌ Submission Window Closed: This checklist slot closed at ${delayInfo.formattedExpire || 'deadline'}. Expired checklists cannot be submitted.`, true);
+    const tmpl = executingChecklist.template;
+    const currentDelayInfo = calculateDelayStatus({
+      frequency: tmpl.frequency,
+      periodKey: executingChecklist.currentPeriodKey,
+      dueTime: executingChecklist.slotInfo?.due_time || tmpl.due_time || '18:00',
+      bufferMinutes: executingChecklist.slotInfo?.buffer_minutes || tmpl.buffer_minutes || 20,
+      dayOfMonth: tmpl.day_of_month || 1,
+      monthOfYear: tmpl.month_of_year || 12,
+      quarterMonth: tmpl.quarter_month || 3,
+      halfYearlyMonth: tmpl.half_yearly_month || 6,
+      submittedAt: null,
+      isCompleted: false,
+      allowDelayedSubmission: tmpl.allow_delayed_submission,
+      now: new Date()
+    });
+
+    if (currentDelayInfo.isExpired) {
+      showNotification(`❌ Submission Window Closed: This checklist slot closed at ${currentDelayInfo.formattedExpire || 'deadline'}. Expired checklists cannot be submitted.`, true);
       return;
     }
-    if (delayInfo.isBeforeStart) {
-      showNotification(`🔒 Checklist is Locked: This checklist slot opens at ${delayInfo.formattedStart || 'start time'}.`, true);
+    if (currentDelayInfo.isBeforeStart) {
+      showNotification(`🔒 Checklist is Locked: This checklist slot opens at ${currentDelayInfo.formattedStart || 'start time'}.`, true);
       return;
     }
 
@@ -2471,7 +2523,7 @@ export default function ChecklistModule({
             </div>
           )}
 
-          {!loading && dashboardChecklists.length === 0 && (
+          {!loading && liveDashboardChecklists.length === 0 && (
             <div style={{
               background: 'var(--bg-secondary, #f8fafc)',
               border: '1px dashed var(--border-color, #cbd5e1)',
@@ -2505,12 +2557,12 @@ export default function ChecklistModule({
             </div>
           )}
 
-          {!loading && dashboardChecklists.length > 0 && (
+          {!loading && liveDashboardChecklists.length > 0 && (
             <>
               {/* View Mode Toggle Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', margin: '0.25rem 0' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                  Showing <strong>{dashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
+                  Showing <strong>{liveDashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
                 </span>
 
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
@@ -2562,7 +2614,7 @@ export default function ChecklistModule({
               {/* 1. TILES VIEW */}
               {myChecklistsViewMode === 'tiles' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
-                  {dashboardChecklists.map((item, idx) => {
+                  {liveDashboardChecklists.map((item, idx) => {
                     const tmpl = item.template;
                     const isCompleted = item.status === 'COMPLETED';
                     const percent = item.stats.percent;
@@ -2845,7 +2897,7 @@ export default function ChecklistModule({
                       </tr>
                     </thead>
                     <tbody>
-                      {dashboardChecklists.map((item, idx) => {
+                      {liveDashboardChecklists.map((item, idx) => {
                         const tmpl = item.template;
                         const isCompleted = item.status === 'COMPLETED';
                         const percent = item.stats.percent;
