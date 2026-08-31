@@ -38,6 +38,7 @@ import {
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
+import { createClient } from '@/utils/supabase/client';
 
 export default function ChecklistModule({
   userRole = 'agent',
@@ -53,7 +54,7 @@ export default function ChecklistModule({
 
   // Tabs: 'dashboard' | 'my_checklists' | 'templates' | 'compliance' | 'holidays'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
-  const [selectedFrequency, setSelectedFrequency] = useState('DAILY');
+  const [selectedFrequency, setSelectedFrequency] = useState('ALL'); // Default to 'ALL' (All Checklists)
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -65,11 +66,17 @@ export default function ChecklistModule({
   useEffect(() => {
     if (initialSubTab) {
       setActiveTab(initialSubTab);
+      if (initialSubTab === 'my_checklists') {
+        setSelectedFrequency('ALL');
+      }
     }
   }, [initialSubTab]);
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
+    if (tabId === 'my_checklists') {
+      setSelectedFrequency('ALL');
+    }
     if (onSubTabChange) {
       onSubTabChange(tabId);
     }
@@ -510,6 +517,36 @@ export default function ChecklistModule({
     }
   }, [activeTab, selectedFrequency, userEmail, dashboardDate]);
 
+  // Realtime Supabase Subscription for Checklist Submissions & Verification
+  useEffect(() => {
+    if (!userEmail) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel('realtime-checklist-submissions-sync')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'checklist_submissions'
+        },
+        () => {
+          // Silently refresh without screen flicker
+          if (activeTab === 'my_checklists' || activeTab === 'dashboard') {
+            loadEmployeeDashboard(dashboardDate, true);
+          }
+          if (activeTab === 'compliance') {
+            loadCompliance(true);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userEmail, activeTab, dashboardDate, selectedFrequency]);
+
   const showNotification = (msg, isError = false) => {
     if (isError) {
       setErrorMsg(msg);
@@ -540,8 +577,8 @@ export default function ChecklistModule({
     }
   };
 
-  const loadEmployeeDashboard = async (targetDateStr = dashboardDate) => {
-    setLoading(true);
+  const loadEmployeeDashboard = async (targetDateStr = dashboardDate, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const targetObj = targetDateStr ? new Date(`${targetDateStr}T12:00:00`) : new Date();
       const res = await getEmployeeChecklistDashboard({
@@ -554,9 +591,9 @@ export default function ChecklistModule({
       }
     } catch (e) {
       console.error(e);
-      showNotification('Failed to load checklists', true);
+      if (!silent) showNotification('Failed to load checklists', true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -577,8 +614,8 @@ export default function ChecklistModule({
     }
   };
 
-  const loadCompliance = async () => {
-    setLoading(true);
+  const loadCompliance = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await getChecklistComplianceReport({
         frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency
@@ -588,9 +625,9 @@ export default function ChecklistModule({
       }
     } catch (e) {
       console.error(e);
-      showNotification('Failed to load compliance report', true);
+      if (!silent) showNotification('Failed to load compliance report', true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -733,9 +770,36 @@ export default function ChecklistModule({
       });
 
       if (res.success) {
+        // Instant Realtime Optimistic State Update
+        const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
+        const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
+        const savedSub = res.data || {
+          id: executingChecklist.submission?.id || 'temp_sub',
+          status,
+          responses: execResponses,
+          submission_notes: execNotes,
+          items_completed_count: stats.completedCount,
+          items_total_count: stats.totalCount,
+          submitted_at: new Date().toISOString()
+        };
+
+        setDashboardChecklists(prev => prev.map(item => {
+          if (item.template.id === tmpl.id && item.currentPeriodKey === executingChecklist.currentPeriodKey) {
+            return {
+              ...item,
+              submission: savedSub,
+              status,
+              stats
+            };
+          }
+          return item;
+        }));
+
         showNotification('✅ Checklist completed and submitted successfully!');
         setExecutingChecklist(null);
-        loadEmployeeDashboard();
+
+        // Silent background sync - no screen flicker or reload
+        loadEmployeeDashboard(dashboardDate, true);
       } else {
         showNotification(res.error || 'Failed to submit checklist', true);
       }
