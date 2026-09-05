@@ -675,11 +675,16 @@ function TabMonitor({ agents, onRefresh }) {
 }
 
 // ── Tab: Settings ─────────────────────────────────────────────
-function TabSettings() {
+function TabSettings({ agents = [] }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [defaultForward, setDefaultForward] = useState('');
+  const [routingMode, setRoutingMode] = useState('simultaneous');
+  const [stickyAgent, setStickyAgent] = useState(true);
+  const [inboundAgentIds, setInboundAgentIds] = useState([]);
+  const [agentSearch, setAgentSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const fetchSettings = () => {
     setLoading(true);
@@ -688,6 +693,9 @@ function TabSettings() {
       .then(d => {
         setSettings(d);
         setDefaultForward(d.defaultForward || '');
+        setRoutingMode(d.routingMode || 'simultaneous');
+        setStickyAgent(d.stickyAgent !== false);
+        setInboundAgentIds(Array.isArray(d.inboundAgentIds) ? d.inboundAgentIds : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -698,18 +706,25 @@ function TabSettings() {
   }, []);
 
   const handleSave = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setSaving(true);
+    setSaveSuccess(false);
     try {
-      const cleanNum = defaultForward.replace(/['"]/g, '').trim();
+      const cleanNum = (defaultForward || '').replace(/['"]/g, '').trim();
       const res = await fetch('/api/plivo/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultForward: cleanNum })
+        body: JSON.stringify({
+          defaultForward: cleanNum,
+          routingMode,
+          stickyAgent,
+          inboundAgentIds
+        })
       });
       const data = await res.json();
       if (data.success) {
-        alert('Settings saved successfully!');
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 4000);
         fetchSettings();
       } else {
         alert('Error saving settings: ' + (data.error || 'Unknown error'));
@@ -720,103 +735,395 @@ function TabSettings() {
     setSaving(false);
   };
 
+  // Filter actual human agents with SIP endpoints
+  const humanAgents = (agents || []).filter(a =>
+    a.plivo_username &&
+    !a.plivo_username.startsWith('system_settings_') &&
+    a.display_name &&
+    !a.display_name.startsWith('System ')
+  );
+
+  const filteredAgents = humanAgents.filter(a => {
+    const term = (agentSearch || '').toLowerCase();
+    return (
+      (a.display_name || '').toLowerCase().includes(term) ||
+      (a.plivo_sip_uri || '').toLowerCase().includes(term) ||
+      (a.plivo_username || '').toLowerCase().includes(term) ||
+      (a.agent_code || '').toLowerCase().includes(term)
+    );
+  });
+
+  const toggleAgent = (agentId) => {
+    setInboundAgentIds(prev =>
+      prev.includes(agentId) ? prev.filter(id => id !== agentId) : [...prev, agentId]
+    );
+  };
+
+  const selectAllFiltered = () => {
+    const ids = filteredAgents.map(a => a.id);
+    setInboundAgentIds(prev => Array.from(new Set([...prev, ...ids])));
+  };
+
+  const clearSelection = () => {
+    setInboundAgentIds([]);
+  };
+
   if (loading) return <PremiumProgressLoader message="Loading Call Settings" active={loading} />;
 
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1.5rem' }}>
-      {/* Account Info */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-          <Shield size={18} color="#3b82f6" /> Plivo Account
-        </h3>
-        <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
-          {[
-            { label: 'Auth ID',          value: process.env.NEXT_PUBLIC_PLIVO_AUTH_ID || 'MAMJFH***' },
-            { label: 'From Number',      value: settings?.fromNumber || '+918035340622' },
-            { label: 'Data Region',      value: 'India 🇮🇳' },
-          ].map(row => (
-            <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px' }}>
-              <span style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:500 }}>{row.label}</span>
-              <span style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, fontFamily: row.label.includes('ID')||row.label.includes('Number') ? 'monospace' : 'inherit' }}>{row.value}</span>
-            </div>
-          ))}
-
-          {/* Edit Default Forward */}
-          <form onSubmit={handleSave} style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
-            <label style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:600 }}>Default Forward Number</label>
-            <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.25rem' }}>
-              <input 
-                type="text" 
-                value={defaultForward} 
-                onChange={e => setDefaultForward(e.target.value)}
-                placeholder="+917888399954"
-                style={{
-                  flex: 1,
-                  padding: '0.4rem 0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '0.85rem',
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box',
-                  background: 'white'
-                }}
-              />
-              <button 
-                type="submit" 
-                disabled={saving}
-                style={{
-                  padding: '0.4rem 1rem',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: '#3b82f6',
-                  color: 'white',
-                  fontWeight: 600,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  opacity: saving ? 0.7 : 1
-                }}
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-            <span style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem' }}>Calls will dial this number when agents are offline.</span>
-          </form>
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1280px', margin:'0 auto' }}>
+      
+      {/* Top Banner & Save Action */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
+        <div>
+          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
+            <PhoneIncoming size={22} color="#3b82f6" /> Inbound Call Routing & Softphone Distribution
+          </h2>
+          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
+            Control how incoming customer calls to <strong>{settings?.fromNumber || '+918035340622'}</strong> ring on agents&apos; CRM Softphone screens.
+          </p>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          {saveSuccess && (
+            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'#16a34a', fontSize:'0.85rem', fontWeight:600, background:'#dcfce7', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
+              <CheckCircle size={16} /> Settings Saved!
+            </span>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              display:'flex', alignItems:'center', gap:'0.5rem',
+              padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
+              background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.88rem',
+              cursor:'pointer', opacity: saving ? 0.7 : 1,
+              boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
+            }}
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {saving ? 'Saving...' : 'Save Inbound Settings'}
+          </button>
         </div>
       </div>
 
-      {/* Applications */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-          <Radio size={18} color="#3b82f6" /> Plivo Applications
-        </h3>
-        {settings?.apps?.length > 0 ? (
-          <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
-            {settings.apps.map(app => (
-              <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'#f8fafc', borderRadius:'8px', borderLeft:'3px solid #3b82f6' }}>
-                <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.9rem' }}>{app.app_name}</div>
-                <div style={{ fontSize:'0.75rem', color:'#64748b', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
-                <div style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
-              </div>
-            ))}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(520px, 1fr))', gap:'1.5rem' }}>
+        
+        {/* Card 1: Routing Mode / Strategy */}
+        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+          <div>
+            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <Radio size={18} color="#3b82f6" /> 1. Inbound Ringing Strategy
+            </h3>
+            <p style={{ color:'#64748b', fontSize:'0.8rem', marginTop:'0.25rem' }}>
+              Select how incoming calls should be dispatched among online softphones.
+            </p>
           </div>
-        ) : (
-          <p style={{ color:'#94a3b8', fontSize:'0.85rem' }}>No applications found.</p>
-        )}
+
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+            {/* Option 1: Simultaneous Ring */}
+            <label
+              onClick={() => setRoutingMode('simultaneous')}
+              style={{
+                display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
+                borderRadius:'10px', border: routingMode === 'simultaneous' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                background: routingMode === 'simultaneous' ? '#eff6ff' : '#f8fafc',
+                cursor:'pointer', transition:'all 0.15s'
+              }}
+            >
+              <input
+                type="radio"
+                name="routingMode"
+                value="simultaneous"
+                checked={routingMode === 'simultaneous'}
+                onChange={() => setRoutingMode('simultaneous')}
+                style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+              />
+              <div style={{ flex:1 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>Simultaneous Ring (Blast All)</span>
+                  <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.15rem 0.5rem', background:'#dcfce7', color:'#15803d', borderRadius:'999px' }}>Recommended</span>
+                </div>
+                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                  All online softphones ring simultaneously on their screens. The first telecaller to click <strong>Answer</strong> connects immediately; Plivo cancels ringing on everyone else. <em>Best to prevent missed customer calls.</em>
+                </div>
+              </div>
+            </label>
+
+            {/* Option 2: Round Robin */}
+            <label
+              onClick={() => setRoutingMode('round_robin')}
+              style={{
+                display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
+                borderRadius:'10px', border: routingMode === 'round_robin' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                background: routingMode === 'round_robin' ? '#eff6ff' : '#f8fafc',
+                cursor:'pointer', transition:'all 0.15s'
+              }}
+            >
+              <input
+                type="radio"
+                name="routingMode"
+                value="round_robin"
+                checked={routingMode === 'round_robin'}
+                onChange={() => setRoutingMode('round_robin')}
+                style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+              />
+              <div style={{ flex:1 }}>
+                <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>Round Robin (Equal Distribution)</span>
+                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                  Distributes incoming customer calls evenly one-by-one in circular rotation across eligible online agents.
+                </div>
+              </div>
+            </label>
+
+            {/* Option 3: First Available */}
+            <label
+              onClick={() => setRoutingMode('first_available')}
+              style={{
+                display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
+                borderRadius:'10px', border: routingMode === 'first_available' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                background: routingMode === 'first_available' ? '#eff6ff' : '#f8fafc',
+                cursor:'pointer', transition:'all 0.15s'
+              }}
+            >
+              <input
+                type="radio"
+                name="routingMode"
+                value="first_available"
+                checked={routingMode === 'first_available'}
+                onChange={() => setRoutingMode('first_available')}
+                style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+              />
+              <div style={{ flex:1 }}>
+                <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>First Available Agent</span>
+                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                  Routes the call straight to the first available telecaller currently in ready status.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Sticky Agent Toggle */}
+          <div style={{ marginTop:'0.5rem', padding:'1rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'1rem' }}>
+            <div>
+              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.88rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <PhoneCall size={16} color="#7c3aed" /> Sticky Agent Routing (Returning Leads)
+              </div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
+                If an existing CRM lead calls back, prioritize ringing the specific telecaller assigned to that lead or who last spoke with them. If offline, auto-falls back to the inbound group.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStickyAgent(!stickyAgent)}
+              style={{ background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0 }}
+            >
+              {stickyAgent ? <ToggleRight size={38} color="#2563eb" /> : <ToggleLeft size={38} color="#94a3b8" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Card 2: Option 4 - Dedicated Inbound Telecallers Selection */}
+        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.5rem' }}>
+            <div>
+              <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <Users size={18} color="#3b82f6" /> 2. Inbound Agent Selection List
+              </h3>
+              <p style={{ color:'#64748b', fontSize:'0.8rem', marginTop:'0.25rem' }}>
+                Choose specific telecallers (e.g. 1, 2, or 3) to receive new inbound calls so other team members are not disturbed.
+              </p>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                style={{ fontSize:'0.75rem', fontWeight:600, color:'#2563eb', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{ fontSize:'0.75rem', fontWeight:600, color:'#64748b', background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+
+          {/* Selection summary badge */}
+          <div style={{ padding:'0.6rem 0.85rem', borderRadius:'8px', background: inboundAgentIds.length === 0 ? '#f0fdf4' : '#eff6ff', border: inboundAgentIds.length === 0 ? '1px solid #bbf7d0' : '1px solid #bfdbfe', fontSize:'0.8rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ color: inboundAgentIds.length === 0 ? '#166534' : '#1e40af', fontWeight:600 }}>
+              {inboundAgentIds.length === 0
+                ? '🌐 All Online Agents Eligible (No filter applied)'
+                : `🎯 ${inboundAgentIds.length} Dedicated Agent(s) Selected for Inbound Calls`}
+            </span>
+            <span style={{ fontSize:'0.72rem', color:'#64748b' }}>
+              Total: {humanAgents.length} Agents
+            </span>
+          </div>
+
+          {/* Search agents */}
+          <div style={{ position:'relative' }}>
+            <Search size={15} color="#94a3b8" style={{ position:'absolute', left:'10px', top:'50%', transform:'translateY(-50%)' }} />
+            <input
+              type="text"
+              placeholder="Search agent by name, SIP username or ID..."
+              value={agentSearch}
+              onChange={e => setAgentSearch(e.target.value)}
+              style={{
+                width:'100%', boxSizing:'border-box', padding:'0.45rem 0.75rem 0.45rem 2rem',
+                borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.82rem', background:'#f8fafc'
+              }}
+            />
+          </div>
+
+          {/* Agent Checkbox List */}
+          <div style={{ maxHeight:'280px', overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'0.5rem', display:'flex', flexDirection:'column', gap:'0.4rem', background:'#fafafa' }}>
+            {filteredAgents.map(agent => {
+              const isChecked = inboundAgentIds.includes(agent.id);
+              const isOnline = agent.status === 'available' || agent.status === 'on_call';
+              return (
+                <label
+                  key={agent.id}
+                  style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'0.5rem 0.75rem', borderRadius:'6px',
+                    background: isChecked ? '#eff6ff' : 'white',
+                    border: isChecked ? '1px solid #93c5fd' : '1px solid #f1f5f9',
+                    cursor:'pointer', transition:'background 0.15s'
+                  }}
+                >
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.65rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleAgent(agent.id)}
+                      style={{ width:'16px', height:'16px', accentColor:'#2563eb', cursor:'pointer' }}
+                    />
+                    <div>
+                      <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                        {agent.display_name}
+                        {agent.agent_code && (
+                          <span style={{ fontSize:'0.7rem', color:'#64748b', background:'#e2e8f0', padding:'0.1rem 0.4rem', borderRadius:'4px' }}>
+                            {agent.agent_code}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize:'0.72rem', color:'#94a3b8', fontFamily:'monospace' }}>
+                        {agent.plivo_sip_uri || agent.plivo_username}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                    {isOnline ? (
+                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:600, color:'#16a34a', background:'#dcfce7', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
+                        <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#16a34a' }}></span>
+                        {agent.status}
+                      </span>
+                    ) : (
+                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:500, color:'#94a3b8', background:'#f1f5f9', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
+                        <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#94a3b8' }}></span>
+                        offline
+                      </span>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+            {filteredAgents.length === 0 && (
+              <div style={{ textAlign:'center', color:'#94a3b8', fontSize:'0.82rem', padding:'1.5rem' }}>
+                No agents match &quot;{agentSearch}&quot;
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Routing Rules */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', gridColumn:'1/-1' }}>
+      {/* Account Info & Fallback Forward Settings */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(480px, 1fr))', gap:'1.5rem' }}>
+        
+        {/* Plivo Account & Fallback */}
+        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <Shield size={18} color="#3b82f6" /> Plivo Account & Fallback Forwarding
+          </h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+            {[
+              { label: 'Auth ID',          value: process.env.NEXT_PUBLIC_PLIVO_AUTH_ID || 'MAMJFH***' },
+              { label: 'Company Plivo Number', value: settings?.fromNumber || '+918035340622' },
+              { label: 'Data Region',      value: 'India 🇮🇳' },
+            ].map(row => (
+              <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px' }}>
+                <span style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:500 }}>{row.label}</span>
+                <span style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, fontFamily: row.label.includes('ID')||row.label.includes('Number') ? 'monospace' : 'inherit' }}>{row.value}</span>
+              </div>
+            ))}
+
+            {/* Edit Default Forward */}
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.85rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
+              <label style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, display:'flex', alignItems:'center', gap:'0.35rem' }}>
+                <PhoneCall size={14} color="#ef4444" /> Final Fallback Forward Mobile Number
+              </label>
+              <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.25rem' }}>
+                <input 
+                  type="text" 
+                  value={defaultForward} 
+                  onChange={e => setDefaultForward(e.target.value)}
+                  placeholder="+91XXXXXXXXXX"
+                  style={{
+                    flex: 1,
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.85rem',
+                    fontFamily: 'monospace',
+                    boxSizing: 'border-box',
+                    background: 'white'
+                  }}
+                />
+              </div>
+              <span style={{ fontSize:'0.72rem', color:'#64748b', marginTop:'0.2rem' }}>
+                If no softphones are online or the incoming call is not answered within 30 seconds, the call forwards automatically to this phone.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Applications */}
+        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <Radio size={18} color="#3b82f6" /> Plivo Webhook Applications
+          </h3>
+          {settings?.apps?.length > 0 ? (
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+              {settings.apps.map(app => (
+                <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'#f8fafc', borderRadius:'8px', borderLeft:'3px solid #3b82f6' }}>
+                  <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.9rem' }}>{app.app_name}</div>
+                  <div style={{ fontSize:'0.75rem', color:'#64748b', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
+                  <div style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color:'#94a3b8', fontSize:'0.85rem' }}>No applications found.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Routing Rules Diagram */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
         <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-          <ArrowRight size={18} color="#3b82f6" /> Call Routing Flow
+          <ArrowRight size={18} color="#3b82f6" /> Live Inbound Call Routing Flow
         </h3>
         <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
           {[
-            { label:'Inbound Call', color:'#3b82f6' },
-            { label:'Sticky Agent Check', color:'#7c3aed' },
-            { label:'SIP Registration Verify', color:'#0891b2' },
-            { label:'Route to Agent Browser', color:'#16a34a' },
-            { label:'Fallback: Department Group', color:'#f59e0b' },
-            { label:'Final Fallback: Forward Mobile', color:'#ef4444' },
+            { label:'Customer Dials +918035340622', color:'#3b82f6' },
+            { label:'CRM Lead Lookup (Name & Company)', color:'#0891b2' },
+            { label:'Sticky Agent Check (Priority)', color:'#7c3aed' },
+            { label:`Inbound Team Ring (${routingMode.replace('_',' ').toUpperCase()})`, color:'#16a34a' },
+            { label:`Fallback Mobile: ${defaultForward || '+91XXXXXXXXXX'}`, color:'#ef4444' },
           ].map((step, i, arr) => (
             <React.Fragment key={step.label}>
               <div style={{ padding:'0.5rem 1rem', background:step.color+'15', border:`1px solid ${step.color}40`, borderRadius:'8px', fontSize:'0.8rem', fontWeight:600, color:step.color }}>
@@ -827,25 +1134,24 @@ function TabSettings() {
           ))}
         </div>
         <div style={{ marginTop:'1rem', padding:'0.75rem 1rem', background:'#f0f9ff', borderRadius:'8px', border:'1px solid #bae6fd', fontSize:'0.82rem', color:'#0369a1' }}>
-          <strong>Note:</strong> Incoming webhook checks real-time Plivo API for SIP registration before routing. If agent's browser is disconnected, the call auto-heals and routes to the next available agent or falls back to <code>{settings?.defaultForward || '+91XXXXXXXXXX'}</code>.
+          <strong>Real-Time SIP Verification:</strong> Before dispatching XML, Plivo verifies softphone registration via live endpoint status. If softphones are connected in the browser, customer calls ring directly on screen with <strong>Caller Name, Company, and Lead Status badge</strong>!
         </div>
       </div>
 
-      {/* Widget Settings */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', gridColumn:'1/-1' }}>
+      {/* Widget Preferences */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
         <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
           <Settings size={18} color="#3b82f6" /> Softphone Preferences (Browser Local)
         </h3>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
           <div>
             <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.95rem' }}>Auto-Answer Outbound Calls</div>
-            <div style={{ fontSize:'0.8rem', color:'#64748b', marginTop:'0.25rem' }}>When dialing a number, connect immediately without requiring the agent to click "Accept".</div>
+            <div style={{ fontSize:'0.8rem', color:'#64748b', marginTop:'0.25rem' }}>When dialing a number, connect immediately without requiring the agent to click &quot;Accept&quot;.</div>
           </div>
           <button 
             onClick={() => {
               const current = localStorage.getItem('CRM_AUTO_ANSWER_OUTBOUND') !== 'false';
               localStorage.setItem('CRM_AUTO_ANSWER_OUTBOUND', (!current).toString());
-              // Force re-render just to show toggle state
               setSettings({...settings});
             }}
             style={{ background:'none', border:'none', cursor:'pointer' }}
@@ -965,7 +1271,7 @@ export default function CallAdminModule({ moduleAccess = {}, userRole = '' }) {
         {activeTab === 'endpoints' && <TabEndpoints />}
         {activeTab === 'calllogs' && <TabCallLogs />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
-        {activeTab === 'settings' && <TabSettings />}
+        {activeTab === 'settings' && <TabSettings agents={agents} />}
       </div>
     </div>
   );

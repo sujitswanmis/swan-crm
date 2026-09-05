@@ -794,7 +794,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           }
         });
 
-        client.on('onIncomingCall', (callerName, extraHeaders, callInfo) => {
+        client.on('onIncomingCall', async (callerName, extraHeaders, callInfo) => {
           // Fast auto-answer logic for outbound calls initiated by the agent
           if (localStorage.getItem('pendingOutboundCall') === 'true') {
             localStorage.removeItem('pendingOutboundCall');
@@ -805,7 +805,50 @@ export default function GlobalSoftphoneWidget({ userId }) {
             return;
           }
 
-          setIncomingCall({ callerName, extraHeaders, callInfo });
+          let leadName = '';
+          let leadCompany = '';
+          let leadId = '';
+          const callerNumber = callerName || '';
+
+          // 1. Try parsing from extraHeaders
+          if (extraHeaders) {
+            try {
+              leadName = decodeURIComponent(extraHeaders['X-Lead-Name'] || extraHeaders['x-lead-name'] || '');
+              leadCompany = decodeURIComponent(extraHeaders['X-Lead-Company'] || extraHeaders['x-lead-company'] || '');
+              leadId = extraHeaders['X-Lead-Id'] || extraHeaders['x-lead-id'] || '';
+            } catch (e) {}
+          }
+
+          // 2. If not in extraHeaders, perform fast database lookup by 10-digit number
+          if (!leadName && !leadCompany) {
+            const cleanDigits = (callerName || '').replace(/\D/g, '').slice(-10);
+            if (cleanDigits.length >= 10) {
+              try {
+                const sbClient = createClient();
+                const { data: leads } = await sbClient
+                  .from('leads')
+                  .select('id, name, company')
+                  .or(`phone.ilike.%${cleanDigits}%,business_contact_1.ilike.%${cleanDigits}%,business_contact_2.ilike.%${cleanDigits}%,cp1_mobile_2.ilike.%${cleanDigits}%`)
+                  .limit(1);
+
+                if (leads && leads.length > 0) {
+                  leadName = leads[0].name || '';
+                  leadCompany = leads[0].company || '';
+                  leadId = leads[0].id || '';
+                }
+              } catch (err) {}
+            }
+          }
+
+          setIncomingCall({
+            callerName,
+            callerNumber,
+            leadName,
+            leadCompany,
+            leadId,
+            extraHeaders,
+            callInfo
+          });
           setIsMinimized(false); // Auto-expand on incoming call
         });
 
@@ -1197,17 +1240,84 @@ export default function GlobalSoftphoneWidget({ userId }) {
             </div>
           )}
 
-          {/* Incoming Call */}
+          {/* Incoming Call Popup with Live Lead Identification */}
           {incomingCall && (
-            <div className="pulse" style={{ background: '#3b82f6', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>Incoming Call</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>{incomingCall.callerName || 'Unknown Caller'}</div>
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                <button onClick={rejectCall} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '24px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <PhoneOff size={14} /> Reject
+            <div className="pulse" style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)', color: 'white', padding: '1.15rem 1rem', borderRadius: '12px', marginBottom: '1rem', textAlign: 'center', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.35)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', opacity: 0.85, marginBottom: '0.3rem' }}>
+                🔔 Incoming Call
+              </div>
+
+              {/* Lead Name / Identifier */}
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                👤 {incomingCall.leadName || incomingCall.leadCompany || 'Customer'}
+              </div>
+
+              {/* Company Name if available */}
+              {incomingCall.leadCompany && incomingCall.leadName && (
+                <div style={{ fontSize: '0.85rem', opacity: 0.95, fontWeight: 500, marginBottom: '0.35rem' }}>
+                  🏢 {incomingCall.leadCompany}
+                </div>
+              )}
+
+              {/* Status Badge: Existing Lead vs New Customer */}
+              <div style={{ marginBottom: '0.5rem' }}>
+                {(incomingCall.leadName || incomingCall.leadCompany) ? (
+                  <span style={{ fontSize: '0.7rem', fontWeight: 700, backgroundColor: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    ✓ Existing CRM Lead
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.7rem', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.25)', color: 'white', padding: '2px 8px', borderRadius: '9999px' }}>
+                    🆕 New Customer
+                  </span>
+                )}
+              </div>
+
+              {/* Phone Number */}
+              <div style={{ fontSize: '0.88rem', fontFamily: 'monospace', opacity: 0.9, marginBottom: '1rem' }}>
+                📞 +91 {incomingCall.callerNumber?.replace(/\D/g, '').slice(-10) || incomingCall.callerName}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={rejectCall}
+                  style={{
+                    background: '#ef4444',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.5rem 1.25rem',
+                    borderRadius: '24px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)'
+                  }}
+                >
+                  <PhoneOff size={15} /> Reject
                 </button>
-                <button onClick={answerCall} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '24px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Phone size={14} /> Answer
+                <button
+                  type="button"
+                  onClick={answerCall}
+                  style={{
+                    background: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.5rem 1.25rem',
+                    borderRadius: '24px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <Phone size={15} /> Answer
                 </button>
               </div>
             </div>
