@@ -64,25 +64,17 @@ export const FREQUENCIES_CONFIG = [
 
 export const DEFAULT_HOLIDAYS_LIST = [
   { date: '2026-01-26', name: 'Republic Day' },
-  { date: '2026-03-03', name: 'Holi' },
+  { date: '2026-03-04', name: 'Holi' },
   { date: '2026-03-21', name: 'Eid-ul-Fitr' },
-  { date: '2026-04-03', name: 'Good Friday' },
   { date: '2026-04-14', name: 'Dr. Ambedkar Jayanti' },
-  { date: '2026-05-01', name: 'May Day / Labor Day' },
-  { date: '2026-05-27', name: 'Bakrid / Eid-ul-Adha' },
+  { date: '2026-05-01', name: 'May Day / Labour Day' },
+  { date: '2026-05-28', name: 'Bakrid / Eid-al-Adha' },
   { date: '2026-08-15', name: 'Independence Day' },
-  { date: '2026-09-04', name: 'Janmashtami' },
   { date: '2026-10-02', name: 'Mahatma Gandhi Jayanti' },
   { date: '2026-10-20', name: 'Dussehra / Vijayadashami' },
   { date: '2026-11-08', name: 'Diwali / Deepavali' },
-  { date: '2026-11-09', name: 'Govardhan Puja' },
-  { date: '2026-11-10', name: 'Bhai Dooj' },
   { date: '2026-11-24', name: 'Guru Nanak Jayanti' },
-  { date: '2026-12-25', name: 'Christmas Day' },
-  { date: '2027-01-26', name: 'Republic Day' },
-  { date: '2027-08-15', name: 'Independence Day' },
-  { date: '2027-10-02', name: 'Mahatma Gandhi Jayanti' },
-  { date: '2027-12-25', name: 'Christmas Day' }
+  { date: '2026-12-25', name: 'Christmas Day' }
 ];
 
 export function getISTDateParts(dateInput = new Date()) {
@@ -130,11 +122,15 @@ export function getISTDateParts(dateInput = new Date()) {
   }
 }
 
-export function isDateHoliday(dateInput = new Date(), customHolidays = []) {
+export function isDateHoliday(dateInput = new Date(), companyHolidays = null) {
   const { dateStr } = getISTDateParts(dateInput);
   if (!dateStr) return null;
-  const allHolidays = [...(customHolidays || []), ...DEFAULT_HOLIDAYS_LIST];
-  return allHolidays.find(h => h.date === dateStr) || null;
+  // If companyHolidays array is passed, strictly check within that configured list.
+  // Only use DEFAULT_HOLIDAYS_LIST if companyHolidays is null/undefined.
+  const list = Array.isArray(companyHolidays)
+    ? companyHolidays
+    : (companyHolidays === null || companyHolidays === undefined ? DEFAULT_HOLIDAYS_LIST : []);
+  return list.find(h => h.date === dateStr) || null;
 }
 
 export function isDateSunday(dateInput = new Date()) {
