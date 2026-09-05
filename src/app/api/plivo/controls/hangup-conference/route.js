@@ -39,8 +39,15 @@ export async function POST(req) {
         console.log('Controls API: Conference hangup background status:', confErr.message);
       }
 
-      // If customer call was still ringing, cancel it
-      if (session && session.status !== 'connected' && session.customer_call_uuid) {
+      // Hang up agent call leg so WebRTC softphone in browser disconnects immediately
+      if (session?.agent_call_uuid) {
+        try {
+          await client.calls.hangup(session.agent_call_uuid);
+        } catch (_e) {}
+      }
+
+      // If customer call was still ringing or active, terminate it
+      if (session?.customer_call_uuid) {
         try {
           await client.calls.cancel(session.customer_call_uuid);
         } catch (cancelErr) {

@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+export async function GET() {
+  return NextResponse.json({
+    status: 'ok',
+    service: 'Plivo Incoming Fallback Webhook',
+    method: 'POST only (configured in Plivo application)'
+  });
+}
+
 export async function POST(req) {
   try {
     const textData = await req.text();

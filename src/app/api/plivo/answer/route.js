@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req) {
   try {
@@ -7,6 +8,25 @@ export async function POST(req) {
     const customerNumber = url.searchParams.get('customer_number') || '';
 
     const role = url.searchParams.get('role') || 'agent';
+
+    // If customer answers, immediately mark call_sessions as connected with answer timestamp
+    if (role === 'customer' && roomName) {
+      try {
+        const adminClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+        await adminClient
+          .from('call_sessions')
+          .update({
+            status: 'connected',
+            customer_answer_time: new Date().toISOString()
+          })
+          .eq('room_name', roomName);
+      } catch (dbErr) {
+        console.error('Error marking customer answered in answer route:', dbErr);
+      }
+    }
     // Agent: endConferenceOnExit=true, startConferenceOnEnter=false
     // Customer: endConferenceOnExit=false, startConferenceOnEnter=true
     const endOnExit = (role === 'agent') ? 'true' : 'false';

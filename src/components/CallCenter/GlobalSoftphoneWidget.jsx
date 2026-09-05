@@ -118,6 +118,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const activeSessionRef = useRef(null);
   const agentDataRef = useRef(null);
   const announcementTimerRef = useRef(null);
+  const handleSessionTerminationAnnouncementRef = useRef(null);
 
   useEffect(() => {
     activeSessionRef.current = activeSession;
@@ -127,8 +128,44 @@ export default function GlobalSoftphoneWidget({ userId }) {
     agentDataRef.current = agentData;
   }, [agentData]);
 
+  const ringAudioRef = useRef(null);
+
+  const startRingingAudio = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!ringAudioRef.current) {
+        ringAudioRef.current = new Audio('/ringback.mp3');
+        ringAudioRef.current.loop = true;
+        ringAudioRef.current.volume = 0.55;
+      }
+      ringAudioRef.current.currentTime = 0;
+      const playPromise = ringAudioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => console.warn('Ringback audio autoplay:', e));
+      }
+    } catch (e) {
+      console.warn('Ringback audio error:', e);
+    }
+  }, []);
+
+  const stopRingingAudio = useCallback(() => {
+    try {
+      if (ringAudioRef.current) {
+        ringAudioRef.current.pause();
+        ringAudioRef.current.currentTime = 0;
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopRingingAudio();
+    };
+  }, [stopRingingAudio]);
+
   const triggerAnnouncement = useCallback(({ type, title, subtitle, speech, customerNumber }) => {
     setIsHidden(false);
+    stopRingingAudio();
 
     if (type === 'rejected') playAudioTone('rejected');
     else if (type === 'busy') playAudioTone('busy');
@@ -151,10 +188,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
     announcementTimerRef.current = setTimeout(() => {
       setCallAnnouncement(null);
     }, 12000);
-  }, []);
+  }, [stopRingingAudio]);
 
   const hangupCall = useCallback(async () => {
     const currentRoom = activeSessionRef.current?.room_name;
+
+    // Stop ringback audio immediately
+    stopRingingAudio();
 
     // 1. INSTANT UI RESET (0 ms latency!)
     setActiveCall(null);
@@ -192,15 +232,21 @@ export default function GlobalSoftphoneWidget({ userId }) {
         console.error(e);
       }
     }
-  }, []);
+  }, [stopRingingAudio]);
 
   const updateActiveSession = useCallback((newSession) => {
     setActiveSession(prev => {
       if (!prev && !newSession) return null;
       if (!prev && newSession) return newSession;
       if (prev && !newSession) {
-        // Session ended! Clean up browser WebRTC call!
-        hangupCall();
+        // Session ended from backend! Clean up local browser call WITHOUT re-calling hangup API
+        if (plivoClientRef.current) {
+          try { plivoClientRef.current.hangup(); } catch (e) {}
+        }
+        setActiveCall(null);
+        setOptimisticCall(null);
+        setCallDuration(0);
+        stopRingingAudio();
         return null;
       }
       if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
@@ -208,7 +254,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }
       return newSession;
     });
-  }, [hangupCall]);
+  }, [stopRingingAudio]);
 
   const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
 
@@ -365,28 +411,121 @@ export default function GlobalSoftphoneWidget({ userId }) {
     fetchAgent();
   }, [userId]);
 
-  // Realtime Active Session listener and polling backup
-  useEffect(() => {
-    if (!agentData) return;
+  const handleSessionTerminationAnnouncement = useCallback((sessionData) => {
+    if (!sessionData) return;
+    const cause = (sessionData.hangup_cause || '').toLowerCase();
+    const cleanNum = (sessionData.customer_number || '').replace(/[^0-9]/g, '').slice(-10);
 
-    const fetchSession = async () => {
+    if (cause === 'agent_hangup') return; // Agent deliberately ended it
+
+    // If customer was connected and answered, then hung up
+    if (sessionData.customer_answer_time || cause === 'customer_hangup') {
+      triggerAnnouncement({
+        type: 'ended',
+        title: 'Customer ने Call Disconnect कर दिया',
+        subtitle: 'Customer ne call end kar diya.',
+        speech: 'Customer ne call disconnect kar diya.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
+
+    // Customer cut / rejected while ringing
+    if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel')) {
+      triggerAnnouncement({
+        type: 'rejected',
+        title: 'Customer ने Call Cut कर दिया',
+        subtitle: 'Customer ne call disconnect ya reject kar diya.',
+        speech: 'Customer ne call cut kar diya hai.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'busy' || cause.includes('busy')) {
+      triggerAnnouncement({
+        type: 'busy',
+        title: 'Customer Busy है',
+        subtitle: 'Customer doosri call par vyast hai.',
+        speech: 'Customer doosri call par vyast hai.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
+      triggerAnnouncement({
+        type: 'no_answer',
+        title: 'Customer ने Phone नहीं उठाया',
+        subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
+        speech: 'Customer ne phone nahi uthaya.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'failed' || cause === 'customer_dial_error') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: 'Call Connect नहीं हो सका',
+        subtitle: 'Network issue ya unreachable number.',
+        speech: 'Call connect nahi ho paya.',
+        customerNumber: cleanNum
+      });
+    }
+  }, [triggerAnnouncement]);
+
+  useEffect(() => {
+    handleSessionTerminationAnnouncementRef.current = handleSessionTerminationAnnouncement;
+  }, [handleSessionTerminationAnnouncement]);
+
+  const fetchSession = useCallback(async () => {
+    if (!agentData) return;
+    try {
       const { data } = await getRecentCalls(agentData.id);
       if (data) {
         const active = data.find(c => {
           const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
-          const ageInMs = new Date() - new Date(c.created_at);
+          const ageInMs = Date.now() - new Date(c.created_at).getTime();
           if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 120000) return false;
           const isRecent = ageInMs < 1000 * 60 * 60;
           return isStatusActive && isRecent;
         });
-        updateActiveSession(active || null);
-        if (active) setOptimisticCall(null);
-      }
-    };
 
+        if (active) {
+          if (active.status === 'connected' || active.customer_answer_time) {
+            stopRingingAudio();
+          } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
+            startRingingAudio();
+          }
+          setOptimisticCall(null);
+          updateActiveSession(active);
+        } else {
+          // If we previously had an active session that just finished
+          const prev = activeSessionRef.current;
+          if (prev) {
+            stopRingingAudio();
+            const latest = data.find(c => c.id === prev.id) || data[0];
+            if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
+              handleSessionTerminationAnnouncement(latest);
+            }
+          }
+          updateActiveSession(null);
+          setOptimisticCall(null);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching softphone session:', err);
+    }
+  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
+
+  // Dynamic Polling: 1 second during active interaction, 5 seconds when idle
+  useEffect(() => {
+    if (!agentData) return;
     fetchSession();
 
-    // Subscribe to realtime database changes for call_sessions
+    const isEngaged = !!(activeCall || activeSession || optimisticCall);
+    const intervalMs = isEngaged ? 1000 : 5000;
+    const interval = setInterval(fetchSession, intervalMs);
+
+    return () => clearInterval(interval);
+  }, [agentData, activeCall, activeSession?.status, optimisticCall, fetchSession]);
+
+  // Realtime Active Session listener
+  useEffect(() => {
+    if (!agentData) return;
+
     const channel = supabase
       .channel(`agent_call_sessions_${agentData.id}`)
       .on('postgres_changes', {
@@ -399,56 +538,28 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (payload.eventType === 'DELETE' || !updated) {
           updateActiveSession(null);
           setOptimisticCall(null);
+          stopRingingAudio();
           return;
         }
 
         const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(updated.status);
-        const ageInMs = new Date() - new Date(updated.created_at);
+        const ageInMs = Date.now() - new Date(updated.created_at).getTime();
         const isRecent = ageInMs < 1000 * 60 * 60;
 
         if (isStatusActive && isRecent) {
-          updateActiveSession(updated);
+          if (updated.status === 'connected' || updated.customer_answer_time) {
+            stopRingingAudio();
+          } else if (updated.status === 'customer_ringing' || updated.status === 'ringing') {
+            startRingingAudio();
+          }
           setOptimisticCall(null);
+          updateActiveSession(updated);
         } else {
-          // Terminal session state: check if customer cut or rejected call before answering
+          // Terminal session state: trigger announcement
           const prevSession = activeSessionRef.current;
-          if (prevSession && prevSession.id === updated.id && !prevSession.customer_answer_time) {
-            const cause = (updated.hangup_cause || '').toLowerCase();
-            const cleanNum = (updated.customer_number || '').replace(/[^0-9]/g, '').slice(-10);
-
-            if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel')) {
-              triggerAnnouncement({
-                type: 'rejected',
-                title: 'Customer ने Call Cut कर दिया',
-                subtitle: 'Customer ne call disconnect ya reject kar diya.',
-                speech: 'Customer ne call cut kar diya hai.',
-                customerNumber: cleanNum
-              });
-            } else if (cause === 'busy' || cause.includes('busy')) {
-              triggerAnnouncement({
-                type: 'busy',
-                title: 'Customer Busy है',
-                subtitle: 'Customer doosri call par vyast hai.',
-                speech: 'Customer doosri call par vyast hai.',
-                customerNumber: cleanNum
-              });
-            } else if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
-              triggerAnnouncement({
-                type: 'no_answer',
-                title: 'Customer ने Phone नहीं उठाया',
-                subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
-                speech: 'Customer ne phone nahi uthaya.',
-                customerNumber: cleanNum
-              });
-            } else if (cause === 'failed' || cause === 'customer_dial_error') {
-              triggerAnnouncement({
-                type: 'failed',
-                title: 'Call Connect नहीं हो सका',
-                subtitle: 'Network issue ya unreachable number.',
-                speech: 'Call connect nahi ho paya.',
-                customerNumber: cleanNum
-              });
-            }
+          if (prevSession && prevSession.id === updated.id) {
+            stopRingingAudio();
+            handleSessionTerminationAnnouncement(updated);
           }
           updateActiveSession(null);
           setOptimisticCall(null);
@@ -456,14 +567,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
       })
       .subscribe();
 
-    // 5-second polling fallback to ensure state remains in sync even if websocket drops
-    const interval = setInterval(fetchSession, 5000);
-
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(interval);
     };
-  }, [agentData, supabase, updateActiveSession, triggerAnnouncement]);
+  }, [agentData, supabase, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
 
   const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
     if (!clientInstance) return;
@@ -553,54 +660,20 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         client.on('onCallTerminated', async () => {
+          stopRingingAudio();
           setActiveCall(null);
           setIncomingCall(null);
           stopDurationTimer();
           setCallDuration(0);
 
           const currentSession = activeSessionRef.current;
-          if (currentSession && !currentSession.customer_answer_time) {
-            // Call terminated before customer answered! Check outcome cause
+          if (currentSession) {
             try {
               const { data } = await getRecentCalls(agentDataRef.current?.id);
               if (data && data.length > 0) {
                 const latest = data.find(c => c.id === currentSession.id) || data[0];
                 if (latest && (latest.status === 'failed' || latest.status === 'ended')) {
-                  const cause = (latest.hangup_cause || '').toLowerCase();
-                  const cleanNum = (latest.customer_number || '').replace(/[^0-9]/g, '').slice(-10);
-                  if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel')) {
-                    triggerAnnouncement({
-                      type: 'rejected',
-                      title: 'Customer ने Call Cut कर दिया',
-                      subtitle: 'Customer ne call disconnect ya reject kar diya.',
-                      speech: 'Customer ne call cut kar diya hai.',
-                      customerNumber: cleanNum
-                    });
-                  } else if (cause === 'busy' || cause.includes('busy')) {
-                    triggerAnnouncement({
-                      type: 'busy',
-                      title: 'Customer Busy है',
-                      subtitle: 'Customer doosri call par vyast hai.',
-                      speech: 'Customer doosri call par vyast hai.',
-                      customerNumber: cleanNum
-                    });
-                  } else if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
-                    triggerAnnouncement({
-                      type: 'no_answer',
-                      title: 'Customer ने Phone नहीं उठाया',
-                      subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
-                      speech: 'Customer ne phone nahi uthaya.',
-                      customerNumber: cleanNum
-                    });
-                  } else if (cause === 'failed' || cause === 'customer_dial_error') {
-                    triggerAnnouncement({
-                      type: 'failed',
-                      title: 'Call Connect नहीं हो सका',
-                      subtitle: 'Network issue ya unreachable number.',
-                      speech: 'Call connect nahi ho paya.',
-                      customerNumber: cleanNum
-                    });
-                  }
+                  handleSessionTerminationAnnouncementRef.current?.(latest);
                 }
               }
             } catch (e) {
@@ -630,12 +703,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, []);
 
-  // Declarative Call Duration Timer based on activeSession status
+  // Declarative Call Duration Timer based on activeSession status or customer_answer_time
   useEffect(() => {
     let timerInterval = null;
-    if (activeSession && activeSession.status === 'connected') {
-      if (activeSession.customer_answer_time) {
-        const elapsed = Math.floor((new Date() - new Date(activeSession.customer_answer_time)) / 1000);
+    const isConnected = (activeSession && (activeSession.status === 'connected' || !!activeSession.customer_answer_time)) ||
+      (activeCall && activeCall.direction === 'inbound');
+
+    if (isConnected) {
+      if (activeSession?.customer_answer_time) {
+        const elapsed = Math.floor((Date.now() - new Date(activeSession.customer_answer_time).getTime()) / 1000);
         setCallDuration(Math.max(0, elapsed));
       }
       timerInterval = setInterval(() => {
@@ -648,7 +724,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [activeSession?.status, activeSession === null]);
+  }, [activeSession?.status, activeSession?.customer_answer_time, activeSession === null, activeCall?.direction]);
 
   const startDurationTimer = () => {
     // Handled declaratively
@@ -703,8 +779,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
     // Dismiss previous announcement
     setCallAnnouncement(null);
 
-    // 1. Play immediate audio dialing tone
+    // 1. Play immediate audio dialing tone & start in-browser ringing audio loop
     playAudioTone('dialing');
+    startRingingAudio();
 
     // 2. Set immediate optimistic UI state! (0 ms latency)
     setOptimisticCall({
@@ -730,6 +807,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       });
       const result = await res.json();
       if (result.error) {
+        stopRingingAudio();
         setOptimisticCall(null);
         alert("Call Error: " + result.error);
       } else {
@@ -738,8 +816,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (result.session) {
           updateActiveSession(result.session);
         }
+        setOptimisticCall(null);
       }
     } catch (err) {
+      stopRingingAudio();
       setOptimisticCall(null);
       alert("Failed to start call");
     }
@@ -747,7 +827,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   if (!agentData) return null; // Don't show widget if not an agent
 
-  const hasActiveInteraction = activeCall || incomingCall || activeSession || optimisticCall;
+  const hasActiveInteraction = !!(activeCall || incomingCall || (activeSession && activeSession.status !== 'ended') || optimisticCall);
 
   // If user chose to hide the widget, render a persistent mini launcher pill (unless incoming call arrives)
   if (isHidden && !incomingCall) {
@@ -1007,17 +1087,26 @@ export default function GlobalSoftphoneWidget({ userId }) {
           )}
 
           {/* Active Call Status & Controls */}
-          {(activeCall || optimisticCall || (activeSession && activeSession.status !== 'ended')) && (
+          {((activeSession && activeSession.status !== 'ended') || optimisticCall || (activeCall && activeCall.direction === 'inbound')) && (
             <div style={{ background: 'var(--bg-primary)', padding: '1.25rem 1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', color: activeSession?.status === 'connected' ? '#10b981' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                color: (activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound')) ? '#10b981' : '#f59e0b',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                marginBottom: '0.35rem'
+              }}>
                 <div style={{
                   width: '8px',
                   height: '8px',
                   borderRadius: '50%',
-                  background: activeSession?.status === 'connected' ? '#10b981' : '#f59e0b',
-                  boxShadow: activeSession?.status === 'connected' ? '0 0 8px #10b981' : '0 0 8px #f59e0b'
+                  background: (activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound')) ? '#10b981' : '#f59e0b',
+                  boxShadow: (activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound')) ? '0 0 8px #10b981' : '0 0 8px #f59e0b'
                 }} />
-                {activeSession?.status === 'connected'
+                {(activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound'))
                   ? 'Call Connected'
                   : (activeSession?.status === 'customer_ringing'
                       ? 'Ringing Customer...'
@@ -1030,7 +1119,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
 
               <div style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '1rem', letterSpacing: '0.5px' }}>
-                {activeSession?.status === 'connected' ? formatDuration(callDuration) : '00:00'}
+                {(activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound')) ? formatDuration(callDuration) : '00:00'}
               </div>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                 {activeCall && (
@@ -1054,9 +1143,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
           )}
 
           {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
-          {activeSession && (
+          {activeSession && activeSession.status !== 'ended' && (
             <div style={{ marginTop: '0.5rem' }}>
-              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={() => setActiveSession(null)} />
+              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={hangupCall} />
             </div>
           )}
 

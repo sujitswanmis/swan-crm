@@ -262,7 +262,14 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         console.error('Error ending conference:', confErr.message);
       }
 
-      // 2. Cancel/hangup customer call if still ringing (not answered)
+      // 2. Hangup agent call leg so WebRTC browser disconnects immediately
+      if (session.agent_call_uuid) {
+        try {
+          await client.calls.hangup(session.agent_call_uuid);
+        } catch (_e) {}
+      }
+
+      // 3. Cancel/hangup customer call if still ringing (not answered)
       if (session.status !== 'connected' && session.customer_call_uuid) {
         try {
           await client.calls.cancel(session.customer_call_uuid);

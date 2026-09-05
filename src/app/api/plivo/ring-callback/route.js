@@ -80,8 +80,14 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // --- Handle CUSTOMER leg terminal events ---
-    if (leg === 'customer' && TERMINAL_CUSTOMER_STATUSES.has(callStatus)) {
+    // --- Handle CUSTOMER leg terminal events (rejection, busy, no-answer, or customer hangup) ---
+    const isCustomerTerminal = leg === 'customer' && (
+      TERMINAL_CUSTOMER_STATUSES.has(callStatus) || 
+      callStatus === 'completed' || 
+      hangupCause !== ''
+    );
+
+    if (isCustomerTerminal) {
       // Find session by room_name first (stable), fallback to call UUID
       let session = null;
 
@@ -108,34 +114,46 @@ export async function POST(req) {
         return new NextResponse('OK', { status: 200 });
       }
 
-      // Idempotency: skip if already connected or ended
-      if (session.customer_answer_time || session.status === 'connected' || session.status === 'ended') {
+      // Idempotency: skip only if already marked ended or failed
+      if (session.status === 'ended' || session.status === 'failed') {
         console.log(`ring-callback: session already ${session.status}, skipping terminal handling`);
         return new NextResponse('OK', { status: 200 });
       }
 
       const endTime = new Date();
+      const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
       const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
       const startTime = session.start_time ? new Date(session.start_time) : (agentAnsTime || endTime);
-      const ringingSec = agentAnsTime
-        ? Math.max(0, Math.floor((endTime - agentAnsTime) / 1000))
-        : Math.max(0, Math.floor((endTime - startTime) / 1000));
 
-      const newStatus = terminalStatusLabel(callStatus, hangupCause);
+      let ringingSec = 0;
+      let talkSec = 0;
+      let determinedCause = 'rejected';
 
-      const normalizedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
+      if (customerAnsTime) {
+        // Customer had answered and was in conversation, then hung up
+        talkSec = Math.max(0, Math.floor((endTime - customerAnsTime) / 1000));
+        ringingSec = Math.max(0, Math.floor((customerAnsTime - (agentAnsTime || startTime)) / 1000));
+        determinedCause = 'customer_hangup';
+      } else {
+        // Customer disconnected or failed before answering
+        ringingSec = agentAnsTime
+          ? Math.max(0, Math.floor((endTime - agentAnsTime) / 1000))
+          : Math.max(0, Math.floor((endTime - startTime) / 1000));
+        talkSec = 0;
+        determinedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
+      }
 
       // Update DB with terminal status and normalized cause
       await adminClient.from('call_sessions').update({
-        status: newStatus,
-        hangup_cause: normalizedCause,
+        status: 'ended',
+        hangup_cause: determinedCause,
         hangup_source: hangupSource || 'customer_leg',
         end_time: endTime.toISOString(),
         ringing_duration_sec: ringingSec,
-        talk_duration_sec: 0,
+        talk_duration_sec: talkSec,
       }).eq('id', session.id);
 
-      console.log(`ring-callback: customer ${callStatus} for room=${session.room_name}, hanging up conference/agent`);
+      console.log(`ring-callback: customer ${callStatus} / cause=${determinedCause} for room=${session.room_name}, hanging up conference/agent`);
 
       // Immediately clean up conference and employee leg
       const plivoClient = new plivo.Client(
@@ -157,7 +175,7 @@ export async function POST(req) {
         } catch (_e) {}
       }
 
-      // 3. Cancel/hangup customer leg if still active (e.g. ring-callback fired before hangup)
+      // 3. Cancel/hangup customer leg if still active
       const customerUuid = session.customer_call_uuid || callUuid;
       if (customerUuid && callStatus !== 'completed') {
         try {
@@ -171,10 +189,13 @@ export async function POST(req) {
     }
 
     // --- Handle NON-customer-leg or ringing/in-progress status updates ---
-    // Update DB status for agent or generic leg ringing events
+    // Update DB status for agent or customer ringing events
     if (callStatus === 'ringing') {
-      // Agent ringing — update status to ringing if still initiated
-      if (callUuid) {
+      if (leg === 'customer' && roomFromQuery) {
+        await adminClient.from('call_sessions').update({
+          status: 'customer_ringing'
+        }).eq('room_name', roomFromQuery);
+      } else if (callUuid) {
         const { data: agentSession } = await adminClient
           .from('call_sessions')
           .select('id, status')
