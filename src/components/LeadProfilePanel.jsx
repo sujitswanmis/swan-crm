@@ -1,19 +1,309 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
 import { enqueueOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { X, Send } from 'lucide-react';
+import { X, Send, Play, Pause, Phone, Volume2, RotateCw } from 'lucide-react';
+
+// Strict IST Timezone Formatter
+const formatIST = (isoString) => {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }) + ' IST';
+  } catch (e) {
+    return String(isoString);
+  }
+};
+
+const formatDuration = (seconds) => {
+  if (!seconds || seconds <= 0) return '00:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const getCallStatusBadge = (status, hangupCause, talkDuration) => {
+  const cause = (hangupCause || '').toLowerCase();
+  const st = (status || '').toLowerCase();
+
+  if (talkDuration > 0 || st === 'connected' || cause === 'customer_hangup') {
+    return {
+      label: 'Connected',
+      bg: '#ecfdf5',
+      color: '#059669',
+      border: '#a7f3d0'
+    };
+  }
+  if (cause === 'busy' || cause.includes('busy')) {
+    return {
+      label: 'Customer Busy',
+      bg: '#fffbeb',
+      color: '#d97706',
+      border: '#fde68a'
+    };
+  }
+  if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel')) {
+    return {
+      label: 'Cut / Declined',
+      bg: '#fef2f2',
+      color: '#dc2626',
+      border: '#fecaca'
+    };
+  }
+  if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
+    return {
+      label: 'No Answer',
+      bg: '#f8fafc',
+      color: '#64748b',
+      border: '#cbd5e1'
+    };
+  }
+  if (cause === 'failed' || st === 'failed') {
+    return {
+      label: 'Failed / Unreachable',
+      bg: '#fef2f2',
+      color: '#dc2626',
+      border: '#fecaca'
+    };
+  }
+  return {
+    label: st ? st.toUpperCase() : 'CALL',
+    bg: '#f1f5f9',
+    color: '#475569',
+    border: '#cbd5e1'
+  };
+};
+
+function CallAudioPlayer({ audioUrl }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef(null);
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      document.querySelectorAll('audio').forEach(el => {
+        if (el !== audioRef.current) el.pause();
+      });
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(e => console.error("Audio play error:", e));
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e) => {
+    const time = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const formatSec = (sec) => {
+    if (isNaN(sec) || !isFinite(sec)) return '00:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div style={{
+      marginTop: '0.6rem',
+      padding: '0.6rem 0.75rem',
+      backgroundColor: 'var(--bg-surface, #ffffff)',
+      borderRadius: '8px',
+      border: '1px solid var(--border-light, #e2e8f0)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.75rem'
+    }}>
+      <audio
+        ref={audioRef}
+        src={audioUrl}
+        preload="metadata"
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+        onPause={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+      />
+
+      <button
+        type="button"
+        onClick={togglePlay}
+        title={isPlaying ? "Pause Recording" : "Play Recording"}
+        style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '50%',
+          backgroundColor: isPlaying ? '#dc2626' : '#059669',
+          color: '#ffffff',
+          border: 'none',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          flexShrink: 0,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          transition: 'all 0.15s ease'
+        }}
+      >
+        {isPlaying ? <Pause size={14} fill="#ffffff" /> : <Play size={14} fill="#ffffff" style={{ marginLeft: '2px' }} />}
+      </button>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          step={0.1}
+          value={currentTime}
+          onChange={handleSeek}
+          style={{
+            width: '100%',
+            height: '4px',
+            accentColor: '#059669',
+            cursor: 'pointer'
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)', fontFamily: 'monospace' }}>
+          <span>{formatSec(currentTime)}</span>
+          <span>{formatSec(duration)}</span>
+        </div>
+      </div>
+
+      <a
+        href={audioUrl}
+        target="_blank"
+        rel="noreferrer"
+        download
+        title="Download / Open Audio"
+        style={{
+          color: 'var(--text-secondary, #64748b)',
+          padding: '4px',
+          borderRadius: '4px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          textDecoration: 'none'
+        }}
+      >
+        <Volume2 size={16} />
+      </a>
+    </div>
+  );
+}
 
 export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
+  const [callLogs, setCallLogs] = useState([]);
+  const [isLoadingCalls, setIsLoadingCalls] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState('all');
   const [newNote, setNewNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
+
+  const fetchCalls = async () => {
+    if (!lead) return;
+    setIsLoadingCalls(true);
+    try {
+      const rawList = [
+        lead.phone,
+        lead.business_contact_1,
+        lead.business_contact_2,
+        lead.business_alt_1,
+        lead.business_alt_2,
+        lead.cp1_mobile_2,
+        lead.cp1_alt_1,
+        lead.cp1_alt_2,
+        lead.cp2_mobile_1,
+        lead.cp2_mobile_2,
+        lead.cp2_alt_1,
+        lead.cp2_alt_2,
+        lead.cp3_mobile_1,
+        lead.cp3_mobile_2,
+        lead.cp3_alt_1,
+        lead.cp3_alt_2,
+        lead.mobile,
+        lead.contact_no_2,
+        lead.business_contact_in_aio,
+        lead.cp_mobile_in_aio,
+        lead['Business Contact in AIO'],
+        lead['CP Mobile in AIO'],
+        lead.business_contact_aio,
+        lead.cp_mobile_aio
+      ];
+
+      const digitsSet = new Set();
+      rawList.forEach(item => {
+        if (!item) return;
+        const tokens = String(item).split(/[,;\/\s]+/);
+        tokens.forEach(tok => {
+          const d = tok.replace(/\D/g, '');
+          if (d.length >= 10) {
+            digitsSet.add(d.slice(-10));
+          }
+        });
+      });
+
+      const unique10Digits = Array.from(digitsSet);
+      if (unique10Digits.length === 0) {
+        setCallLogs([]);
+        setIsLoadingCalls(false);
+        return;
+      }
+
+      const searchPatterns = unique10Digits.flatMap(d => [
+        `+91${d}`,
+        d,
+        `91${d}`,
+        `0${d}`
+      ]);
+
+      const { data, error } = await supabase
+        .from('call_sessions')
+        .select('id, room_name, customer_number, status, start_time, end_time, customer_answer_time, talk_duration_sec, ringing_duration_sec, hangup_cause, recording_url, created_at, call_agents(display_name)')
+        .in('customer_number', searchPatterns)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setCallLogs(data);
+      }
+    } catch (err) {
+      console.error("Error fetching call logs for lead:", err);
+    } finally {
+      setIsLoadingCalls(false);
+    }
+  };
 
   useEffect(() => {
     if (!lead || !isOpen) return;
@@ -72,9 +362,10 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       }
     };
     fetchNotes();
+    fetchCalls();
 
     // Subscribe to new notes
-    const channel = supabase
+    const noteChannel = supabase
       .channel(`notes-${lead.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes', filter: `lead_id=eq.${lead.id}` }, (payload) => {
         setNotes((prev) => {
@@ -84,10 +375,60 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       })
       .subscribe();
 
+    // Subscribe to call session updates (new calls or newly attached recordings)
+    const callChannel = supabase
+      .channel(`lead-calls-${lead.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_sessions' }, () => {
+        fetchCalls();
+      })
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(noteChannel);
+      supabase.removeChannel(callChannel);
     };
   }, [lead, isOpen]);
+
+  // Unified chronological timeline of notes & calls
+  const unifiedHistory = useMemo(() => {
+    const list = [];
+
+    // Format notes
+    notes.forEach(n => {
+      list.push({
+        id: `note_${n.id}`,
+        type: 'note',
+        createdAt: n.created_at,
+        text: n.note_text,
+        createdBy: n.created_by,
+        raw: n
+      });
+    });
+
+    // Format calls
+    callLogs.forEach(c => {
+      list.push({
+        id: `call_${c.id}`,
+        type: 'call',
+        createdAt: c.created_at || c.start_time,
+        customerNumber: c.customer_number,
+        status: c.status,
+        hangupCause: c.hangup_cause,
+        talkDuration: c.talk_duration_sec || 0,
+        ringingDuration: c.ringing_duration_sec || 0,
+        recordingUrl: c.recording_url,
+        agentName: c.call_agents?.display_name || '',
+        raw: c
+      });
+    });
+
+    // Sort descending (latest on top)
+    list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    if (historyFilter === 'calls') return list.filter(item => item.type === 'call');
+    if (historyFilter === 'notes') return list.filter(item => item.type === 'note');
+    return list;
+  }, [notes, callLogs, historyFilter]);
 
   const handleAddNote = async (e) => {
     e.preventDefault();
@@ -346,22 +687,180 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
         {/* Show Notes Section only if mode is history or not editing */}
         {(!isEditing || mode === 'history') && (
           <>
-            {/* Notes Section */}
+            {/* Notes & Call History Section */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Interaction History</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                  Interaction & Call History
+                  <button
+                    type="button"
+                    onClick={fetchCalls}
+                    title="Refresh Call History"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      color: 'var(--text-secondary)'
+                    }}
+                  >
+                    <RotateCw size={14} style={{ animation: isLoadingCalls ? 'spin 1s linear infinite' : 'none' }} />
+                  </button>
+                </h3>
+
+                {/* Filter Pills */}
+                <div style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'var(--bg-primary, #f1f5f9)', padding: '3px', borderRadius: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFilter('all')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: historyFilter === 'all' ? 'var(--accent-color, #0284c7)' : 'transparent',
+                      color: historyFilter === 'all' ? '#ffffff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    All ({notes.length + callLogs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFilter('calls')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: historyFilter === 'calls' ? '#059669' : 'transparent',
+                      color: historyFilter === 'calls' ? '#ffffff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    📞 Calls ({callLogs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFilter('notes')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: historyFilter === 'notes' ? 'var(--accent-color, #0284c7)' : 'transparent',
+                      color: historyFilter === 'notes' ? '#ffffff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    📝 Notes ({notes.length})
+                  </button>
+                </div>
+              </div>
               
-              {notes.length === 0 ? (
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>No notes yet.</p>
+              {unifiedHistory.length === 0 ? (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  No interaction or call history yet.
+                </p>
               ) : (
-                notes.map(note => (
-                  <div key={note.id} style={{ padding: '1rem', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.9rem' }}>
-                    <p style={{ marginBottom: '0.5rem' }}>{note.note_text}</p>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{note.created_by}</span>
-                      <span>{new Date(note.created_at).toLocaleString()}</span>
+                unifiedHistory.map(item => {
+                  if (item.type === 'call') {
+                    const badge = getCallStatusBadge(item.status, item.hangupCause, item.talkDuration);
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '0.85rem 1rem',
+                          backgroundColor: 'var(--th-bg, #f8fafc)',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light, #e2e8f0)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem'
+                        }}
+                      >
+                        {/* Call Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              backgroundColor: item.talkDuration > 0 ? '#dcfce7' : '#fee2e2',
+                              color: item.talkDuration > 0 ? '#16a34a' : '#dc2626',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Phone size={12} strokeWidth={2.5} />
+                            </div>
+                            <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
+                              Outbound Call ({item.customerNumber})
+                            </span>
+                          </div>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            borderRadius: '9999px',
+                            backgroundColor: badge.bg,
+                            color: badge.color,
+                            border: `1px solid ${badge.border}`
+                          }}>
+                            {badge.label}
+                          </span>
+                        </div>
+
+                        {/* Call Metrics */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          <span>⏱️ <b>Talk Duration:</b> {formatDuration(item.talkDuration)}</span>
+                          {item.ringingDuration > 0 && <span>🔔 Ringing: {item.ringingDuration}s</span>}
+                          {item.agentName && <span>👤 Agent: {item.agentName}</span>}
+                        </div>
+
+                        {/* Call Recording Play/Pause Audio Player */}
+                        {item.recordingUrl ? (
+                          <CallAudioPlayer audioUrl={item.recordingUrl} />
+                        ) : item.talkDuration > 0 ? (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: '#b45309',
+                            backgroundColor: '#fef3c7',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginTop: '2px'
+                          }}>
+                            <span>⏳ Recording process ho rahi hai...</span>
+                          </div>
+                        ) : null}
+
+                        {/* IST Timestamp */}
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'flex-end', marginTop: '0.2rem' }}>
+                          <span>📅 {formatIST(item.createdAt)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Note item
+                  return (
+                    <div key={item.id} style={{ padding: '1rem', backgroundColor: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                      <p style={{ marginBottom: '0.5rem', whiteSpace: 'pre-wrap' }}>{item.text}</p>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>👤 {item.createdBy}</span>
+                        <span>📅 {formatIST(item.createdAt)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 

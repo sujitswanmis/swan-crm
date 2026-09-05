@@ -74,6 +74,8 @@ export async function POST(req) {
       session = data;
     }
 
+    const recordUrl = event.DialBLegRecordingUrl || event.RecordingUrl || event.RecordUrl || '';
+
     if (session && session.status !== 'ended') {
       const determinedCause = mapDialOutcome(dialStatus, hangupCause);
       const endTime = new Date();
@@ -91,7 +93,7 @@ export async function POST(req) {
         ringingSec = Math.max(0, Math.floor((endTime - (agentAnsTime || startTime)) / 1000));
       }
 
-      await adminClient.from('call_sessions').update({
+      const updateData = {
         status: 'ended',
         hangup_cause: determinedCause,
         hangup_source: 'plivo_dial',
@@ -99,7 +101,13 @@ export async function POST(req) {
         customer_call_uuid: bLegUuid || session.customer_call_uuid,
         talk_duration_sec: talkSec,
         ringing_duration_sec: ringingSec
-      }).eq('id', session.id);
+      };
+
+      if (recordUrl) {
+        updateData.recording_url = recordUrl;
+      }
+
+      await adminClient.from('call_sessions').update(updateData).eq('id', session.id);
     }
 
     // Return Hangup XML so Plivo cleanly terminates the call flow

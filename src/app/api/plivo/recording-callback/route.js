@@ -11,18 +11,37 @@ export async function POST(req) {
     const searchParams = new URLSearchParams(textData);
     const event = Object.fromEntries(searchParams);
     
-    const recordUrl = event.RecordUrl;
-    const recordDuration = event.RecordDuration;
+    const recordUrl = event.RecordUrl || event.RecordingUrl || event.DialBLegRecordingUrl || '';
+    const recordDuration = parseInt(event.RecordDuration || event.RecordingDuration || event.DialBLegDuration || '0', 10);
+    const callUuid = event.CallUUID || event.DialBLegUUID || event.DialALegUUID || '';
 
-    if (roomName && recordUrl) {
+    if (recordUrl) {
       const adminClient = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
-      await adminClient.from('call_sessions').update({
-        recording_url: recordUrl
-      }).eq('room_name', roomName);
+      let targetSession = null;
+      if (roomName) {
+        const { data } = await adminClient.from('call_sessions').select('id, talk_duration_sec').eq('room_name', roomName).maybeSingle();
+        targetSession = data;
+      }
+      if (!targetSession && callUuid) {
+        const { data } = await adminClient.from('call_sessions').select('id, talk_duration_sec')
+          .or(`agent_call_uuid.eq.${callUuid},customer_call_uuid.eq.${callUuid}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        targetSession = data;
+      }
+
+      if (targetSession) {
+        const updatePayload = { recording_url: recordUrl };
+        if (recordDuration && (!targetSession.talk_duration_sec || targetSession.talk_duration_sec === 0)) {
+          updatePayload.talk_duration_sec = recordDuration;
+        }
+        await adminClient.from('call_sessions').update(updatePayload).eq('id', targetSession.id);
+      }
     }
 
     return new NextResponse('OK', { status: 200 });
