@@ -36,16 +36,11 @@ export async function POST(req) {
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
 
-    // waitSound loops ringback.wav for the AGENT while waiting for customer.
-    // Only set on the agent leg — customer leg has no waitSound.
-    // Audio stops automatically when startConferenceOnEnter fires (customer joins).
-    const waitSoundAttr = (role === 'agent')
-      ? ` waitSound="${appBaseUrl}/ringback.wav"`
-      : '';
-
+    // Note: Ringing tone is handled client-side by the softphone widget so that it cuts off
+    // instantly upon pickup without relying on Plivo conference waitSound streaming into the call mixer.
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}"${waitSoundAttr}>
+    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">
         ${roomName}
     </Conference>
 </Response>`;

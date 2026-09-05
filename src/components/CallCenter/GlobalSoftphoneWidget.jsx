@@ -12,12 +12,13 @@ import { createClient } from '@/utils/supabase/client';
 class IndianRingbackTone {
   constructor() {
     this.ctx = null;
+    this.masterGain = null;
     this.timer = null;
     this.isPlaying = false;
   }
 
   _burst(startTime) {
-    if (!this.ctx || this.ctx.state === 'closed') return;
+    if (!this.ctx || this.ctx.state === 'closed' || !this.masterGain || !this.isPlaying) return;
     const osc1 = this.ctx.createOscillator();
     const osc2 = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -29,12 +30,12 @@ class IndianRingbackTone {
 
     osc1.connect(gain);
     osc2.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain);
 
     const dur = 0.4;
     gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(0.09, startTime + 0.025);
-    gain.gain.setValueAtTime(0.09, startTime + dur - 0.025);
+    gain.gain.linearRampToValueAtTime(0.08, startTime + 0.025);
+    gain.gain.setValueAtTime(0.08, startTime + dur - 0.025);
     gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
 
     osc1.start(startTime);
@@ -56,6 +57,10 @@ class IndianRingbackTone {
         this.ctx.resume();
       }
 
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+      this.masterGain.connect(this.ctx.destination);
+
       const schedule = () => {
         if (!this.isPlaying || !this.ctx || this.ctx.state === 'closed') return;
         const now = this.ctx.currentTime;
@@ -75,6 +80,13 @@ class IndianRingbackTone {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.masterGain) {
+      try {
+        this.masterGain.gain.setValueAtTime(0, this.ctx?.currentTime || 0);
+        this.masterGain.disconnect();
+      } catch (e) {}
+      this.masterGain = null;
     }
     if (this.ctx && this.ctx.state !== 'closed') {
       try {
@@ -299,6 +311,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [stopRingingAudio]);
 
   const updateActiveSession = useCallback((newSession) => {
+    if (newSession && (newSession.status === 'connected' || newSession.customer_answer_time)) {
+      stopRingingAudio();
+    }
+
     setActiveSession(prev => {
       if (!prev && !newSession) return null;
       if (!prev && newSession) return newSession;
@@ -319,6 +335,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
       return newSession;
     });
   }, [stopRingingAudio]);
+
+  // Auto-stop ringing immediately as soon as activeSession is connected or answered
+  useEffect(() => {
+    if (activeSession && (activeSession.status === 'connected' || activeSession.customer_answer_time)) {
+      stopRingingAudio();
+    }
+  }, [activeSession?.status, activeSession?.customer_answer_time, stopRingingAudio]);
 
   const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
 
@@ -580,7 +603,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     fetchSession();
 
     const isEngaged = !!(activeCall || activeSession || optimisticCall);
-    const intervalMs = isEngaged ? 1000 : 5000;
+    const intervalMs = isEngaged ? 800 : 5000;
     const interval = setInterval(fetchSession, intervalMs);
 
     return () => clearInterval(interval);
