@@ -19,7 +19,8 @@ import {
   isDateHoliday,
   isDateSunday,
   formatDurationHuman,
-  calculateDelayStatus
+  calculateDelayStatus,
+  getISTDateParts
 } from '@/utils/checklistUtils';
 import {
   getChecklistTemplates,
@@ -92,6 +93,32 @@ export default function ChecklistModule({
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState('ALL');
   const [dashboardSearchEmployee, setDashboardSearchEmployee] = useState('');
   const [dashboardLeaderboardScoreFilter, setDashboardLeaderboardScoreFilter] = useState('ALL');
+
+  // Compliance & Verification Filters & Pagination State
+  const initialComplianceRange = useMemo(() => computeDateRange('this_month'), []);
+  const [complianceDatePreset, setComplianceDatePreset] = useState('this_month'); // 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom'
+  const [complianceStartDate, setComplianceStartDate] = useState(initialComplianceRange.startDate);
+  const [complianceEndDate, setComplianceEndDate] = useState(initialComplianceRange.endDate);
+  const [complianceSearchQuery, setComplianceSearchQuery] = useState('');
+  const [complianceStatusFilter, setComplianceStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
+  const [complianceTimingFilter, setComplianceTimingFilter] = useState('ALL'); // 'ALL' | 'ON_TIME' | 'DELAYED'
+  const [compliancePage, setCompliancePage] = useState(1);
+  const [compliancePageSize, setCompliancePageSize] = useState(25);
+
+  const handleCompliancePresetChange = (preset) => {
+    setComplianceDatePreset(preset);
+    const range = computeDateRange(preset, complianceStartDate, complianceEndDate);
+    setComplianceStartDate(range.startDate);
+    setComplianceEndDate(range.endDate);
+    setCompliancePage(1);
+  };
+
+  const handleComplianceDateRangeChange = ({ startDate, endDate, preset }) => {
+    setComplianceDatePreset(preset || 'custom');
+    setComplianceStartDate(startDate);
+    setComplianceEndDate(endDate);
+    setCompliancePage(1);
+  };
 
   // View Mode for My Checklists: 'tiles' | 'table'
   const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
@@ -532,23 +559,26 @@ export default function ChecklistModule({
   const [verifyingSubmission, setVerifyingSubmission] = useState(null);
   const [verifyRemarks, setVerifyRemarks] = useState('');
 
-  // Initial load
+  // Initial load: load master records & prefetch all data silently in background
   useEffect(() => {
     loadEmployees();
     loadDepartments();
+    loadEmployeeDashboard(dashboardDate, true);
+    loadTemplates(true);
+    loadCompliance(true);
   }, []);
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
-      loadCompliance();
-      loadTemplates();
-      loadEmployeeDashboard(dashboardDate);
+      loadCompliance(true);
+      loadTemplates(true);
+      loadEmployeeDashboard(dashboardDate, true);
     } else if (activeTab === 'my_checklists') {
-      loadEmployeeDashboard(dashboardDate);
+      loadEmployeeDashboard(dashboardDate, dashboardChecklists.length > 0);
     } else if (activeTab === 'templates') {
-      loadTemplates();
+      loadTemplates(templates.length > 0);
     } else if (activeTab === 'compliance') {
-      loadCompliance();
+      loadCompliance(complianceLogs.length > 0);
     } else if (activeTab === 'holidays') {
       loadHolidays();
     }
@@ -615,7 +645,7 @@ export default function ChecklistModule({
   };
 
   const loadEmployeeDashboard = async (targetDateStr = dashboardDate, silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent && dashboardChecklists.length === 0) setLoading(true);
     try {
       const targetObj = targetDateStr ? new Date(`${targetDateStr}T12:00:00`) : new Date();
       const res = await getEmployeeChecklistDashboard({
@@ -630,12 +660,12 @@ export default function ChecklistModule({
       console.error(e);
       if (!silent) showNotification('Failed to load checklists', true);
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   };
 
-  const loadTemplates = async () => {
-    setLoading(true);
+  const loadTemplates = async (silent = false) => {
+    if (!silent && templates.length === 0) setLoading(true);
     try {
       const res = await getChecklistTemplates({
         frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency
@@ -645,14 +675,14 @@ export default function ChecklistModule({
       }
     } catch (e) {
       console.error(e);
-      showNotification('Failed to load checklist templates', true);
+      if (!silent) showNotification('Failed to load checklist templates', true);
     } finally {
       setLoading(false);
     }
   };
 
   const loadCompliance = async (silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent && complianceLogs.length === 0) setLoading(true);
     try {
       const res = await getChecklistComplianceReport({
         frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency
@@ -664,7 +694,7 @@ export default function ChecklistModule({
       console.error(e);
       if (!silent) showNotification('Failed to load compliance report', true);
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -2516,7 +2546,7 @@ export default function ChecklistModule({
             </div>
           </div>
 
-          {loading && (
+          {loading && liveDashboardChecklists.length === 0 && (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
               <RefreshCw className="spin" size={32} style={{ margin: '0 auto 1rem' }} />
               <p>Loading scheduled checklists...</p>
@@ -3504,32 +3534,92 @@ export default function ChecklistModule({
       {/* ========================================================================= */}
       {activeTab === 'compliance' && (() => {
         const teamEmailsSet = new Set(myReportingTeam.map(e => (e.email || '').toLowerCase().trim()));
-        const displayedComplianceLogs = (complianceTeamFilter === 'MY_TEAM' && teamEmailsSet.size > 0)
+        let filteredLogs = (complianceTeamFilter === 'MY_TEAM' && teamEmailsSet.size > 0)
           ? complianceLogs.filter(log => teamEmailsSet.has((log.employee_email || '').toLowerCase().trim()))
           : complianceLogs;
 
+        // 1. Date preset / range filter (IST aligned)
+        if (complianceDatePreset !== 'all' && (complianceStartDate || complianceEndDate)) {
+          filteredLogs = filteredLogs.filter(log => {
+            const raw = log.submitted_at || log.created_at;
+            if (!raw) return true;
+            const logDateStr = getISTDateParts(raw).dateStr;
+            if (complianceStartDate && logDateStr < complianceStartDate) return false;
+            if (complianceEndDate && logDateStr > complianceEndDate) return false;
+            return true;
+          });
+        }
+
+        // 2. Verification status filter
+        if (complianceStatusFilter !== 'ALL') {
+          filteredLogs = filteredLogs.filter(log => (log.verification_status || 'PENDING') === complianceStatusFilter);
+        }
+
+        // 3. Timing delay filter
+        if (complianceTimingFilter !== 'ALL') {
+          if (complianceTimingFilter === 'DELAYED') {
+            filteredLogs = filteredLogs.filter(log => Boolean(log.delayInfo?.isDelayed));
+          } else if (complianceTimingFilter === 'ON_TIME') {
+            filteredLogs = filteredLogs.filter(log => !log.delayInfo?.isDelayed);
+          }
+        }
+
+        // 4. Search query filter
+        if (complianceSearchQuery.trim()) {
+          const q = complianceSearchQuery.toLowerCase().trim();
+          filteredLogs = filteredLogs.filter(log => {
+            return (
+              (log.employee_name || '').toLowerCase().includes(q) ||
+              (log.employee_email || '').toLowerCase().includes(q) ||
+              (log.template_title || '').toLowerCase().includes(q) ||
+              (log.department || '').toLowerCase().includes(q) ||
+              (log.period_key || '').toLowerCase().includes(q) ||
+              (log.submission_notes || '').toLowerCase().includes(q)
+            );
+          });
+        }
+
+        // KPI Counts
+        const totalSubmissions = filteredLogs.length;
+        const pendingCount = filteredLogs.filter(l => (l.verification_status || 'PENDING') === 'PENDING').length;
+        const approvedCount = filteredLogs.filter(l => l.verification_status === 'APPROVED').length;
+        const delayedCount = filteredLogs.filter(l => Boolean(l.delayInfo?.isDelayed)).length;
+
+        // 5. Pagination calculation
+        const totalPages = Math.max(1, Math.ceil(totalSubmissions / compliancePageSize));
+        const currentPage = Math.min(compliancePage, totalPages);
+        const startIndex = (currentPage - 1) * compliancePageSize;
+        const endIndex = Math.min(startIndex + compliancePageSize, totalSubmissions);
+        const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Header & Reporting Team Switcher */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Compliance & Sign-Off Dashboard</h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: 0 }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #0f172a)' }}>
+                  🛡️ Compliance & Sign-Off Dashboard
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0.2rem 0 0 0' }}>
                   Audit employee checklist completions, check submitted photos/readings, and sign off.
                 </p>
               </div>
 
-              {myReportingTeam.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {myReportingTeam.length > 0 && (
                   <select
                     value={complianceTeamFilter}
-                    onChange={(e) => setComplianceTeamFilter(e.target.value)}
+                    onChange={(e) => {
+                      setComplianceTeamFilter(e.target.value);
+                      setCompliancePage(1);
+                    }}
                     style={{
                       padding: '0.5rem 0.85rem',
                       borderRadius: '8px',
                       border: '1.5px solid #3b82f6',
                       background: '#eff6ff',
                       color: '#1d4ed8',
-                      fontWeight: 600,
+                      fontWeight: 700,
                       fontSize: '0.85rem',
                       cursor: 'pointer'
                     }}
@@ -3537,10 +3627,239 @@ export default function ChecklistModule({
                     <option value="MY_TEAM">👥 My Reporting Team ({myReportingTeam.length} Members)</option>
                     {isAdmin && <option value="ALL">🏢 All Company Submissions</option>}
                   </select>
-                </div>
-              )}
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => loadCompliance(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.5rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    background: 'var(--card-bg, #ffffff)',
+                    color: 'var(--text-primary, #1e293b)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
             </div>
 
+            {/* Quick Date Presets & Filter Card */}
+            <div style={{
+              background: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              borderRadius: '12px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem'
+            }}>
+              {/* Row 1: Quick Date Presets Bar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: '#1e293b',
+                    marginRight: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}>
+                    <Calendar size={14} style={{ color: '#0284c7' }} /> 📅 Quick Date:
+                  </span>
+
+                  {[
+                    { id: 'today', label: 'Today' },
+                    { id: 'yesterday', label: 'Yesterday' },
+                    { id: 'this_week', label: 'This Week' },
+                    { id: 'last_week', label: 'Last Week' },
+                    { id: 'this_month', label: 'This Month' },
+                    { id: 'last_month', label: 'Last Month' },
+                    { id: 'all', label: 'All Time' },
+                    { id: 'custom', label: 'Custom' }
+                  ].map(p => {
+                    const isSelected = complianceDatePreset === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleCompliancePresetChange(p.id)}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '20px',
+                          border: isSelected ? '1.5px solid #0284c7' : '1px solid var(--border-color, #e2e8f0)',
+                          background: isSelected ? '#0284c7' : 'var(--bg-secondary, #f8fafc)',
+                          color: isSelected ? '#ffffff' : 'var(--text-secondary, #475569)',
+                          fontSize: '0.8rem',
+                          fontWeight: isSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isSelected ? '0 1px 3px rgba(2, 132, 199, 0.3)' : 'none'
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <DateRangePicker
+                    preset={complianceDatePreset}
+                    startDate={complianceStartDate}
+                    endDate={complianceEndDate}
+                    onChange={handleComplianceDateRangeChange}
+                    allowAllTime={true}
+                    variant="compact"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Search, Status Filter & Timing Filter */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                borderTop: '1px solid var(--border-color, #f1f5f9)',
+                paddingTop: '0.75rem'
+              }}>
+                {/* Search Bar */}
+                <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: '380px' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input
+                    type="text"
+                    placeholder="Search employee, checklist, dept..."
+                    value={complianceSearchQuery}
+                    onChange={(e) => {
+                      setComplianceSearchQuery(e.target.value);
+                      setCompliancePage(1);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 2rem 0.45rem 2.1rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      fontSize: '0.85rem',
+                      background: 'var(--bg-secondary, #f8fafc)',
+                      color: 'var(--text-primary, #0f172a)'
+                    }}
+                  />
+                  {complianceSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setComplianceSearchQuery('');
+                        setCompliancePage(1);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#94a3b8'
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Status & Timing Dropdowns */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <select
+                    value={complianceStatusFilter}
+                    onChange={(e) => {
+                      setComplianceStatusFilter(e.target.value);
+                      setCompliancePage(1);
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      background: 'var(--bg-secondary, #f8fafc)',
+                      color: 'var(--text-primary, #1e293b)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="ALL">All Status</option>
+                    <option value="PENDING">⏳ Pending Review</option>
+                    <option value="APPROVED">✅ Approved</option>
+                    <option value="REJECTED">❌ Rejected</option>
+                  </select>
+
+                  <select
+                    value={complianceTimingFilter}
+                    onChange={(e) => {
+                      setComplianceTimingFilter(e.target.value);
+                      setCompliancePage(1);
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      background: 'var(--bg-secondary, #f8fafc)',
+                      color: 'var(--text-primary, #1e293b)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="ALL">All Timings</option>
+                    <option value="ON_TIME">✓ On Time Only</option>
+                    <option value="DELAYED">⚠️ Delayed Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 3: KPI Summary Badges */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+                flexWrap: 'wrap',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary, #64748b)'
+              }}>
+                <span style={{ background: '#f1f5f9', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                  Total: <strong style={{ color: '#0f172a' }}>{totalSubmissions}</strong>
+                </span>
+                <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                  ⏳ Pending: <strong>{pendingCount}</strong>
+                </span>
+                <span style={{ background: '#dcfce7', color: '#166534', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                  ✅ Approved: <strong>{approvedCount}</strong>
+                </span>
+                {delayedCount > 0 && (
+                  <span style={{ background: '#fee2e2', color: '#991b1b', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                    ⚠️ Delayed: <strong>{delayedCount}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Submissions Table */}
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
@@ -3556,114 +3875,293 @@ export default function ChecklistModule({
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedComplianceLogs.length === 0 && (
+                  {paginatedLogs.length === 0 && (
                     <tr>
-                      <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
-                        No submissions recorded for this filter yet.
+                      <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                        <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>🔍</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>No submissions found</div>
+                        <div style={{ fontSize: '0.85rem' }}>Try adjusting your date range, search query, or status filter.</div>
                       </td>
                     </tr>
                   )}
-                  {displayedComplianceLogs.map(log => {
-                  const humanPeriod = getHumanPeriodLabel(log.frequency, log.period_key);
-                  const isApproved = log.verification_status === 'APPROVED';
-                  const isDelayed = log.delayInfo?.isDelayed;
-                  return (
-                    <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{log.employee_name}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{log.employee_email}</div>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 500 }}>{log.template_title}</div>
-                        <span style={{ fontSize: '0.75rem', color: '#3b82f6' }}>{log.frequency}</span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
-                        {humanPeriod}
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
-                        {log.submitted_at ? new Date(log.submitted_at).toLocaleString('en-IN') : 'N/A'}
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        {isDelayed ? (
+                  {paginatedLogs.map(log => {
+                    const humanPeriod = getHumanPeriodLabel(log.frequency, log.period_key);
+                    const isApproved = log.verification_status === 'APPROVED';
+                    const isRejected = log.verification_status === 'REJECTED';
+                    const isDelayed = log.delayInfo?.isDelayed;
+                    return (
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>{log.employee_name}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{log.employee_email}</div>
+                          {log.department && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.1rem' }}>🏢 {log.department}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>{log.template_title}</div>
                           <span style={{
-                            background: '#fee2e2',
-                            color: '#991b1b',
-                            border: '1px solid #fca5a5',
+                            fontSize: '0.72rem',
+                            color: '#0284c7',
+                            background: '#e0f2fe',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                            display: 'inline-block',
+                            marginTop: '0.2rem'
+                          }}>
+                            {log.frequency}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
+                          {humanPeriod}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                          {log.submitted_at ? new Date(log.submitted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : 'N/A'}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          {isDelayed ? (
+                            <span style={{
+                              background: '#fee2e2',
+                              color: '#991b1b',
+                              border: '1px solid #fca5a5',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '6px',
+                              fontWeight: 700,
+                              fontSize: '0.75rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}>
+                              ⚠️ {log.delayInfo?.delayText || 'Delayed'}
+                            </span>
+                          ) : (
+                            <span style={{
+                              background: '#dcfce7',
+                              color: '#166534',
+                              border: '1px solid #bbf7d0',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '6px',
+                              fontWeight: 700,
+                              fontSize: '0.75rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}>
+                              ✓ On Time
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{
+                            background: log.status === 'COMPLETED' ? '#dcfce7' : '#fef3c7',
+                            color: log.status === 'COMPLETED' ? '#166534' : '#92400e',
                             padding: '0.2rem 0.5rem',
                             borderRadius: '6px',
                             fontWeight: 700,
-                            fontSize: '0.75rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem'
+                            fontSize: '0.75rem'
                           }}>
-                            ⚠️ {log.delayInfo?.delayText || 'Delayed'}
+                            {log.items_completed_count}/{log.items_total_count} Done
                           </span>
-                        ) : (
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
                           <span style={{
-                            background: '#dcfce7',
-                            color: '#166534',
-                            border: '1px solid #bbf7d0',
+                            background: isApproved ? '#dcfce7' : isRejected ? '#fee2e2' : '#fef3c7',
+                            color: isApproved ? '#166534' : isRejected ? '#991b1b' : '#92400e',
+                            border: `1px solid ${isApproved ? '#bbf7d0' : isRejected ? '#fca5a5' : '#fde68a'}`,
                             padding: '0.2rem 0.5rem',
-                            borderRadius: '6px',
-                            fontWeight: 700,
+                            borderRadius: '12px',
                             fontSize: '0.75rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem'
+                            fontWeight: 700
                           }}>
-                            ✓ On Time
+                            {log.verification_status || 'PENDING'}
                           </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <span style={{
-                          background: log.status === 'COMPLETED' ? '#dcfce7' : '#fef3c7',
-                          color: log.status === 'COMPLETED' ? '#166534' : '#92400e',
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '6px',
-                          fontWeight: 700,
-                          fontSize: '0.75rem'
-                        }}>
-                          {log.items_completed_count}/{log.items_total_count} Done
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <span style={{
-                          background: isApproved ? '#dcfce7' : '#fee2e2',
-                          color: isApproved ? '#166534' : '#991b1b',
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700
-                        }}>
-                          {log.verification_status || 'PENDING'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                        <button
-                          onClick={() => handleOpenVerify(log)}
-                          style={{
-                            background: '#3b82f6',
-                            color: '#fff',
-                            border: 'none',
-                            padding: '0.35rem 0.8rem',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem',
-                            fontWeight: 600
-                          }}
-                        >
-                          Review & Verify
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                          <button
+                            onClick={() => handleOpenVerify(log)}
+                            style={{
+                              background: isApproved ? '#059669' : '#2563eb',
+                              color: '#fff',
+                              border: 'none',
+                              padding: '0.38rem 0.85rem',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            <ShieldCheck size={14} /> Review & Verify
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Interactive Pagination Navigation Bar */}
+            {totalSubmissions > 0 && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: 'var(--card-bg, #ffffff)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: '10px'
+              }}>
+                {/* Left: Rows Per Page & Showing Info */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                    <span>Rows per page:</span>
+                    <select
+                      value={compliancePageSize}
+                      onChange={(e) => {
+                        setCompliancePageSize(Number(e.target.value));
+                        setCompliancePage(1);
+                      }}
+                      style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color, #cbd5e1)',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        color: 'var(--text-primary, #0f172a)',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
+                    Showing <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{startIndex + 1}</strong> to <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{endIndex}</strong> of <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{totalSubmissions}</strong> submissions
+                  </span>
+                </div>
+
+                {/* Right: Page Navigation Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCompliancePage(1)}
+                    style={{
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: currentPage <= 1 ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
+                      color: currentPage <= 1 ? '#94a3b8' : 'var(--text-primary, #1e293b)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
+                    }}
+                    title="First Page"
+                  >
+                    « First
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCompliancePage(p => Math.max(1, p - 1))}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: currentPage <= 1 ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
+                      color: currentPage <= 1 ? '#94a3b8' : 'var(--text-primary, #1e293b)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    ‹ Prev
+                  </button>
+
+                  {/* Page numbers (smart sliding window) */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => {
+                      const prev = arr[idx - 1];
+                      const showEllipsis = prev && p - prev > 1;
+                      const isCurrent = p === currentPage;
+
+                      return (
+                        <React.Fragment key={p}>
+                          {showEllipsis && <span style={{ padding: '0 0.25rem', color: '#94a3b8' }}>...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCompliancePage(p)}
+                            style={{
+                              minWidth: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              border: isCurrent ? '1.5px solid #2563eb' : '1px solid var(--border-color, #cbd5e1)',
+                              background: isCurrent ? '#2563eb' : 'var(--card-bg, #ffffff)',
+                              color: isCurrent ? '#ffffff' : 'var(--text-primary, #1e293b)',
+                              fontSize: '0.8rem',
+                              fontWeight: isCurrent ? 700 : 500,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCompliancePage(p => Math.min(totalPages, p + 1))}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: currentPage >= totalPages ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
+                      color: currentPage >= totalPages ? '#94a3b8' : 'var(--text-primary, #1e293b)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next ›
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCompliancePage(totalPages)}
+                    style={{
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: currentPage >= totalPages ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
+                      color: currentPage >= totalPages ? '#94a3b8' : 'var(--text-primary, #1e293b)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
+                    }}
+                    title="Last Page"
+                  >
+                    Last »
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
         );
       })()}
 
