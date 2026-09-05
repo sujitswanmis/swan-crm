@@ -97,3 +97,27 @@ export async function GET(req) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export async function POST(req) {
+  try {
+    const { agentId, status } = await req.json();
+    if (!agentId || !status) {
+      return NextResponse.json({ error: 'Missing agentId or status' }, { status: 400 });
+    }
+
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    await adminClient
+      .from('call_agents')
+      .update({ status })
+      .eq('id', agentId);
+
+    return NextResponse.json({ success: true, agentId, status });
+  } catch (error) {
+    console.error('Update agent status error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

@@ -757,6 +757,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
         client.on('onLogin', () => {
           setConnectionState('online');
           setSdkStatus({ isRegistered: true, isConnected: true });
+          if (agentDataRef.current?.id) {
+            fetch('/api/plivo/session-status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agentId: agentDataRef.current.id, status: 'available' })
+            }).catch(() => {});
+          }
         });
 
         client.on('onLoginFailed', (reason) => {
@@ -768,6 +775,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
         client.on('onLogout', () => {
           setConnectionState('offline');
           setSdkStatus({ isRegistered: false, isConnected: false });
+          if (agentDataRef.current?.id) {
+            fetch('/api/plivo/session-status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agentId: agentDataRef.current.id, status: 'offline' })
+            }).catch(() => {});
+          }
         });
 
         client.on('onConnectionChange', (state) => {

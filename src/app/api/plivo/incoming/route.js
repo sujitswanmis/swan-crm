@@ -45,67 +45,73 @@ export async function POST(req) {
       (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '')
     );
 
-    // Helper to verify if SIP endpoint is currently registered on Plivo
-    const verifySipRegistered = async (username) => {
-      if (!username) return false;
-      try {
-        const endpoints = await plivoClient.endpoints.list();
-        const ep = endpoints.find(e => e.username === username);
-        const registered = ep && ep.sipRegistered === 'true';
-        console.log(`[Incoming Webhook] Endpoint ${username} registration check: ${registered}`);
-        return registered;
-      } catch (err) {
-        console.error(`[Incoming Webhook] Error checking registration for ${username}:`, err.message);
-        return true; // Fallback to true on API error to avoid blocking call
-      }
-    };
+    // Fetch registered SIP endpoints in 1 fast API call
+    let registeredUsernames = new Set();
+    try {
+      const endpoints = await plivoClient.endpoints.list();
+      registeredUsernames = new Set(
+        (endpoints || [])
+          .filter(e => e.sipRegistered === 'true' || e.sipRegistered === true)
+          .map(e => e.username)
+      );
+      console.log(`[Incoming Webhook] Currently registered Plivo endpoints:`, Array.from(registeredUsernames));
+    } catch (epErr) {
+      console.error('[Incoming Webhook] Error checking registered endpoints:', epErr.message);
+    }
 
     let targetAgentSip = null;
-    let fallbackGroup = null;
 
-    // 1. STICKY AGENT ROUTING: Find last agent who talked to this caller
-    const { data: lastCall } = await adminClient
-      .from('call_sessions')
-      .select('agent_id')
-      .eq('customer_number', fromNumber)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // 1. Normalize From number and search for STICKY AGENT
+    const cleanDigits = fromNumber.replace(/\D/g, '').slice(-10);
+    const searchPatterns = cleanDigits ? [
+      `+91${cleanDigits}`,
+      cleanDigits,
+      `91${cleanDigits}`,
+      `0${cleanDigits}`
+    ] : [];
 
-    if (lastCall && lastCall.agent_id) {
-      const { data: agentData } = await adminClient
-        .from('call_agents')
-        .select('id, plivo_username, plivo_sip_uri, status')
-        .eq('id', lastCall.agent_id)
-        .single();
+    if (searchPatterns.length > 0) {
+      const { data: lastCall } = await adminClient
+        .from('call_sessions')
+        .select('agent_id')
+        .in('customer_number', searchPatterns)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (agentData && agentData.status === 'available') {
-        const isRegistered = await verifySipRegistered(agentData.plivo_username);
-        if (isRegistered) {
-          targetAgentSip = agentData.plivo_sip_uri;
-        } else {
-          // Auto-heal offline agent status
-          await adminClient.from('call_agents').update({ status: 'offline' }).eq('id', lastCall.agent_id);
+      if (lastCall && lastCall.agent_id) {
+        const { data: agentData } = await adminClient
+          .from('call_agents')
+          .select('id, plivo_username, plivo_sip_uri, status')
+          .eq('id', lastCall.agent_id)
+          .maybeSingle();
+
+        if (agentData && agentData.plivo_username) {
+          const isRegistered = registeredUsernames.has(agentData.plivo_username) || (registeredUsernames.size === 0 && agentData.status === 'available');
+          if (isRegistered && agentData.plivo_sip_uri) {
+            targetAgentSip = agentData.plivo_sip_uri;
+            console.log(`[Incoming Webhook] Found STICKY agent online: ${targetAgentSip}`);
+            adminClient.from('call_agents').update({ status: 'available' }).eq('id', agentData.id).then(() => {});
+          }
         }
       }
     }
 
-    // 2. ANY AVAILABLE AGENT ROUTING: If no sticky agent, find ANY online available agent in system
+    // 2. ANY AVAILABLE AGENT ROUTING: If no sticky agent online, find ANY online registered agent in system
     if (!targetAgentSip) {
-      const { data: availableAgents } = await adminClient
+      const { data: activeAgents } = await adminClient
         .from('call_agents')
-        .select('id, plivo_username, plivo_sip_uri')
-        .eq('status', 'available')
+        .select('id, plivo_username, plivo_sip_uri, status')
+        .eq('is_active', true)
         .neq('plivo_username', 'system_settings_forward');
 
-      if (availableAgents && availableAgents.length > 0) {
-        for (const agent of availableAgents) {
-          const isRegistered = await verifySipRegistered(agent.plivo_username);
-          if (isRegistered && agent.plivo_sip_uri) {
+      if (activeAgents && activeAgents.length > 0) {
+        for (const agent of activeAgents) {
+          if (agent.plivo_username && (registeredUsernames.has(agent.plivo_username) || (registeredUsernames.size === 0 && agent.status === 'available'))) {
             targetAgentSip = agent.plivo_sip_uri;
+            console.log(`[Incoming Webhook] Found AVAILABLE agent online: ${targetAgentSip}`);
+            adminClient.from('call_agents').update({ status: 'available' }).eq('id', agent.id).then(() => {});
             break;
-          } else {
-            await adminClient.from('call_agents').update({ status: 'offline' }).eq('id', agent.id);
           }
         }
       }
@@ -119,10 +125,11 @@ export async function POST(req) {
     let xml = '';
 
     if (targetAgentSip) {
-      console.log(`[Incoming Webhook] WebRTC Agent Found: ${targetAgentSip}. Ringing WebRTC first with 20s timeout.`);
+      console.log(`[Incoming Webhook] WebRTC Agent Found: ${targetAgentSip}. Ringing WebRTC widget with 25s timeout.`);
+      const callerIdToDisplay = fromNumber || toNumber;
       xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Dial callerId="${toNumber}" timeout="20" action="${fallbackActionUrl}">
+    <Dial callerId="${callerIdToDisplay}" timeout="25" action="${fallbackActionUrl}">
         <User>${targetAgentSip}</User>
     </Dial>
 </Response>`;
