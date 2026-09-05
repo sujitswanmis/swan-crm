@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import plivo from 'plivo';
+import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
 
 export async function POST(req) {
   try {
@@ -65,8 +66,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
     }
 
-    const url = new URL(req.url);
-    let appBaseUrl = url.origin;
+    let appBaseUrl = getPlivoWebhookBaseUrl(req);
     // We only initiate the call to the AGENT first.
     // The answer URL will put the agent in the conference.
     // The conference callback will then dial the customer.
@@ -90,6 +90,9 @@ export async function POST(req) {
       {
         answerMethod: 'POST',
         fallbackMethod: 'POST',
+        hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=agent`,
+        hangupMethod: 'POST',
+        ringTimeout: 35,
       }
     );
 

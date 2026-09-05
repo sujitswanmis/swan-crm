@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
+
+export async function GET() {
+  return new NextResponse('Plivo Answer Webhook Active', { status: 200 });
+}
 
 export async function POST(req) {
   try {
     const url = new URL(req.url);
     const roomName = url.searchParams.get('room');
     const customerNumber = url.searchParams.get('customer_number') || '';
-
     const role = url.searchParams.get('role') || 'agent';
 
     // If customer answers, immediately mark call_sessions as connected with answer timestamp
@@ -27,11 +31,12 @@ export async function POST(req) {
         console.error('Error marking customer answered in answer route:', dbErr);
       }
     }
+
     // Agent: endConferenceOnExit=true, startConferenceOnEnter=false
     // Customer: endConferenceOnExit=false, startConferenceOnEnter=true
     const endOnExit = (role === 'agent') ? 'true' : 'false';
     const startOnEnter = (role === 'agent') ? 'false' : 'true';
-    const appBaseUrl = url.origin;
+    const appBaseUrl = getPlivoWebhookBaseUrl(req);
 
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;

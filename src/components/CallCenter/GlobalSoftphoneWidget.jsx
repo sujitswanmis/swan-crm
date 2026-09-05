@@ -9,45 +9,52 @@ import { createClient } from '@/utils/supabase/client';
 // Web Audio API tone generator for instant audio cues
 // Authentic Indian Standard Telecom Ringback Tone Generator (400 Hz + 450 Hz Dual Frequency)
 // Cadence: 0.4s ON, 0.2s OFF, 0.4s ON, 2.0s OFF (Classic "trr-trr.........trr-trr" telephone ringing tone)
-class IndianRingbackTone {
+class IndianRingbackController {
   constructor() {
     this.ctx = null;
     this.masterGain = null;
     this.timer = null;
+    this.safetyTimer = null;
     this.isPlaying = false;
+    this.activeRoom = null;
+    this.answeredRooms = new Set();
   }
 
   _burst(startTime) {
     if (!this.ctx || this.ctx.state === 'closed' || !this.masterGain || !this.isPlaying) return;
-    const osc1 = this.ctx.createOscillator();
-    const osc2 = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    try {
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
 
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(400, startTime);
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(450, startTime);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(400, startTime);
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(450, startTime);
 
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(this.masterGain);
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.masterGain);
 
-    const dur = 0.4;
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(0.08, startTime + 0.025);
-    gain.gain.setValueAtTime(0.08, startTime + dur - 0.025);
-    gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
+      const dur = 0.4;
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.linearRampToValueAtTime(0.08, startTime + 0.025);
+      gain.gain.setValueAtTime(0.08, startTime + dur - 0.025);
+      gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
 
-    osc1.start(startTime);
-    osc2.start(startTime);
-    osc1.stop(startTime + dur);
-    osc2.stop(startTime + dur);
+      osc1.start(startTime);
+      osc2.start(startTime);
+      osc1.stop(startTime + dur);
+      osc2.stop(startTime + dur);
+    } catch (e) {}
   }
 
-  start() {
+  start(roomName) {
     if (typeof window === 'undefined') return;
+    if (roomName && this.answeredRooms.has(roomName)) return;
     if (this.isPlaying) return;
     this.isPlaying = true;
+    this.activeRoom = roomName || null;
 
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -70,16 +77,30 @@ class IndianRingbackTone {
       };
 
       schedule();
+
+      // 35s Hard Safety Cutoff: never ring past telecom timeout
+      if (this.safetyTimer) clearTimeout(this.safetyTimer);
+      this.safetyTimer = setTimeout(() => {
+        this.stop(roomName);
+      }, 35000);
     } catch (e) {
       console.warn("Ringback audio error:", e);
     }
   }
 
-  stop() {
+  stop(roomName) {
+    if (roomName) this.answeredRooms.add(roomName);
+    if (this.activeRoom) this.answeredRooms.add(this.activeRoom);
     this.isPlaying = false;
+    this.activeRoom = null;
+
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.safetyTimer) {
+      clearTimeout(this.safetyTimer);
+      this.safetyTimer = null;
     }
     if (this.masterGain) {
       try {
@@ -95,6 +116,15 @@ class IndianRingbackTone {
       this.ctx = null;
     }
   }
+}
+
+// Global browser tab singleton
+const globalRingController = typeof window !== 'undefined'
+  ? (window.__crm_ringback_controller || (window.__crm_ringback_controller = new IndianRingbackController()))
+  : new IndianRingbackController();
+
+if (typeof window !== 'undefined') {
+  window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
 // Web Audio API tone generator for instant audio cues
@@ -207,37 +237,21 @@ export default function GlobalSoftphoneWidget({ userId }) {
     agentDataRef.current = agentData;
   }, [agentData]);
 
-  const ringGeneratorRef = useRef(null);
-  useEffect(() => {
-    ringGeneratorRef.current = new IndianRingbackTone();
-    return () => {
-      ringGeneratorRef.current?.stop();
-    };
+  const startRingingAudio = useCallback((roomName) => {
+    const target = roomName || activeSessionRef.current?.room_name;
+    globalRingController.start(target);
   }, []);
 
-  const startRingingAudio = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      if (!ringGeneratorRef.current) {
-        ringGeneratorRef.current = new IndianRingbackTone();
-      }
-      ringGeneratorRef.current.start();
-    } catch (e) {
-      console.warn('Ringback audio error:', e);
-    }
-  }, []);
-
-  const stopRingingAudio = useCallback(() => {
-    try {
-      ringGeneratorRef.current?.stop();
-    } catch (e) {}
+  const stopRingingAudio = useCallback((roomName) => {
+    const target = roomName || activeSessionRef.current?.room_name;
+    globalRingController.stop(target);
   }, []);
 
   useEffect(() => {
     return () => {
-      stopRingingAudio();
+      globalRingController.stop();
     };
-  }, [stopRingingAudio]);
+  }, []);
 
   const triggerAnnouncement = useCallback(({ type, title, subtitle, speech, customerNumber }) => {
     setIsHidden(false);
@@ -560,50 +574,82 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const fetchSession = useCallback(async () => {
     if (!agentData) return;
     try {
-      const { data } = await getRecentCalls(agentData.id);
-      if (data) {
-        const active = data.find(c => {
-          const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
-          const ageInMs = Date.now() - new Date(c.created_at).getTime();
-          if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 120000) return false;
-          const isRecent = ageInMs < 1000 * 60 * 60;
-          return isStatusActive && isRecent;
-        });
+      const activeRoom = activeSessionRef.current?.room_name || optimisticCall?.roomName;
+      let url = `/api/plivo/session-status?agent_id=${agentData.id}`;
+      if (activeRoom) {
+        url += `&room=${encodeURIComponent(activeRoom)}`;
+      }
 
-        if (active) {
-          if (active.status === 'connected' || active.customer_answer_time) {
-            stopRingingAudio();
-          } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
-            startRingingAudio();
+      const res = await fetch(url, { cache: 'no-store' });
+      const statusData = await res.json();
+
+      if (statusData?.activeSession && !statusData.isEnded) {
+        const s = statusData.activeSession;
+        if (statusData.isConnected || statusData.customerAnswered || s.status === 'connected' || s.customer_answer_time) {
+          stopRingingAudio(s.room_name);
+        } else if (s.status === 'customer_ringing' || s.status === 'ringing') {
+          if (!s.customer_answer_time) {
+            startRingingAudio(s.room_name);
           }
-          setOptimisticCall(null);
-          updateActiveSession(active);
-        } else {
-          // If we previously had an active session that just finished
-          const prev = activeSessionRef.current;
-          if (prev) {
-            stopRingingAudio();
-            const latest = data.find(c => c.id === prev.id) || data[0];
-            if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
-              handleSessionTerminationAnnouncement(latest);
+        }
+        setOptimisticCall(null);
+        updateActiveSession(s);
+      } else if (statusData?.isEnded) {
+        stopRingingAudio(activeRoom);
+        const prev = activeSessionRef.current;
+        if (prev) {
+          handleSessionTerminationAnnouncement(statusData.activeSession || prev);
+        }
+        updateActiveSession(null);
+        setOptimisticCall(null);
+      } else {
+        // Fallback check via getRecentCalls
+        const { data } = await getRecentCalls(agentData.id);
+        if (data) {
+          const active = data.find(c => {
+            const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
+            const ageInMs = Date.now() - new Date(c.created_at).getTime();
+            if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 45000) return false;
+            const isRecent = ageInMs < 1000 * 60 * 60;
+            return isStatusActive && isRecent;
+          });
+
+          if (active) {
+            if (active.status === 'connected' || active.customer_answer_time) {
+              stopRingingAudio(active.room_name);
+            } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
+              if (!active.customer_answer_time) {
+                startRingingAudio(active.room_name);
+              }
             }
+            setOptimisticCall(null);
+            updateActiveSession(active);
+          } else {
+            const prev = activeSessionRef.current;
+            if (prev) {
+              stopRingingAudio(prev.room_name);
+              const latest = data.find(c => c.id === prev.id) || data[0];
+              if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
+                handleSessionTerminationAnnouncement(latest);
+              }
+            }
+            updateActiveSession(null);
+            setOptimisticCall(null);
           }
-          updateActiveSession(null);
-          setOptimisticCall(null);
         }
       }
     } catch (err) {
       console.error('Error fetching softphone session:', err);
     }
-  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
+  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement, optimisticCall?.roomName]);
 
-  // Dynamic Polling: 1 second during active interaction, 5 seconds when idle
+  // Dynamic Polling: 500ms during active interaction, 4000ms when idle
   useEffect(() => {
     if (!agentData) return;
     fetchSession();
 
     const isEngaged = !!(activeCall || activeSession || optimisticCall);
-    const intervalMs = isEngaged ? 800 : 5000;
+    const intervalMs = isEngaged ? 500 : 4000;
     const interval = setInterval(fetchSession, intervalMs);
 
     return () => clearInterval(interval);
@@ -866,16 +912,16 @@ export default function GlobalSoftphoneWidget({ userId }) {
     // Dismiss previous announcement
     setCallAnnouncement(null);
 
-    // 1. Start authentic Indian telephone ringing audio loop immediately
-    startRingingAudio();
-
-    // 2. Set immediate optimistic UI state! (0 ms latency)
+    // 1. Set immediate optimistic UI state! (0 ms latency)
     setOptimisticCall({
       customerNumber: targetNumber,
       callingMode,
       status: 'initiating',
       startTime: Date.now()
     });
+
+    // 2. Start authentic Indian telephone ringing audio loop immediately
+    startRingingAudio();
 
     // Set flag so onIncomingCall knows this is our outbound call
     localStorage.setItem('pendingOutboundCall', 'true');
@@ -898,6 +944,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         alert("Call Error: " + result.error);
       } else {
         if (!directNumber) setCustomerNumber('');
+        if (result.roomName) {
+          startRingingAudio(result.roomName);
+        }
         // Instantly adopt session if returned!
         if (result.session) {
           updateActiveSession(result.session);

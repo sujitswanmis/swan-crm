@@ -6,8 +6,10 @@ import plivo from 'plivo';
 const TERMINAL_CUSTOMER_STATUSES = new Set([
   'busy',
   'busy-line',
+  'busy line',
   'rejected',
   'no-answer',
+  'no answer',
   'timeout',
   'ring-timeout',
   'ring-timeout-reached',
@@ -16,19 +18,14 @@ const TERMINAL_CUSTOMER_STATUSES = new Set([
   'canceled',
   'cancelled',
   'originator-cancel',
+  'user_busy',
+  'user busy',
+  'call rejected',
+  'call_rejected',
+  'congestion',
+  'unallocated',
+  'completed'
 ]);
-
-// Map Plivo terminal status to a user-visible DB status
-function terminalStatusLabel(callStatus, hangupCause) {
-  const s = (callStatus || '').toLowerCase();
-  const h = (hangupCause || '').toLowerCase();
-  if (s === 'busy' || s === 'busy-line') return 'failed';
-  if (s === 'rejected') return 'failed';
-  if (s === 'no-answer' || s.includes('timeout') || s.includes('ring-timeout')) return 'failed';
-  if (h.includes('cancel') || s.includes('cancel')) return 'failed';
-  if (s === 'failed') return 'failed';
-  return 'failed';
-}
 
 // Normalize Plivo terminal cause for voice and UI announcement
 function categorizeHangupCause(callStatus, hangupCause, hangupSource) {
@@ -38,7 +35,7 @@ function categorizeHangupCause(callStatus, hangupCause, hangupSource) {
   if (s === 'rejected' || h.includes('reject') || h.includes('call rejected')) {
     return 'rejected';
   }
-  if (s === 'busy' || s === 'busy-line' || h.includes('busy') || h.includes('user_busy')) {
+  if (s === 'busy' || s.includes('busy') || h.includes('busy') || h.includes('user_busy')) {
     return 'busy';
   }
   if (s.includes('timeout') || s === 'no-answer' || h.includes('timeout') || h.includes('no_answer') || h.includes('no answer')) {
@@ -50,7 +47,11 @@ function categorizeHangupCause(callStatus, hangupCause, hangupSource) {
   if (s === 'failed' || h.includes('failed') || h.includes('unallocated') || h.includes('absent')) {
     return 'failed';
   }
-  return s || 'failed';
+  return s || h || 'failed';
+}
+
+export async function GET() {
+  return new NextResponse('Plivo Ring Callback Active', { status: 200 });
 }
 
 export async function POST(req) {
@@ -70,8 +71,8 @@ export async function POST(req) {
     const hangupCause = event.HangupCause || event.HangupCauseName || '';
     const hangupSource = event.HangupSource || '';
 
-    // Always return 200 for idempotency
-    if (!callStatus) {
+    // If completely empty payload, return 200 for idempotency
+    if (!callStatus && !hangupCause && !callUuid) {
       return new NextResponse('OK', { status: 200 });
     }
 
@@ -81,11 +82,14 @@ export async function POST(req) {
     );
 
     // --- Handle CUSTOMER leg terminal events (rejection, busy, no-answer, or customer hangup) ---
-    const isCustomerTerminal = leg === 'customer' && (
-      TERMINAL_CUSTOMER_STATUSES.has(callStatus) || 
-      callStatus === 'completed' || 
-      hangupCause !== ''
-    );
+    const isTerminalStatus = TERMINAL_CUSTOMER_STATUSES.has(callStatus) ||
+      callStatus.includes('busy') ||
+      callStatus.includes('reject') ||
+      callStatus.includes('timeout') ||
+      callStatus.includes('cancel') ||
+      hangupCause !== '';
+
+    const isCustomerTerminal = (leg === 'customer' || !leg) && isTerminalStatus;
 
     if (isCustomerTerminal) {
       // Find session by room_name first (stable), fallback to call UUID
@@ -96,16 +100,18 @@ export async function POST(req) {
           .from('call_sessions')
           .select('*')
           .eq('room_name', roomFromQuery)
-          .single();
+          .maybeSingle();
         session = data;
       }
 
-      if (!session && callUuid) {
+      if (!session && (callUuid || requestUuid)) {
         const { data } = await adminClient
           .from('call_sessions')
           .select('*')
-          .or(`customer_call_uuid.eq.${callUuid},customer_call_uuid.eq.${requestUuid}`)
-          .single();
+          .or(`customer_call_uuid.eq.${callUuid},customer_call_uuid.eq.${requestUuid},agent_call_uuid.eq.${callUuid},agent_call_uuid.eq.${requestUuid}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
         session = data;
       }
 
@@ -161,7 +167,7 @@ export async function POST(req) {
         process.env.PLIVO_AUTH_TOKEN
       );
 
-      // 1. Hangup conference (ends agent audio/waitSound immediately)
+      // 1. Hangup conference (ends agent audio immediately)
       try {
         await plivoClient.conferences.hangup(session.room_name);
       } catch (_e) {
@@ -200,7 +206,7 @@ export async function POST(req) {
           .from('call_sessions')
           .select('id, status')
           .eq('agent_call_uuid', callUuid)
-          .single();
+          .maybeSingle();
 
         if (agentSession && agentSession.status === 'initiated') {
           await adminClient.from('call_sessions').update({
@@ -218,7 +224,7 @@ export async function POST(req) {
           .from('call_sessions')
           .select('*')
           .or(`agent_call_uuid.eq.${callUuid},customer_call_uuid.eq.${callUuid}`)
-          .single();
+          .maybeSingle();
         session = data;
       }
 

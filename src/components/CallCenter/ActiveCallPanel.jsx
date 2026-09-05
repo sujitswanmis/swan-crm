@@ -51,6 +51,9 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
       const res = await fetch(`/api/plivo/controls/members?room=${session.room_name}`);
       const data = await res.json();
       if (data.members) {
+        if (data.members.length >= 2 && typeof window !== 'undefined' && window.__crm_stop_all_ringing) {
+          window.__crm_stop_all_ringing(session?.room_name);
+        }
         setMembers(prev => {
           if (prev.length === data.members.length) {
             const hasChange = data.members.some((m, idx) => {

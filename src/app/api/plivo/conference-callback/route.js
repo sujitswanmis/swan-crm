@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
+import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
+
+export async function GET() {
+  return new NextResponse('Plivo Conference Callback Active', { status: 200 });
+}
 
 export async function POST(req) {
   try {
@@ -13,8 +18,10 @@ export async function POST(req) {
     const roomName = url.searchParams.get('room') || event.room || event.ConferenceName;
     const customerNumber = url.searchParams.get('customer_number') || event.customer_number;
 
+    const baseUrl = getPlivoWebhookBaseUrl(req);
+
     // Run processing sequentially so serverless function doesn't terminate early
-    await processConferenceEvent(roomName, event, url.origin, customerNumber);
+    await processConferenceEvent(roomName, event, baseUrl, customerNumber);
 
     return new NextResponse('OK', { status: 200 });
   } catch (error) {
@@ -77,7 +84,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
             hangupMethod: 'POST',
             ringUrl: ringCallbackUrl,
             ringMethod: 'POST',
-            ringTimeout: 40,
+            ringTimeout: 35,
           }
         );
 
