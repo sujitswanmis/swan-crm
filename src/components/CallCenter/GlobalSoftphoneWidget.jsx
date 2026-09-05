@@ -7,6 +7,85 @@ import { getRecentCalls } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
 
 // Web Audio API tone generator for instant audio cues
+// Authentic Indian Standard Telecom Ringback Tone Generator (400 Hz + 450 Hz Dual Frequency)
+// Cadence: 0.4s ON, 0.2s OFF, 0.4s ON, 2.0s OFF (Classic "trr-trr.........trr-trr" telephone ringing tone)
+class IndianRingbackTone {
+  constructor() {
+    this.ctx = null;
+    this.timer = null;
+    this.isPlaying = false;
+  }
+
+  _burst(startTime) {
+    if (!this.ctx || this.ctx.state === 'closed') return;
+    const osc1 = this.ctx.createOscillator();
+    const osc2 = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(400, startTime);
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(450, startTime);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    const dur = 0.4;
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(0.09, startTime + 0.025);
+    gain.gain.setValueAtTime(0.09, startTime + dur - 0.025);
+    gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
+
+    osc1.start(startTime);
+    osc2.start(startTime);
+    osc1.stop(startTime + dur);
+    osc2.stop(startTime + dur);
+  }
+
+  start() {
+    if (typeof window === 'undefined') return;
+    if (this.isPlaying) return;
+    this.isPlaying = true;
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      this.ctx = new AudioCtx();
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+
+      const schedule = () => {
+        if (!this.isPlaying || !this.ctx || this.ctx.state === 'closed') return;
+        const now = this.ctx.currentTime;
+        this._burst(now);
+        this._burst(now + 0.6);
+        this.timer = setTimeout(schedule, 3000);
+      };
+
+      schedule();
+    } catch (e) {
+      console.warn("Ringback audio error:", e);
+    }
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.ctx && this.ctx.state !== 'closed') {
+      try {
+        this.ctx.close();
+      } catch (e) {}
+      this.ctx = null;
+    }
+  }
+}
+
+// Web Audio API tone generator for instant audio cues
 function playAudioTone(type) {
   if (typeof window === 'undefined') return;
   try {
@@ -14,19 +93,7 @@ function playAudioTone(type) {
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
 
-    if (type === 'dialing') {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.2);
-    } else if (type === 'rejected') {
+    if (type === 'rejected') {
       [0, 0.15, 0.3].forEach((delay, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -128,21 +195,21 @@ export default function GlobalSoftphoneWidget({ userId }) {
     agentDataRef.current = agentData;
   }, [agentData]);
 
-  const ringAudioRef = useRef(null);
+  const ringGeneratorRef = useRef(null);
+  useEffect(() => {
+    ringGeneratorRef.current = new IndianRingbackTone();
+    return () => {
+      ringGeneratorRef.current?.stop();
+    };
+  }, []);
 
   const startRingingAudio = useCallback(() => {
     if (typeof window === 'undefined') return;
     try {
-      if (!ringAudioRef.current) {
-        ringAudioRef.current = new Audio('/ringback.mp3');
-        ringAudioRef.current.loop = true;
-        ringAudioRef.current.volume = 0.55;
+      if (!ringGeneratorRef.current) {
+        ringGeneratorRef.current = new IndianRingbackTone();
       }
-      ringAudioRef.current.currentTime = 0;
-      const playPromise = ringAudioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => console.warn('Ringback audio autoplay:', e));
-      }
+      ringGeneratorRef.current.start();
     } catch (e) {
       console.warn('Ringback audio error:', e);
     }
@@ -150,10 +217,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const stopRingingAudio = useCallback(() => {
     try {
-      if (ringAudioRef.current) {
-        ringAudioRef.current.pause();
-        ringAudioRef.current.currentTime = 0;
-      }
+      ringGeneratorRef.current?.stop();
     } catch (e) {}
   }, []);
 
@@ -779,8 +843,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     // Dismiss previous announcement
     setCallAnnouncement(null);
 
-    // 1. Play immediate audio dialing tone & start in-browser ringing audio loop
-    playAudioTone('dialing');
+    // 1. Start authentic Indian telephone ringing audio loop immediately
     startRingingAudio();
 
     // 2. Set immediate optimistic UI state! (0 ms latency)
