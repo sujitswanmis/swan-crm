@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings, Phone } from 'lucide-react';
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import {
@@ -509,6 +509,103 @@ const LeadStatusCell = React.memo(({ info }) => {
   );
 });
 
+// Direct CRM Softphone Call Trigger Helper
+export const triggerDirectCall = (rawNumber) => {
+  if (typeof window === 'undefined') return;
+  const clean = String(rawNumber || '').trim();
+  if (!clean) return;
+
+  if (typeof window.__crm_direct_call === 'function') {
+    window.__crm_direct_call(clean);
+  } else {
+    window.dispatchEvent(new CustomEvent('crm:make-call', { detail: { number: clean } }));
+    setTimeout(() => {
+      if (typeof window.__crm_direct_call !== 'function') {
+        alert('Call Center Softphone abhi connect ho raha hai ya agent profile configure nahi hai.');
+      }
+    }, 400);
+  }
+};
+
+// Reusable Cell for AIO Phone columns with direct click-to-call icon
+const AioPhoneCell = ({ info }) => {
+  const rawValue = info.getValue();
+  if (!rawValue) return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
+
+  // Split comma-separated phone numbers
+  const numbers = String(rawValue)
+    .split(',')
+    .map(n => n.trim())
+    .filter(Boolean);
+
+  if (numbers.length === 0) {
+    return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center' }}>
+      {numbers.map((num, idx) => {
+        const cleanDigits = num.replace(/[^\d+]/g, '');
+        const isDialable = cleanDigits.replace(/\D/g, '').length >= 10;
+
+        return (
+          <div 
+            key={idx}
+            style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {isDialable && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerDirectCall(cleanDigits);
+                }}
+                title={`Call ${cleanDigits} via Softphone`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '6px',
+                  border: '1px solid #10b981',
+                  backgroundColor: '#ecfdf5',
+                  color: '#059669',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  flexShrink: 0
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#059669';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.transform = 'scale(1.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#ecfdf5';
+                  e.currentTarget.style.color = '#059669';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <Phone size={12} strokeWidth={2.5} />
+              </button>
+            )}
+            <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+              {num}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const columns = [
   {
     id: 'edit',
@@ -553,7 +650,12 @@ const columns = [
   { 
     id: 'business_contact_aio',
     header: 'Business Contact in AIO',
-    accessorFn: row => [row.business_contact_1, row.business_contact_2, row.business_alt_1, row.business_alt_2].filter(Boolean).join(', ')
+    accessorFn: row => {
+      const explicit = row.business_contact_aio || row.business_contact_in_aio || row['Business Contact in AIO'];
+      if (explicit) return explicit;
+      return [row.business_contact_1, row.business_contact_2, row.business_alt_1, row.business_alt_2].filter(Boolean).join(', ');
+    },
+    cell: info => <AioPhoneCell info={info} />
   },
   { 
     id: 'business_email_aio',
@@ -568,11 +670,16 @@ const columns = [
   { 
     id: 'cp_mobile_aio',
     header: 'CP Mobile in AIO',
-    accessorFn: row => [
-      row.phone, row.cp1_mobile_2, row.cp1_alt_1, row.cp1_alt_2,
-      row.cp2_mobile_1, row.cp2_mobile_2, row.cp2_alt_1, row.cp2_alt_2,
-      row.cp3_mobile_1, row.cp3_mobile_2, row.cp3_alt_1, row.cp3_alt_2
-    ].filter(Boolean).join(', ')
+    accessorFn: row => {
+      const explicit = row.cp_mobile_aio || row.cp_mobile_in_aio || row['CP Mobile in AIO'];
+      if (explicit) return explicit;
+      return [
+        row.phone, row.cp1_mobile_2, row.cp1_alt_1, row.cp1_alt_2,
+        row.cp2_mobile_1, row.cp2_mobile_2, row.cp2_alt_1, row.cp2_alt_2,
+        row.cp3_mobile_1, row.cp3_mobile_2, row.cp3_alt_1, row.cp3_alt_2
+      ].filter(Boolean).join(', ');
+    },
+    cell: info => <AioPhoneCell info={info} />
   },
   { 
     id: 'cp_email_aio',

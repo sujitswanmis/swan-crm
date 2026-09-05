@@ -907,15 +907,42 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const handleStartCall = async (e, directNumber = null) => {
     e?.preventDefault?.();
-    const targetNumber = directNumber || customerNumber;
-    if (!targetNumber || targetNumber.length < 10) return;
+    const rawTarget = directNumber || customerNumber;
+    if (!rawTarget) return;
+
+    // Sanitize phone number (strip whitespace, hyphens, brackets)
+    let clean = String(rawTarget).trim().replace(/[^\d+]/g, '');
+    let formattedE164 = clean;
+
+    if (formattedE164.startsWith('+91')) {
+      // already +91
+    } else if (formattedE164.startsWith('91') && formattedE164.length === 12) {
+      formattedE164 = '+' + formattedE164;
+    } else if (formattedE164.startsWith('0') && formattedE164.length === 11) {
+      formattedE164 = '+91' + formattedE164.slice(1);
+    } else {
+      formattedE164 = '+91' + formattedE164.replace(/\D/g, '');
+    }
+
+    const digitsOnly = formattedE164.replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      alert("Invalid phone number: " + rawTarget);
+      return;
+    }
+
+    const display10Digit = digitsOnly.slice(-10);
+    setCustomerNumber(display10Digit);
+
+    // Unhide and unminimize softphone so agent sees the call progress
+    setIsHidden(false);
+    setIsMinimized(false);
 
     // Dismiss previous announcement
     setCallAnnouncement(null);
 
     // 1. Set immediate optimistic UI state! (0 ms latency)
     setOptimisticCall({
-      customerNumber: targetNumber,
+      customerNumber: display10Digit,
       callingMode,
       status: 'initiating',
       startTime: Date.now()
@@ -932,10 +959,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerNumber: `+91${targetNumber}`,
+          customerNumber: formattedE164,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
-          agentMobile: callingMode === 'mobile' ? `+91${agentMobile}` : undefined
+          agentMobile: callingMode === 'mobile' ? (agentMobile.startsWith('+') ? agentMobile : `+91${agentMobile}`) : undefined
         })
       });
       const result = await res.json();
@@ -960,6 +987,44 @@ export default function GlobalSoftphoneWidget({ userId }) {
       alert("Failed to start call");
     }
   };
+
+  const handleStartCallRef = useRef(handleStartCall);
+  useEffect(() => {
+    handleStartCallRef.current = handleStartCall;
+  });
+
+  // Global direct dial listener for table click-to-call actions
+  useEffect(() => {
+    const handleMakeCallEvent = (e) => {
+      const rawNum = e?.detail?.number || e?.detail?.phoneNumber || e?.detail;
+      if (!rawNum) return;
+
+      if (!agentDataRef.current) {
+        alert("Softphone agent profile configure nahi hai ya load ho raha hai. Kripya thoda intezar karein.");
+        return;
+      }
+
+      setIsHidden(false);
+      setIsMinimized(false);
+
+      if (activeCall || incomingCall || (activeSessionRef.current && activeSessionRef.current.status !== 'ended')) {
+        alert("Ek call pehle se chal rahi hai. Kripya doosri call lagane se pehle use end karein.");
+        return;
+      }
+
+      handleStartCallRef.current?.(null, String(rawNum));
+    };
+
+    window.addEventListener('crm:make-call', handleMakeCallEvent);
+    window.__crm_direct_call = (num) => {
+      handleMakeCallEvent({ detail: { number: num } });
+    };
+
+    return () => {
+      window.removeEventListener('crm:make-call', handleMakeCallEvent);
+      delete window.__crm_direct_call;
+    };
+  }, [activeCall, incomingCall]);
 
   if (!agentData) return null; // Don't show widget if not an agent
 
