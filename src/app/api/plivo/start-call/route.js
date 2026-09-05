@@ -98,7 +98,17 @@ export async function POST(req) {
       .update({ agent_call_uuid: response.requestUuid })
       .eq('id', sessionData.id);
 
-    return NextResponse.json({ success: true, roomName, callUuid: response.requestUuid });
+    const updatedSession = {
+      ...sessionData,
+      agent_call_uuid: response.requestUuid
+    };
+
+    return NextResponse.json({ 
+      success: true, 
+      roomName, 
+      callUuid: response.requestUuid,
+      session: updatedSession
+    });
 
   } catch (error) {
     console.error('Start call error:', error);

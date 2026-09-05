@@ -20,6 +20,8 @@ export async function POST(req) {
       .from('call_sessions')
       .update({
         status: 'ended',
+        hangup_cause: 'agent_hangup',
+        hangup_source: 'agent',
         end_time: endTime.toISOString()
       })
       .eq('room_name', roomName)

@@ -30,6 +30,29 @@ function terminalStatusLabel(callStatus, hangupCause) {
   return 'failed';
 }
 
+// Normalize Plivo terminal cause for voice and UI announcement
+function categorizeHangupCause(callStatus, hangupCause, hangupSource) {
+  const s = (callStatus || '').toLowerCase();
+  const h = (hangupCause || '').toLowerCase();
+  
+  if (s === 'rejected' || h.includes('reject') || h.includes('call rejected')) {
+    return 'rejected';
+  }
+  if (s === 'busy' || s === 'busy-line' || h.includes('busy') || h.includes('user_busy')) {
+    return 'busy';
+  }
+  if (s.includes('timeout') || s === 'no-answer' || h.includes('timeout') || h.includes('no_answer') || h.includes('no answer')) {
+    return 'no_answer';
+  }
+  if (s.includes('cancel') || h.includes('cancel')) {
+    return 'rejected';
+  }
+  if (s === 'failed' || h.includes('failed') || h.includes('unallocated') || h.includes('absent')) {
+    return 'failed';
+  }
+  return s || 'failed';
+}
+
 export async function POST(req) {
   try {
     const url = new URL(req.url);
@@ -100,10 +123,12 @@ export async function POST(req) {
 
       const newStatus = terminalStatusLabel(callStatus, hangupCause);
 
-      // Update DB with terminal status and cause
+      const normalizedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
+
+      // Update DB with terminal status and normalized cause
       await adminClient.from('call_sessions').update({
         status: newStatus,
-        hangup_cause: callStatus,
+        hangup_cause: normalizedCause,
         hangup_source: hangupSource || 'customer_leg',
         end_time: endTime.toISOString(),
         ringing_duration_sec: ringingSec,
@@ -177,9 +202,10 @@ export async function POST(req) {
       }
 
       if (session && session.status !== 'ended' && session.status !== 'connected') {
+        const normalizedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
         await adminClient.from('call_sessions').update({
           status: 'failed',
-          hangup_cause: callStatus,
+          hangup_cause: normalizedCause,
           end_time: new Date().toISOString(),
           talk_duration_sec: 0,
         }).eq('id', session.id);

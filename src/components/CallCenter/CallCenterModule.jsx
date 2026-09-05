@@ -72,6 +72,9 @@ export default function CallCenterModule({ userId }) {
         alert("Call Error: " + result.error);
       } else {
         setCustomerNumber('');
+        if (result.session) {
+          setActiveSession(result.session);
+        }
         // Refresh call history after a short delay
         setTimeout(() => { if (agentData) fetchRecent(agentData.id); }, 2000);
       }

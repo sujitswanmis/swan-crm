@@ -77,7 +77,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
             hangupMethod: 'POST',
             ringUrl: ringCallbackUrl,
             ringMethod: 'POST',
-            ringTimeout: 25,
+            ringTimeout: 40,
           }
         );
 
@@ -228,8 +228,25 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       if (ringingSec < 0) ringingSec = 0;
       if (talkSec < 0) talkSec = 0;
 
+      let hangupCause = session.hangup_cause;
+      let hangupSource = session.hangup_source;
+      if (!hangupCause) {
+        if (isAgentExit) {
+          hangupCause = 'agent_hangup';
+          hangupSource = 'agent';
+        } else if (session.status === 'connected') {
+          hangupCause = 'customer_hangup';
+          hangupSource = 'customer';
+        } else {
+          hangupCause = 'customer_abandoned';
+          hangupSource = 'customer';
+        }
+      }
+
       await adminClient.from('call_sessions').update({
         status: 'ended',
+        hangup_cause: hangupCause,
+        hangup_source: hangupSource,
         end_time: endTime.toISOString(),
         ringing_duration_sec: ringingSec,
         talk_duration_sec: talkSec

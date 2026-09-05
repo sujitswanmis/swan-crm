@@ -143,7 +143,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ roomName: session.room_name })
           });
-          // The supabase subscription will catch the end event and close the panel.
+          if (onCallEnded) onCallEnded();
         } finally {
           setLoadingAction(null);
         }
