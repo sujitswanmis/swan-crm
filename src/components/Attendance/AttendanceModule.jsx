@@ -352,6 +352,19 @@ export default function AttendanceModule({
   const [monthlyMatrixData, setMonthlyMatrixData] = useState({ rows: [], monthDates: [], summary: {} });
   const [loadingMonthlyMatrix, setLoadingMonthlyMatrix] = useState(false);
 
+  // Dynamic Departments extracted from active records/matrix
+  const availableDepartments = useMemo(() => {
+    const deptSet = new Set();
+    (teamMasterData.records || []).forEach(r => {
+      if (r.department && r.department !== 'General') deptSet.add(r.department);
+    });
+    (monthlyMatrixData.rows || []).forEach(r => {
+      if (r.department && r.department !== 'General') deptSet.add(r.department);
+    });
+    const depts = Array.from(deptSet).sort();
+    return ['All', ...depts, 'General'];
+  }, [teamMasterData.records, monthlyMatrixData.rows]);
+
   // 1. Live Clock Timer
   useEffect(() => {
     const timer = setInterval(() => {
@@ -2909,12 +2922,11 @@ export default function AttendanceModule({
                     outline: 'none'
                   }}
                 >
-                  <option value="All">All Departments</option>
-                  <option value="Sales">Sales</option>
-                  <option value="IT">IT</option>
-                  <option value="Human Resource">Human Resource</option>
-                  <option value="Accounts">Accounts</option>
-                  <option value="General">General</option>
+                  {availableDepartments.map(dept => (
+                    <option key={dept} value={dept}>
+                      {dept === 'All' ? 'All Departments' : dept}
+                    </option>
+                  ))}
                 </select>
               </div>
 

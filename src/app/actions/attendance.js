@@ -1273,21 +1273,33 @@ export async function getTeamAttendanceMaster({
   try {
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role');
     if (!uErr && Array.isArray(usersData)) {
-      allUsers = usersData.map(u => ({
-        user_id: u.user_id,
-        emp_name: u.emp_name,
-        email: (u.email || '').trim().toLowerCase(),
-        emp_code: u.emp_id || '',
-        emp_id: u.emp_id || '',
-        department: u.emp_department || 'General',
-        emp_status: u.module_access?.emp_status || 'Active',
-        created_at: u.created_at,
-        module_access: u.module_access
-      }));
+      allUsers = usersData
+        .filter(u => {
+          // Team Management Approval Status = Approved
+          if (u.is_approved !== true) return false;
+          // Must not be a customer
+          if (u.role === 'customer') return false;
+          const status = u.module_access?.emp_status;
+          return status !== 'InActive' && status !== 'Terminated' && status !== 'Resigned' && status !== 'Trash' && status !== 'Draft';
+        })
+        .map(u => ({
+          user_id: u.user_id,
+          emp_name: u.emp_name,
+          email: (u.email || '').trim().toLowerCase(),
+          emp_code: u.emp_id || '',
+          emp_id: u.emp_id || '',
+          department: u.emp_department || 'General',
+          emp_status: u.module_access?.emp_status || 'Active',
+          created_at: u.created_at,
+          module_access: u.module_access
+        }));
     }
   } catch {}
+
+  const approvedUserEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+  const approvedUserIds = new Set(allUsers.map(u => u.user_id).filter(Boolean));
 
   try {
     let query = adminClient
@@ -1306,19 +1318,27 @@ export async function getTeamAttendanceMaster({
 
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      dbRecords = data;
+      // Keep records only for approved team members
+      dbRecords = data.filter(r => {
+        if (r.user_id && approvedUserIds.has(r.user_id)) return true;
+        if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
+        return false;
+      });
     }
   } catch {}
 
   const local = await getFallbackData();
-  const localDayRecs = local.records.filter(r => {
+  const localDayRecs = (local.records || []).filter(r => {
     if (isRange) {
       if (r.attendance_date < effectiveStart || r.attendance_date > effectiveEnd) return false;
     } else {
       if (r.attendance_date !== effectiveStart) return false;
     }
     if (department && department !== 'All' && r.department !== department) return false;
-    return true;
+    // Only approved team members
+    if (r.user_id && approvedUserIds.has(r.user_id)) return true;
+    if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
+    return false;
   });
 
   const dayMap = new Map();
@@ -1356,10 +1376,17 @@ export async function getTeamAttendanceMaster({
   if (!isRange) {
     // Single Day view: include absent employees who didn't punch
     const punchedEmails = new Set(enrichedDbRecords.map(r => r.email?.toLowerCase()));
+    const punchedIds = new Set(enrichedDbRecords.map(r => r.user_id).filter(Boolean));
     const absentUsers = (allUsers || [])
-      .filter(u => u.emp_status !== 'InActive' && u.emp_status !== 'Terminated' && !punchedEmails.has(u.email?.toLowerCase()))
+      .filter(u => {
+        if (department && department !== 'All' && u.department !== department) return false;
+        if (u.user_id && punchedIds.has(u.user_id)) return false;
+        if (punchedEmails.has(u.email?.toLowerCase())) return false;
+        return true;
+      })
       .map(u => ({
         id: `absent-${u.email}`,
+        user_id: u.user_id,
         email: u.email,
         emp_name: u.emp_name || u.email.split('@')[0],
         emp_code: u.emp_code || '',
@@ -1380,6 +1407,10 @@ export async function getTeamAttendanceMaster({
     absentCount = enrichedDbRecords.filter(r => r.status === 'ABSENT').length;
   }
 
+  const activeEmployeesCount = (department && department !== 'All') 
+    ? allUsers.filter(u => u.department === department).length 
+    : allUsers.length;
+
   return {
     success: true,
     date: effectiveStart,
@@ -1388,7 +1419,7 @@ export async function getTeamAttendanceMaster({
     isRange,
     records: combinedRecords,
     summary: {
-      totalEmployees: allUsers.length > 0 ? allUsers.length : combinedRecords.length,
+      totalEmployees: activeEmployeesCount > 0 ? activeEmployeesCount : combinedRecords.length,
       totalRecords: combinedRecords.length,
       totalPresent: enrichedDbRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE' || r.status === 'REGULARIZED').length,
       totalHalfDay: enrichedDbRecords.filter(r => r.status === 'HALF_DAY').length,
@@ -1554,12 +1585,16 @@ export async function getTeamMonthlyMatrix({
   try {
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role');
     if (!uErr && Array.isArray(usersData)) {
       allUsers = usersData
         .filter(u => {
+          // Team Management Approval Status = Approved
+          if (u.is_approved !== true) return false;
+          // Must not be a customer
+          if (u.role === 'customer') return false;
           const status = u.module_access?.emp_status;
-          return status !== 'InActive' && status !== 'Terminated' && status !== 'Resigned';
+          return status !== 'InActive' && status !== 'Terminated' && status !== 'Resigned' && status !== 'Trash' && status !== 'Draft';
         })
         .map(u => ({
           user_id: u.user_id,
@@ -1574,6 +1609,9 @@ export async function getTeamMonthlyMatrix({
     }
   } catch {}
 
+  const approvedUserEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+  const approvedUserIds = new Set(allUsers.map(u => u.user_id).filter(Boolean));
+
   let allRecords = [];
   try {
     const { data, error } = await adminClient
@@ -1583,12 +1621,21 @@ export async function getTeamMonthlyMatrix({
       .lte('attendance_date', endDateStr);
 
     if (!error && data && data.length > 0) {
-      allRecords = data;
+      allRecords = data.filter(r => {
+        if (r.user_id && approvedUserIds.has(r.user_id)) return true;
+        if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
+        return false;
+      });
     }
   } catch {}
 
   const local = await getFallbackData();
-  const localMonthRecs = local.records.filter(r => r.attendance_date >= startDateStr && r.attendance_date <= endDateStr);
+  const localMonthRecs = (local.records || []).filter(r => {
+    if (r.attendance_date < startDateStr || r.attendance_date > endDateStr) return false;
+    if (r.user_id && approvedUserIds.has(r.user_id)) return true;
+    if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
+    return false;
+  });
 
   const matrixMap = new Map();
   allRecords.forEach(r => matrixMap.set(`${(r.email || '').toLowerCase()}_${r.attendance_date}`, r));
@@ -1607,8 +1654,8 @@ export async function getTeamMonthlyMatrix({
     targetUsers = targetUsers.filter(u => u.department === department);
   }
 
-  // If no user_roles found, synthesize from unique emails in allRecords
-  if (targetUsers.length === 0) {
+  // If no user_roles found at all, synthesize from unique emails in allRecords as emergency fallback
+  if (allUsers.length === 0 && targetUsers.length === 0) {
     const uniqueEmails = [...new Set(allRecords.map(r => r.email))];
     targetUsers = uniqueEmails.map(em => {
       const sample = allRecords.find(r => r.email === em);
