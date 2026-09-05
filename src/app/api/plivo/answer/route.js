@@ -44,7 +44,8 @@ export async function POST(req) {
 
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Dial callerId="${fromNumber}" action="${actionUrl}" method="POST" callbackUrl="${callbackUrl}" callbackMethod="POST" timeout="35" record="true" recordCallbackUrl="${recordCallbackUrl}">
+    <Record recordSession="true" startOnDialAnswer="true" redirect="false" callbackUrl="${recordCallbackUrl}" callbackMethod="POST" />
+    <Dial callerId="${fromNumber}" action="${actionUrl}" method="POST" callbackUrl="${callbackUrl}" callbackMethod="POST" timeout="35">
         <Number>${customerNumber}</Number>
     </Dial>
 </Response>`;

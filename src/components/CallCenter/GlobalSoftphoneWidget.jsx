@@ -322,6 +322,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
         console.error(e);
       }
     }
+
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('crm:call-ended', { detail: { roomName: currentRoom } }));
+      }, 700);
+    }
   }, [stopRingingAudio]);
 
   const updateActiveSession = useCallback((newSession) => {
@@ -341,6 +347,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
         setOptimisticCall(null);
         setCallDuration(0);
         stopRingingAudio();
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('crm:call-ended', { detail: { session: prev } }));
+          }, 700);
+        }
         return null;
       }
       if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {

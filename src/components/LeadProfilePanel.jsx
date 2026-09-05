@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
+import { getLeadCallHistory } from '@/app/actions/team';
 import { enqueueOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw } from 'lucide-react';
@@ -221,7 +222,7 @@ function CallAudioPlayer({ audioUrl }) {
   );
 }
 
-export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUpdate, userName }) {
+export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, onLeadUpdate, userName }) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [callLogs, setCallLogs] = useState([]);
@@ -263,40 +264,9 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
         lead.cp_mobile_aio
       ];
 
-      const digitsSet = new Set();
-      rawList.forEach(item => {
-        if (!item) return;
-        const tokens = String(item).split(/[,;\/\s]+/);
-        tokens.forEach(tok => {
-          const d = tok.replace(/\D/g, '');
-          if (d.length >= 10) {
-            digitsSet.add(d.slice(-10));
-          }
-        });
-      });
-
-      const unique10Digits = Array.from(digitsSet);
-      if (unique10Digits.length === 0) {
-        setCallLogs([]);
-        setIsLoadingCalls(false);
-        return;
-      }
-
-      const searchPatterns = unique10Digits.flatMap(d => [
-        `+91${d}`,
-        d,
-        `91${d}`,
-        `0${d}`
-      ]);
-
-      const { data, error } = await supabase
-        .from('call_sessions')
-        .select('id, room_name, customer_number, status, start_time, end_time, customer_answer_time, talk_duration_sec, ringing_duration_sec, hangup_cause, recording_url, created_at, call_agents(display_name)')
-        .in('customer_number', searchPatterns)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setCallLogs(data);
+      const res = await getLeadCallHistory(rawList);
+      if (res && res.success && Array.isArray(res.data)) {
+        setCallLogs(res.data);
       }
     } catch (err) {
       console.error("Error fetching call logs for lead:", err);
@@ -383,9 +353,19 @@ export default function LeadProfilePanel({ lead, isOpen, mode, onClose, onLeadUp
       })
       .subscribe();
 
+    const handleCallEnded = () => {
+      fetchCalls();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm:call-ended', handleCallEnded);
+    }
+
     return () => {
       supabase.removeChannel(noteChannel);
       supabase.removeChannel(callChannel);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('crm:call-ended', handleCallEnded);
+      }
     };
   }, [lead, isOpen]);
 

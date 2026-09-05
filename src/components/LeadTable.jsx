@@ -1607,6 +1607,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
         {selectedLead && (
           <LeadProfilePanel
             lead={selectedLead}
+            isOpen={true}
             mode={profileMode}
             onClose={() => setSelectedLead(null)}
             teamMembers={teamMembers}

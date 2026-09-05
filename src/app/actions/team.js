@@ -780,6 +780,57 @@ export async function getRecentCalls(agentId) {
   return { data: data || [] };
 }
 
+export async function getLeadCallHistory(phoneNumbers = []) {
+  try {
+    if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+      return { success: true, data: [] };
+    }
+
+    const digitsSet = new Set();
+    phoneNumbers.forEach(item => {
+      if (!item) return;
+      const tokens = String(item).split(/[,;\/\s]+/);
+      tokens.forEach(tok => {
+        const d = tok.replace(/\D/g, '');
+        if (d.length >= 10) {
+          digitsSet.add(d.slice(-10));
+        }
+      });
+    });
+
+    const unique10Digits = Array.from(digitsSet);
+    if (unique10Digits.length === 0) {
+      return { success: true, data: [] };
+    }
+
+    const searchPatterns = unique10Digits.flatMap(d => [
+      `+91${d}`,
+      d,
+      `91${d}`,
+      `0${d}`
+    ]);
+
+    const adminClient = getAdminClient();
+    const { data, error } = await adminClient
+      .from('call_sessions')
+      .select('id, room_name, customer_number, status, start_time, end_time, customer_answer_time, talk_duration_sec, ringing_duration_sec, hangup_cause, recording_url, created_at, call_agents(display_name)')
+      .in('customer_number', searchPatterns)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error('Error fetching lead call history:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+
+    return { success: true, data: data || [] };
+  } catch (err) {
+    console.error('Exception in getLeadCallHistory:', err);
+    return { success: false, error: err.message, data: [] };
+  }
+}
+
+
 export async function moveToTrashUser(userId) {
   return await updateEmpStatus(userId, 'Trash');
 }
