@@ -12,8 +12,50 @@ export async function POST(req) {
     const roomName = url.searchParams.get('room');
     const customerNumber = url.searchParams.get('customer_number') || '';
     const role = url.searchParams.get('role') || 'agent';
+    const appBaseUrl = getPlivoWebhookBaseUrl(req);
+    const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
 
-    // If customer answers, immediately mark call_sessions as connected with answer timestamp
+    // 1. DIRECT CARRIER-BRIDGED CALLING VIA <Dial>:
+    // When the agent answers, directly dial the customer. This bridges the audio stream immediately,
+    // allowing the agent to hear real telecom early media:
+    // - Operator voice announcements ("Number is switched off", "Out of coverage", "User busy")
+    // - Customer's actual caller tune or telecom network ringing tone
+    // - Immediate termination if customer cuts or rejects the call
+    if (role === 'agent' && customerNumber && roomName) {
+      try {
+        const adminClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+        await adminClient
+          .from('call_sessions')
+          .update({
+            status: 'customer_ringing',
+            agent_answer_time: new Date().toISOString()
+          })
+          .eq('room_name', roomName);
+      } catch (dbErr) {
+        console.error('Error updating call session in answer:', dbErr);
+      }
+
+      const actionUrl = `${appBaseUrl}/api/plivo/dial-action?room=${roomName}`;
+      const callbackUrl = `${appBaseUrl}/api/plivo/dial-callback?room=${roomName}`;
+      const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Dial callerId="${fromNumber}" action="${actionUrl}" method="POST" callbackUrl="${callbackUrl}" callbackMethod="POST" timeout="35" record="true" recordCallbackUrl="${recordCallbackUrl}">
+        <Number>${customerNumber}</Number>
+    </Dial>
+</Response>`;
+
+      return new NextResponse(xml, {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml' },
+      });
+    }
+
+    // 2. Fallback Conference Mode (for multi-party merge/guest legs)
     if (role === 'customer' && roomName) {
       try {
         const adminClient = createClient(
@@ -32,17 +74,12 @@ export async function POST(req) {
       }
     }
 
-    // Agent: endConferenceOnExit=true, startConferenceOnEnter=false
-    // Customer: endConferenceOnExit=false, startConferenceOnEnter=true
     const endOnExit = (role === 'agent') ? 'true' : 'false';
     const startOnEnter = (role === 'agent') ? 'false' : 'true';
-    const appBaseUrl = getPlivoWebhookBaseUrl(req);
 
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
 
-    // Note: Ringing tone is handled client-side by the softphone widget so that it cuts off
-    // instantly upon pickup without relying on Plivo conference waitSound streaming into the call mixer.
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">

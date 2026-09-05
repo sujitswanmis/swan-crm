@@ -238,8 +238,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [agentData]);
 
   const startRingingAudio = useCallback((roomName) => {
-    const target = roomName || activeSessionRef.current?.room_name;
-    globalRingController.start(target);
+    // With direct Plivo <Dial>, real telecom early media (carrier ringing, caller tune, operator switched-off announcement)
+    // is streamed live over WebRTC. Synthetic tones are omitted to prevent drowning out operator messages.
   }, []);
 
   const stopRingingAudio = useCallback((roomName) => {
@@ -800,21 +800,22 @@ export default function GlobalSoftphoneWidget({ userId }) {
           setCallDuration(0);
 
           const currentSession = activeSessionRef.current;
-          if (currentSession) {
-            try {
-              const { data } = await getRecentCalls(agentDataRef.current?.id);
-              if (data && data.length > 0) {
-                const latest = data.find(c => c.id === currentSession.id) || data[0];
-                if (latest && (latest.status === 'failed' || latest.status === 'ended')) {
-                  handleSessionTerminationAnnouncementRef.current?.(latest);
-                }
-              }
-            } catch (e) {
-              console.error("Error checking outcome on terminated:", e);
-            }
-          }
           setActiveSession(null);
           setOptimisticCall(null);
+
+          if (currentSession) {
+            try {
+              const res = await fetch(`/api/plivo/session-status?room=${currentSession.room_name}&agent_id=${agentDataRef.current?.id}`, { cache: 'no-store' });
+              const statusData = await res.json();
+              if (statusData?.activeSession) {
+                handleSessionTerminationAnnouncementRef.current?.(statusData.activeSession);
+              } else {
+                handleSessionTerminationAnnouncementRef.current?.(currentSession);
+              }
+            } catch (e) {
+              handleSessionTerminationAnnouncementRef.current?.(currentSession);
+            }
+          }
         });
 
         setPlivoClient(client);
