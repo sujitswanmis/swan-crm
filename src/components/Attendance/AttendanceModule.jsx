@@ -45,6 +45,28 @@ const REASON_CATEGORIES = [
   'Other'
 ];
 
+export const formatTimeIST = (timeInput, options = { hour: '2-digit', minute: '2-digit', hour12: true }) => {
+  if (!timeInput) return '—';
+  try {
+    const d = new Date(timeInput);
+    if (isNaN(d.getTime())) return String(timeInput);
+    return d.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', ...options });
+  } catch {
+    return String(timeInput);
+  }
+};
+
+export const formatDateIST = (dateInput, options = { day: '2-digit', month: 'short', year: 'numeric' }) => {
+  if (!dateInput) return '—';
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return String(dateInput);
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', ...options });
+  } catch {
+    return String(dateInput);
+  }
+};
+
 export default function AttendanceModule({
   userRole = 'agent',
   userId = '',
@@ -530,7 +552,7 @@ export default function AttendanceModule({
     playInstantChime('in');
 
     const inDate = new Date();
-    const inTimeFormatted = inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const inTimeFormatted = formatTimeIST(inDate);
     
     // Evaluate shift rules immediately on client for instant voice feedback
     const evaluation = evaluateMorningInPunch(inDate, shortLeaveUsage, userName);
@@ -696,8 +718,8 @@ export default function AttendanceModule({
     setApplyForm({
       attendanceDate: dateStr || getTodayDateString(),
       requestType: existingRow?.in_time && !existingRow?.out_time ? 'MISSED_OUT' : (!existingRow?.in_time && existingRow?.out_time ? 'MISSED_IN' : 'BOTH'),
-      requestedInTime: existingRow?.in_time ? new Date(existingRow.in_time).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '09:30',
-      requestedOutTime: existingRow?.out_time ? new Date(existingRow.out_time).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '18:30',
+      requestedInTime: existingRow?.in_time ? formatTimeIST(existingRow.in_time, { hour12: false, hour: '2-digit', minute: '2-digit' }) : '09:00',
+      requestedOutTime: existingRow?.out_time ? formatTimeIST(existingRow.out_time, { hour12: false, hour: '2-digit', minute: '2-digit' }) : '18:30',
       reasonType: 'Forgot to Punch In / Out',
       reasonDetails: '',
       assignedHodEmail: '',
@@ -1016,8 +1038,8 @@ export default function AttendanceModule({
         base.push(`"${r.attendance_date || ''}"`);
       }
       base.push(
-        `"${r.in_time ? new Date(r.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}"`,
-        `"${r.out_time ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}"`,
+        `"${r.in_time ? formatTimeIST(r.in_time) : ''}"`,
+        `"${r.out_time ? formatTimeIST(r.out_time) : ''}"`,
         `"${formatMinutesToHours(r.total_working_minutes)}"`,
         `"${r.status || 'ABSENT'}"`,
         `"${r.is_regularized ? 'Yes' : 'No'}"`,
@@ -1265,10 +1287,10 @@ export default function AttendanceModule({
 
             {/* Time display */}
             <p style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0.2rem 0', color: punchConfirm === 'IN' ? '#16a34a' : '#dc2626' }}>
-              {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+              {formatTimeIST(new Date(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
             </p>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1.5rem' }}>
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+              {formatDateIST(new Date(), { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
             </p>
 
             {/* Confirmation message */}
@@ -1553,12 +1575,12 @@ export default function AttendanceModule({
               </div>
               
               <div style={{ fontSize: '2.4rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+                {formatTimeIST(currentTime, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
               </div>
 
               <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Calendar size={15} />
-                {currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {formatDateIST(currentTime, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
@@ -1678,7 +1700,7 @@ export default function AttendanceModule({
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
                     {todayRecord?.in_time
-                      ? `In: ${new Date(todayRecord.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                      ? `In: ${formatTimeIST(todayRecord.in_time)}`
                       : 'Click to Punch In'}
                   </span>
                 </button>
@@ -1712,7 +1734,7 @@ export default function AttendanceModule({
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
                     {todayRecord?.out_time
-                      ? `Out: ${new Date(todayRecord.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                      ? `Out: ${formatTimeIST(todayRecord.out_time)}`
                       : (todayRecord?.in_time ? 'Click to Punch Out' : 'Punch In First')}
                   </span>
                 </button>
@@ -2012,10 +2034,10 @@ export default function AttendanceModule({
                           <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{r.attendance_date}</td>
                           <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{dayName}</td>
                           <td style={{ padding: '0.75rem 1rem', color: r.in_time ? 'var(--text-primary)' : '#ef4444', fontWeight: r.in_time ? 500 : 600 }}>
-                            {r.in_time ? new Date(r.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'Missed In'}
+                            {r.in_time ? formatTimeIST(r.in_time) : 'Missed In'}
                           </td>
                           <td style={{ padding: '0.75rem 1rem', color: r.out_time ? 'var(--text-primary)' : (r.attendance_date === getTodayDateString() ? 'var(--text-secondary)' : '#ef4444'), fontWeight: r.out_time ? 500 : 600 }}>
-                            {r.out_time ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : (r.attendance_date === getTodayDateString() ? 'Working...' : 'Missed Out')}
+                            {r.out_time ? formatTimeIST(r.out_time) : (r.attendance_date === getTodayDateString() ? 'Working...' : 'Missed Out')}
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)' }}>
                             {formatMinutesToHours(r.total_working_minutes)}
@@ -2142,13 +2164,13 @@ export default function AttendanceModule({
                     </tr>
                   ) : (
                     myRequests.map((r, idx) => {
-                      const reqInFormatted = r.requested_in_time ? new Date(r.requested_in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-                      const reqOutFormatted = r.requested_out_time ? new Date(r.requested_out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+                      const reqInFormatted = r.requested_in_time ? formatTimeIST(r.requested_in_time) : '—';
+                      const reqOutFormatted = r.requested_out_time ? formatTimeIST(r.requested_out_time) : '—';
 
                       return (
                         <tr key={r.id || idx} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
                           <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>
-                            {new Date(r.created_at).toLocaleDateString()}
+                            {formatDateIST(r.created_at)}
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{r.attendance_date}</td>
                           <td style={{ padding: '0.75rem 1rem' }}>
@@ -2543,8 +2565,8 @@ export default function AttendanceModule({
                     </tr>
                   ) : (
                     filteredHodRequests.map((r, idx) => {
-                      const reqInFormatted = r.requested_in_time ? new Date(r.requested_in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-                      const reqOutFormatted = r.requested_out_time ? new Date(r.requested_out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+                      const reqInFormatted = r.requested_in_time ? formatTimeIST(r.requested_in_time) : '—';
+                      const reqOutFormatted = r.requested_out_time ? formatTimeIST(r.requested_out_time) : '—';
 
                       return (
                         <tr key={r.id || idx} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: selectedHodRequests.has(r.id) ? 'rgba(37, 99, 235, 0.05)' : (idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))') }}>
@@ -2658,7 +2680,7 @@ export default function AttendanceModule({
                                   ✓ Approved by {r.action_by_name || 'HOD'}
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                  {new Date(r.action_at || r.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                  {formatDateIST(r.action_at || r.updated_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
                                 </div>
                                 {r.action_remarks && (
                                   <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
@@ -2672,7 +2694,7 @@ export default function AttendanceModule({
                                   ✕ Rejected by {r.action_by_name || 'HOD'}
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                  {new Date(r.action_at || r.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                  {formatDateIST(r.action_at || r.updated_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
                                 </div>
                                 {r.action_remarks && (
                                   <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
@@ -2752,7 +2774,16 @@ export default function AttendanceModule({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTeamReportView('MONTHLY_MATRIX')}
+                  onClick={() => {
+                    setTeamReportView('MONTHLY_MATRIX');
+                    if (teamStartDate) {
+                      const [y, m] = teamStartDate.split('-').map(Number);
+                      if (y && m) {
+                        setMatrixYear(y);
+                        setMatrixMonth(m);
+                      }
+                    }
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -3018,11 +3049,11 @@ export default function AttendanceModule({
                             <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.email}</td>
                             <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.department || 'General'}</td>
                             <td style={{ padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400 }}>
-                              {r.in_time ? new Date(r.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                              {r.in_time ? formatTimeIST(r.in_time) : '—'}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400 }}>
                               {r.out_time 
-                                ? new Date(r.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) 
+                                ? formatTimeIST(r.out_time) 
                                 : (r.attendance_date === getTodayDateString() ? (r.in_time ? 'Working...' : '—') : (r.in_time ? 'Missed Out' : '—'))
                               }
                             </td>

@@ -706,13 +706,15 @@ export async function applyMissingAttendance({
 
   if (requestType === 'MISSED_IN' || requestType === 'BOTH') {
     if (!requestedInTime) throw new Error('Requested In Time is required.');
-    const inDateObj = new Date(`${attendanceDate}T${requestedInTime.length === 5 ? requestedInTime + ':00' : requestedInTime}`);
+    const timeClean = requestedInTime.length === 5 ? requestedInTime + ':00' : requestedInTime;
+    const inDateObj = new Date(`${attendanceDate}T${timeClean}+05:30`);
     finalInIso = isNaN(inDateObj.getTime()) ? requestedInTime : inDateObj.toISOString();
   }
 
   if (requestType === 'MISSED_OUT' || requestType === 'BOTH') {
     if (!requestedOutTime) throw new Error('Requested Out Time is required.');
-    const outDateObj = new Date(`${attendanceDate}T${requestedOutTime.length === 5 ? requestedOutTime + ':00' : requestedOutTime}`);
+    const timeClean = requestedOutTime.length === 5 ? requestedOutTime + ':00' : requestedOutTime;
+    const outDateObj = new Date(`${attendanceDate}T${timeClean}+05:30`);
     finalOutIso = isNaN(outDateObj.getTime()) ? requestedOutTime : outDateObj.toISOString();
   }
 
@@ -1057,7 +1059,7 @@ export async function approveRegularizationRequest({
     await logAuditAction({
       module: 'attendance',
       action: 'REGULARIZATION_APPROVED',
-      details: `HOD (${actionByName || actionByEmail}) APPROVED regularization for ${request.emp_name} on date ${request.attendance_date}. In: ${finalInTime ? new Date(finalInTime).toLocaleTimeString() : 'N/A'}, Out: ${finalOutTime ? new Date(finalOutTime).toLocaleTimeString() : 'N/A'}`,
+      details: `HOD (${actionByName || actionByEmail}) APPROVED regularization for ${request.emp_name} on date ${request.attendance_date}. In: ${finalInTime ? new Date(finalInTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A'}, Out: ${finalOutTime ? new Date(finalOutTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A'}`,
       userEmail: actionByEmail,
       userName: actionByName
     });
@@ -1597,13 +1599,13 @@ export async function getTeamMonthlyMatrix({
   const monthDates = [];
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const d = new Date(`${dateStr}T00:00:00`);
+    const d = new Date(`${dateStr}T12:00:00+05:30`);
     const dayOfWeek = d.getDay(); // 0 is Sunday
     monthDates.push({
       dayNumber: day,
       dateStr,
       dayOfWeek,
-      dayNameShort: d.toLocaleDateString('en-US', { weekday: 'narrow' }),
+      dayNameShort: d.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'narrow' }),
       isSunday: dayOfWeek === 0
     });
   }
