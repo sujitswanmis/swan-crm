@@ -1271,10 +1271,22 @@ export async function getTeamAttendanceMaster({
   const effectiveEnd = endDate || date;
 
   try {
-    const { data: usersData } = await adminClient
+    const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_code, department, emp_status');
-    if (usersData) allUsers = usersData;
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at');
+    if (!uErr && Array.isArray(usersData)) {
+      allUsers = usersData.map(u => ({
+        user_id: u.user_id,
+        emp_name: u.emp_name,
+        email: (u.email || '').trim().toLowerCase(),
+        emp_code: u.emp_id || '',
+        emp_id: u.emp_id || '',
+        department: u.emp_department || 'General',
+        emp_status: u.module_access?.emp_status || 'Active',
+        created_at: u.created_at,
+        module_access: u.module_access
+      }));
+    }
   } catch {}
 
   try {
@@ -1321,10 +1333,11 @@ export async function getTeamAttendanceMaster({
   dbRecords = Array.from(dayMap.values());
 
   const userMapByEmail = new Map((allUsers || []).map(u => [u.email?.toLowerCase(), u]));
+  const userMapById = new Map((allUsers || []).map(u => [u.user_id, u]));
   const localMap = new Map((local.records || []).map(lr => [`${(lr.email || '').toLowerCase()}_${lr.attendance_date}`, lr]));
 
   const enrichedDbRecords = dbRecords.map(r => {
-    const user = userMapByEmail.get(r.email?.toLowerCase());
+    const user = (r.user_id && userMapById.get(r.user_id)) || userMapByEmail.get(r.email?.toLowerCase());
     const localRec = localMap.get(`${(r.email || '').toLowerCase()}_${r.attendance_date}`);
     return {
       ...r,
@@ -1539,11 +1552,25 @@ export async function getTeamMonthlyMatrix({
 
   let allUsers = [];
   try {
-    const { data: usersData } = await adminClient
+    const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_code, department, emp_status');
-    if (usersData) {
-      allUsers = usersData.filter(u => u.emp_status !== 'InActive' && u.emp_status !== 'Terminated');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at');
+    if (!uErr && Array.isArray(usersData)) {
+      allUsers = usersData
+        .filter(u => {
+          const status = u.module_access?.emp_status;
+          return status !== 'InActive' && status !== 'Terminated' && status !== 'Resigned';
+        })
+        .map(u => ({
+          user_id: u.user_id,
+          emp_name: u.emp_name,
+          email: (u.email || '').trim().toLowerCase(),
+          emp_code: u.emp_id || '',
+          emp_id: u.emp_id || '',
+          department: u.emp_department || 'General',
+          created_at: u.created_at,
+          module_access: u.module_access
+        }));
     }
   } catch {}
 
@@ -1615,8 +1642,29 @@ export async function getTeamMonthlyMatrix({
   // Process matrix rows with Sunday Rules (Min 3 working days & Sandwich Leave Rule)
   const matrixRows = targetUsers.map(user => {
     const userEmail = user.email?.toLowerCase();
-    const userRecords = allRecords.filter(r => r.email?.toLowerCase() === userEmail);
+    const userId = user.user_id;
+    const userRecords = allRecords.filter(r => {
+      if (userId && r.user_id) {
+        return r.user_id === userId;
+      }
+      return (r.email || '').toLowerCase() === userEmail;
+    });
     const recordsMapByDate = new Map(userRecords.map(r => [r.attendance_date, r]));
+
+    // Determine effective joining date to avoid marking pre-joining days as absent
+    const userCreatedAtStr = user.created_at ? user.created_at.slice(0, 10) : null;
+    const explicitJoinDate = user.emp_joining_date || user.module_access?.emp_joining_date;
+    const sortedRecordDates = userRecords.map(r => r.attendance_date).filter(Boolean).sort();
+    const earliestRecordDate = sortedRecordDates.length > 0 ? sortedRecordDates[0] : null;
+
+    let effectiveJoinDate = explicitJoinDate;
+    if (!effectiveJoinDate) {
+      if (earliestRecordDate && userCreatedAtStr) {
+        effectiveJoinDate = earliestRecordDate < userCreatedAtStr ? earliestRecordDate : userCreatedAtStr;
+      } else {
+        effectiveJoinDate = earliestRecordDate || userCreatedAtStr;
+      }
+    }
 
     let totalPresent = 0;
     let totalHalfDays = 0;
@@ -1629,8 +1677,20 @@ export async function getTeamMonthlyMatrix({
     const days = monthDates.map(mDate => {
       const rec = recordsMapByDate.get(mDate.dateStr);
       const isPastOrToday = mDate.dateStr <= todayStr;
+      const isBeforeJoin = effectiveJoinDate && mDate.dateStr < effectiveJoinDate;
 
       if (mDate.isSunday) {
+        // If Sunday is before employee's joining date, do not penalize as Absent
+        if (isBeforeJoin && !rec) {
+          return {
+            code: '—',
+            status: 'NOT_JOINED',
+            label: 'Not Joined Yet (Sunday)',
+            reason: 'Before joining date',
+            record: null
+          };
+        }
+
         const sunEval = evaluateSundayEligibility({
           sundayDateStr: mDate.dateStr,
           recordsMapByDate,
@@ -1708,7 +1768,14 @@ export async function getTeamMonthlyMatrix({
         }
       } else {
         // No record
-        if (isPastOrToday) {
+        if (isBeforeJoin) {
+          return {
+            code: '—',
+            status: 'NOT_JOINED',
+            label: 'Not Joined Yet',
+            record: null
+          };
+        } else if (isPastOrToday) {
           totalAbsent++;
           return {
             code: 'A',
