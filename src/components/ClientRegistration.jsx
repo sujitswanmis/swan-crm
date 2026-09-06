@@ -9,7 +9,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { enqueueOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -859,6 +859,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       if (isEditMode && initialData) {
         // UPDATE MODE
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const check = canPerformOfflineAction('clientRegistration');
+          if (!check.allowed) {
+            alert(check.reason);
+            setIsSubmitting(false);
+            return;
+          }
           await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
           alert('⚡ Offline Mode: Client updates saved to device storage! They will sync to cloud when connected.');
           if (onRegistrationSuccess) onRegistrationSuccess();
@@ -891,6 +897,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (onClose) onClose();
           } catch (netErr) {
             console.warn('Network update failed, fallback to offline queue:', netErr);
+            const check = canPerformOfflineAction('clientRegistration');
+            if (!check.allowed) {
+              alert(check.reason);
+              setIsSubmitting(false);
+              return;
+            }
             await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
             alert('⚡ Network issue: Client updates saved to device! They will sync to cloud automatically.');
             if (onRegistrationSuccess) onRegistrationSuccess();
@@ -902,6 +914,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         payload.created_by = actor;
 
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const check = canPerformOfflineAction('clientRegistration');
+          if (!check.allowed) {
+            alert(check.reason);
+            setIsSubmitting(false);
+            return;
+          }
           // Device is offline - queue directly to IndexedDB
           await enqueueOfflineAction('create', 'lead', payload);
           alert('⚡ Offline Mode: Client saved safely to device disk! It will automatically sync to cloud once internet is connected.');
@@ -940,6 +958,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (onRegistrationSuccess) onRegistrationSuccess();
           } catch (netErr) {
             console.warn('Network insert failed, fallback to offline queue:', netErr);
+            const check = canPerformOfflineAction('clientRegistration');
+            if (!check.allowed) {
+              alert(check.reason);
+              setIsSubmitting(false);
+              return;
+            }
             await enqueueOfflineAction('create', 'lead', payload);
             alert('⚡ Network issue detected: Client saved safely to device storage! It will sync to cloud automatically.');
             if (onRegistrationSuccess) onRegistrationSuccess();

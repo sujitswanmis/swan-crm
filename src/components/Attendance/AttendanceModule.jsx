@@ -32,7 +32,7 @@ import {
   SHIFT_RULES
 } from '@/utils/attendanceUtils';
 import { getCurrentGPSLocation } from '@/utils/geoAttendance';
-import { enqueueOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 
 const REASON_CATEGORIES = [
   'Forgot to Punch In / Out',
@@ -561,6 +561,16 @@ export default function AttendanceModule({
   // Confirmed Punch In (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
   const handleConfirmedPunchIn = async () => {
     setPunchConfirm(null);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        alert(check.reason);
+        setPunchError(check.reason);
+        return;
+      }
+    }
+
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('in');
 
@@ -629,6 +639,12 @@ export default function AttendanceModule({
       }
     } catch (err) {
       console.warn('Network punch-in failed, queueing offline:', err);
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        alert(check.reason);
+        setPunchError(check.reason);
+        return;
+      }
       await enqueueOfflineAction('create', 'attendance', {
         email: userEmail,
         userId,
@@ -649,6 +665,16 @@ export default function AttendanceModule({
   // Confirmed Punch Out (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
   const handleConfirmedPunchOut = async () => {
     setPunchConfirm(null);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        alert(check.reason);
+        setPunchError(check.reason);
+        return;
+      }
+    }
+
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('out');
 
@@ -708,6 +734,12 @@ export default function AttendanceModule({
       }
     } catch (err) {
       console.warn('Network punch-out failed, queueing offline:', err);
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        alert(check.reason);
+        setPunchError(check.reason);
+        return;
+      }
       await enqueueOfflineAction('create', 'attendance', {
         email: userEmail,
         userId,

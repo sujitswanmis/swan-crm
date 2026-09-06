@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
-import { enqueueOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw } from 'lucide-react';
 
@@ -414,6 +414,14 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
     e.preventDefault();
     if (!newNote.trim()) return;
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadNotes');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
+    }
+
     const actor = normalizeEmployeeName(userName || 'Agent');
     const createdNote = {
       id: `local_note_${Date.now()}`,
@@ -453,6 +461,11 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
       }
     } catch (netErr) {
       console.warn('Network addNote failed, fallback to offline queue:', netErr);
+      const check = canPerformOfflineAction('leadNotes');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
     }
   };
@@ -460,6 +473,14 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
   const handleFollowUpChange = async (e) => {
     const newDate = e.target.value;
     const actor = userName || 'System';
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadFollowUp');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
+    }
 
     if (!newDate) {
       setFollowUpDate('');
@@ -492,6 +513,11 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
         }]);
       } catch (netErr) {
         console.warn('Network update failed, fallback to offline:', netErr);
+        const check = canPerformOfflineAction('leadFollowUp');
+        if (!check.allowed) {
+          alert(check.reason);
+          return;
+        }
         await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
       }
       return;
@@ -527,6 +553,11 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
       } catch(e) {}
     } catch (netErr) {
       console.warn('Network update failed, fallback to offline:', netErr);
+      const check = canPerformOfflineAction('leadFollowUp');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
     }
   };
@@ -536,6 +567,14 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
   };
 
   const handleSaveEdit = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('profileEdit');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
+    }
+
     const cleanForm = normalizeLeadRecord({ ...editForm });
     const actor = normalizeEmployeeName(userName || 'System');
 
@@ -565,6 +604,11 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
       alert('Lead profile updated successfully!');
     } catch (netErr) {
       console.warn('Network update failed, fallback to offline:', netErr);
+      const check = canPerformOfflineAction('profileEdit');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
       alert('⚡ Network issue: Profile changes saved to device! They will sync to cloud automatically.');
     }

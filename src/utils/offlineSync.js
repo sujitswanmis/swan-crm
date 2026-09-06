@@ -12,6 +12,50 @@ const STORES = {
   SYNC_HISTORY: 'sync_history'
 };
 
+export const DEFAULT_OFFLINE_RULES = {
+  isOfflineEnabled: true,
+  dailyQuotaHours: 5,
+  monthlyQuotaHours: 50,
+  features: {
+    leadStatusUpdate: true,
+    leadNotes: true,
+    leadFollowUp: true,
+    attendancePunch: true,
+    clientRegistration: true,
+    leadAssign: false,
+    profileEdit: true
+  },
+  autoSyncOnReconnect: true,
+  maxQueueItemsPerDevice: 500
+};
+
+export function getOfflineRules() {
+  if (typeof window === 'undefined') return DEFAULT_OFFLINE_RULES;
+  try {
+    const raw = localStorage.getItem('supuja_offline_rules');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...DEFAULT_OFFLINE_RULES,
+        ...parsed,
+        features: {
+          ...DEFAULT_OFFLINE_RULES.features,
+          ...(parsed.features || {})
+        }
+      };
+    }
+  } catch (e) {}
+  return DEFAULT_OFFLINE_RULES;
+}
+
+export function saveOfflineRulesToLocal(rules) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('supuja_offline_rules', JSON.stringify(rules));
+    window.dispatchEvent(new CustomEvent('supuja_offline_rules_changed', { detail: rules }));
+  } catch (e) {}
+}
+
 function getTodayQuotaKey() {
   const d = new Date();
   const year = d.getFullYear();
@@ -20,20 +64,31 @@ function getTodayQuotaKey() {
   return `supuja_offline_sec_${year}-${month}-${day}`;
 }
 
+function getMonthQuotaKey() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `supuja_offline_month_${year}-${month}`;
+}
+
 /**
  * Returns current day's cumulative offline usage and remaining quota
  */
 export function getDailyOfflineUsage() {
+  const rules = getOfflineRules();
+  const dailyCapHours = rules.dailyQuotaHours || 5;
+  const maxSec = dailyCapHours * 3600;
+
   if (typeof window === 'undefined') {
-    return { secondsUsed: 0, secondsRemaining: MAX_OFFLINE_SECONDS_PER_DAY, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: '5h 0m' };
+    return { secondsUsed: 0, secondsRemaining: maxSec, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: `${dailyCapHours}h 0m` };
   }
   try {
     const key = getTodayQuotaKey();
     const raw = localStorage.getItem(key);
     const secondsUsed = raw ? parseInt(raw, 10) || 0 : 0;
-    const secondsRemaining = Math.max(0, MAX_OFFLINE_SECONDS_PER_DAY - secondsUsed);
-    const isExceeded = secondsUsed >= MAX_OFFLINE_SECONDS_PER_DAY;
-    const percentUsed = Math.min(100, Math.round((secondsUsed / MAX_OFFLINE_SECONDS_PER_DAY) * 100));
+    const secondsRemaining = Math.max(0, maxSec - secondsUsed);
+    const isExceeded = secondsUsed >= maxSec;
+    const percentUsed = Math.min(100, Math.round((secondsUsed / maxSec) * 100));
 
     const usedHours = Math.floor(secondsUsed / 3600);
     const usedMins = Math.floor((secondsUsed % 3600) / 60);
@@ -49,41 +104,110 @@ export function getDailyOfflineUsage() {
       formattedRemaining: remHours > 0 ? `${remHours}h ${remMins}m` : `${remMins}m`
     };
   } catch (e) {
-    return { secondsUsed: 0, secondsRemaining: MAX_OFFLINE_SECONDS_PER_DAY, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: '5h 0m' };
+    return { secondsUsed: 0, secondsRemaining: maxSec, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: `${dailyCapHours}h 0m` };
   }
 }
 
 /**
- * Increments cumulative offline seconds for today
+ * Returns current month's cumulative offline usage and remaining quota
+ */
+export function getMonthlyOfflineUsage() {
+  const rules = getOfflineRules();
+  const monthlyCapHours = rules.monthlyQuotaHours || 50;
+  const maxSec = monthlyCapHours * 3600;
+
+  if (typeof window === 'undefined') {
+    return { secUsed: 0, hoursUsed: '0.0', hoursRemaining: String(monthlyCapHours), isExceeded: false, percentUsed: 0, maxHours: monthlyCapHours };
+  }
+  try {
+    const key = getMonthQuotaKey();
+    const secUsed = parseInt(localStorage.getItem(key) || '0', 10) || 0;
+    const isExceeded = secUsed >= maxSec;
+    const hoursUsed = (secUsed / 3600).toFixed(1);
+    const hoursRemaining = Math.max(0, (maxSec - secUsed) / 3600).toFixed(1);
+    const percentUsed = Math.min(100, Math.round((secUsed / maxSec) * 100));
+    return { secUsed, hoursUsed, hoursRemaining, isExceeded, percentUsed, maxHours: monthlyCapHours };
+  } catch {
+    return { secUsed: 0, hoursUsed: '0.0', hoursRemaining: String(monthlyCapHours), isExceeded: false, percentUsed: 0, maxHours: monthlyCapHours };
+  }
+}
+
+/**
+ * Increments cumulative offline seconds for today and current month
  */
 export function incrementDailyOfflineSeconds(incSec = 1) {
   if (typeof window === 'undefined') return 0;
   try {
-    const key = getTodayQuotaKey();
-    const current = parseInt(localStorage.getItem(key) || '0', 10) || 0;
-    const updated = current + incSec;
-    localStorage.setItem(key, String(updated));
-    return updated;
+    const dayKey = getTodayQuotaKey();
+    const currentDay = parseInt(localStorage.getItem(dayKey) || '0', 10) || 0;
+    const updatedDay = currentDay + incSec;
+    localStorage.setItem(dayKey, String(updatedDay));
+
+    const monthKey = getMonthQuotaKey();
+    const currentMonth = parseInt(localStorage.getItem(monthKey) || '0', 10) || 0;
+    localStorage.setItem(monthKey, String(currentMonth + incSec));
+
+    return updatedDay;
   } catch (e) {
     return 0;
   }
 }
 
 /**
- * Validates if an offline update is permitted under 5-hour daily cap
+ * Validates if an offline update is permitted based on admin-defined rules, quotas, and feature flags
  */
-export function canPerformOfflineAction() {
+export function canPerformOfflineAction(featureKey = '') {
   if (typeof navigator !== 'undefined' && navigator.onLine) {
     return { allowed: true };
   }
+
+  const rules = getOfflineRules();
+
+  // 1. Master Switch: Kya offline kaam karega ya nahi
+  if (!rules.isOfflineEnabled) {
+    return {
+      allowed: false,
+      reason: `🛑 Offline Mode Disabled!\n\nAdmin ne company policy ke tahat offline kaam band kar rakha hai.\n\nKripya naye records add karne ya badlav save karne ke liye active Internet connect karein.`
+    };
+  }
+
+  // 2. Process-Level Feature Permission: Kaun sa process offline kaam karega
+  if (featureKey && rules.features && rules.features[featureKey] === false) {
+    const featureLabels = {
+      leadStatusUpdate: 'Lead Status Update',
+      leadNotes: 'Lead Notes & Remarks',
+      leadFollowUp: 'Follow-up Scheduling',
+      attendancePunch: 'Smart Attendance Punch Station',
+      clientRegistration: 'New Client Registration',
+      leadAssign: 'Lead Assignment',
+      profileEdit: 'Lead Profile Editing'
+    };
+    const name = featureLabels[featureKey] || featureKey;
+    return {
+      allowed: false,
+      reason: `🛑 Process Restricted Offline!\n\nAdmin policy ke mutabiq '${name}' offline allowed nahi hai.\n\nKripya is action ko perform karne ke liye active Internet connect karein.`
+    };
+  }
+
+  // 3. Daily Quota Check
   const usage = getDailyOfflineUsage();
   if (usage.isExceeded) {
     return {
       allowed: false,
-      reason: `🛑 Daily Offline Limit Exceeded (5 Hours Max Reached)!\n\nAap aaj ke din ka maximum 5 ghante ka offline work quota pura kar chuke hain.\n\nData security aur company policy ke mutabiq, naye records add karne ya update karne ke liye kripya abhee Internet connect karein.`
+      reason: `🛑 Daily Offline Limit Exceeded (${rules.dailyQuotaHours || 5} Hours Max Reached)!\n\nAap aaj ke din ka maximum ${rules.dailyQuotaHours || 5} ghante ka offline work quota pura kar chuke hain.\n\nData security aur company policy ke mutabiq, naye records add karne ya update karne ke liye kripya abhee Internet connect karein.`
     };
   }
-  return { allowed: true, usage };
+
+  // 4. Monthly Quota Check
+  const monthUsage = getMonthlyOfflineUsage();
+  if (monthUsage.isExceeded) {
+    return {
+      allowed: false,
+      reason: `🛑 Monthly Offline Limit Exceeded (${rules.monthlyQuotaHours || 50} Hours Max Reached)!\n\nAap is mahine ka maximum ${rules.monthlyQuotaHours || 50} ghante ka offline work quota pura kar chuke hain.\n\nKripya naye updates save karne ke liye active Internet connect karein.`
+    };
+  }
+
+  return { allowed: true, usage, monthUsage };
 }
 
 /**

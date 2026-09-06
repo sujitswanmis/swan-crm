@@ -4117,7 +4117,7 @@ export default function CRMContainer({
                 isVisited={visitedTabs.has('offline_rule')}
               >
                 <ErrorBoundary>
-                  <OfflineRuleModule />
+                  <OfflineRuleModule userRole={userRole} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

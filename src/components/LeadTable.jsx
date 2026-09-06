@@ -19,7 +19,7 @@ import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
-import { enqueueOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import Papa from 'papaparse';
 
@@ -210,6 +210,11 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadAssign');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
       const updatedRawLead = {
         ...lead,
@@ -241,6 +246,11 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
     } catch (netErr) {
       console.warn('Network updateAssignee failed, fallback to offline:', netErr);
+      const check = canPerformOfflineAction('leadAssign');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
       const updatedRawLead = {
         ...lead,
@@ -348,6 +358,11 @@ const LeadStatusCell = React.memo(({ info }) => {
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
       const updatedRawLead = {
         ...lead,
@@ -405,6 +420,11 @@ const LeadStatusCell = React.memo(({ info }) => {
       });
     } catch (netErr) {
       console.warn('Network stage update failed, fallback to offline:', netErr);
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
       const updatedRawLead = {
         ...lead,
@@ -1519,6 +1539,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
       const updatedRawLead = {
         ...lead,
@@ -1572,6 +1597,11 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
       });
     } catch (netErr) {
       console.warn('Network direct status change failed, fallback to offline:', netErr);
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
       const updatedRawLead = {
         ...lead,
