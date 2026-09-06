@@ -832,10 +832,25 @@ export default function CRMContainer({
     }
 
     async function loadLeads() {
-      setLoadingLeads(true);
       setIsSyncing(true);
       const supabase = createClient();
       
+      // 0. Instant 0ms Cache Hydration from IndexedDB
+      let localCachedLeads = [];
+      try {
+        localCachedLeads = await getLocalLeads();
+        if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
+          setRawLeads(localCachedLeads);
+          setSyncLoadedCount(localCachedLeads.length);
+          setLoadingLeads(false);
+        } else {
+          setLoadingLeads(true);
+        }
+      } catch (cacheErr) {
+        console.warn("Local leads cache read error:", cacheErr);
+        setLoadingLeads(true);
+      }
+
       let total = 0;
       try {
         const { count, error: countError } = await supabase
@@ -915,86 +930,193 @@ export default function CRMContainer({
       };
 
       try {
-        // 1. Fetch Page 0 of leads first for instant UI response
-        const page0Data = await fetchLeadsPageWithRetry(0);
-        loadedLeads = [...page0Data];
-        
-        // Render first chunk immediately
-        setRawLeads(loadedLeads.map(l => ({ ...l, lead_notes: [] })));
-        setSyncLoadedCount(loadedLeads.length);
-        setLoadingLeads(false);
+        const hasValidLocalCache = Array.isArray(localCachedLeads) && localCachedLeads.length > 0 &&
+          localCachedLeads.some(l => Array.isArray(l.lead_notes) && l.lead_notes.length > 0);
 
-        // 2. Fetch remaining pages of leads in parallel batches of 2
-        const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
-        const leadsBatchSize = 2;
-        
-        for (let i = 0; i < remainingPages.length; i += leadsBatchSize) {
-          const batch = remainingPages.slice(i, i + leadsBatchSize);
-          const batchResults = await Promise.all(batch.map(p => fetchLeadsPageWithRetry(p)));
-          for (const data of batchResults) {
-            loadedLeads = loadedLeads.concat(data);
+        if (hasValidLocalCache) {
+          // =========================================================================
+          // HIGH-EFFICIENCY DELTA SYNC (Conserves 99% Supabase Egress & Eliminates Lag)
+          // =========================================================================
+          let maxLeadCreatedAt = null;
+          let maxNoteCreatedAt = null;
+
+          for (const l of localCachedLeads) {
+            if (l.created_at && (!maxLeadCreatedAt || l.created_at > maxLeadCreatedAt)) {
+              maxLeadCreatedAt = l.created_at;
+            }
+            if (Array.isArray(l.lead_notes)) {
+              for (const n of l.lead_notes) {
+                if (n.created_at && (!maxNoteCreatedAt || n.created_at > maxNoteCreatedAt)) {
+                  maxNoteCreatedAt = n.created_at;
+                }
+              }
+            }
           }
+
+          // 1. Fetch Page 0 (top 1000 most recent leads) to sync status/assignment updates on active leads
+          const page0Data = await fetchLeadsPageWithRetry(0);
+
+          // 2. Fetch new notes created since last sync
+          let newNotes = [];
+          if (maxNoteCreatedAt) {
+            try {
+              const { data: deltaNotes, error: dNoteErr } = await supabase
+                .from('lead_notes')
+                .select('id, lead_id, created_at, note_text, created_by')
+                .gt('created_at', maxNoteCreatedAt)
+                .order('created_at', { ascending: false })
+                .limit(2000);
+              if (!dNoteErr && Array.isArray(deltaNotes)) {
+                newNotes = deltaNotes;
+              }
+            } catch (e) {
+              console.warn("Delta notes fetch error:", e);
+            }
+          }
+
+          // 3. Fetch any newly added leads
+          let newLeads = [];
+          if (maxLeadCreatedAt && total > localCachedLeads.length) {
+            try {
+              const { data: deltaLeads, error: dLeadErr } = await supabase
+                .from('leads')
+                .select('*')
+                .gt('created_at', maxLeadCreatedAt)
+                .order('created_at', { ascending: false })
+                .limit(1000);
+              if (!dLeadErr && Array.isArray(deltaLeads)) {
+                newLeads = deltaLeads;
+              }
+            } catch (e) {
+              console.warn("Delta leads fetch error:", e);
+            }
+          }
+
+          // 4. Merge cleanly: Preserve existing notes, apply fresh Page 0 updates, add new leads & notes
+          const leadsMap = new Map();
+          for (const l of localCachedLeads) {
+            leadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
+          }
+
+          // Merge recent page 0 leads (preserves existing notes)
+          for (const rl of page0Data) {
+            const existing = leadsMap.get(rl.id);
+            if (existing) {
+              leadsMap.set(rl.id, { ...existing, ...rl, lead_notes: existing.lead_notes });
+            } else {
+              leadsMap.set(rl.id, { ...rl, lead_notes: [] });
+            }
+          }
+
+          // Add brand new leads
+          for (const nl of newLeads) {
+            if (!leadsMap.has(nl.id)) {
+              leadsMap.set(nl.id, { ...nl, lead_notes: [] });
+            }
+          }
+
+          // Merge newly arrived notes
+          if (newNotes.length > 0) {
+            for (const n of newNotes) {
+              const targetLead = leadsMap.get(n.lead_id);
+              if (targetLead) {
+                const notesList = targetLead.lead_notes || [];
+                if (!notesList.some(existingN => existingN.id === n.id)) {
+                  targetLead.lead_notes = [n, ...notesList];
+                }
+              }
+            }
+          }
+
+          const finalMerged = Array.from(leadsMap.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          setRawLeads(finalMerged);
+          setSyncLoadedCount(finalMerged.length);
+          saveLeadsLocally(finalMerged);
+        } else {
+          // =========================================================================
+          // FULL INITIAL SYNC (Only for cold start / first time browser / empty cache)
+          // =========================================================================
+          // 1. Fetch Page 0 of leads first for instant UI response
+          const page0Data = await fetchLeadsPageWithRetry(0);
+          loadedLeads = [...page0Data];
+          
+          // Render first chunk immediately
+          setRawLeads(loadedLeads.map(l => ({ ...l, lead_notes: [] })));
           setSyncLoadedCount(loadedLeads.length);
+          setLoadingLeads(false);
+
+          // 2. Fetch remaining pages of leads in parallel batches of 2
+          const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
+          const leadsBatchSize = 2;
           
-          // Deduplicate and update state cleanly without quadratic array duplication
-          const currentSnapshot = [...loadedLeads];
-          const unique = [];
-          const seen = new Set();
-          for (const lead of currentSnapshot) {
-            if (!seen.has(lead.id)) {
-              seen.add(lead.id);
-              unique.push({ ...lead, lead_notes: [] });
+          for (let i = 0; i < remainingPages.length; i += leadsBatchSize) {
+            const batch = remainingPages.slice(i, i + leadsBatchSize);
+            const batchResults = await Promise.all(batch.map(p => fetchLeadsPageWithRetry(p)));
+            for (const data of batchResults) {
+              loadedLeads = loadedLeads.concat(data);
             }
-          }
-          const finalLeads = unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          setRawLeads(finalLeads);
-          saveLeadsLocally(finalLeads);
-        }
-
-        // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
-        try {
-          const { count: totalNotesCount } = await supabase
-            .from('lead_notes')
-            .select('*', { count: 'exact', head: true });
-
-          const notesPageSize = 1000;
-          const totalNotes = totalNotesCount || 0;
-          const notesNumPages = totalNotes > 0 ? Math.ceil(totalNotes / notesPageSize) : 1;
-          
-          let allNotes = [];
-          const notesBatches = Array.from({ length: notesNumPages }, (_, i) => i);
-          const notesBatchSize = 4; // Fetch 4 pages (4,000 notes) in parallel batches
-          
-          for (let i = 0; i < notesBatches.length; i += notesBatchSize) {
-            const currentBatch = notesBatches.slice(i, i + notesBatchSize);
-            const results = await Promise.all(currentBatch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
-            for (const data of results) {
-              if (Array.isArray(data)) {
-                allNotes = allNotes.concat(data);
+            setSyncLoadedCount(loadedLeads.length);
+            
+            // Deduplicate and update state cleanly without quadratic array duplication
+            const currentSnapshot = [...loadedLeads];
+            const unique = [];
+            const seen = new Set();
+            for (const lead of currentSnapshot) {
+              if (!seen.has(lead.id)) {
+                seen.add(lead.id);
+                unique.push({ ...lead, lead_notes: [] });
               }
             }
+            const finalLeads = unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            setRawLeads(finalLeads);
+            saveLeadsLocally(finalLeads);
           }
 
-          if (allNotes.length > 0) {
-            const notesMap = {};
-            for (const note of allNotes) {
-              if (!notesMap[note.lead_id]) {
-                notesMap[note.lead_id] = [];
+          // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
+          try {
+            const { count: totalNotesCount } = await supabase
+              .from('lead_notes')
+              .select('*', { count: 'exact', head: true });
+
+            const notesPageSize = 1000;
+            const totalNotes = totalNotesCount || 0;
+            const notesNumPages = totalNotes > 0 ? Math.ceil(totalNotes / notesPageSize) : 1;
+            
+            let allNotes = [];
+            const notesBatches = Array.from({ length: notesNumPages }, (_, i) => i);
+            const notesBatchSize = 4; // Fetch 4 pages (4,000 notes) in parallel batches
+            
+            for (let i = 0; i < notesBatches.length; i += notesBatchSize) {
+              const currentBatch = notesBatches.slice(i, i + notesBatchSize);
+              const results = await Promise.all(currentBatch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
+              for (const data of results) {
+                if (Array.isArray(data)) {
+                  allNotes = allNotes.concat(data);
+                }
               }
-              notesMap[note.lead_id].push(note);
             }
 
-            setRawLeads(prev => {
-              const withNotes = prev.map(lead => ({
-                ...lead,
-                lead_notes: notesMap[lead.id] || lead.lead_notes || []
-              })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-              saveLeadsLocally(withNotes);
-              return withNotes;
-            });
+            if (allNotes.length > 0) {
+              const notesMap = {};
+              for (const note of allNotes) {
+                if (!notesMap[note.lead_id]) {
+                  notesMap[note.lead_id] = [];
+                }
+                notesMap[note.lead_id].push(note);
+              }
+
+              setRawLeads(prev => {
+                const withNotes = prev.map(lead => ({
+                  ...lead,
+                  lead_notes: notesMap[lead.id] || lead.lead_notes || []
+                })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                saveLeadsLocally(withNotes);
+                return withNotes;
+              });
+            }
+          } catch (notesErr) {
+            console.error("Failed to fetch all lead notes:", notesErr);
           }
-        } catch (notesErr) {
-          console.error("Failed to fetch all lead notes:", notesErr);
         }
 
       } catch (err) {
@@ -1018,25 +1140,39 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => {
           if (current.some(item => item.id === payload.new.id)) return current;
-          return [{ ...payload.new, lead_notes: [] }, ...current];
+          const updated = [{ ...payload.new, lead_notes: [] }, ...current];
+          saveLeadsLocally(updated);
+          return updated;
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
-        setRawLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
+        setRawLeads((current) => {
+          const updated = current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item);
+          saveLeadsLocally(updated);
+          return updated;
+        });
         setLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
-        setRawLeads((current) => current.filter(item => item.id !== payload.old.id));
+        setRawLeads((current) => {
+          const updated = current.filter(item => item.id !== payload.old.id);
+          saveLeadsLocally(updated);
+          return updated;
+        });
         setLeads((current) => current.filter(item => item.id !== payload.old.id));
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
         const incoming = payload.new;
-        setRawLeads((current) => current.map(item => {
-          if (item.id !== incoming.lead_id) return item;
-          const existingNotes = item.lead_notes || [];
-          if (existingNotes.some(n => n.id === incoming.id)) return item;
-          return { ...item, lead_notes: [incoming, ...existingNotes] };
-        }));
+        setRawLeads((current) => {
+          const updated = current.map(item => {
+            if (item.id !== incoming.lead_id) return item;
+            const existingNotes = item.lead_notes || [];
+            if (existingNotes.some(n => n.id === incoming.id)) return item;
+            return { ...item, lead_notes: [incoming, ...existingNotes] };
+          });
+          saveLeadsLocally(updated);
+          return updated;
+        });
         setLeads((current) => current.map(item => {
           if (item.id !== incoming.lead_id) return item;
           const existingNotes = item.lead_notes || [];

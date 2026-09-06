@@ -28,29 +28,74 @@ export async function getDashboardMetrics(leadIds, dateFilter = 'Today') {
     let periodWaCount = 0;
     const chunkSize = 200; // Small chunk to be super safe with URL length
 
-    for (let i = 0; i < leadIds.length; i += chunkSize) {
-      const chunk = leadIds.slice(i, i + chunkSize);
+    // Optimization: If querying across practically all leads (>3000), execute single direct queries instead of 60+ chunked loops
+    if (leadIds.length > 3000) {
+      try {
+        const { count: tCount, error: err1 } = await supabase
+          .from('whatsapp_message_logs')
+          .select('*', { count: 'exact', head: true })
+          .not('status', 'ilike', 'failed%');
+        if (!err1) totalWaCount = tCount || 0;
 
-      // Total
-      const { count: tCount, error: err1 } = await supabase
-        .from('whatsapp_message_logs')
-        .select('*', { count: 'exact', head: true })
-        .in('lead_id', chunk)
-        .not('status', 'ilike', 'failed%');
-      
-      if (!err1) totalWaCount += (tCount || 0);
+        if (startDate) {
+          let { count: pCount, error: err2 } = await supabase
+            .from('whatsapp_message_logs')
+            .select('*', { count: 'exact', head: true })
+            .gte('sent_at', startDate)
+            .not('status', 'ilike', 'failed%');
 
-      // Period
-      if (startDate) {
-        const { count: pCount, error: err2 } = await supabase
+          if (err2 && err2.code === '42703') {
+            const res = await supabase
+              .from('whatsapp_message_logs')
+              .select('*', { count: 'exact', head: true })
+              .gte('created_at', startDate)
+              .not('status', 'ilike', 'failed%');
+            periodWaCount = res.count || 0;
+          } else if (!err2) {
+            periodWaCount = pCount || 0;
+          }
+        } else {
+          periodWaCount = totalWaCount;
+        }
+      } catch (err) {
+        console.warn('Global WhatsApp stats query warning:', err);
+      }
+    } else {
+      for (let i = 0; i < leadIds.length; i += chunkSize) {
+        const chunk = leadIds.slice(i, i + chunkSize);
+
+        // Total
+        const { count: tCount, error: err1 } = await supabase
           .from('whatsapp_message_logs')
           .select('*', { count: 'exact', head: true })
           .in('lead_id', chunk)
-          .gte('created_at', startDate)
           .not('status', 'ilike', 'failed%');
-        if (!err2) periodWaCount += (pCount || 0);
-      } else {
-        periodWaCount += (tCount || 0);
+        
+        if (!err1) totalWaCount += (tCount || 0);
+
+        // Period (using sent_at with created_at fallback)
+        if (startDate) {
+          let { count: pCount, error: err2 } = await supabase
+            .from('whatsapp_message_logs')
+            .select('*', { count: 'exact', head: true })
+            .in('lead_id', chunk)
+            .gte('sent_at', startDate)
+            .not('status', 'ilike', 'failed%');
+
+          if (err2 && err2.code === '42703') {
+            const res = await supabase
+              .from('whatsapp_message_logs')
+              .select('*', { count: 'exact', head: true })
+              .in('lead_id', chunk)
+              .gte('created_at', startDate)
+              .not('status', 'ilike', 'failed%');
+            if (!res.error) periodWaCount += (res.count || 0);
+          } else if (!err2) {
+            periodWaCount += (pCount || 0);
+          }
+        } else {
+          periodWaCount += (tCount || 0);
+        }
       }
     }
 

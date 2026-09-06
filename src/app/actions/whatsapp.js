@@ -261,7 +261,8 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         await supabase.from('whatsapp_message_logs').insert([{
           lead_id: lead.id,
           template_id: template.id,
-          status: 'sent to ' + phoneStr
+          status: 'sent to ' + phoneStr,
+          sent_at: new Date().toISOString()
         }]);
 
         successCount++;
@@ -273,7 +274,8 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         await supabase.from('whatsapp_message_logs').insert([{
           lead_id: leadId,
           template_id: templateId,
-          status: 'failed for ' + phone + ': ' + err.message
+          status: 'failed for ' + phone + ': ' + err.message,
+          sent_at: new Date().toISOString()
         }]);
       }
     }
