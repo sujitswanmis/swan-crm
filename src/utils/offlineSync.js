@@ -17,13 +17,25 @@ export const DEFAULT_OFFLINE_RULES = {
   dailyQuotaHours: 5,
   monthlyQuotaHours: 50,
   features: {
+    // Smart Checklist Operations
+    checklistSubmit: true,
+    checklistTemplateEdit: false,
+    // Task & Delegation Operations
+    delegationStatusUpdate: true,
+    delegationCreate: true,
+    delegationApproval: false,
+    // Sales & Lead Operations
     leadStatusUpdate: true,
     leadNotes: true,
     leadFollowUp: true,
-    attendancePunch: true,
     clientRegistration: true,
+    profileEdit: true,
     leadAssign: false,
-    profileEdit: true
+    // Attendance & Workforce Operations
+    attendancePunch: true,
+    attendanceRegularization: true,
+    // Master Records
+    partyMasterEdit: true
   },
   autoSyncOnReconnect: true,
   maxQueueItemsPerDevice: 500
@@ -174,13 +186,20 @@ export function canPerformOfflineAction(featureKey = '') {
   // 2. Process-Level Feature Permission: Kaun sa process offline kaam karega
   if (featureKey && rules.features && rules.features[featureKey] === false) {
     const featureLabels = {
+      checklistSubmit: 'Smart Checklist Submission',
+      checklistTemplateEdit: 'Checklist Template Builder',
+      delegationStatusUpdate: 'Delegation Task Status Update',
+      delegationCreate: 'Assign Delegation Task',
+      delegationApproval: 'Delegation Task Approval',
       leadStatusUpdate: 'Lead Status Update',
       leadNotes: 'Lead Notes & Remarks',
       leadFollowUp: 'Follow-up Scheduling',
       attendancePunch: 'Smart Attendance Punch Station',
+      attendanceRegularization: 'Attendance Regularization Request',
       clientRegistration: 'New Client Registration',
       leadAssign: 'Lead Assignment',
-      profileEdit: 'Lead Profile Editing'
+      profileEdit: 'Lead Profile Editing',
+      partyMasterEdit: 'Party Master Editing'
     };
     const name = featureLabels[featureKey] || featureKey;
     return {
@@ -628,6 +647,42 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
           if (error) throw error;
         }
         await removeQueueItem(item.queueId, { ...item, title: `Note: ${payload.note_text?.slice(0, 20)}` });
+        successCount++;
+      } else if (item.entityType === 'checklist_response') {
+        const payload = item.payload;
+        const { submitChecklistResponse } = await import('@/app/actions/checklist');
+        const res = await submitChecklistResponse(payload);
+        if (res && !res.success && res.error) {
+          throw new Error(res.error);
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
+        successCount++;
+      } else if (item.entityType === 'delegation_task') {
+        const payload = item.payload;
+        const { createDelegationTask } = await import('@/app/actions/delegationTask');
+        const res = await createDelegationTask(payload);
+        if (res && !res.success && res.error) {
+          throw new Error(res.error);
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Task: ${payload.title}` });
+        successCount++;
+      } else if (item.entityType === 'delegation_update') {
+        const payload = item.payload;
+        const { updateTaskStatus } = await import('@/app/actions/delegationTask');
+        const res = await updateTaskStatus(payload);
+        if (res && !res.success && res.error) {
+          throw new Error(res.error);
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Task Status: ${payload.status || 'Updated'}` });
+        successCount++;
+      } else if (item.entityType === 'attendance_regularize') {
+        const payload = item.payload;
+        const { applyMissingAttendance } = await import('@/app/actions/attendance');
+        const res = await applyMissingAttendance(payload);
+        if (res && !res.success && res.error) {
+          throw new Error(res.error);
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Regularize: ${payload.attendanceDate}` });
         successCount++;
       }
     } catch (itemErr) {

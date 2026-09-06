@@ -20,6 +20,7 @@ import {
 } from '@/app/actions/delegationTask';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 
 const PRIORITY_CONFIG = {
   URGENT: { label: 'Urgent', color: '#ef4444', bg: '#fee2e2', icon: '🔥' },
@@ -728,6 +729,35 @@ export default function DelegationTaskModule({
     const deadlineIso = new Date(`${createForm.deadlineDate}T${createForm.deadlineTime || '18:00'}:00`).toISOString();
     const cleanSubtasks = createForm.subtasks.filter(s => s.title && s.title.trim() !== '');
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('delegationCreate');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+      const offlineTask = {
+        id: `local_del_${Date.now()}`,
+        title: createForm.title,
+        description: createForm.description,
+        priority: createForm.priority,
+        category: createForm.category,
+        delegated_by_name: userName || 'Delegator',
+        delegated_by_email: userEmail,
+        assigned_to_name: createForm.assigned_to_name || 'Assignee',
+        assigned_to_email: createForm.assigned_to_email,
+        assigned_to_department: createForm.assigned_to_department,
+        deadline: deadlineIso,
+        subtasks: cleanSubtasks,
+        status: 'PENDING',
+        created_at: new Date().toISOString()
+      };
+      await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+      setTasks(prev => [offlineTask, ...prev]);
+      showNotification(`⚡ Offline Mode: Task delegated to ${createForm.assigned_to_name}! Saved to device.`);
+      setCreateModalOpen(false);
+      return;
+    }
+
     try {
       const res = await createDelegationTask({
         title: createForm.title,
@@ -752,7 +782,32 @@ export default function DelegationTaskModule({
         showNotification(res.error || 'Failed to create task', true);
       }
     } catch (e) {
-      showNotification(e.message, true);
+      console.warn('Network createDelegationTask failed, checking offline fallback:', e);
+      const check = canPerformOfflineAction('delegationCreate');
+      if (check.allowed) {
+        const offlineTask = {
+          id: `local_del_${Date.now()}`,
+          title: createForm.title,
+          description: createForm.description,
+          priority: createForm.priority,
+          category: createForm.category,
+          delegated_by_name: userName || 'Delegator',
+          delegated_by_email: userEmail,
+          assigned_to_name: createForm.assigned_to_name || 'Assignee',
+          assigned_to_email: createForm.assigned_to_email,
+          assigned_to_department: createForm.assigned_to_department,
+          deadline: deadlineIso,
+          subtasks: cleanSubtasks,
+          status: 'PENDING',
+          created_at: new Date().toISOString()
+        };
+        await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+        setTasks(prev => [offlineTask, ...prev]);
+        showNotification(`⚡ Network Issue: Task delegated and saved to device!`);
+        setCreateModalOpen(false);
+      } else {
+        showNotification(e.message, true);
+      }
     }
   };
 
@@ -761,6 +816,22 @@ export default function DelegationTaskModule({
   // ==========================================
 
   const handleStartTask = async (task) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('delegationStatusUpdate');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+      await enqueueOfflineAction('update', 'delegation_update', {
+        taskId: task.id,
+        status: 'IN_PROGRESS',
+        user: { name: userName, email: userEmail }
+      });
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'IN_PROGRESS' } : t));
+      showNotification('⚡ Offline: Task marked as In Progress (saved to device)');
+      return;
+    }
+
     try {
       const res = await updateTaskStatus({
         taskId: task.id,
@@ -786,6 +857,26 @@ export default function DelegationTaskModule({
 
   const handleSubmitTaskForReview = async () => {
     if (!submittingTask) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('delegationStatusUpdate');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+      await enqueueOfflineAction('update', 'delegation_update', {
+        taskId: submittingTask.id,
+        status: 'SUBMITTED',
+        completionNotes: submissionNotes,
+        completionProof: submissionProof,
+        user: { name: userName, email: userEmail }
+      });
+      setTasks(prev => prev.map(t => t.id === submittingTask.id ? { ...t, status: 'SUBMITTED', completion_notes: submissionNotes, completion_proof: submissionProof } : t));
+      showNotification('⚡ Offline Mode: Task submission saved to device! Will sync when connected.');
+      setSubmitModalOpen(false);
+      return;
+    }
+
     try {
       const res = await updateTaskStatus({
         taskId: submittingTask.id,
@@ -813,6 +904,22 @@ export default function DelegationTaskModule({
       if (st.id === subtaskId) return { ...st, completed: !st.completed };
       return st;
     });
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('delegationStatusUpdate');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+      await enqueueOfflineAction('update', 'delegation_update', {
+        taskId: task.id,
+        status: task.status === 'PENDING' ? 'IN_PROGRESS' : task.status,
+        subtasks: updatedSubtasks,
+        user: { name: userName, email: userEmail }
+      });
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: updatedSubtasks } : t));
+      return;
+    }
 
     try {
       await updateTaskStatus({
@@ -845,6 +952,15 @@ export default function DelegationTaskModule({
 
   const handleApproveTask = async () => {
     if (!verifyingTask) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('delegationApproval');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+    }
+
     try {
       const res = await verifyAndCompleteTask({
         taskId: verifyingTask.id,

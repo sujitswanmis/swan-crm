@@ -41,6 +41,7 @@ import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import { createClient } from '@/utils/supabase/client';
+import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 
 export default function ChecklistModule({
   userRole = 'agent',
@@ -833,10 +834,54 @@ export default function ChecklistModule({
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('checklistSubmit');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+
+      // Offline Save to Local Queue & Optimistic State
+      const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
+      const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
+      const offlinePayload = {
+        id: executingChecklist.submission?.id || `local_sub_${Date.now()}`,
+        template_id: tmpl.id,
+        template_title: tmpl.title,
+        frequency: tmpl.frequency,
+        period_key: executingChecklist.currentPeriodKey,
+        employee_name: userName || 'Employee',
+        employee_email: userEmail,
+        department: tmpl.department || 'General',
+        responses: execResponses,
+        submission_notes: execNotes,
+        items: executingChecklist.items,
+        status,
+        submitted_at: new Date().toISOString()
+      };
+
+      await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+
+      setDashboardChecklists(prev => prev.map(item => {
+        if (item.template.id === tmpl.id && item.currentPeriodKey === executingChecklist.currentPeriodKey) {
+          return {
+            ...item,
+            submission: offlinePayload,
+            status,
+            stats
+          };
+        }
+        return item;
+      }));
+
+      showNotification('⚡ Offline Mode: Checklist response saved safely to device! Will sync to cloud when connected.');
+      setExecutingChecklist(null);
+      return;
+    }
+
     setSavingSubmission(true);
 
     try {
-      const tmpl = executingChecklist.template;
       const res = await submitChecklistResponse({
         id: executingChecklist.submission?.id,
         template_id: tmpl.id,
@@ -886,7 +931,46 @@ export default function ChecklistModule({
         showNotification(res.error || 'Failed to submit checklist', true);
       }
     } catch (e) {
-      showNotification(e.message, true);
+      console.warn('Network submitChecklist failed, checking offline fallback:', e);
+      const check = canPerformOfflineAction('checklistSubmit');
+      if (check.allowed) {
+        const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
+        const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
+        const offlinePayload = {
+          id: executingChecklist.submission?.id || `local_sub_${Date.now()}`,
+          template_id: tmpl.id,
+          template_title: tmpl.title,
+          frequency: tmpl.frequency,
+          period_key: executingChecklist.currentPeriodKey,
+          employee_name: userName || 'Employee',
+          employee_email: userEmail,
+          department: tmpl.department || 'General',
+          responses: execResponses,
+          submission_notes: execNotes,
+          items: executingChecklist.items,
+          status,
+          submitted_at: new Date().toISOString()
+        };
+
+        await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+
+        setDashboardChecklists(prev => prev.map(item => {
+          if (item.template.id === tmpl.id && item.currentPeriodKey === executingChecklist.currentPeriodKey) {
+            return {
+              ...item,
+              submission: offlinePayload,
+              status,
+              stats
+            };
+          }
+          return item;
+        }));
+
+        showNotification('⚡ Network Issue: Checklist saved safely to device! Will sync automatically.');
+        setExecutingChecklist(null);
+      } else {
+        showNotification(e.message, true);
+      }
     } finally {
       setSavingSubmission(false);
     }
@@ -1109,6 +1193,14 @@ export default function ChecklistModule({
   };
 
   const handleSaveTemplate = async (explicitStatus = null) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('checklistTemplateEdit');
+      if (!check.allowed) {
+        showNotification(check.reason, true);
+        return;
+      }
+    }
+
     if (!templateForm.title.trim()) {
       showNotification('Please enter a template title', true);
       return;

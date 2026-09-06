@@ -23,7 +23,12 @@ import {
   Calendar,
   ToggleLeft,
   ToggleRight,
-  AlertCircle
+  AlertCircle,
+  CheckSquare,
+  ListTodo,
+  UserCheck,
+  FileCheck,
+  Building2
 } from 'lucide-react';
 import { 
   getDailyOfflineUsage, 
@@ -54,6 +59,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
   // Configurable Rules State
   const [rules, setRules] = useState(DEFAULT_OFFLINE_RULES);
   const [hasChanges, setHasChanges] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const supabase = createClient();
 
@@ -172,48 +178,129 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
   };
 
   const featureConfigs = [
+    // 📋 Smart Checklist Operations
+    {
+      key: 'checklistSubmit',
+      category: 'checklist',
+      categoryLabel: 'Smart Checklist',
+      title: 'Smart Checklist Submissions & Slot Responses',
+      desc: 'Allow employees to complete, fill checklists, and submit slot responses while offline in the field.',
+      icon: CheckSquare
+    },
+    {
+      key: 'checklistTemplateEdit',
+      category: 'checklist',
+      categoryLabel: 'Smart Checklist',
+      title: 'Checklist Template Builder & Configuration',
+      desc: 'Allow Admins/Managers to create or modify checklist templates and timing slots offline.',
+      icon: FileSpreadsheet,
+      warning: 'Recommended: Disabled to prevent schedule definition conflicts.'
+    },
+
+    // 👥 Task & Delegation Operations
+    {
+      key: 'delegationStatusUpdate',
+      category: 'delegation',
+      categoryLabel: 'Delegation Tasks',
+      title: 'Delegation Task Execution & Subtasks',
+      desc: 'Allow assignees to mark tasks In-Progress, tick subtasks, and submit completion proof offline.',
+      icon: ListTodo
+    },
+    {
+      key: 'delegationCreate',
+      category: 'delegation',
+      categoryLabel: 'Delegation Tasks',
+      title: 'Assign New Delegation Task',
+      desc: 'Allow managers and colleagues to delegate new tasks with deadlines to employees while offline.',
+      icon: Users
+    },
+    {
+      key: 'delegationApproval',
+      category: 'delegation',
+      categoryLabel: 'Delegation Tasks',
+      title: 'Delegation Task Review & Rating Approval',
+      desc: 'Allow delegators to verify, give 5-star ratings, and approve completed tasks while offline.',
+      icon: UserCheck,
+      warning: 'Recommended: Disabled to prevent concurrent rating conflicts.'
+    },
+
+    // 🎯 Sales & Lead Operations
     {
       key: 'leadStatusUpdate',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'Lead Pipeline Stage Updates',
       desc: 'Allow employees to change lead stages (New, Contact, Qualification, Follow-up, etc.) while offline.',
       icon: CheckCircle2
     },
     {
       key: 'leadNotes',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'Customer Remarks & Notes',
       desc: 'Allow employees to add customer discussion notes and remarks without active internet.',
       icon: FileText
     },
     {
       key: 'leadFollowUp',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'Follow-up Date Scheduling',
       desc: 'Allow agents to schedule upcoming follow-up reminder dates offline.',
       icon: Clock
     },
     {
-      key: 'attendancePunch',
-      title: 'Smart Attendance Punch Station',
-      desc: 'Allow employees to record Punch-In and Punch-Out with GPS location offline.',
-      icon: Users
-    },
-    {
       key: 'clientRegistration',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'New Client Registration Form',
       desc: 'Allow agents to fill and submit complete new lead/client registration forms offline.',
       icon: ShieldCheck
     },
     {
       key: 'profileEdit',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'Lead Profile Details Editing',
       desc: 'Allow modifying phone, email, contact person, or address while disconnected.',
       icon: Sliders
     },
     {
       key: 'leadAssign',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
       title: 'Lead Re-Assignment / Transfer',
-      desc: 'Allow reassigning leads to another employee while offline (Recommended: Disabled to prevent collision).',
+      desc: 'Allow reassigning leads to another employee while offline.',
       icon: Users,
       warning: 'Disabling prevents two agents from claiming the same lead simultaneously.'
+    },
+
+    // ⏰ Attendance & Workforce Operations
+    {
+      key: 'attendancePunch',
+      category: 'attendance',
+      categoryLabel: 'Smart Attendance',
+      title: 'Smart Attendance Punch Station',
+      desc: 'Allow employees to record Punch-In and Punch-Out with GPS location offline.',
+      icon: Clock
+    },
+    {
+      key: 'attendanceRegularization',
+      category: 'attendance',
+      categoryLabel: 'Smart Attendance',
+      title: 'Missing Punch Regularization Requests',
+      desc: 'Allow employees to submit attendance regularization requests and explanations offline.',
+      icon: FileCheck
+    },
+
+    // 🏢 Master Records & Accounts
+    {
+      key: 'partyMasterEdit',
+      category: 'master',
+      categoryLabel: 'Master Records',
+      title: 'Party Master & Customer Records',
+      desc: 'Allow creating or modifying business party master profiles while disconnected.',
+      icon: Building2
     }
   ];
 
@@ -547,8 +634,50 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
           </p>
         </div>
 
+        {/* Category Filter Tabs */}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+          {[
+            { id: 'all', label: 'All Operations', count: featureConfigs.length },
+            { id: 'checklist', label: '📋 Smart Checklist', count: featureConfigs.filter(f => f.category === 'checklist').length },
+            { id: 'delegation', label: '👥 Delegation Tasks', count: featureConfigs.filter(f => f.category === 'delegation').length },
+            { id: 'leads', label: '🎯 Leads & Sales', count: featureConfigs.filter(f => f.category === 'leads').length },
+            { id: 'attendance', label: '⏰ Smart Attendance', count: featureConfigs.filter(f => f.category === 'attendance').length },
+            { id: 'master', label: '🏢 Master Records', count: featureConfigs.filter(f => f.category === 'master').length }
+          ].map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategoryFilter(cat.id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '8px',
+                fontSize: '0.8rem',
+                fontWeight: categoryFilter === cat.id ? '700' : '500',
+                background: categoryFilter === cat.id ? '#2563eb' : 'var(--bg-hover, #f1f5f9)',
+                color: categoryFilter === cat.id ? '#ffffff' : 'var(--text-color, #334155)',
+                border: `1px solid ${categoryFilter === cat.id ? '#2563eb' : 'var(--border-color, #e2e8f0)'}`,
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              <span>{cat.label}</span>
+              <span style={{
+                fontSize: '0.7rem',
+                padding: '0.1rem 0.35rem',
+                borderRadius: '10px',
+                background: categoryFilter === cat.id ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                color: categoryFilter === cat.id ? '#ffffff' : 'var(--text-muted, #64748b)'
+              }}>
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
-          {featureConfigs.map((feat) => {
+          {featureConfigs.filter(f => categoryFilter === 'all' || f.category === categoryFilter).map((feat) => {
             const IconComp = feat.icon;
             const isEnabled = Boolean(rules.features?.[feat.key]);
 
@@ -582,8 +711,13 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
                     <IconComp size={18} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '0.2rem' }}>
-                      {feat.title}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }}>
+                        {feat.categoryLabel}
+                      </span>
+                      <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>
+                        {feat.title}
+                      </span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', lineHeight: 1.4 }}>
                       {feat.desc}

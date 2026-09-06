@@ -786,6 +786,40 @@ export default function AttendanceModule({
     setApplyError(null);
     setApplySuccess(null);
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('attendanceRegularization');
+      if (!check.allowed) {
+        setApplyError(check.reason);
+        setApplying(false);
+        return;
+      }
+      const regPayload = {
+        id: `local_reg_${Date.now()}`,
+        email: userEmail,
+        userId,
+        empName: userName,
+        attendanceDate: applyForm.attendanceDate,
+        requestType: applyForm.requestType,
+        requestedInTime: applyForm.requestedInTime,
+        requestedOutTime: applyForm.requestedOutTime,
+        reasonType: applyForm.reasonType,
+        reasonDetails: applyForm.reasonDetails,
+        assignedHodEmail: applyForm.assignedHodEmail,
+        assignedHodName: applyForm.assignedHodName,
+        status: 'PENDING',
+        created_at: new Date().toISOString()
+      };
+      await enqueueOfflineAction('create', 'attendance_regularize', regPayload);
+      setMyRequests(prev => [regPayload, ...prev]);
+      setApplySuccess('⚡ Offline Mode: Missing punch request saved to device! Will sync when internet is connected.');
+      setTimeout(() => {
+        setShowApplyModal(false);
+        setApplySuccess(null);
+      }, 2000);
+      setApplying(false);
+      return;
+    }
+
     try {
       const res = await applyMissingAttendance({
         email: userEmail,
@@ -813,7 +847,35 @@ export default function AttendanceModule({
         setApplyError(res.error);
       }
     } catch (err) {
-      setApplyError(err.message);
+      console.warn('Network applyMissingAttendance failed, checking offline fallback:', err);
+      const check = canPerformOfflineAction('attendanceRegularization');
+      if (check.allowed) {
+        const regPayload = {
+          id: `local_reg_${Date.now()}`,
+          email: userEmail,
+          userId,
+          empName: userName,
+          attendanceDate: applyForm.attendanceDate,
+          requestType: applyForm.requestType,
+          requestedInTime: applyForm.requestedInTime,
+          requestedOutTime: applyForm.requestedOutTime,
+          reasonType: applyForm.reasonType,
+          reasonDetails: applyForm.reasonDetails,
+          assignedHodEmail: applyForm.assignedHodEmail,
+          assignedHodName: applyForm.assignedHodName,
+          status: 'PENDING',
+          created_at: new Date().toISOString()
+        };
+        await enqueueOfflineAction('create', 'attendance_regularize', regPayload);
+        setMyRequests(prev => [regPayload, ...prev]);
+        setApplySuccess('⚡ Network Issue: Missing punch request saved to device! Will sync automatically.');
+        setTimeout(() => {
+          setShowApplyModal(false);
+          setApplySuccess(null);
+        }, 2000);
+      } else {
+        setApplyError(err.message);
+      }
     } finally {
       setApplying(false);
     }

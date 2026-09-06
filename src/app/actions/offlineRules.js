@@ -16,13 +16,25 @@ export const DEFAULT_OFFLINE_RULES = {
   dailyQuotaHours: 5,
   monthlyQuotaHours: 50,
   features: {
+    // Smart Checklist Operations
+    checklistSubmit: true,
+    checklistTemplateEdit: false,
+    // Task & Delegation Operations
+    delegationStatusUpdate: true,
+    delegationCreate: true,
+    delegationApproval: false,
+    // Sales & Lead Operations
     leadStatusUpdate: true,
     leadNotes: true,
     leadFollowUp: true,
-    attendancePunch: true,
     clientRegistration: true,
+    profileEdit: true,
     leadAssign: false,
-    profileEdit: true
+    // Attendance & Workforce Operations
+    attendancePunch: true,
+    attendanceRegularization: true,
+    // Master Records
+    partyMasterEdit: true
   },
   autoSyncOnReconnect: true,
   maxQueueItemsPerDevice: 500
@@ -91,13 +103,20 @@ export async function saveOfflineRuleSettings(newSettings) {
       dailyQuotaHours: Math.min(24, Math.max(1, Number(newSettings.dailyQuotaHours) || 5)),
       monthlyQuotaHours: Math.min(300, Math.max(5, Number(newSettings.monthlyQuotaHours) || 50)),
       features: {
+        checklistSubmit: Boolean(newSettings.features?.checklistSubmit),
+        checklistTemplateEdit: Boolean(newSettings.features?.checklistTemplateEdit),
+        delegationStatusUpdate: Boolean(newSettings.features?.delegationStatusUpdate),
+        delegationCreate: Boolean(newSettings.features?.delegationCreate),
+        delegationApproval: Boolean(newSettings.features?.delegationApproval),
         leadStatusUpdate: Boolean(newSettings.features?.leadStatusUpdate),
         leadNotes: Boolean(newSettings.features?.leadNotes),
         leadFollowUp: Boolean(newSettings.features?.leadFollowUp),
-        attendancePunch: Boolean(newSettings.features?.attendancePunch),
         clientRegistration: Boolean(newSettings.features?.clientRegistration),
+        profileEdit: Boolean(newSettings.features?.profileEdit),
         leadAssign: Boolean(newSettings.features?.leadAssign),
-        profileEdit: Boolean(newSettings.features?.profileEdit)
+        attendancePunch: Boolean(newSettings.features?.attendancePunch),
+        attendanceRegularization: Boolean(newSettings.features?.attendanceRegularization),
+        partyMasterEdit: Boolean(newSettings.features?.partyMasterEdit)
       },
       autoSyncOnReconnect: Boolean(newSettings.autoSyncOnReconnect),
       maxQueueItemsPerDevice: Number(newSettings.maxQueueItemsPerDevice) || 500,
