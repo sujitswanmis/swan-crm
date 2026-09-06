@@ -41,7 +41,7 @@ import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import { createClient } from '@/utils/supabase/client';
-import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, getLocalChecklists } from '@/utils/offlineSync';
 
 export default function ChecklistModule({
   userRole = 'agent',
@@ -562,6 +562,13 @@ export default function ChecklistModule({
 
   // Initial load: load master records & prefetch all data silently in background
   useEffect(() => {
+    // 0ms Instant Offline Hydration from IndexedDB
+    getLocalChecklists().then((cached) => {
+      if (Array.isArray(cached) && cached.length > 0) {
+        setDashboardChecklists(cached);
+      }
+    }).catch(() => {});
+
     loadEmployees();
     loadDepartments();
     loadEmployeeDashboard(dashboardDate, true);
@@ -654,12 +661,18 @@ export default function ChecklistModule({
         frequency: selectedFrequency,
         targetDate: targetObj
       });
-      if (res.success) {
-        setDashboardChecklists(res.data || []);
+      if (res.success && Array.isArray(res.data)) {
+        setDashboardChecklists(res.data);
+        saveChecklistsLocally(res.data);
       }
     } catch (e) {
-      console.error(e);
-      if (!silent) showNotification('Failed to load checklists', true);
+      console.warn('Network loadEmployeeDashboard failed, reading offline IndexedDB cache:', e);
+      const cached = await getLocalChecklists();
+      if (cached && cached.length > 0) {
+        setDashboardChecklists(cached);
+      } else if (!silent) {
+        showNotification('Failed to load checklists', true);
+      }
     } finally {
       setLoading(false);
     }

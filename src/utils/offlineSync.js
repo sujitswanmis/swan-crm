@@ -5,9 +5,11 @@
 export const MAX_OFFLINE_SECONDS_PER_DAY = 5 * 60 * 60; // Maximum 5 Hours Offline Limit Per Day (18,000 Seconds)
 
 const DB_NAME = 'supuja_crm_offline_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = {
   LEADS_CACHE: 'leads_cache',
+  CHECKLIST_CACHE: 'checklist_cache',
+  DELEGATION_CACHE: 'delegation_cache',
   SYNC_QUEUE: 'sync_queue',
   SYNC_HISTORY: 'sync_history'
 };
@@ -17,25 +19,60 @@ export const DEFAULT_OFFLINE_RULES = {
   dailyQuotaHours: 5,
   monthlyQuotaHours: 50,
   features: {
-    // Smart Checklist Operations
+    // 📋 Smart Checklist Operations
     checklistSubmit: true,
     checklistTemplateEdit: false,
-    // Task & Delegation Operations
+
+    // 👥 Task & Delegation Operations
     delegationStatusUpdate: true,
     delegationCreate: true,
     delegationApproval: false,
-    // Sales & Lead Operations
+
+    // ⏰ Smart Attendance Operations
+    attendancePunch: true,
+    attendanceRegularization: true,
+
+    // 🎯 Sales & CRM Operations
     leadStatusUpdate: true,
     leadNotes: true,
     leadFollowUp: true,
     clientRegistration: true,
     profileEdit: true,
     leadAssign: false,
-    // Attendance & Workforce Operations
-    attendancePunch: true,
-    attendanceRegularization: true,
-    // Master Records
-    partyMasterEdit: true
+    partyMasterEdit: true,
+    locationMaster: false,
+    orders: false,
+    clientReport: false,
+
+    // 📊 General & Analytics
+    analytics: false,
+
+    // 📦 Purchase & Production
+    mrp: false,
+    mrpAgainst: false,
+
+    // 👔 Human Resource
+    recruiter: false,
+    joining: false,
+
+    // 🏢 System & Workplace WMS
+    teamManagement: false,
+    workplaceWms: false,
+    publicUsers: false,
+
+    // 📞 Communication & AI
+    callCenter: false,
+    callAdmin: false,
+    aiCallCenter: false,
+    whatsappOfficial: false,
+    whatsappUnofficial: false,
+    aiAssistant: false,
+    aiAdmin: false,
+    aiKnowledgeBase: false,
+    adminMessageConfig: false,
+
+    // ⚙️ System Settings
+    settings: true
   },
   autoSyncOnReconnect: true,
   maxQueueItemsPerDevice: 500
@@ -266,6 +303,12 @@ export function openOfflineDB() {
       if (!db.objectStoreNames.contains(STORES.LEADS_CACHE)) {
         db.createObjectStore(STORES.LEADS_CACHE, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(STORES.CHECKLIST_CACHE)) {
+        db.createObjectStore(STORES.CHECKLIST_CACHE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORES.DELEGATION_CACHE)) {
+        db.createObjectStore(STORES.DELEGATION_CACHE, { keyPath: 'id' });
+      }
       if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
         const queueStore = db.createObjectStore(STORES.SYNC_QUEUE, { keyPath: 'queueId' });
         queueStore.createIndex('timestamp', 'timestamp', { unique: false });
@@ -332,6 +375,104 @@ export async function getLocalLeads() {
     });
   } catch (err) {
     console.warn('Failed to read local leads:', err);
+    return [];
+  }
+}
+
+/**
+ * Cache current checklists array to IndexedDB for offline browsing
+ */
+export async function saveChecklistsLocally(checklists) {
+  if (!Array.isArray(checklists) || checklists.length === 0) return;
+  try {
+    const db = await openOfflineDB();
+    if (!db) return;
+
+    const tx = db.transaction(STORES.CHECKLIST_CACHE, 'readwrite');
+    const store = tx.objectStore(STORES.CHECKLIST_CACHE);
+    
+    store.clear();
+    checklists.forEach((item) => {
+      if (item && item.id) {
+        store.put(item);
+      }
+    });
+
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Failed to cache checklists locally:', err);
+  }
+}
+
+/**
+ * Read cached checklists from IndexedDB when offline
+ */
+export async function getLocalChecklists() {
+  try {
+    const db = await openOfflineDB();
+    if (!db) return [];
+
+    const tx = db.transaction(STORES.CHECKLIST_CACHE, 'readonly');
+    const store = tx.objectStore(STORES.CHECKLIST_CACHE);
+    const request = store.getAll();
+
+    return new Promise((resolve) => {
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Cache current delegation tasks array to IndexedDB for offline browsing
+ */
+export async function saveDelegationTasksLocally(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) return;
+  try {
+    const db = await openOfflineDB();
+    if (!db) return;
+
+    const tx = db.transaction(STORES.DELEGATION_CACHE, 'readwrite');
+    const store = tx.objectStore(STORES.DELEGATION_CACHE);
+    
+    store.clear();
+    tasks.forEach((t) => {
+      if (t && t.id) {
+        store.put(t);
+      }
+    });
+
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Failed to cache delegation tasks locally:', err);
+  }
+}
+
+/**
+ * Read cached delegation tasks from IndexedDB when offline
+ */
+export async function getLocalDelegationTasks() {
+  try {
+    const db = await openOfflineDB();
+    if (!db) return [];
+
+    const tx = db.transaction(STORES.DELEGATION_CACHE, 'readonly');
+    const store = tx.objectStore(STORES.DELEGATION_CACHE);
+    const request = store.getAll();
+
+    return new Promise((resolve) => {
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+  } catch (e) {
     return [];
   }
 }
@@ -768,8 +909,10 @@ export function isModuleAllowedOffline(tabId = '') {
 
   switch (tabId) {
     case 'leads':
-    case 'report':
       return !!(features.leadStatusUpdate || features.leadNotes || features.profileEdit || features.leadFollowUp);
+
+    case 'report':
+      return !!features.clientReport;
 
     case 'registration':
       return !!features.clientRegistration;
@@ -786,7 +929,72 @@ export function isModuleAllowedOffline(tabId = '') {
     case 'party':
       return !!features.partyMasterEdit;
 
+    case 'location_master':
+    case 'location_territory':
+    case 'location-master':
+      return !!features.locationMaster;
+
+    case 'orders':
+      return !!features.orders;
+
+    case 'mrp':
+      return !!features.mrp;
+
+    case 'mrp_against':
+      return !!features.mrpAgainst;
+
+    case 'recruiter':
+      return !!features.recruiter;
+
+    case 'joining':
+      return !!features.joining;
+
+    case 'dashboard':
+    case 'analytics':
+      return !!features.analytics;
+
+    case 'team':
+      return !!features.teamManagement;
+
+    case 'workplace':
+      return !!features.workplaceWms;
+
+    case 'public_users':
+      return !!features.publicUsers;
+
+    case 'callcenter':
+      return !!features.callCenter;
+
+    case 'calladmin':
+      return !!features.callAdmin;
+
+    case 'aicallcenter':
+      return !!features.aiCallCenter;
+
+    case 'whatsapp_official':
+      return !!features.whatsappOfficial;
+
+    case 'whatsapp_unofficial':
+      return !!features.whatsappUnofficial;
+
+    case 'ai':
+    case 'new_swan_ai':
+      return !!features.aiAssistant;
+
+    case 'aiadmin':
+      return !!features.aiAdmin;
+
+    case 'aiknowledgebase':
+      return !!features.aiKnowledgeBase;
+
+    case 'admin_message_config':
+    case 'sms_config':
+    case 'rcs_config':
+    case 'email_config':
+      return !!features.adminMessageConfig;
+
     case 'system_offline_rules':
+    case 'offline_rule':
     case 'settings':
       return true;
 

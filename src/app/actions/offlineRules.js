@@ -16,25 +16,60 @@ const DEFAULT_OFFLINE_RULES = {
   dailyQuotaHours: 5,
   monthlyQuotaHours: 50,
   features: {
-    // Smart Checklist Operations
+    // 📋 Smart Checklist Operations
     checklistSubmit: true,
     checklistTemplateEdit: false,
-    // Task & Delegation Operations
+
+    // 👥 Task & Delegation Operations
     delegationStatusUpdate: true,
     delegationCreate: true,
     delegationApproval: false,
-    // Sales & Lead Operations
+
+    // ⏰ Smart Attendance Operations
+    attendancePunch: true,
+    attendanceRegularization: true,
+
+    // 🎯 Sales & CRM Operations
     leadStatusUpdate: true,
     leadNotes: true,
     leadFollowUp: true,
     clientRegistration: true,
     profileEdit: true,
     leadAssign: false,
-    // Attendance & Workforce Operations
-    attendancePunch: true,
-    attendanceRegularization: true,
-    // Master Records
-    partyMasterEdit: true
+    partyMasterEdit: true,
+    locationMaster: false,
+    orders: false,
+    clientReport: false,
+
+    // 📊 General & Analytics
+    analytics: false,
+
+    // 📦 Purchase & Production
+    mrp: false,
+    mrpAgainst: false,
+
+    // 👔 Human Resource
+    recruiter: false,
+    joining: false,
+
+    // 🏢 System & Workplace WMS
+    teamManagement: false,
+    workplaceWms: false,
+    publicUsers: false,
+
+    // 📞 Communication & AI
+    callCenter: false,
+    callAdmin: false,
+    aiCallCenter: false,
+    whatsappOfficial: false,
+    whatsappUnofficial: false,
+    aiAssistant: false,
+    aiAdmin: false,
+    aiKnowledgeBase: false,
+    adminMessageConfig: false,
+
+    // ⚙️ System Settings
+    settings: true
   },
   autoSyncOnReconnect: true,
   maxQueueItemsPerDevice: 500

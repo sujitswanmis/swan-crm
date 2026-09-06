@@ -28,7 +28,17 @@ import {
   ListTodo,
   UserCheck,
   FileCheck,
-  Building2
+  Building2,
+  PieChart,
+  Bot,
+  Phone,
+  MessageCircle,
+  Globe,
+  Archive,
+  Briefcase,
+  Layers,
+  Settings,
+  Mail
 } from 'lucide-react';
 import { 
   getDailyOfflineUsage, 
@@ -37,6 +47,8 @@ import {
   getSyncHistory, 
   syncPendingQueue, 
   getLocalLeads,
+  getLocalChecklists,
+  getLocalDelegationTasks,
   getOfflineRules,
   saveOfflineRulesToLocal,
   DEFAULT_OFFLINE_RULES
@@ -52,6 +64,8 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
   const [syncHistory, setSyncHistory] = useState([]);
   const [cachedLeadsCount, setCachedLeadsCount] = useState(0);
   const [cachedNotesCount, setCachedNotesCount] = useState(0);
+  const [cachedChecklistsCount, setCachedChecklistsCount] = useState(0);
+  const [cachedDelegationsCount, setCachedDelegationsCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
@@ -96,6 +110,16 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
           if (Array.isArray(l.lead_notes)) noteCount += l.lead_notes.length;
         }
         setCachedNotesCount(noteCount);
+      }
+
+      const cachedChecklists = await getLocalChecklists();
+      if (Array.isArray(cachedChecklists)) {
+        setCachedChecklistsCount(cachedChecklists.length);
+      }
+
+      const cachedDelegations = await getLocalDelegationTasks();
+      if (Array.isArray(cachedDelegations)) {
+        setCachedDelegationsCount(cachedDelegations.length);
       }
     } catch (err) {
       console.warn('Error loading offline rule data:', err);
@@ -224,6 +248,24 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       warning: 'Recommended: Disabled to prevent concurrent rating conflicts.'
     },
 
+    // ⏰ Attendance & Workforce Operations
+    {
+      key: 'attendancePunch',
+      category: 'attendance',
+      categoryLabel: 'Smart Attendance',
+      title: 'Smart Attendance Punch Station',
+      desc: 'Allow employees to record Punch-In and Punch-Out with GPS location offline.',
+      icon: Clock
+    },
+    {
+      key: 'attendanceRegularization',
+      category: 'attendance',
+      categoryLabel: 'Smart Attendance',
+      title: 'Missing Punch Regularization Requests',
+      desc: 'Allow employees to submit attendance regularization requests and explanations offline.',
+      icon: FileCheck
+    },
+
     // 🎯 Sales & Lead Operations
     {
       key: 'leadStatusUpdate',
@@ -274,33 +316,199 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       icon: Users,
       warning: 'Disabling prevents two agents from claiming the same lead simultaneously.'
     },
-
-    // ⏰ Attendance & Workforce Operations
     {
-      key: 'attendancePunch',
-      category: 'attendance',
-      categoryLabel: 'Smart Attendance',
-      title: 'Smart Attendance Punch Station',
-      desc: 'Allow employees to record Punch-In and Punch-Out with GPS location offline.',
-      icon: Clock
-    },
-    {
-      key: 'attendanceRegularization',
-      category: 'attendance',
-      categoryLabel: 'Smart Attendance',
-      title: 'Missing Punch Regularization Requests',
-      desc: 'Allow employees to submit attendance regularization requests and explanations offline.',
-      icon: FileCheck
+      key: 'clientReport',
+      category: 'leads',
+      categoryLabel: 'Leads & Sales',
+      title: 'Client Registered Report & Analytics',
+      desc: 'Allow browsing registered clients summary and conversion reports offline.',
+      icon: FileText
     },
 
-    // 🏢 Master Records & Accounts
+    // 🏢 Sales & Locations
     {
       key: 'partyMasterEdit',
-      category: 'master',
-      categoryLabel: 'Master Records',
-      title: 'Party Master & Customer Records',
+      category: 'sales_locations',
+      categoryLabel: 'Sales & Locations',
+      title: 'Party Master & Customer Profiles',
       desc: 'Allow creating or modifying business party master profiles while disconnected.',
       icon: Building2
+    },
+    {
+      key: 'locationMaster',
+      category: 'sales_locations',
+      categoryLabel: 'Sales & Locations',
+      title: 'Location Master Directory',
+      desc: 'Allow browsing states, districts, tehsils, blocks, and PIN codes while offline.',
+      icon: Globe
+    },
+    {
+      key: 'orders',
+      category: 'sales_locations',
+      categoryLabel: 'Sales & Locations',
+      title: 'Order Management & Tracking',
+      desc: 'Allow viewing customer sales orders and order status offline.',
+      icon: Briefcase
+    },
+
+    // 📦 Purchase & Production
+    {
+      key: 'mrp',
+      category: 'purchase',
+      categoryLabel: 'Purchase & MRP',
+      title: 'MRP System (Material Planning)',
+      desc: 'Allow browsing material requirements planning and BOM records offline.',
+      icon: Archive
+    },
+    {
+      key: 'mrpAgainst',
+      category: 'purchase',
+      categoryLabel: 'Purchase & MRP',
+      title: 'MRP Against (Procurement Requisitions)',
+      desc: 'Allow viewing purchase indent and procurement tracking records offline.',
+      icon: Layers
+    },
+
+    // 👔 Human Resources
+    {
+      key: 'recruiter',
+      category: 'hr',
+      categoryLabel: 'Human Resources',
+      title: 'Recruiter Dashboard (S00-S09 Pipeline)',
+      desc: 'Allow recruiters to view candidate profiles, interview status, and stages offline.',
+      icon: Users
+    },
+    {
+      key: 'joining',
+      category: 'hr',
+      categoryLabel: 'Human Resources',
+      title: 'Joining & Onboarding Process',
+      desc: 'Allow HR to track candidate onboarding checklist and joining documents offline.',
+      icon: UserCheck
+    },
+
+    // 📊 General & Analytics
+    {
+      key: 'analytics',
+      category: 'general',
+      categoryLabel: 'General & Analytics',
+      title: 'Executive Analytics Dashboard',
+      desc: 'Allow viewing cached high-level performance charts and KPI counters offline.',
+      icon: PieChart
+    },
+
+    // ⚙️ System & Workplace
+    {
+      key: 'workplaceWms',
+      category: 'system',
+      categoryLabel: 'System & WMS',
+      title: 'Workplace WMS & Employee Master',
+      desc: 'Allow browsing company staff directory, designations, and organizational chart offline.',
+      icon: Building2
+    },
+    {
+      key: 'teamManagement',
+      category: 'system',
+      categoryLabel: 'System & WMS',
+      title: 'Team Management & User Access Control',
+      desc: 'Allow managing employee permissions and roles offline.',
+      icon: Users,
+      warning: 'Recommended: Online Only to prevent permission synchronization conflicts.'
+    },
+    {
+      key: 'publicUsers',
+      category: 'system',
+      categoryLabel: 'System & WMS',
+      title: 'Public User Account Management',
+      desc: 'Allow browsing public portal users and customer accounts offline.',
+      icon: Users
+    },
+    {
+      key: 'settings',
+      category: 'system',
+      categoryLabel: 'System & WMS',
+      title: 'System Settings & Security Config',
+      desc: 'Allow configuring business preferences and viewing offline rules while disconnected.',
+      icon: Settings
+    },
+
+    // 📞 Telephony, WhatsApp & AI
+    {
+      key: 'callCenter',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'Softphone & Call Center',
+      desc: 'VoIP calling station. Requires active SIP internet connection.',
+      icon: PhoneCall,
+      warning: 'Real-time VoIP voice streams cannot operate without active internet connection.'
+    },
+    {
+      key: 'callAdmin',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'Call Admin & Agent Endpoints',
+      desc: 'Allow viewing SIP extension configurations and call history logs offline.',
+      icon: Phone
+    },
+    {
+      key: 'aiCallCenter',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'Autonomous AI Call Center',
+      desc: 'AI automated calling campaigns and speech analysis.',
+      icon: Bot,
+      warning: 'Real-time AI voice agents require active cloud network connection.'
+    },
+    {
+      key: 'whatsappOfficial',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'Official Meta WhatsApp Business',
+      desc: 'Cloud API messaging and approved templates broadcast.',
+      icon: MessageCircle,
+      warning: 'Requires active internet connection to deliver WhatsApp API messages.'
+    },
+    {
+      key: 'whatsappUnofficial',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'WhatsApp Multi-Device Web Inbox',
+      desc: 'Live chat inbox and instance QR manager.',
+      icon: MessageCircle,
+      warning: 'Requires active WebSocket connection to mobile device instance.'
+    },
+    {
+      key: 'aiAssistant',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'New Swan AI Assistant (LLM)',
+      desc: 'Smart generative assistant. Requires active cloud neural network.',
+      icon: Bot,
+      warning: 'Requires active cloud AI network connection.'
+    },
+    {
+      key: 'aiAdmin',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'User AI Usage & Token Tracking',
+      desc: 'Monitor token consumption and employee quotas.',
+      icon: Bot
+    },
+    {
+      key: 'aiKnowledgeBase',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'AI Knowledge Base (RAG)',
+      desc: 'Vector embeddings and knowledge documents manager.',
+      icon: Database
+    },
+    {
+      key: 'adminMessageConfig',
+      category: 'comm',
+      categoryLabel: 'Communications & AI',
+      title: 'Messaging Gateway Configuration (SMS/RCS/Email)',
+      desc: 'Manage SMTP, Twilio, and SMS gateway credentials offline.',
+      icon: Mail
     }
   ];
 
@@ -637,12 +845,17 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
         {/* Category Filter Tabs */}
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
           {[
-            { id: 'all', label: 'All Operations', count: featureConfigs.length },
+            { id: 'all', label: 'All Modules', count: featureConfigs.length },
             { id: 'checklist', label: '📋 Smart Checklist', count: featureConfigs.filter(f => f.category === 'checklist').length },
             { id: 'delegation', label: '👥 Delegation Tasks', count: featureConfigs.filter(f => f.category === 'delegation').length },
-            { id: 'leads', label: '🎯 Leads & Sales', count: featureConfigs.filter(f => f.category === 'leads').length },
             { id: 'attendance', label: '⏰ Smart Attendance', count: featureConfigs.filter(f => f.category === 'attendance').length },
-            { id: 'master', label: '🏢 Master Records', count: featureConfigs.filter(f => f.category === 'master').length }
+            { id: 'leads', label: '🎯 Leads & Sales', count: featureConfigs.filter(f => f.category === 'leads').length },
+            { id: 'sales_locations', label: '🏢 Sales & Locations', count: featureConfigs.filter(f => f.category === 'sales_locations').length },
+            { id: 'purchase', label: '📦 Purchase & MRP', count: featureConfigs.filter(f => f.category === 'purchase').length },
+            { id: 'hr', label: '👔 Human Resources', count: featureConfigs.filter(f => f.category === 'hr').length },
+            { id: 'general', label: '📊 General & Analytics', count: featureConfigs.filter(f => f.category === 'general').length },
+            { id: 'system', label: '⚙️ System & WMS', count: featureConfigs.filter(f => f.category === 'system').length },
+            { id: 'comm', label: '📞 Telecom & AI', count: featureConfigs.filter(f => f.category === 'comm').length }
           ].map(cat => (
             <button
               key={cat.id}
@@ -794,6 +1007,14 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-hover, #f8fafc)', borderRadius: '8px' }}>
               <span style={{ color: 'var(--text-muted, #64748b)' }}>Cached Notes on Device:</span>
               <strong>{cachedNotesCount.toLocaleString()} Notes</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-hover, #f8fafc)', borderRadius: '8px' }}>
+              <span style={{ color: 'var(--text-muted, #64748b)' }}>Cached Checklists on Device:</span>
+              <strong>{cachedChecklistsCount.toLocaleString()} Tasks</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-hover, #f8fafc)', borderRadius: '8px' }}>
+              <span style={{ color: 'var(--text-muted, #64748b)' }}>Cached Delegations on Device:</span>
+              <strong>{cachedDelegationsCount.toLocaleString()} Tasks</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-hover, #f8fafc)', borderRadius: '8px' }}>
               <span style={{ color: 'var(--text-muted, #64748b)' }}>Sync Architecture:</span>

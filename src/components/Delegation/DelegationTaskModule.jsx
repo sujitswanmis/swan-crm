@@ -20,7 +20,7 @@ import {
 } from '@/app/actions/delegationTask';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
-import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, saveDelegationTasksLocally, getLocalDelegationTasks } from '@/utils/offlineSync';
 
 const PRIORITY_CONFIG = {
   URGENT: { label: 'Urgent', color: '#ef4444', bg: '#fee2e2', icon: '🔥' },
@@ -159,6 +159,13 @@ export default function DelegationTaskModule({
   const [drilldownSearch, setDrilldownSearch] = useState('');
 
   useEffect(() => {
+    // 0ms Instant Offline Hydration from IndexedDB
+    getLocalDelegationTasks().then((cached) => {
+      if (Array.isArray(cached) && cached.length > 0) {
+        setTasks(cached);
+      }
+    }).catch(() => {});
+
     loadEmployees();
     // Default deadline to tomorrow 6 PM
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -220,12 +227,18 @@ export default function DelegationTaskModule({
         priority: priorityFilter,
         search: searchQuery
       });
-      if (res.success) {
-        setTasks(res.data || []);
+      if (res.success && Array.isArray(res.data)) {
+        setTasks(res.data);
+        saveDelegationTasksLocally(res.data);
       }
     } catch (e) {
-      console.error(e);
-      showNotification('Failed to load tasks', true);
+      console.warn('Network loadTasks failed, reading offline IndexedDB cache:', e);
+      const cached = await getLocalDelegationTasks();
+      if (cached && cached.length > 0) {
+        setTasks(cached);
+      } else {
+        showNotification('Failed to load tasks', true);
+      }
     } finally {
       setLoading(false);
     }
