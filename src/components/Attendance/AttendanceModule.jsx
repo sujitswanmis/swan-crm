@@ -561,10 +561,6 @@ export default function AttendanceModule({
   // Confirmed Punch In (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
   const handleConfirmedPunchIn = async () => {
     setPunchConfirm(null);
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setPunchError('🛑 Internet Disconnected: Attendance mark karne ke liye active internet connection zaroori hai.');
-      return;
-    }
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('in');
 
@@ -632,8 +628,19 @@ export default function AttendanceModule({
         }
       }
     } catch (err) {
-      console.warn('Network punch-in failed:', err);
-      setPunchError('🛑 Network Error: Attendance punch-in karne ke liye active internet connection zaroori hai.');
+      console.warn('Network punch-in failed, queueing offline:', err);
+      await enqueueOfflineAction('create', 'attendance', {
+        email: userEmail,
+        userId,
+        empName: userName,
+        attendance_date: getTodayDateString(),
+        in_time: inDate.toISOString(),
+        in_location: punchLocation,
+        in_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        status: evaluation.status,
+        remarks: evaluation.remarks
+      });
+      setPunchMessage('⚡ Offline Punch Saved to Device! Will sync to server when online.');
     } finally {
       setPunchingIn(false);
     }
@@ -642,10 +649,6 @@ export default function AttendanceModule({
   // Confirmed Punch Out (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
   const handleConfirmedPunchOut = async () => {
     setPunchConfirm(null);
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setPunchError('🛑 Internet Disconnected: Attendance punch-out karne ke liye active internet connection zaroori hai.');
-      return;
-    }
     // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
     playInstantChime('out');
 
@@ -704,8 +707,20 @@ export default function AttendanceModule({
         }
       }
     } catch (err) {
-      console.warn('Network punch-out failed:', err);
-      setPunchError('🛑 Network Error: Attendance punch-out karne ke liye active internet connection zaroori hai.');
+      console.warn('Network punch-out failed, queueing offline:', err);
+      await enqueueOfflineAction('create', 'attendance', {
+        email: userEmail,
+        userId,
+        empName: userName,
+        attendance_date: getTodayDateString(),
+        out_time: outDate.toISOString(),
+        out_location: punchLocation,
+        out_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        total_working_minutes: evaluation.total_working_minutes,
+        status: evaluation.status,
+        remarks: evaluation.remarks
+      });
+      setPunchMessage('⚡ Offline Punch-Out Saved to Device! Will sync to server when online.');
     } finally {
       setPunchingOut(false);
     }

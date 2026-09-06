@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare } from 'lucide-react';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -217,6 +217,13 @@ export const MODULES_CONFIG = [
       { id: 'rcs', label: 'RCS Configuration' },
       { id: 'email', label: 'Email Setup' }
     ]
+  },
+  { 
+    id: 'offline_rule', 
+    path: 'offline_rule', 
+    label: 'Offline Rule', 
+    category: 'System', 
+    icon: <WifiOff size={20} /> 
   },
   { 
     id: 'settings', 

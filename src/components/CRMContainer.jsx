@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -40,6 +40,7 @@ import DelegationTaskModule from './Delegation/DelegationTaskModule';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
+import OfflineRuleModule from './Offline/OfflineRuleModule';
 import { saveLeadsLocally, getLocalLeads } from '@/utils/offlineSync';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
@@ -2649,6 +2650,20 @@ export default function CRMContainer({
                       </button>
                     )}
 
+                    {/* Offline Rule (System Page) */}
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['offline_rule']?.view !== false) && (
+                      <button 
+                        onClick={() => handleTabChange('offline_rule')}
+                        className="nav-item" 
+                        data-active={activeTab === 'offline_rule'}
+                        title={isSidebarCollapsed ? "Offline Rule" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <WifiOff size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
+                        <span>Offline Rule</span>
+                      </button>
+                    )}
+
                     {/* Settings Accordion with Sub-Menu */}
                     {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
                       <div className="nav-item-wrapper" style={{ position: 'relative' }}>
@@ -4093,6 +4108,16 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole} />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* Offline Rule Module */}
+              <KeepAliveTab 
+                isActive={activeTab === 'offline_rule'} 
+                isVisited={visitedTabs.has('offline_rule')}
+              >
+                <ErrorBoundary>
+                  <OfflineRuleModule />
                 </ErrorBoundary>
               </KeepAliveTab>
 
