@@ -88,19 +88,28 @@ function getMonthQuotaKey() {
  */
 export function getDailyOfflineUsage() {
   const rules = getOfflineRules();
-  const dailyCapHours = rules.dailyQuotaHours || 5;
+  const dailyCapHours = rules.dailyQuotaHours !== undefined ? Number(rules.dailyQuotaHours) : 5;
   const maxSec = dailyCapHours * 3600;
 
   if (typeof window === 'undefined') {
-    return { secondsUsed: 0, secondsRemaining: maxSec, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: `${dailyCapHours}h 0m` };
+    return { 
+      secondsUsed: 0, 
+      secondsRemaining: maxSec, 
+      isExceeded: false, 
+      percentUsed: 0, 
+      formattedUsed: '0m', 
+      formattedRemaining: `${dailyCapHours}h 0m`,
+      dailyCapHours,
+      formattedMax: `${dailyCapHours}h 0m`
+    };
   }
   try {
     const key = getTodayQuotaKey();
     const raw = localStorage.getItem(key);
     const secondsUsed = raw ? parseInt(raw, 10) || 0 : 0;
     const secondsRemaining = Math.max(0, maxSec - secondsUsed);
-    const isExceeded = secondsUsed >= maxSec;
-    const percentUsed = Math.min(100, Math.round((secondsUsed / maxSec) * 100));
+    const isExceeded = maxSec > 0 ? secondsUsed >= maxSec : false;
+    const percentUsed = maxSec > 0 ? Math.min(100, Math.round((secondsUsed / maxSec) * 100)) : 0;
 
     const usedHours = Math.floor(secondsUsed / 3600);
     const usedMins = Math.floor((secondsUsed % 3600) / 60);
@@ -113,10 +122,21 @@ export function getDailyOfflineUsage() {
       isExceeded,
       percentUsed,
       formattedUsed: usedHours > 0 ? `${usedHours}h ${usedMins}m` : `${usedMins}m`,
-      formattedRemaining: remHours > 0 ? `${remHours}h ${remMins}m` : `${remMins}m`
+      formattedRemaining: remHours > 0 ? `${remHours}h ${remMins}m` : `${remMins}m`,
+      dailyCapHours,
+      formattedMax: `${dailyCapHours}h 0m`
     };
   } catch (e) {
-    return { secondsUsed: 0, secondsRemaining: maxSec, isExceeded: false, percentUsed: 0, formattedUsed: '0m', formattedRemaining: `${dailyCapHours}h 0m` };
+    return { 
+      secondsUsed: 0, 
+      secondsRemaining: maxSec, 
+      isExceeded: false, 
+      percentUsed: 0, 
+      formattedUsed: '0m', 
+      formattedRemaining: `${dailyCapHours}h 0m`,
+      dailyCapHours,
+      formattedMax: `${dailyCapHours}h 0m`
+    };
   }
 }
 
