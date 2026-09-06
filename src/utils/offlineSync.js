@@ -392,9 +392,10 @@ export async function saveChecklistsLocally(checklists) {
     const store = tx.objectStore(STORES.CHECKLIST_CACHE);
     
     store.clear();
-    checklists.forEach((item) => {
-      if (item && item.id) {
-        store.put(item);
+    checklists.forEach((item, idx) => {
+      if (item) {
+        const id = item.id || (item.template?.id ? `${item.template.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}` : `chk_${idx}`);
+        store.put({ ...item, id });
       }
     });
 
@@ -441,9 +442,10 @@ export async function saveDelegationTasksLocally(tasks) {
     const store = tx.objectStore(STORES.DELEGATION_CACHE);
     
     store.clear();
-    tasks.forEach((t) => {
-      if (t && t.id) {
-        store.put(t);
+    tasks.forEach((t, idx) => {
+      if (t) {
+        const id = t.id || t.task_id || t.uuid || `del_${idx}`;
+        store.put({ ...t, id });
       }
     });
 

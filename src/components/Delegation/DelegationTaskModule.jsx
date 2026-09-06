@@ -200,7 +200,7 @@ export default function DelegationTaskModule({
   };
 
   const loadTasks = async () => {
-    setLoading(true);
+    if (tasks.length === 0) setLoading(true);
     try {
       const teamEmails = myReportingTeam.map(e => e.email).filter(Boolean);
       const isTeamView = activeTab === 'all' && (teamBoardFilter === 'MY_TEAM' || !isAdmin);

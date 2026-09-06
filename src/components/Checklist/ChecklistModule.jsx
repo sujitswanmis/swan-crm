@@ -560,33 +560,30 @@ export default function ChecklistModule({
   const [verifyingSubmission, setVerifyingSubmission] = useState(null);
   const [verifyRemarks, setVerifyRemarks] = useState('');
 
-  // Initial load: load master records & prefetch all data silently in background
+  // Initial load: 0ms instant hydration from IndexedDB
   useEffect(() => {
-    // 0ms Instant Offline Hydration from IndexedDB
     getLocalChecklists().then((cached) => {
       if (Array.isArray(cached) && cached.length > 0) {
         setDashboardChecklists(cached);
       }
     }).catch(() => {});
-
-    loadEmployees();
-    loadDepartments();
-    loadEmployeeDashboard(dashboardDate, true);
-    loadTemplates(true);
-    loadCompliance(true);
   }, []);
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
-      loadCompliance(true);
-      loadTemplates(true);
       loadEmployeeDashboard(dashboardDate, true);
+      loadTemplates(templates.length > 0);
+      loadCompliance(complianceLogs.length > 0);
     } else if (activeTab === 'my_checklists') {
       loadEmployeeDashboard(dashboardDate, dashboardChecklists.length > 0);
     } else if (activeTab === 'templates') {
       loadTemplates(templates.length > 0);
+      if (employeesList.length === 0) loadEmployees();
+      if (managedDepartments.length === 0) loadDepartments();
     } else if (activeTab === 'compliance') {
       loadCompliance(complianceLogs.length > 0);
+      if (employeesList.length === 0) loadEmployees();
+      if (managedDepartments.length === 0) loadDepartments();
     } else if (activeTab === 'holidays') {
       loadHolidays();
     }
@@ -2692,13 +2689,20 @@ export default function ChecklistModule({
             </div>
           )}
 
-          {!loading && liveDashboardChecklists.length > 0 && (
+          {liveDashboardChecklists.length > 0 && (
             <>
               {/* View Mode Toggle Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', margin: '0.25rem 0' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                  Showing <strong>{liveDashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
+                    Showing <strong>{liveDashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
+                  </span>
+                  {loading && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#2563eb', padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'rgba(37,99,235,0.08)', fontWeight: 600 }}>
+                      <RefreshCw size={11} className="spin" /> Syncing...
+                    </span>
+                  )}
+                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary, #f1f5f9)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)' }}>
                   <button

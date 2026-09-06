@@ -20,6 +20,9 @@ import crypto from 'crypto';
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const HOLIDAYS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'company_holidays.json');
 
+let holidaysCache = null;
+let holidaysCacheExpires = 0;
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -495,6 +498,15 @@ export async function getEmployeeChecklistDashboard({
       subQuery = subQuery.eq('employee_email', emailClean);
     }
 
+    const year = targetObj.getFullYear();
+    const month = String(targetObj.getMonth() + 1).padStart(2, '0');
+    const day = String(targetObj.getDate()).padStart(2, '0');
+    const targetDateStr = `${year}-${month}-${day}`;
+
+    if (frequency === 'DAILY') {
+      subQuery = subQuery.like('period_key', `${targetDateStr}%`);
+    }
+
     const { data: submissions, error: subErr } = await subQuery;
     if (subErr) throw subErr;
 
@@ -868,6 +880,11 @@ export async function getChecklistComplianceReport({
 // ==========================================
 
 export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID) {
+  const now = Date.now();
+  if (holidaysCache && now < holidaysCacheExpires) {
+    return { success: true, data: holidaysCache };
+  }
+
   const adminClient = getAdminClient();
   try {
     const { data: dbHolidays, error } = await adminClient
@@ -883,6 +900,8 @@ export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID) {
         name: h.holiday_name,
         type: h.holiday_type || 'NATIONAL'
       }));
+      holidaysCache = mapped;
+      holidaysCacheExpires = now + 10 * 60 * 1000;
       try {
         await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(mapped, null, 2), 'utf8');
       } catch (_) {}
@@ -963,6 +982,8 @@ export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_
       });
     }
 
+    holidaysCache = null;
+    holidaysCacheExpires = 0;
     return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error saving holiday:', err.message);
@@ -987,6 +1008,8 @@ export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_
         .eq('holiday_date', holidayId);
     }
 
+    holidaysCache = null;
+    holidaysCacheExpires = 0;
     return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error deleting holiday:', err.message);
@@ -1013,6 +1036,8 @@ export async function resetCompanyHolidaysToDefault(tenantId = DEFAULT_TENANT_ID
       .from('holiday_master')
       .insert(seedPayload);
 
+    holidaysCache = null;
+    holidaysCacheExpires = 0;
     return await getCompanyHolidays(tenantId);
   } catch (err) {
     console.error('Error resetting holidays:', err.message);
