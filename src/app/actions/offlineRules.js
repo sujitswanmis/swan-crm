@@ -11,7 +11,7 @@ const getAdminClient = () => {
   );
 };
 
-export const DEFAULT_OFFLINE_RULES = {
+const DEFAULT_OFFLINE_RULES = {
   isOfflineEnabled: true,
   dailyQuotaHours: 5,
   monthlyQuotaHours: 50,
