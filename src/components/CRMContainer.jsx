@@ -41,7 +41,8 @@ import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
 import OfflineRuleModule from './Offline/OfflineRuleModule';
-import { saveLeadsLocally, getLocalLeads } from '@/utils/offlineSync';
+import OfflineBlockScreen from './Offline/OfflineBlockScreen';
+import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline } from '@/utils/offlineSync';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -175,6 +176,38 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
 
   return moduleAccess[tabId]?.view === true;
 }
+
+export const MODULE_DISPLAY_NAMES = {
+  dashboard: 'Analytics Dashboard',
+  leads: 'Leads & Sales Database',
+  registration: 'New Client Registration',
+  report: 'Client Analytics & Reports',
+  orders: 'Order Management',
+  mrp: 'MRP System',
+  mrp_against: 'MRP Against',
+  recruiter: 'Recruiter Dashboard',
+  joining: 'Joining Process',
+  attendance: 'Smart Attendance Station',
+  checklist: 'Smart Checklist Management',
+  delegation: 'Delegation Task Management',
+  party: 'Party Master Directory',
+  location_master: 'Location Management',
+  location_territory: 'Location Management',
+  'location-master': 'Location Management',
+  callcenter: 'Softphone & Call Center',
+  calladmin: 'Call Admin Dashboard',
+  aicallcenter: 'AI Call Center',
+  ai: 'AI Assistant',
+  aiadmin: 'AI Admin Panel',
+  aiknowledgebase: 'AI Knowledge Base',
+  whatsapp_official: 'Official WhatsApp Center',
+  whatsapp_unofficial: 'Unofficial WhatsApp Center',
+  team: 'Team Management',
+  workplace: 'Workplace Directory',
+  public_users: 'Public User Management',
+  settings: 'System Settings',
+  system_offline_rules: 'Offline Rule Settings'
+};
 
 export default function CRMContainer({ 
   initialLeads, 
@@ -319,6 +352,30 @@ export default function CRMContainer({
   const [isSyncing, setIsSyncing] = useState(false);
   const [impersonationInfo, setImpersonationInfo] = useState(null);
   const [adminRestoreToken, setAdminRestoreToken] = useState(null);
+
+  // Online / Offline Detection & Dynamic Rule Synchronization
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineRuleVersion, setOfflineRuleVersion] = useState(0);
+
+  useEffect(() => {
+    setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    const handleRulesChanged = () => setOfflineRuleVersion(v => v + 1);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('supuja_offline_rules_changed', handleRulesChanged);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('supuja_offline_rules_changed', handleRulesChanged);
+    };
+  }, []);
+
+  const isCurrentTabAllowedOffline = isOnline || isModuleAllowedOffline(activeTab);
 
   useEffect(() => {
     try {
@@ -3817,6 +3874,15 @@ export default function CRMContainer({
             </div>
           ) : !isMounted ? (
             <PremiumProgressLoader message="Loading workspace" active={!isMounted} />
+          ) : !isCurrentTabAllowedOffline ? (
+            <OfflineBlockScreen 
+              moduleName={MODULE_DISPLAY_NAMES[activeTab] || 'This Module'} 
+              onRetry={() => {
+                if (typeof navigator !== 'undefined') {
+                  setIsOnline(navigator.onLine);
+                }
+              }}
+            />
           ) : (
             <>
               {/* Dashboard */}

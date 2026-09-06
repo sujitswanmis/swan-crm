@@ -747,3 +747,51 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
 
   return { success: failCount === 0, count: successCount, failed: failCount };
 }
+
+/**
+ * Determines whether an entire module/tab is permitted to display data when disconnected
+ * If Master Offline Switch is disabled, or if the module is restricted to Online-Only, returns false.
+ */
+export function isModuleAllowedOffline(tabId = '') {
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    return true;
+  }
+
+  const rules = getOfflineRules();
+
+  // 1. If Master Offline Mode is disabled, NO data module is allowed offline!
+  if (!rules.isOfflineEnabled) {
+    return tabId === 'system_offline_rules' || tabId === 'settings';
+  }
+
+  const features = rules.features || {};
+
+  switch (tabId) {
+    case 'leads':
+    case 'report':
+      return !!(features.leadStatusUpdate || features.leadNotes || features.profileEdit || features.leadFollowUp);
+
+    case 'registration':
+      return !!features.clientRegistration;
+
+    case 'checklist':
+      return !!features.checklistSubmit;
+
+    case 'delegation':
+      return !!(features.delegationStatusUpdate || features.delegationCreate);
+
+    case 'attendance':
+      return !!(features.attendancePunch || features.attendanceRegularization);
+
+    case 'party':
+      return !!features.partyMasterEdit;
+
+    case 'system_offline_rules':
+    case 'settings':
+      return true;
+
+    default:
+      return false;
+  }
+}
+
