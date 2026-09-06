@@ -436,7 +436,7 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
     setNewNote('');
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      alert("🛑 Internet Disconnected!\n\nNaya note save karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 
@@ -477,7 +477,7 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
       }
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
+        alert("🛑 Internet Disconnected!\n\nFollow-up date update karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
         return;
       }
 
@@ -491,8 +491,8 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
           created_by: actor
         }]);
       } catch (netErr) {
-        console.warn('Network update failed, fallback to offline:', netErr);
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
+        console.warn('Network update failed:', netErr);
+        alert('Follow-up update failed. Please check your internet connection.');
       }
       return;
     }
@@ -509,7 +509,7 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
     }
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+      alert("🛑 Internet Disconnected!\n\nFollow-up date update karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 
@@ -526,8 +526,8 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
         logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
       } catch(e) {}
     } catch (netErr) {
-      console.warn('Network update failed, fallback to offline:', netErr);
-      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+      console.warn('Network update failed:', netErr);
+      alert('Follow-up update failed. Please check your internet connection.');
     }
   };
 
@@ -545,8 +545,7 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
     setIsEditing(false);
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
-      alert('⚡ Offline Mode: Profile changes saved to device! They will sync to cloud when connected.');
+      alert("🛑 Internet Disconnected!\n\nLead profile edit karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 

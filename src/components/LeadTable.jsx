@@ -210,14 +210,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
-      const updatedRawLead = {
-        ...lead,
-        assigned_to: valToSet,
-        is_offline_pending: true,
-        lead_notes: [newNote, ...(lead.lead_notes || [])]
-      };
-      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+      alert("🛑 Internet Disconnected!\n\nLead assign karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 
@@ -348,20 +341,7 @@ const LeadStatusCell = React.memo(({ info }) => {
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
-      const updatedRawLead = {
-        ...lead,
-        ...updates,
-        updated_at: nowIso,
-        last_timestamp: nowIso,
-        latest_remark: noteText,
-        is_offline_pending: true,
-        lead_notes: [newNote, ...(lead.lead_notes || [])]
-      };
-      const processed = processLeads([updatedRawLead], teamMembers)[0];
-      if (info.table.options.meta?.updateLeadInState) {
-        info.table.options.meta.updateLeadInState(processed);
-      }
+      alert("🛑 Internet Disconnected!\n\nLead status ya note save karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 
@@ -1519,18 +1499,7 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
-      const updatedRawLead = {
-        ...lead,
-        ...updates,
-        updated_at: nowIso,
-        last_timestamp: nowIso,
-        latest_remark: noteText,
-        is_offline_pending: true,
-        lead_notes: [newNote, ...(lead.lead_notes || [])]
-      };
-      const processed = processLeads([updatedRawLead], teamMembers)[0];
-      updateLeadInState(processed);
+      alert("🛑 Internet Disconnected!\n\nLead status ya note save karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
       return;
     }
 

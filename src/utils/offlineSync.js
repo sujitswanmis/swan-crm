@@ -70,20 +70,17 @@ export function incrementDailyOfflineSeconds(incSec = 1) {
 }
 
 /**
- * Validates if an offline update is permitted under 5-hour daily cap
+ * Validates if an offline update is permitted
+ * NOTE: Offline editing is disabled to protect data integrity, prevent race conditions and lead collision.
  */
 export function canPerformOfflineAction() {
   if (typeof navigator !== 'undefined' && navigator.onLine) {
     return { allowed: true };
   }
-  const usage = getDailyOfflineUsage();
-  if (usage.isExceeded) {
-    return {
-      allowed: false,
-      reason: `🛑 Daily Offline Limit Exceeded (5 Hours Max Reached)!\n\nAap aaj ke din ka maximum 5 ghante ka offline work quota pura kar chuke hain.\n\nData security aur company policy ke mutabiq, naye records add karne ya update karne ke liye kripya abhee Internet connect karein.`
-    };
-  }
-  return { allowed: true, usage };
+  return {
+    allowed: false,
+    reason: `🛑 Offline Editing Disabled!\n\nData collision, customer double-calling aur attendance integrity ke liye active internet connection zaroori hai.\n\nKripya naye records add karne, lead status badalne ya call karne ke liye Internet connect karein.`
+  };
 }
 
 /**

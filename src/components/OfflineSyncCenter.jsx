@@ -72,7 +72,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     const handleOffline = () => {
       setIsOnline(false);
       setOfflineUsage(getDailyOfflineUsage());
-      setToastMessage('⚡ Offline mode active (5h max daily quota). All changes saved to disk.');
+      setToastMessage('⚠️ Internet Disconnected: CRM is in Read-Only Mode. Connect internet to make calls or save updates.');
     };
 
     const handleQueueChanged = () => {
@@ -137,12 +137,12 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
             ? '#fbbf24' 
             : '#94a3b8'
         }}
-        title={!isOnline ? 'Offline Mode Active' : pendingCount > 0 ? `${pendingCount} items pending sync` : 'All changes synced'}
+        title={!isOnline ? 'Internet Disconnected - Read-Only Mode' : pendingCount > 0 ? `${pendingCount} items pending sync` : 'All changes synced'}
       >
         {!isOnline ? (
           <>
             <WifiOff style={{ width: '14px', height: '14px', color: '#f87171', flexShrink: 0 }} />
-            <span className="desktop-only-text">Offline {pendingCount > 0 ? `(${pendingCount})` : ''}</span>
+            <span className="desktop-only-text">Read Only (Offline)</span>
           </>
         ) : isSyncing ? (
           <>

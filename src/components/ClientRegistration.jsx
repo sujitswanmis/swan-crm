@@ -859,10 +859,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       if (isEditMode && initialData) {
         // UPDATE MODE
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
-          alert('⚡ Offline Mode: Client updates saved to device storage! They will sync to cloud when connected.');
-          if (onRegistrationSuccess) onRegistrationSuccess();
-          if (onClose) onClose();
+          alert("🛑 Internet Disconnected!\n\nClient details update karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
+          setIsSubmitting(false);
+          return;
         } else {
           try {
             const { error } = await supabase.from('leads').update(payload).eq('id', initialData.id);
@@ -890,11 +889,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (onRegistrationSuccess) onRegistrationSuccess();
             if (onClose) onClose();
           } catch (netErr) {
-            console.warn('Network update failed, fallback to offline queue:', netErr);
-            await enqueueOfflineAction('update', 'lead', { ...payload, id: initialData.id });
-            alert('⚡ Network issue: Client updates saved to device! They will sync to cloud automatically.');
-            if (onRegistrationSuccess) onRegistrationSuccess();
-            if (onClose) onClose();
+            console.warn('Network update failed:', netErr);
+            alert('Client update failed. Please check your internet connection.');
+            setIsSubmitting(false);
           }
         }
       } else {
@@ -902,10 +899,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         payload.created_by = actor;
 
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          // Device is offline - queue directly to IndexedDB
-          await enqueueOfflineAction('create', 'lead', payload);
-          alert('⚡ Offline Mode: Client saved safely to device disk! It will automatically sync to cloud once internet is connected.');
-          if (onRegistrationSuccess) onRegistrationSuccess();
+          alert("🛑 Internet Disconnected!\n\nNaya client create karne ke liye active internet connection zaroori hai. Kripya internet connect karein.");
+          setIsSubmitting(false);
+          return;
         } else {
           try {
             const { data, error } = await supabase.from('leads').insert([payload]).select();
@@ -930,7 +926,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 note_text: 'Client Registration Form Submitted',
                 created_by: actor
               }]);
-              
+
               try {
                 await logAuditAction('Create Lead', `Created New Lead: ${payload.company || payload.name || 'Unknown'}`);
               } catch(e) { console.error('Audit Log failed', e); }
@@ -939,10 +935,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             alert('Client Registered Successfully!');
             if (onRegistrationSuccess) onRegistrationSuccess();
           } catch (netErr) {
-            console.warn('Network insert failed, fallback to offline queue:', netErr);
-            await enqueueOfflineAction('create', 'lead', payload);
-            alert('⚡ Network issue detected: Client saved safely to device storage! It will sync to cloud automatically.');
-            if (onRegistrationSuccess) onRegistrationSuccess();
+            console.warn('Network insert failed:', netErr);
+            alert('Client creation failed. Please check your internet connection.');
+            setIsSubmitting(false);
           }
         }
         
