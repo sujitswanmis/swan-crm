@@ -50,7 +50,9 @@ export default function ChecklistModule({
   userEmail = '',
   moduleAccess = {},
   initialSubTab = 'dashboard',
-  onSubTabChange = null
+  onSubTabChange = null,
+  pendingSlotToOpen = null,
+  onSlotOpened = null
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
@@ -808,6 +810,77 @@ export default function ChecklistModule({
     setExecResponses(item.submission?.responses || {});
     setExecNotes(item.submission?.submission_notes || '');
   };
+
+  // Dedicated Auto-open Checklist Slot Handler for Notifications & Popups
+  const pendingSlotRef = React.useRef(null);
+
+  const attemptOpenSlot = React.useCallback((slotData) => {
+    if (!slotData) return false;
+    const targetTemplateId = slotData.templateId || slotData.template_id;
+    const targetPeriodKey = slotData.periodKey || slotData.period_key;
+    const targetSlotId = slotData.slotId || slotData.slot_id;
+
+    const list = (liveDashboardChecklists && liveDashboardChecklists.length > 0) 
+      ? liveDashboardChecklists 
+      : (dashboardChecklists || []);
+
+    const match = list.find(item => {
+      const matchTmpl = item.template?.id === targetTemplateId;
+      const matchPeriod = targetPeriodKey ? item.currentPeriodKey === targetPeriodKey : true;
+      const matchSlot = targetSlotId ? (item.slotInfo?.slot_id === targetSlotId || item.template?.slot_id === targetSlotId) : true;
+      return matchTmpl && matchPeriod && matchSlot;
+    }) || list.find(item => item.template?.id === targetTemplateId);
+
+    if (match) {
+      handleOpenExecution(match);
+      pendingSlotRef.current = null;
+      if (onSlotOpened) onSlotOpened();
+      return true;
+    }
+    return false;
+  }, [liveDashboardChecklists, dashboardChecklists, onSlotOpened]);
+
+  // Handle auto-open slot from parent prop
+  useEffect(() => {
+    if (pendingSlotToOpen) {
+      pendingSlotRef.current = pendingSlotToOpen;
+      setActiveTab('my_checklists');
+      if (dashboardDate !== todayDateStr) {
+        setDashboardDate(todayDateStr);
+      }
+      const opened = attemptOpenSlot(pendingSlotToOpen);
+      if (!opened) {
+        loadEmployeeDashboard(todayDateStr, false);
+      }
+    }
+  }, [pendingSlotToOpen, dashboardDate, todayDateStr, attemptOpenSlot]);
+
+  // Handle auto-open slot from custom window event
+  useEffect(() => {
+    const handleEvent = (e) => {
+      const slot = e.detail;
+      if (!slot) return;
+      pendingSlotRef.current = slot;
+      setActiveTab('my_checklists');
+      if (dashboardDate !== todayDateStr) {
+        setDashboardDate(todayDateStr);
+      }
+      const opened = attemptOpenSlot(slot);
+      if (!opened) {
+        loadEmployeeDashboard(todayDateStr, false);
+      }
+    };
+
+    window.addEventListener('open_checklist_slot', handleEvent);
+    return () => window.removeEventListener('open_checklist_slot', handleEvent);
+  }, [dashboardDate, todayDateStr, attemptOpenSlot]);
+
+  // Recheck whenever checklists finish loading
+  useEffect(() => {
+    if (pendingSlotRef.current && (liveDashboardChecklists.length > 0 || dashboardChecklists.length > 0)) {
+      attemptOpenSlot(pendingSlotRef.current);
+    }
+  }, [liveDashboardChecklists, dashboardChecklists, attemptOpenSlot]);
 
   const handleResponseChange = (itemId, val) => {
     setExecResponses(prev => ({

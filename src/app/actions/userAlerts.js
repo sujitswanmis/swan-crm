@@ -82,7 +82,21 @@ export async function getUserPendingAlerts({
 
     if (checkRes.success && Array.isArray(checkRes.data)) {
       checklistSlots = checkRes.data
-        .filter(item => item.status !== 'COMPLETED')
+        .filter(item => {
+          // 1. Skip if already completed
+          if (item.status === 'COMPLETED' || item.submission?.status === 'COMPLETED') return false;
+
+          // 2. Skip UPCOMING locked slots (do NOT show before scheduled slot unlock time)
+          if (item.delayInfo?.isBeforeStart) return false;
+
+          // 3. Skip EXPIRED locked slots (do NOT show once closed by template master rules)
+          if (item.delayInfo?.isExpired) return false;
+
+          // 4. Must be currently actionable / executable
+          if (item.delayInfo?.canExecute === false) return false;
+
+          return true;
+        })
         .map(item => ({
           templateId: item.template?.id,
           templateTitle: item.template?.title || 'Checklist',
@@ -95,6 +109,9 @@ export async function getUserPendingAlerts({
           status: item.status,
           isDelayed: item.delayInfo?.isDelayed || false,
           delayMinutes: item.delayInfo?.delayMinutes || 0,
+          isExpired: item.delayInfo?.isExpired || false,
+          isBeforeStart: item.delayInfo?.isBeforeStart || false,
+          canExecute: item.delayInfo?.canExecute !== false,
           canSubmit: item.delayInfo?.canSubmit !== false
         }));
     }

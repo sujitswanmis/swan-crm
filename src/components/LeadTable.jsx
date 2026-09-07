@@ -856,7 +856,23 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
   );
 };
 
-export default function LeadTable({ initialData = [], canImportExport, canWrite = true, onLeadsChange, searchQuery, stageFilter, onStageChange, teamMembers = [], userRole, userId, userName, moduleAccess = {}, globalRolePermissions }) {
+export default function LeadTable({ 
+  initialData = [], 
+  canImportExport, 
+  canWrite = true, 
+  onLeadsChange, 
+  searchQuery, 
+  stageFilter, 
+  onStageChange, 
+  teamMembers = [], 
+  userRole, 
+  userId, 
+  userName, 
+  moduleAccess = {}, 
+  globalRolePermissions,
+  pendingLeadToOpen = null,
+  onLeadOpened = null
+}) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
 
@@ -899,6 +915,35 @@ export default function LeadTable({ initialData = [], canImportExport, canWrite 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [profileMode, setProfileMode] = useState('history');
+
+  // Handle auto-open lead profile panel when navigated from Notifications or Popups
+  useEffect(() => {
+    if (pendingLeadToOpen) {
+      const targetId = pendingLeadToOpen.id;
+      const targetRef = pendingLeadToOpen.lead_ref_id;
+      const found = (data || []).find(l => (targetId && l.id === targetId) || (targetRef && l.lead_ref_id === targetRef)) || pendingLeadToOpen;
+      const processed = processLeads([found], teamMembers)[0] || found;
+      setSelectedLead(processed);
+      setProfileMode('history');
+      if (onLeadOpened) onLeadOpened();
+    }
+  }, [pendingLeadToOpen, data, teamMembers, onLeadOpened]);
+
+  useEffect(() => {
+    const handleOpenLeadDetails = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+      const targetLead = detail.lead || (data || []).find(l => (detail.leadId && l.id === detail.leadId) || (detail.leadRefId && l.lead_ref_id === detail.leadRefId));
+      if (targetLead) {
+        const processed = processLeads([targetLead], teamMembers)[0] || targetLead;
+        setSelectedLead(processed);
+        setProfileMode('history');
+      }
+    };
+
+    window.addEventListener('open_lead_details', handleOpenLeadDetails);
+    return () => window.removeEventListener('open_lead_details', handleOpenLeadDetails);
+  }, [data, teamMembers]);
   const [whatsappModalLead, setWhatsappModalLead] = useState(null);
   const [activeRowId, setActiveRowId] = useState(null);
   const [isImporting, setIsImporting] = useState(false);

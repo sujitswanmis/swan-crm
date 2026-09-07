@@ -1340,6 +1340,8 @@ export default function CRMContainer({
   const [notifMainTab, setNotifMainTab] = useState('all'); // 'all' | 'checklist' | 'delegation' | 'leads'
   const [userDelegationTasks, setUserDelegationTasks] = useState([]);
   const [userChecklistSlots, setUserChecklistSlots] = useState([]);
+  const [pendingLeadToOpen, setPendingLeadToOpen] = useState(null);
+  const [pendingChecklistSlot, setPendingChecklistSlot] = useState(null);
   const [activeCornerToast, setActiveCornerToast] = useState(null);
   const [activeCenterModal, setActiveCenterModal] = useState(null);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
@@ -1607,6 +1609,95 @@ export default function CRMContainer({
       window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('popstate'));
     }
+  };
+
+  // Seamless cross-module navigation directly to Lead profile & table
+  const handleNavigateToLead = (lead) => {
+    if (!lead) return;
+    const targetStage = getStageFromStatus(lead.status);
+
+    const params = new URLSearchParams();
+    if (targetStage && targetStage !== 'all') {
+      params.set('stage', targetStage);
+      localStorage.setItem('crmActiveStage', targetStage);
+    } else {
+      params.set('stage', 'all');
+      localStorage.removeItem('crmActiveStage');
+    }
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    window.history.pushState(null, '', `/leads${queryString}`);
+
+    setLeadsFilterStage(targetStage);
+    setActiveTab('leads');
+    setVisitedTabs(prev => {
+      const next = new Set(prev);
+      next.add('leads');
+      return next;
+    });
+
+    const query = lead.lead_ref_id || lead.phone || lead.name || '';
+    setActiveSearchQuery(query);
+
+    setPendingLeadToOpen(lead);
+    setShowNotifications(false);
+
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+
+    window.dispatchEvent(new CustomEvent('open_lead_details', {
+      detail: {
+        leadId: lead.id,
+        leadRefId: lead.lead_ref_id,
+        lead
+      }
+    }));
+  };
+
+  // Seamless navigation directly into specific Checklist slot execution modal
+  const handleNavigateToChecklistSlot = (slot) => {
+    if (!slot) return;
+    setPendingChecklistSlot(slot);
+    setChecklistSubTab('my_checklists');
+
+    window.history.pushState(null, '', '/checklist?tab=my_checklists');
+    setActiveTab('checklist');
+    setVisitedTabs(prev => {
+      const next = new Set(prev);
+      next.add('checklist');
+      return next;
+    });
+
+    setShowNotifications(false);
+
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+
+    window.dispatchEvent(new CustomEvent('open_checklist_slot', { detail: slot }));
+  };
+
+  // Seamless navigation directly into assigned Delegation tasks
+  const handleNavigateToDelegationTask = (task) => {
+    if (!task) return;
+    setDelegationSubTab('to_me');
+
+    window.history.pushState(null, '', '/delegation?tab=to_me');
+    setActiveTab('delegation');
+    setVisitedTabs(prev => {
+      const next = new Set(prev);
+      next.add('delegation');
+      return next;
+    });
+
+    setShowNotifications(false);
+
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+
+    window.dispatchEvent(new CustomEvent('open_delegation_task', { detail: task }));
   };
 
   const handleLogout = () => {
@@ -1989,8 +2080,9 @@ export default function CRMContainer({
         }
       }
 
-      // Check genuinely new due checklist slots
+      // Check genuinely new due checklist slots (strictly active and executable)
       for (const s of slots) {
+        if (s.isExpired || s.isBeforeStart || s.canExecute === false) continue;
         const slotKey = `${s.templateId}_${s.periodKey}`;
         if (!notifiedChecklistKeysRef.current.has(slotKey)) {
           notifiedChecklistKeysRef.current.add(slotKey);
@@ -3544,6 +3636,7 @@ export default function CRMContainer({
                         userChecklistSlots.map((slot, idx) => (
                           <div
                             key={`${slot.templateId}_${slot.slotId}_${idx}`}
+                            onClick={() => handleNavigateToChecklistSlot(slot)}
                             style={{
                               padding: '0.75rem 0.85rem',
                               borderRadius: '10px',
@@ -3552,7 +3645,17 @@ export default function CRMContainer({
                               display: 'flex',
                               flexDirection: 'column',
                               gap: '0.4rem',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                              e.currentTarget.style.borderColor = 'var(--accent-color)';
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
+                              e.currentTarget.style.borderColor = 'var(--border-light)';
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
@@ -3577,9 +3680,9 @@ export default function CRMContainer({
                             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.2rem' }}>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  handleTabChange('checklist');
-                                  setShowNotifications(false);
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleNavigateToChecklistSlot(slot);
                                 }}
                                 style={{
                                   padding: '0.35rem 0.8rem',
@@ -3619,6 +3722,7 @@ export default function CRMContainer({
                           return (
                             <div
                               key={task.id}
+                              onClick={() => handleNavigateToDelegationTask(task)}
                               style={{
                                 padding: '0.75rem 0.85rem',
                                 borderRadius: '10px',
@@ -3627,7 +3731,17 @@ export default function CRMContainer({
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '0.35rem',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                              }}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                                e.currentTarget.style.borderColor = 'var(--accent-color)';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
+                                e.currentTarget.style.borderColor = 'var(--border-light)';
                               }}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
@@ -3658,9 +3772,9 @@ export default function CRMContainer({
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    handleTabChange('delegation');
-                                    setShowNotifications(false);
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNavigateToDelegationTask(task);
                                   }}
                                   style={{
                                     padding: '0.35rem 0.8rem',
@@ -3837,13 +3951,7 @@ export default function CRMContainer({
                                   e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
                                   e.currentTarget.style.borderColor = 'var(--border-light)';
                                 }}
-                                onClick={() => {
-                                  const targetStage = getStageFromStatus(lead.status);
-                                  setActiveTab('leads');
-                                  handleStageChange(targetStage);
-                                  setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
-                                  setShowNotifications(false);
-                                }}
+                                onClick={() => handleNavigateToLead(lead)}
                               >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -3992,7 +4100,7 @@ export default function CRMContainer({
                             </span>
                             <button
                               type="button"
-                              onClick={() => { handleTabChange('checklist'); setShowNotifications(false); }}
+                              onClick={() => { setChecklistSubTab('my_checklists'); handleTabChange('checklist'); setShowNotifications(false); }}
                               style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
                             >
                               Go to Checklist 👉
@@ -4002,7 +4110,7 @@ export default function CRMContainer({
                             {userChecklistSlots.slice(0, 3).map((slot, idx) => (
                               <div
                                 key={`all_chk_${idx}`}
-                                onClick={() => { handleTabChange('checklist'); setShowNotifications(false); }}
+                                onClick={() => handleNavigateToChecklistSlot(slot)}
                                 style={{
                                   padding: '0.5rem 0.75rem',
                                   borderRadius: '8px',
@@ -4035,7 +4143,7 @@ export default function CRMContainer({
                             </span>
                             <button
                               type="button"
-                              onClick={() => { handleTabChange('delegation'); setShowNotifications(false); }}
+                              onClick={() => { setDelegationSubTab('to_me'); handleTabChange('delegation'); setShowNotifications(false); }}
                               style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
                             >
                               Go to Delegation 👉
@@ -4045,7 +4153,7 @@ export default function CRMContainer({
                             {userDelegationTasks.slice(0, 3).map(task => (
                               <div
                                 key={`all_del_${task.id}`}
-                                onClick={() => { handleTabChange('delegation'); setShowNotifications(false); }}
+                                onClick={() => handleNavigateToDelegationTask(task)}
                                 style={{
                                   padding: '0.5rem 0.75rem',
                                   borderRadius: '8px',
@@ -4092,13 +4200,7 @@ export default function CRMContainer({
                           {dueFollowUps.slice(0, 5).map(lead => (
                             <div
                               key={`all_lead_${lead.id}`}
-                              onClick={() => {
-                                const targetStage = getStageFromStatus(lead.status);
-                                setActiveTab('leads');
-                                handleStageChange(targetStage);
-                                setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
-                                setShowNotifications(false);
-                              }}
+                              onClick={() => handleNavigateToLead(lead)}
                               style={{
                                 padding: '0.5rem 0.75rem',
                                 borderRadius: '8px',
@@ -4504,7 +4606,23 @@ export default function CRMContainer({
                   {loadingLeads ? (
                     <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
                   ) : (
-                    <LeadTable initialData={leads} canImportExport={canImportExport} canWrite={canWrite} onLeadsChange={handleLeadsChange} searchQuery={activeSearchQuery} stageFilter={leadsFilterStage} onStageChange={handleStageChange} teamMembers={teamMembers} userRole={userRole} userId={userId} userName={userName} moduleAccess={moduleAccess} globalRolePermissions={globalRolePermissions} />
+                    <LeadTable 
+                      initialData={leads} 
+                      canImportExport={canImportExport} 
+                      canWrite={canWrite} 
+                      onLeadsChange={handleLeadsChange} 
+                      searchQuery={activeSearchQuery} 
+                      stageFilter={leadsFilterStage} 
+                      onStageChange={handleStageChange} 
+                      teamMembers={teamMembers} 
+                      userRole={userRole} 
+                      userId={userId} 
+                      userName={userName} 
+                      moduleAccess={moduleAccess} 
+                      globalRolePermissions={globalRolePermissions}
+                      pendingLeadToOpen={pendingLeadToOpen}
+                      onLeadOpened={() => setPendingLeadToOpen(null)}
+                    />
                   )}
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -4565,6 +4683,8 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     initialSubTab={checklistSubTab}
                     onSubTabChange={(tab) => handleChecklistSubTabChange(tab)}
+                    pendingSlotToOpen={pendingChecklistSlot}
+                    onSlotOpened={() => setPendingChecklistSlot(null)}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -4910,7 +5030,13 @@ export default function CRMContainer({
               <button
                 type="button"
                 onClick={() => {
-                  if (activeCornerToast.targetTab) {
+                  if (activeCornerToast.type === 'checklist' && activeCornerToast.rawItem) {
+                    handleNavigateToChecklistSlot(activeCornerToast.rawItem);
+                  } else if (activeCornerToast.type === 'delegation' && activeCornerToast.rawItem) {
+                    handleNavigateToDelegationTask(activeCornerToast.rawItem);
+                  } else if (activeCornerToast.type === 'lead' && activeCornerToast.rawItem) {
+                    handleNavigateToLead(activeCornerToast.rawItem);
+                  } else if (activeCornerToast.targetTab) {
                     handleTabChange(activeCornerToast.targetTab);
                   }
                   setActiveCornerToast(null);
@@ -5033,7 +5159,13 @@ export default function CRMContainer({
               <button
                 type="button"
                 onClick={() => {
-                  if (activeCenterModal.targetTab) {
+                  if (activeCenterModal.type === 'checklist' && activeCenterModal.rawItem) {
+                    handleNavigateToChecklistSlot(activeCenterModal.rawItem);
+                  } else if (activeCenterModal.type === 'delegation' && activeCenterModal.rawItem) {
+                    handleNavigateToDelegationTask(activeCenterModal.rawItem);
+                  } else if (activeCenterModal.type === 'lead' && activeCenterModal.rawItem) {
+                    handleNavigateToLead(activeCenterModal.rawItem);
+                  } else if (activeCenterModal.targetTab) {
                     handleTabChange(activeCenterModal.targetTab);
                   }
                   setActiveCenterModal(null);
