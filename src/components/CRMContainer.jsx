@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -43,6 +43,7 @@ import OfflineSyncCenter from './OfflineSyncCenter';
 import OfflineRuleModule from './Offline/OfflineRuleModule';
 import OfflineBlockScreen from './Offline/OfflineBlockScreen';
 import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline } from '@/utils/offlineSync';
+import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -1336,6 +1337,11 @@ export default function CRMContainer({
   const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'yesterday' | 'today' | 'tomorrow' | 'overdue' | 'upcoming'
   const [notifSearch, setNotifSearch] = useState('');
   const [collapsedDates, setCollapsedDates] = useState(new Set());
+  const [notifMainTab, setNotifMainTab] = useState('all'); // 'all' | 'checklist' | 'delegation' | 'leads'
+  const [userDelegationTasks, setUserDelegationTasks] = useState([]);
+  const [userChecklistSlots, setUserChecklistSlots] = useState([]);
+  const [activeCornerToast, setActiveCornerToast] = useState(null);
+  const [activeCenterModal, setActiveCenterModal] = useState(null);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
@@ -1808,6 +1814,203 @@ export default function CRMContainer({
   const prevDueCount = useRef(dueFollowUps.length);
   const notifiedFollowUpKeysRef = useRef(new Set());
   const notificationAudioRef = useRef(null);
+  const notifiedTaskIdsRef = useRef(new Set());
+  const notifiedChecklistKeysRef = useRef(new Set());
+  const initialAlertSyncFinishedRef = useRef(false);
+  const toastTimeoutRef = useRef(null);
+
+  // Helper to safely play audio alert
+  const playUnifiedAlertSound = (customSoundUrl, durationSec) => {
+    try {
+      if (notificationAudioRef.current) {
+        try {
+          notificationAudioRef.current.pause();
+          notificationAudioRef.current.currentTime = 0;
+        } catch (e) {}
+      }
+
+      if (customSoundUrl) {
+        const audio = new Audio(customSoundUrl);
+        notificationAudioRef.current = audio;
+        const durationMs = (parseInt(durationSec, 10) || 3) * 1000;
+        audio.play().then(() => {
+          setTimeout(() => {
+            try {
+              audio.pause();
+              audio.currentTime = 0;
+            } catch (e) {}
+          }, durationMs);
+        }).catch(() => {});
+      } else {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.12, ctx.currentTime);
+        gainNode.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 3.0);
+      }
+    } catch (err) {
+      console.warn('Audio play failed:', err);
+    }
+  };
+
+  // Helper to dispatch native browser desktop notification
+  const dispatchDesktopNotification = (title, body, onClick) => {
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const n = new Notification(title, {
+          body: body || '',
+          icon: '/favicon.ico'
+        });
+        if (typeof onClick === 'function') {
+          n.onclick = () => {
+            window.focus();
+            onClick();
+            n.close();
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Desktop notification error:', e);
+    }
+  };
+
+  // Central unified notification trigger checking user preferences in crm_config
+  const triggerUnifiedAlert = ({
+    id,
+    type = 'delegation', // 'delegation' | 'checklist' | 'lead' | 'test'
+    title,
+    subtitle = '',
+    details = '',
+    dueTime = '',
+    targetTab = 'leads',
+    rawItem = null,
+    isUrgent = false,
+    forcePopupStyle = null
+  }) => {
+    let config = {
+      soundEnabled: true,
+      popupStyle: 'corner_toast',
+      notifyChecklist: true,
+      notifyDelegation: true,
+      notifyLeads: true,
+      browserPushEnabled: true
+    };
+
+    try {
+      const savedConfig = localStorage.getItem('crm_config');
+      if (savedConfig) {
+        config = { ...config, ...JSON.parse(savedConfig) };
+      }
+    } catch (e) {}
+
+    // Check module notification suppressions
+    if (type === 'checklist' && config.notifyChecklist === false) return;
+    if (type === 'delegation' && config.notifyDelegation === false) return;
+    if (type === 'lead' && config.notifyLeads === false) return;
+
+    // 1. Play sound if enabled
+    if (config.soundEnabled !== false) {
+      playUnifiedAlertSound(config.alertSound, config.alertDuration);
+    }
+
+    // 2. Dispatch native desktop notification if enabled
+    if (config.browserPushEnabled !== false) {
+      dispatchDesktopNotification(title, `${subtitle ? subtitle + ' - ' : ''}${details || ''}`, () => {
+        if (targetTab) handleTabChange(targetTab);
+      });
+    }
+
+    // 3. Screen popup based on chosen style
+    const style = forcePopupStyle || config.popupStyle || 'corner_toast';
+
+    if (style === 'corner_toast') {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      setActiveCornerToast({ id, type, title, subtitle, details, dueTime, targetTab, rawItem });
+      toastTimeoutRef.current = setTimeout(() => setActiveCornerToast(null), 9000);
+    } else if (style === 'center_modal') {
+      setActiveCenterModal({ id, type, title, subtitle, details, dueTime, targetTab, rawItem });
+    } else if (style === 'both') {
+      if (type === 'checklist' || isUrgent) {
+        setActiveCenterModal({ id, type, title, subtitle, details, dueTime, targetTab, rawItem });
+      } else {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        setActiveCornerToast({ id, type, title, subtitle, details, dueTime, targetTab, rawItem });
+        toastTimeoutRef.current = setTimeout(() => setActiveCornerToast(null), 9000);
+      }
+    }
+    // 'bell_only' skips screen popup
+  };
+
+  // Fetch & process checklist and delegation alerts for logged-in user
+  const fetchAndProcessUserAlerts = async () => {
+    if (!userEmail) return;
+    try {
+      const res = await getUserPendingAlerts({ userEmail });
+      if (!res.success) return;
+
+      const tasks = Array.isArray(res.delegationTasks) ? res.delegationTasks : [];
+      const slots = Array.isArray(res.checklistSlots) ? res.checklistSlots : [];
+
+      setUserDelegationTasks(tasks);
+      setUserChecklistSlots(slots);
+
+      // Baseline establishment on first fetch
+      if (!initialAlertSyncFinishedRef.current) {
+        tasks.forEach(t => notifiedTaskIdsRef.current.add(t.id));
+        slots.forEach(s => notifiedChecklistKeysRef.current.add(`${s.templateId}_${s.periodKey}`));
+        initialAlertSyncFinishedRef.current = true;
+        return;
+      }
+
+      // Check genuinely new delegation tasks assigned to user
+      for (const t of tasks) {
+        if (!notifiedTaskIdsRef.current.has(t.id)) {
+          notifiedTaskIdsRef.current.add(t.id);
+          triggerUnifiedAlert({
+            id: t.id,
+            type: 'delegation',
+            title: `🎯 New Task Assigned: ${t.title}`,
+            subtitle: `Delegated by ${t.delegated_by_name}`,
+            details: t.description || `Priority: ${t.priority}`,
+            dueTime: t.deadline ? new Date(t.deadline).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '',
+            targetTab: 'delegation',
+            rawItem: t,
+            isUrgent: t.priority === 'URGENT' || t.priority === 'HIGH'
+          });
+        }
+      }
+
+      // Check genuinely new due checklist slots
+      for (const s of slots) {
+        const slotKey = `${s.templateId}_${s.periodKey}`;
+        if (!notifiedChecklistKeysRef.current.has(slotKey)) {
+          notifiedChecklistKeysRef.current.add(slotKey);
+          triggerUnifiedAlert({
+            id: slotKey,
+            type: 'checklist',
+            title: `📋 Checklist Due: ${s.baseTitle}`,
+            subtitle: `${s.slotLabel} (Due: ${s.dueTime})`,
+            details: 'Your scheduled checklist is open and awaiting submission.',
+            dueTime: s.dueTime,
+            targetTab: 'checklist',
+            rawItem: s,
+            isUrgent: true
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Error processing user alerts:', e);
+    }
+  };
 
   // Sync browser document title for SuPuja Creations & AI Chatbot
   useEffect(() => {
@@ -1816,17 +2019,16 @@ export default function CRMContainer({
     }
   }, [activeTab]);
 
+  // Lead Follow-up Notifications Engine
   useEffect(() => {
     const currentDueKeys = dueFollowUps.map(lead => `${lead.id}:${lead.follow_up_date}`);
 
-    // If sync or initial lead loading is active, update baseline keys without playing audio
     if (isSyncing || loadingLeads) {
       currentDueKeys.forEach(k => notifiedFollowUpKeysRef.current.add(k));
       prevDueCount.current = dueFollowUps.length;
       return;
     }
 
-    // First check after sync finishes — establish baseline count and keys without playing sound
     if (!initialSyncFinishedRef.current) {
       initialSyncFinishedRef.current = true;
       currentDueKeys.forEach(k => notifiedFollowUpKeysRef.current.add(k));
@@ -1834,7 +2036,6 @@ export default function CRMContainer({
       return;
     }
 
-    // Check for genuinely NEW due follow-up items after initial load baseline
     let hasNewNotification = false;
     for (const key of currentDueKeys) {
       if (!notifiedFollowUpKeysRef.current.has(key)) {
@@ -1844,68 +2045,91 @@ export default function CRMContainer({
     }
 
     if (hasNewNotification) {
-      try {
-        let playedCustom = false;
-        
-        // Stop any currently playing notification audio instance to avoid overlapping sound
-        if (notificationAudioRef.current) {
-          try {
-            notificationAudioRef.current.pause();
-            notificationAudioRef.current.currentTime = 0;
-          } catch (e) {}
-        }
-
-        // Try to load custom sound from config
-        const savedConfig = localStorage.getItem('crm_config');
-        if (savedConfig) {
-          const config = JSON.parse(savedConfig);
-          if (config.alertSound) {
-            const audio = new Audio(config.alertSound);
-            notificationAudioRef.current = audio;
-            
-            if (config.alertDuration && !isNaN(config.alertDuration)) {
-              const durationMs = parseInt(config.alertDuration) * 1000;
-              audio.play().then(() => {
-                setTimeout(() => {
-                  try {
-                    audio.pause();
-                    audio.currentTime = 0;
-                  } catch (e) {}
-                }, durationMs);
-              }).catch(() => { /* Browser blocked auto-play */ });
-            } else {
-              audio.play().catch(() => { /* Browser blocked auto-play */ });
-            }
-            playedCustom = true;
-          }
-        }
-        
-        // Fallback to double-beep oscillator if no custom sound
-        if (!playedCustom) {
-          const AudioContext = window.AudioContext || window.webkitAudioContext;
-          const ctx = new AudioContext();
-          const osc = ctx.createOscillator();
-          const gainNode = ctx.createGain();
-          
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(880, ctx.currentTime);
-          osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
-          
-          gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
-          gainNode.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
-          
-          osc.connect(gainNode);
-          gainNode.connect(ctx.destination);
-          
-          osc.start();
-          osc.stop(ctx.currentTime + 3.0);
-        }
-      } catch (err) {
-        console.error('Audio play failed', err);
-      }
+      const topLead = dueFollowUps[0];
+      triggerUnifiedAlert({
+        id: `lead_${Date.now()}`,
+        type: 'lead',
+        title: `📞 Follow-up Due: ${topLead?.company || topLead?.name || 'Lead Follow-up'}`,
+        subtitle: topLead?.phone ? `Contact: ${topLead.phone}` : '',
+        details: 'Scheduled lead follow-up reminder is due now.',
+        dueTime: topLead?.follow_up_date ? new Date(topLead.follow_up_date).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '',
+        targetTab: 'leads',
+        rawItem: topLead
+      });
     }
     prevDueCount.current = dueFollowUps.length;
   }, [dueFollowUps, isSyncing, loadingLeads]);
+
+  // Realtime & Periodic Alert Synchronization for Checklist & Delegation
+  useEffect(() => {
+    if (!userEmail) return;
+
+    fetchAndProcessUserAlerts();
+
+    // 1. Supabase Realtime channel for instant delegation task assignments
+    const delegationRealtimeChannel = supabase
+      .channel(`realtime_delegation_alerts_${userEmail}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'delegation_tasks',
+        filter: `assigned_to_email=eq.${userEmail.toLowerCase().trim()}`
+      }, (payload) => {
+        if (payload?.new) {
+          const t = payload.new;
+          if (!notifiedTaskIdsRef.current.has(t.id)) {
+            notifiedTaskIdsRef.current.add(t.id);
+            setUserDelegationTasks(prev => [t, ...prev]);
+            triggerUnifiedAlert({
+              id: t.id,
+              type: 'delegation',
+              title: `🎯 New Task Assigned: ${t.title}`,
+              subtitle: `Delegated by ${t.delegated_by_name || 'Team Member'}`,
+              details: t.description || `Priority: ${t.priority || 'MEDIUM'}`,
+              dueTime: t.deadline ? new Date(t.deadline).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '',
+              targetTab: 'delegation',
+              rawItem: t,
+              isUrgent: t.priority === 'URGENT' || t.priority === 'HIGH'
+            });
+          }
+        }
+      })
+      .subscribe();
+
+    // 2. Window event listeners for live test alerts & config updates from Settings
+    const handleTestNotificationEvent = (e) => {
+      const d = e.detail || {};
+      triggerUnifiedAlert({
+        id: `test_${Date.now()}`,
+        type: 'test',
+        title: d.title || '🎯 Test Alert Preview',
+        subtitle: d.message || 'Notification preview from Settings',
+        details: 'This alert was triggered by Settings > Notifications & Alerts demo test.',
+        dueTime: d.dueTime || '18:00',
+        targetTab: 'settings',
+        forcePopupStyle: d.popupStyle
+      });
+    };
+
+    const handleConfigUpdatedEvent = () => {
+      fetchAndProcessUserAlerts();
+    };
+
+    window.addEventListener('crm_test_notification', handleTestNotificationEvent);
+    window.addEventListener('crm_config_updated', handleConfigUpdatedEvent);
+
+    return () => {
+      supabase.removeChannel(delegationRealtimeChannel);
+      window.removeEventListener('crm_test_notification', handleTestNotificationEvent);
+      window.removeEventListener('crm_config_updated', handleConfigUpdatedEvent);
+    };
+  }, [userEmail]);
+
+  // Periodic check for checklist slot times (runs every 20 seconds with ticker)
+  useEffect(() => {
+    if (!currentTime || !userEmail) return;
+    fetchAndProcessUserAlerts();
+  }, [currentTime]);
 
   if (userRole === 'customer') {
     return (
@@ -3143,54 +3367,59 @@ export default function CRMContainer({
 
             {/* Notifications Button (Square Button Box) */}
             <div style={{ position: 'relative', flexShrink: 0 }} ref={notificationMenuRef}>
-              <button
-                type="button"
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="header-icon-btn"
-                style={{
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: showNotifications ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: showNotifications ? 'var(--accent-color)' : 'var(--text-primary)',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  position: 'relative'
-                }}
-                title="Notifications"
-              >
-                <Bell size={16} />
-                {dueFollowUps.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '-5px',
-                    right: '-6px',
-                    backgroundColor: '#ef4444',
-                    color: '#ffffff',
-                    fontSize: '0.6rem',
-                    fontWeight: 700,
-                    minWidth: '16px',
-                    height: '16px',
-                    padding: '0 4px',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1.5px solid var(--bg-surface)',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                    pointerEvents: 'none',
-                    lineHeight: 1,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {dueFollowUps.length}
-                  </div>
-                )}
-              </button>
+              {(() => {
+                const totalAlertCount = (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className="header-icon-btn"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      backgroundColor: showNotifications ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: showNotifications ? 'var(--accent-color)' : 'var(--text-primary)',
+                      transition: 'all 0.2s',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                      position: 'relative'
+                    }}
+                    title="Notifications"
+                  >
+                    <Bell size={16} />
+                    {totalAlertCount > 0 && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '-5px',
+                        right: '-6px',
+                        backgroundColor: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: '0.6rem',
+                        fontWeight: 700,
+                        minWidth: '16px',
+                        height: '16px',
+                        padding: '0 4px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1.5px solid var(--bg-surface)',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                        pointerEvents: 'none',
+                        lineHeight: 1,
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {totalAlertCount}
+                      </div>
+                    )}
+                  </button>
+                );
+              })()}
 
               {showNotifications && (
                 <div style={{
@@ -3200,7 +3429,7 @@ export default function CRMContainer({
                   right: '8px',
                   left: '8px',
                   width: 'auto',
-                  maxWidth: '460px',
+                  maxWidth: '480px',
                   margin: '0 auto',
                   backgroundColor: 'var(--bg-surface)',
                   border: '1px solid var(--border-light)',
@@ -3214,7 +3443,7 @@ export default function CRMContainer({
                 }}>
                   {/* Header */}
                   <div style={{
-                    padding: '0.9rem 1.1rem',
+                    padding: '0.85rem 1.1rem',
                     borderBottom: '1px solid var(--border-light)',
                     backgroundColor: 'var(--bg-primary)',
                     display: 'flex',
@@ -3222,8 +3451,8 @@ export default function CRMContainer({
                     justifyContent: 'space-between'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                        Follow-up Tasks Due
+                      <span style={{ fontWeight: 800, fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+                        Notifications & Alerts
                       </span>
                       <span style={{
                         fontSize: '0.74rem',
@@ -3233,7 +3462,7 @@ export default function CRMContainer({
                         padding: '0.2rem 0.6rem',
                         borderRadius: '9999px'
                       }}>
-                        {categorizedFollowUps.all.length} Total
+                        {(dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0)} Total
                       </span>
                     </div>
                     <button
@@ -3246,298 +3475,661 @@ export default function CRMContainer({
                     </button>
                   </div>
 
-                  {/* Search input */}
-                  <div style={{ padding: '0.65rem 0.9rem 0.45rem 0.9rem', backgroundColor: 'var(--bg-surface)' }}>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <Search size={15} style={{ position: 'absolute', left: '10px', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
-                      <input
-                        type="text"
-                        value={notifSearch}
-                        onChange={(e) => setNotifSearch(e.target.value)}
-                        placeholder="Search name, phone, company, ID..."
-                        style={{
-                          width: '100%',
-                          padding: '0.5rem 2rem 0.5rem 2.1rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-light)',
-                          backgroundColor: 'var(--bg-primary)',
-                          fontSize: '0.82rem',
-                          color: 'var(--text-primary)',
-                          outline: 'none'
-                        }}
-                      />
-                      {notifSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setNotifSearch('')}
-                          style={{ position: 'absolute', right: '8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '0.2rem' }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Filter Tabs Grid (Spacious 3x2 Layout with Yesterday) */}
+                  {/* Main Category Tabs (All | Checklists | Delegated Tasks | Leads) */}
                   <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.9rem 0.65rem 0.9rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0.45rem 0.75rem',
+                    gap: '0.35rem',
+                    backgroundColor: 'var(--bg-surface)',
                     borderBottom: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)'
+                    overflowX: 'auto'
                   }}>
                     {[
-                      { id: 'all', label: 'All Tasks', count: categorizedFollowUps.all.length },
-                      { id: 'yesterday', label: '🔴 Yesterday', count: categorizedFollowUps.yesterday.length },
-                      { id: 'today', label: '🟡 Today', count: categorizedFollowUps.today.length },
-                      { id: 'tomorrow', label: '🟢 Tomorrow', count: categorizedFollowUps.tomorrow.length },
-                      { id: 'overdue', label: '🔴 Overdue', count: categorizedFollowUps.overdue.length },
-                      { id: 'upcoming', label: '🔵 Upcoming', count: categorizedFollowUps.upcoming.length }
+                      { id: 'all', label: 'All', icon: '🔔', count: (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) },
+                      { id: 'checklist', label: 'Checklist', icon: '📋', count: userChecklistSlots.length },
+                      { id: 'delegation', label: 'Delegation', icon: '🎯', count: userDelegationTasks.length },
+                      { id: 'leads', label: 'Leads', icon: '📞', count: dueFollowUps.length }
                     ].map(tab => {
-                      const isActive = notifFilter === tab.id;
+                      const isActive = notifMainTab === tab.id;
                       return (
                         <button
                           key={tab.id}
                           type="button"
-                          onClick={() => setNotifFilter(tab.id)}
+                          onClick={() => setNotifMainTab(tab.id)}
                           style={{
-                            padding: '0.4rem 0.5rem',
+                            padding: '0.35rem 0.65rem',
                             borderRadius: '8px',
                             border: isActive ? '1.5px solid var(--accent-color)' : '1px solid var(--border-light)',
                             backgroundColor: isActive ? 'var(--accent-color)' : 'var(--bg-primary)',
                             color: isActive ? '#ffffff' : 'var(--text-primary)',
-                            fontSize: '0.73rem',
+                            fontSize: '0.74rem',
                             fontWeight: 600,
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between',
-                            transition: 'all 0.15s',
-                            boxShadow: isActive ? '0 2px 5px rgba(0,0,0,0.12)' : 'none'
+                            gap: '0.35rem',
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.15s'
                           }}
                         >
-                          <span style={{ whiteSpace: 'nowrap' }}>{tab.label}</span>
-                          <span style={{
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            padding: '0.08rem 0.35rem',
-                            borderRadius: '6px',
-                            backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--bg-surface)',
-                            color: isActive ? '#ffffff' : 'var(--text-secondary)'
-                          }}>
-                            {tab.count}
-                          </span>
+                          <span>{tab.icon} {tab.label}</span>
+                          {tab.count > 0 && (
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '0.05rem 0.35rem',
+                              borderRadius: '6px',
+                              backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--th-bg)',
+                              color: isActive ? '#ffffff' : 'var(--text-secondary)'
+                            }}>
+                              {tab.count}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* List of Notification Items (Direct Rich Cards) */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
-                    {filteredNotificationList.length === 0 ? (
-                      <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                        <Clock size={28} style={{ opacity: 0.4 }} />
-                        <span>No follow-up tasks found for this filter</span>
-                      </div>
-                    ) : (
-                      filteredNotificationList.map(lead => {
-                        const formatted = formatFollowUpDateTime(lead.follow_up_date);
-                        
-                        let badgeBg = 'rgba(59, 130, 246, 0.12)';
-                        let badgeColor = '#3b82f6';
-                        let badgeBorder = 'rgba(59, 130, 246, 0.25)';
-                        let badgeText = formatted.fullStr;
-
-                        if (lead.followUpCategory === 'yesterday') {
-                          badgeBg = 'rgba(239, 68, 68, 0.12)';
-                          badgeColor = '#ef4444';
-                          badgeBorder = 'rgba(239, 68, 68, 0.25)';
-                          badgeText = `Yesterday: ${formatted.fullStr}`;
-                        } else if (lead.followUpCategory === 'overdue') {
-                          badgeBg = 'rgba(239, 68, 68, 0.12)';
-                          badgeColor = '#ef4444';
-                          badgeBorder = 'rgba(239, 68, 68, 0.25)';
-                          badgeText = `Overdue: ${formatted.fullStr}`;
-                        } else if (lead.followUpCategory === 'today') {
-                          badgeBg = 'rgba(234, 179, 8, 0.15)';
-                          badgeColor = '#d97706';
-                          badgeBorder = 'rgba(234, 179, 8, 0.3)';
-                          badgeText = `Today: ${formatted.fullStr}`;
-                        } else if (lead.followUpCategory === 'tomorrow') {
-                          badgeBg = 'rgba(16, 185, 129, 0.12)';
-                          badgeColor = '#059669';
-                          badgeBorder = 'rgba(16, 185, 129, 0.25)';
-                          badgeText = `Tomorrow: ${formatted.fullStr}`;
-                        }
-
-                        const phone = lead.phone || lead.business_contact_1 || lead.business_contact_2;
-                        const cleanStatus = (lead.status || '').includes('>') ? lead.status.split('>').pop() : (lead.status || 'New');
-
-                        return (
+                  {/* TAB CONTENT: CHECKLISTS */}
+                  {notifMainTab === 'checklist' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                      {userChecklistSlots.length === 0 ? (
+                        <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                          <CheckSquare size={28} style={{ opacity: 0.4, color: '#10b981' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>All Checklists Submitted!</span>
+                          <span style={{ fontSize: '0.78rem' }}>You have no pending checklist slots for today.</span>
+                        </div>
+                      ) : (
+                        userChecklistSlots.map((slot, idx) => (
                           <div
-                            key={lead.id}
+                            key={`${slot.templateId}_${slot.slotId}_${idx}`}
                             style={{
-                              padding: '0.65rem 0.8rem',
+                              padding: '0.75rem 0.85rem',
                               borderRadius: '10px',
                               border: '1px solid var(--border-light)',
                               backgroundColor: 'var(--bg-primary)',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s',
                               display: 'flex',
                               flexDirection: 'column',
-                              gap: '0.35rem',
+                              gap: '0.4rem',
                               boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                             }}
-                            onMouseOver={(e) => {
-                              e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                              e.currentTarget.style.borderColor = 'var(--accent-color)';
-                            }}
-                            onMouseOut={(e) => {
-                              e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
-                              e.currentTarget.style.borderColor = 'var(--border-light)';
-                            }}
-                            onClick={() => {
-                              const targetStage = getStageFromStatus(lead.status);
-                              setActiveTab('leads');
-                              handleStageChange(targetStage);
-                              setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
-                              setShowNotifications(false);
-                            }}
                           >
-                            {/* Card Top: ID, Status & Date Badge */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                {lead.lead_ref_id && (
-                                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
-                                    #{lead.lead_ref_id}
-                                  </span>
-                                )}
-                                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                  {cleanStatus}
-                                </span>
-                              </div>
+                              <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                📋 {slot.baseTitle}
+                              </span>
                               <span style={{
-                                fontSize: '0.68rem',
+                                fontSize: '0.7rem',
                                 fontWeight: 700,
-                                padding: '0.15rem 0.5rem',
+                                padding: '0.15rem 0.45rem',
                                 borderRadius: '6px',
-                                backgroundColor: badgeBg,
-                                color: badgeColor,
-                                border: `1px solid ${badgeBorder}`,
-                                whiteSpace: 'nowrap'
+                                backgroundColor: slot.isDelayed ? 'rgba(239, 68, 68, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                                color: slot.isDelayed ? '#ef4444' : '#3b82f6',
+                                border: `1px solid ${slot.isDelayed ? 'rgba(239, 68, 68, 0.25)' : 'rgba(59, 130, 246, 0.25)'}`
                               }}>
-                                {badgeText}
+                                {slot.isDelayed ? `Delayed (${slot.delayMinutes}m)` : `Due: ${slot.dueTime}`}
                               </span>
                             </div>
-
-                            {/* Card Middle: Company / Client Name */}
-                            <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {lead.company || lead.name || 'Unnamed Client'}
-                              {lead.company && lead.name && lead.company !== lead.name && (
-                                <span style={{ fontWeight: 400, fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>
-                                  ({lead.name})
-                                </span>
-                              )}
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                              Slot: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{slot.slotLabel}</span> (Cutoff: {slot.dueTime})
                             </div>
-
-                            {/* Card Bottom: Phone, District & Call/WA Buttons */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                {phone ? (
-                                  <span>📞 {phone}</span>
-                                ) : (
-                                  <span style={{ fontStyle: 'italic', opacity: 0.7 }}>No phone</span>
-                                )}
-                                {lead.district_name && <span>• {lead.district_name}</span>}
-                              </div>
-
-                              {phone && (
-                                <div style={{ display: 'flex', gap: '0.35rem' }} onClick={e => e.stopPropagation()}>
-                                  <a
-                                    href={`tel:${phone}`}
-                                    title="Call"
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      width: '24px',
-                                      height: '24px',
-                                      borderRadius: '4px',
-                                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                                      color: '#3b82f6',
-                                      textDecoration: 'none',
-                                      fontSize: '11px',
-                                      fontWeight: 'bold'
-                                    }}
-                                  >
-                                    📞
-                                  </a>
-                                  <a
-                                    href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title="WhatsApp"
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      width: '24px',
-                                      height: '24px',
-                                      borderRadius: '4px',
-                                      backgroundColor: '#25D366',
-                                      color: '#ffffff',
-                                      textDecoration: 'none',
-                                      fontSize: '10px',
-                                      fontWeight: 'bold'
-                                    }}
-                                  >
-                                    WA
-                                  </a>
-                                </div>
-                              )}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.2rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleTabChange('checklist');
+                                  setShowNotifications(false);
+                                }}
+                                style={{
+                                  padding: '0.35rem 0.8rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: 'var(--accent-color)',
+                                  color: '#ffffff',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Fill Checklist 👉
+                              </button>
                             </div>
                           </div>
-                        );
-                      })
-                    )}
-                  </div>
+                        ))
+                      )}
+                    </div>
+                  )}
 
-                  {/* Footer */}
-                  <div style={{
-                    padding: '0.65rem 1rem',
-                    borderTop: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-primary)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '0.78rem'
-                  }}>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-                      Showing {filteredNotificationList.length} of {categorizedFollowUps[notifFilter]?.length || categorizedFollowUps.all.length} tasks
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('leads');
-                        setShowNotifications(false);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--accent-color)',
-                        fontWeight: 700,
-                        cursor: 'pointer',
+                  {/* TAB CONTENT: DELEGATION TASKS */}
+                  {notifMainTab === 'delegation' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                      {userDelegationTasks.length === 0 ? (
+                        <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                          <Sparkles size={28} style={{ opacity: 0.4, color: '#3b82f6' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No Delegated Tasks Pending!</span>
+                          <span style={{ fontSize: '0.78rem' }}>You have no open tasks assigned to you right now.</span>
+                        </div>
+                      ) : (
+                        userDelegationTasks.map(task => {
+                          const priorityColor = task.priority === 'URGENT' ? '#ef4444' : (task.priority === 'HIGH' ? '#f59e0b' : '#3b82f6');
+                          const priorityBg = task.priority === 'URGENT' ? 'rgba(239, 68, 68, 0.12)' : (task.priority === 'HIGH' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)');
+                          const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'No deadline';
+
+                          return (
+                            <div
+                              key={task.id}
+                              style={{
+                                padding: '0.75rem 0.85rem',
+                                borderRadius: '10px',
+                                border: '1px solid var(--border-light)',
+                                backgroundColor: 'var(--bg-primary)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.35rem',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
+                                  #{task.task_code}
+                                </span>
+                                <span style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  padding: '0.12rem 0.45rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: priorityBg,
+                                  color: priorityColor,
+                                  border: `1px solid ${priorityColor}40`
+                                }}>
+                                  {task.priority}
+                                </span>
+                              </div>
+                              <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                {task.title}
+                              </div>
+                              <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                Delegated by: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{task.delegated_by_name}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                                <span style={{ fontSize: '0.72rem', color: task.is_overdue ? '#ef4444' : 'var(--text-secondary)', fontWeight: task.is_overdue ? 700 : 500 }}>
+                                  ⏰ {task.is_overdue ? 'Overdue: ' : 'Due: '}{deadlineStr}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleTabChange('delegation');
+                                    setShowNotifications(false);
+                                  }}
+                                  style={{
+                                    padding: '0.35rem 0.8rem',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    background: 'var(--accent-color)',
+                                    color: '#ffffff',
+                                    fontSize: '0.76rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  View Task 👉
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB CONTENT: LEADS */}
+                  {notifMainTab === 'leads' && (
+                    <>
+                      {/* Search input */}
+                      <div style={{ padding: '0.65rem 0.9rem 0.45rem 0.9rem', backgroundColor: 'var(--bg-surface)' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <Search size={15} style={{ position: 'absolute', left: '10px', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+                          <input
+                            type="text"
+                            value={notifSearch}
+                            onChange={(e) => setNotifSearch(e.target.value)}
+                            placeholder="Search name, phone, company, ID..."
+                            style={{
+                              width: '100%',
+                              padding: '0.5rem 2rem 0.5rem 2.1rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              fontSize: '0.82rem',
+                              color: 'var(--text-primary)',
+                              outline: 'none'
+                            }}
+                          />
+                          {notifSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setNotifSearch('')}
+                              style={{ position: 'absolute', right: '8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '0.2rem' }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Filter Tabs Grid (Spacious 3x2 Layout with Yesterday) */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '0.4rem',
+                        padding: '0.45rem 0.9rem 0.65rem 0.9rem',
+                        borderBottom: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)'
+                      }}>
+                        {[
+                          { id: 'all', label: 'All Tasks', count: categorizedFollowUps.all.length },
+                          { id: 'yesterday', label: '🔴 Yesterday', count: categorizedFollowUps.yesterday.length },
+                          { id: 'today', label: '🟡 Today', count: categorizedFollowUps.today.length },
+                          { id: 'tomorrow', label: '🟢 Tomorrow', count: categorizedFollowUps.tomorrow.length },
+                          { id: 'overdue', label: '🔴 Overdue', count: categorizedFollowUps.overdue.length },
+                          { id: 'upcoming', label: '🔵 Upcoming', count: categorizedFollowUps.upcoming.length }
+                        ].map(tab => {
+                          const isActive = notifFilter === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setNotifFilter(tab.id)}
+                              style={{
+                                padding: '0.4rem 0.5rem',
+                                borderRadius: '8px',
+                                border: isActive ? '1.5px solid var(--accent-color)' : '1px solid var(--border-light)',
+                                backgroundColor: isActive ? 'var(--accent-color)' : 'var(--bg-primary)',
+                                color: isActive ? '#ffffff' : 'var(--text-primary)',
+                                fontSize: '0.73rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                transition: 'all 0.15s',
+                                boxShadow: isActive ? '0 2px 5px rgba(0,0,0,0.12)' : 'none'
+                              }}
+                            >
+                              <span style={{ whiteSpace: 'nowrap' }}>{tab.label}</span>
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                padding: '0.08rem 0.35rem',
+                                borderRadius: '6px',
+                                backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--bg-surface)',
+                                color: isActive ? '#ffffff' : 'var(--text-secondary)'
+                              }}>
+                                {tab.count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* List of Notification Items (Direct Rich Cards) */}
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                        {filteredNotificationList.length === 0 ? (
+                          <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                            <Clock size={28} style={{ opacity: 0.4 }} />
+                            <span>No follow-up tasks found for this filter</span>
+                          </div>
+                        ) : (
+                          filteredNotificationList.map(lead => {
+                            const formatted = formatFollowUpDateTime(lead.follow_up_date);
+                            
+                            let badgeBg = 'rgba(59, 130, 246, 0.12)';
+                            let badgeColor = '#3b82f6';
+                            let badgeBorder = 'rgba(59, 130, 246, 0.25)';
+                            let badgeText = formatted.fullStr;
+
+                            if (lead.followUpCategory === 'yesterday') {
+                              badgeBg = 'rgba(239, 68, 68, 0.12)';
+                              badgeColor = '#ef4444';
+                              badgeBorder = 'rgba(239, 68, 68, 0.25)';
+                              badgeText = `Yesterday: ${formatted.fullStr}`;
+                            } else if (lead.followUpCategory === 'overdue') {
+                              badgeBg = 'rgba(239, 68, 68, 0.12)';
+                              badgeColor = '#ef4444';
+                              badgeBorder = 'rgba(239, 68, 68, 0.25)';
+                              badgeText = `Overdue: ${formatted.fullStr}`;
+                            } else if (lead.followUpCategory === 'today') {
+                              badgeBg = 'rgba(234, 179, 8, 0.15)';
+                              badgeColor = '#d97706';
+                              badgeBorder = 'rgba(234, 179, 8, 0.3)';
+                              badgeText = `Today: ${formatted.fullStr}`;
+                            } else if (lead.followUpCategory === 'tomorrow') {
+                              badgeBg = 'rgba(16, 185, 129, 0.12)';
+                              badgeColor = '#059669';
+                              badgeBorder = 'rgba(16, 185, 129, 0.25)';
+                              badgeText = `Tomorrow: ${formatted.fullStr}`;
+                            }
+
+                            const phone = lead.phone || lead.business_contact_1 || lead.business_contact_2;
+                            const cleanStatus = (lead.status || '').includes('>') ? lead.status.split('>').pop() : (lead.status || 'New');
+
+                            return (
+                              <div
+                                key={lead.id}
+                                style={{
+                                  padding: '0.65rem 0.8rem',
+                                  borderRadius: '10px',
+                                  border: '1px solid var(--border-light)',
+                                  backgroundColor: 'var(--bg-primary)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.35rem',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                                  e.currentTarget.style.borderColor = 'var(--accent-color)';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'var(--bg-primary)';
+                                  e.currentTarget.style.borderColor = 'var(--border-light)';
+                                }}
+                                onClick={() => {
+                                  const targetStage = getStageFromStatus(lead.status);
+                                  setActiveTab('leads');
+                                  handleStageChange(targetStage);
+                                  setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
+                                  setShowNotifications(false);
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    {lead.lead_ref_id && (
+                                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
+                                        #{lead.lead_ref_id}
+                                      </span>
+                                    )}
+                                    <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                      {cleanStatus}
+                                    </span>
+                                  </div>
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    padding: '0.15rem 0.5rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: badgeBg,
+                                    color: badgeColor,
+                                    border: `1px solid ${badgeBorder}`,
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {badgeText}
+                                  </span>
+                                </div>
+
+                                <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {lead.company || lead.name || 'Unnamed Client'}
+                                  {lead.company && lead.name && lead.company !== lead.name && (
+                                    <span style={{ fontWeight: 400, fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>
+                                      ({lead.name})
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {phone ? (
+                                      <span>📞 {phone}</span>
+                                    ) : (
+                                      <span style={{ fontStyle: 'italic', opacity: 0.7 }}>No phone</span>
+                                    )}
+                                    {(lead.district_name || lead.city_name) && (
+                                      <span>• 📍 {lead.district_name || lead.city_name}</span>
+                                    )}
+                                  </div>
+
+                                  {phone && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} onClick={(e) => e.stopPropagation()}>
+                                      <a
+                                        href={`tel:${phone}`}
+                                        title="Call"
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '4px',
+                                          backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                          color: '#3b82f6',
+                                          textDecoration: 'none',
+                                          fontSize: '11px',
+                                          fontWeight: 'bold'
+                                        }}
+                                      >
+                                        📞
+                                      </a>
+                                      <a
+                                        href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        title="WhatsApp"
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '4px',
+                                          backgroundColor: '#25D366',
+                                          color: '#ffffff',
+                                          textDecoration: 'none',
+                                          fontSize: '10px',
+                                          fontWeight: 'bold'
+                                        }}
+                                      >
+                                        WA
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Footer */}
+                      <div style={{
+                        padding: '0.65rem 1rem',
+                        borderTop: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-primary)',
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '0.25rem',
                         fontSize: '0.78rem'
-                      }}
-                    >
-                      <span>Open Leads Table</span>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
+                      }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                          Showing {filteredNotificationList.length} of {categorizedFollowUps[notifFilter]?.length || categorizedFollowUps.all.length} tasks
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('leads');
+                            setShowNotifications(false);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--accent-color)',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.78rem'
+                          }}
+                        >
+                          <span>Open Leads Table</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* TAB CONTENT: ALL (COMBINED VIEW) */}
+                  {notifMainTab === 'all' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', minHeight: '180px' }}>
+                      {/* Section 1: Checklists Due */}
+                      {userChecklistSlots.length > 0 && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', padding: '0 0.2rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                              📋 Checklists Due ({userChecklistSlots.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { handleTabChange('checklist'); setShowNotifications(false); }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Go to Checklist 👉
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {userChecklistSlots.slice(0, 3).map((slot, idx) => (
+                              <div
+                                key={`all_chk_${idx}`}
+                                onClick={() => { handleTabChange('checklist'); setShowNotifications(false); }}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--bg-primary)',
+                                  border: '1px solid var(--border-light)',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  {slot.baseTitle} ({slot.slotLabel})
+                                </span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: slot.isDelayed ? '#ef4444' : '#3b82f6' }}>
+                                  {slot.dueTime}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section 2: Delegated Tasks */}
+                      {userDelegationTasks.length > 0 && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', padding: '0 0.2rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                              🎯 Delegated Tasks ({userDelegationTasks.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { handleTabChange('delegation'); setShowNotifications(false); }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Go to Delegation 👉
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {userDelegationTasks.slice(0, 3).map(task => (
+                              <div
+                                key={`all_del_${task.id}`}
+                                onClick={() => { handleTabChange('delegation'); setShowNotifications(false); }}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--bg-primary)',
+                                  border: '1px solid var(--border-light)',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {task.title}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
+                                    by {task.delegated_by_name}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--th-bg)' }}>
+                                  {task.priority}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section 3: Follow-up Leads */}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', padding: '0 0.2rem' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                            📞 Lead Follow-ups ({dueFollowUps.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setNotifMainTab('leads')}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            View Filter Grid 👉
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          {dueFollowUps.slice(0, 5).map(lead => (
+                            <div
+                              key={`all_lead_${lead.id}`}
+                              onClick={() => {
+                                const targetStage = getStageFromStatus(lead.status);
+                                setActiveTab('leads');
+                                handleStageChange(targetStage);
+                                setActiveSearchQuery(lead.lead_ref_id || lead.name || lead.phone);
+                                setShowNotifications(false);
+                              }}
+                              style={{
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: '8px',
+                                backgroundColor: 'var(--bg-primary)',
+                                border: '1px solid var(--border-light)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                              }}
+                            >
+                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  {lead.company || lead.name}
+                                </span>
+                                {lead.phone && (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
+                                    {lead.phone}
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                {lead.follow_up_date ? new Date(lead.follow_up_date).toLocaleDateString('en-IN') : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               )}
             </div>
@@ -4232,6 +4824,238 @@ export default function CRMContainer({
           }
         }}
       />
+
+      {/* Dynamic Screen Popup: Corner Floating Toast Card */}
+      {activeCornerToast && (
+        <div style={{
+          position: 'fixed',
+          top: '68px',
+          right: '18px',
+          width: '380px',
+          maxWidth: 'calc(100vw - 36px)',
+          backgroundColor: 'var(--bg-surface)',
+          borderRadius: '14px',
+          border: '2px solid var(--accent-color)',
+          boxShadow: '0 20px 30px -8px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0,0,0,0.06)',
+          zIndex: 999999,
+          padding: '1.1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.65rem',
+          animation: 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '1.4rem' }}>
+                {activeCornerToast.type === 'checklist' ? '📋' : (activeCornerToast.type === 'delegation' ? '🎯' : '🔔')}
+              </span>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                  {activeCornerToast.title}
+                </div>
+                {activeCornerToast.subtitle && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                    {activeCornerToast.subtitle}
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveCornerToast(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.2rem', borderRadius: '4px' }}
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {activeCornerToast.details && (
+            <div style={{
+              fontSize: '0.8rem',
+              color: 'var(--text-primary)',
+              backgroundColor: 'var(--bg-primary)',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              lineHeight: 1.4
+            }}>
+              {activeCornerToast.details}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.15rem' }}>
+            {activeCornerToast.dueTime ? (
+              <span style={{ fontSize: '0.73rem', fontWeight: 600, color: 'var(--accent-color)' }}>
+                ⏰ {activeCornerToast.dueTime}
+              </span>
+            ) : <span />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setActiveCornerToast(null)}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeCornerToast.targetTab) {
+                    handleTabChange(activeCornerToast.targetTab);
+                  }
+                  setActiveCornerToast(null);
+                }}
+                style={{
+                  padding: '0.35rem 0.85rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'var(--accent-color)',
+                  color: '#ffffff',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                }}
+              >
+                {activeCornerToast.type === 'checklist' ? 'Fill Checklist 👉' : (activeCornerToast.type === 'delegation' ? 'View Task 👉' : 'Open 👉')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Screen Popup: High-Priority Center Alert Modal */}
+      {activeCenterModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '460px',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '16px',
+            border: '2px solid var(--accent-color)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.6rem'
+              }}>
+                {activeCenterModal.type === 'checklist' ? '📋' : (activeCenterModal.type === 'delegation' ? '🎯' : '🔔')}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveCenterModal(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.4rem', borderRadius: '6px' }}
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '1.18rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                {activeCenterModal.title}
+              </div>
+              {activeCenterModal.subtitle && (
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  {activeCenterModal.subtitle}
+                </div>
+              )}
+            </div>
+
+            {activeCenterModal.details && (
+              <div style={{
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                backgroundColor: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                fontSize: '0.86rem',
+                color: 'var(--text-primary)',
+                lineHeight: 1.5
+              }}>
+                {activeCenterModal.details}
+                {activeCenterModal.dueTime && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color)' }}>
+                    ⏰ Scheduled Time: {activeCenterModal.dueTime}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.4rem' }}>
+              <button
+                type="button"
+                onClick={() => setActiveCenterModal(null)}
+                style={{
+                  padding: '0.6rem 1.1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Snooze / Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeCenterModal.targetTab) {
+                    handleTabChange(activeCenterModal.targetTab);
+                  }
+                  setActiveCenterModal(null);
+                }}
+                style={{
+                  padding: '0.6rem 1.4rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'var(--accent-color)',
+                  color: '#ffffff',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                }}
+              >
+                {activeCenterModal.type === 'checklist' ? 'Fill Checklist Now 👉' : (activeCenterModal.type === 'delegation' ? 'Open Delegated Task 👉' : 'View Now 👉')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
