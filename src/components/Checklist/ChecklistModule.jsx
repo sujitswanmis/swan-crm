@@ -123,8 +123,20 @@ export default function ChecklistModule({
     setCompliancePage(1);
   };
 
-  // View Mode for My Checklists: 'tiles' | 'table'
-  const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('tiles');
+  // View Mode for My Checklists: 'table' (default on desktop) | 'tiles' (default on mobile)
+  const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('table');
+
+  // Auto-detect mobile devices to default to 'tiles' on mobile, keeping 'table' for desktop
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+      if (isMobile) {
+        setMyChecklistsViewMode('tiles');
+      } else {
+        setMyChecklistsViewMode('table');
+      }
+    }
+  }, []);
 
   // Date selection for My Checklists Dashboard (Defaults to Today)
   const todayDateStr = useMemo(() => {
