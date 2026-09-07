@@ -44,6 +44,7 @@ import OfflineRuleModule from './Offline/OfflineRuleModule';
 import OfflineBlockScreen from './Offline/OfflineBlockScreen';
 import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
+import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -1344,6 +1345,14 @@ export default function CRMContainer({
   const [pendingChecklistSlot, setPendingChecklistSlot] = useState(null);
   const [activeCornerToast, setActiveCornerToast] = useState(null);
   const [activeCenterModal, setActiveCenterModal] = useState(null);
+  const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState(false);
+  const [isDesktopPromptDismissed, setIsDesktopPromptDismissed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_desktop_notif_dismissed') === 'true';
+    }
+    return false;
+  });
+  const [browserPermission, setBrowserPermission] = useState('default');
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
@@ -1361,6 +1370,60 @@ export default function CRMContainer({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Check browser notification permission status on mount and listen for test alert preview
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setBrowserPermission(Notification.permission);
+    }
+
+    const handleTestEvent = (e) => {
+      const testPrefs = e.detail || {};
+      triggerUnifiedAlert({
+        id: `test_${Date.now()}`,
+        type: 'test',
+        title: '🔔 Alert Preview: Notifications Working!',
+        subtitle: 'SuPuja Creations CRM',
+        details: 'This is a live preview of your chosen popup style and sound alert settings.',
+        dueTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }),
+        targetTab: 'leads',
+        isUrgent: true,
+        forcePopupStyle: testPrefs.popupStyle
+      });
+    };
+
+    window.addEventListener('test_user_screen_alert', handleTestEvent);
+    return () => window.removeEventListener('test_user_screen_alert', handleTestEvent);
+  }, []);
+
+  const handleRequestDesktopPermission = async (e) => {
+    if (e) e.stopPropagation();
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const result = await Notification.requestPermission();
+        setBrowserPermission(result);
+        if (result === 'granted') {
+          localStorage.setItem('crm_desktop_notif_dismissed', 'true');
+          setIsDesktopPromptDismissed(true);
+          try {
+            const existing = localStorage.getItem('crm_config');
+            const parsed = existing ? JSON.parse(existing) : {};
+            parsed.browserPushEnabled = true;
+            localStorage.setItem('crm_config', JSON.stringify(parsed));
+            window.dispatchEvent(new CustomEvent('crm_config_updated', { detail: parsed }));
+          } catch (err) {}
+        }
+      } catch (err) {
+        console.error('Error requesting desktop permission:', err);
+      }
+    }
+  };
+
+  const handleDismissDesktopPrompt = (e) => {
+    if (e) e.stopPropagation();
+    localStorage.setItem('crm_desktop_notif_dismissed', 'true');
+    setIsDesktopPromptDismissed(true);
+  };
 
   // Sync stage with localStorage when it changes (initial load covered by state initializer)
   useEffect(() => {
@@ -3557,15 +3620,69 @@ export default function CRMContainer({
                         {(dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0)} Total
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowNotifications(false)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
-                      title="Close"
-                    >
-                      <X size={20} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowNotificationPreferencesModal(true)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
+                        title="Alert & Notification Preferences"
+                      >
+                        <Settings size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowNotifications(false)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
+                        title="Close"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* One-time Smart Permission Banner (Auto-dismisses on Allow or Dismiss) */}
+                  {browserPermission !== 'granted' && !isDesktopPromptDismissed && (
+                    <div style={{
+                      padding: '0.55rem 0.9rem',
+                      backgroundColor: 'rgba(59, 130, 246, 0.09)',
+                      borderBottom: '1px solid rgba(59, 130, 246, 0.22)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.78rem', color: 'var(--text-primary)' }}>
+                        <Bell size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                        <span>Get desktop popups even when CRM is minimized.</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={handleRequestDesktopPermission}
+                          style={{
+                            padding: '0.22rem 0.55rem',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: 'var(--accent-color)',
+                            color: '#ffffff',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Enable
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDismissDesktopPrompt}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.15rem 0.3rem', fontSize: '0.78rem' }}
+                          title="Don't ask again"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Main Category Tabs (All | Checklists | Delegated Tasks | Leads) */}
                   <div style={{
@@ -4538,6 +4655,32 @@ export default function CRMContainer({
                     </div>
 
                     <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          setShowNotificationPreferencesModal(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.65rem 1rem',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.84rem',
+                          fontWeight: 600,
+                          textAlign: 'left',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
+                        onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <Bell size={16} style={{ color: 'var(--accent-color)' }} /> Notification Preferences
+                      </button>
                       <button 
                         onClick={handleLogout}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left', transition: 'background 0.15s' }}
@@ -5188,6 +5331,12 @@ export default function CRMContainer({
           </div>
         </div>
       )}
+
+      {/* Universal Employee Notification Preferences Modal */}
+      <UserNotificationPreferencesModal
+        isOpen={showNotificationPreferencesModal}
+        onClose={() => setShowNotificationPreferencesModal(false)}
+      />
     </div>
   );
 }
