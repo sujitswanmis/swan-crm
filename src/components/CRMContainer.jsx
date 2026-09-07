@@ -2066,13 +2066,17 @@ export default function CRMContainer({
       }
     } catch (e) {}
 
-    // Check module notification suppressions
-    if (type === 'checklist' && config.notifyChecklist === false) return;
-    if (type === 'delegation' && config.notifyDelegation === false) return;
-    if (type === 'lead' && config.notifyLeads === false) return;
+    // Check module notification suppressions - strictly for Admin user only if configured in System Settings.
+    // Regular operational employees CANNOT suppress checklist, delegation, or lead alerts.
+    if (userRole === 'admin') {
+      if (type === 'checklist' && config.notifyChecklist === false) return;
+      if (type === 'delegation' && config.notifyDelegation === false) return;
+      if (type === 'lead' && config.notifyLeads === false) return;
+    }
 
-    // 1. Play sound if enabled
-    if (config.soundEnabled !== false) {
+    // 1. Play sound (always active for employees to ensure deadlines and tasks are never missed)
+    const isSoundAllowed = userRole === 'admin' ? config.soundEnabled !== false : true;
+    if (isSoundAllowed) {
       playUnifiedAlertSound(config.alertSound, config.alertDuration);
     }
 
@@ -2084,7 +2088,10 @@ export default function CRMContainer({
     }
 
     // 3. Screen popup based on chosen style
-    const style = forcePopupStyle || config.popupStyle || 'corner_toast';
+    let style = forcePopupStyle || config.popupStyle || 'both';
+    if (userRole !== 'admin' && style === 'bell_only') {
+      style = 'corner_toast'; // Regular employees MUST receive screen popups; cannot hide them
+    }
 
     if (style === 'corner_toast') {
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -2101,7 +2108,7 @@ export default function CRMContainer({
         toastTimeoutRef.current = setTimeout(() => setActiveCornerToast(null), 9000);
       }
     }
-    // 'bell_only' skips screen popup
+    // 'bell_only' only applicable for admin users who explicitly configured it
   };
 
   // Fetch & process checklist and delegation alerts for logged-in user
