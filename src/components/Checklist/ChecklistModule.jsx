@@ -141,15 +141,36 @@ export default function ChecklistModule({
   const isFutureDate = dashboardDate > todayDateStr;
   const isToday = dashboardDate === todayDateStr;
 
+  // Selected Status Box Filter for Checklist Execution Station
+  // Default to 'OPEN_NOW' as requested by user
+  const [dashboardStatusFilter, setDashboardStatusFilter] = useState('OPEN_NOW');
+
+  const getStatusFilterLabel = (filterKey) => {
+    switch (filterKey) {
+      case 'OPEN_NOW': return 'Open Now (In Buffer Window)';
+      case 'LATE_ALLOWED': return 'Late Allowed (Delayed)';
+      case 'COMPLETED': return 'Completed';
+      case 'UPCOMING': return 'Upcoming (Locked)';
+      case 'EXPIRED': return 'Missed / Expired';
+      default: return 'All Scheduled Slots';
+    }
+  };
+
   const handleShiftDate = (days) => {
     const cur = new Date(`${dashboardDate}T12:00:00`);
     cur.setDate(cur.getDate() + days);
     const nextStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
     setDashboardDate(nextStr);
+    if (nextStr === todayDateStr) {
+      setDashboardStatusFilter('OPEN_NOW');
+    } else {
+      setDashboardStatusFilter('ALL');
+    }
   };
 
   const handleSetToday = () => {
     setDashboardDate(todayDateStr);
+    setDashboardStatusFilter('OPEN_NOW');
   };
 
   // Data states
@@ -240,6 +261,29 @@ export default function ChecklistModule({
       complianceRate
     };
   }, [liveDashboardChecklists, isFutureDate]);
+
+  // Filtered checklists based on the clicked KPI box filter ('ALL', 'OPEN_NOW', 'LATE_ALLOWED', 'COMPLETED', 'UPCOMING', 'EXPIRED')
+  const filteredDashboardChecklists = useMemo(() => {
+    if (!dashboardStatusFilter || dashboardStatusFilter === 'ALL') {
+      return liveDashboardChecklists;
+    }
+    if (dashboardStatusFilter === 'OPEN_NOW') {
+      return liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isActive && i.delayInfo?.badgeStatus !== 'DELAYED_OPEN');
+    }
+    if (dashboardStatusFilter === 'LATE_ALLOWED') {
+      return liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.badgeStatus === 'DELAYED_OPEN');
+    }
+    if (dashboardStatusFilter === 'COMPLETED') {
+      return liveDashboardChecklists.filter(i => i.status === 'COMPLETED');
+    }
+    if (dashboardStatusFilter === 'UPCOMING') {
+      return liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isBeforeStart);
+    }
+    if (dashboardStatusFilter === 'EXPIRED') {
+      return liveDashboardChecklists.filter(i => i.status !== 'COMPLETED' && i.delayInfo?.isExpired);
+    }
+    return liveDashboardChecklists;
+  }, [liveDashboardChecklists, dashboardStatusFilter]);
 
   // Available distinct departments (from Settings > Manage Departments + employee/template records)
   const availableDepartments = useMemo(() => {
@@ -2570,41 +2614,69 @@ export default function ChecklistModule({
               </div>
             )}
 
-            {/* Row 3: 7 High-Impact KPI Metric Cards */}
+            {/* Row 3: 7 High-Impact KPI Metric Cards (Interactive Clickable Filters) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
-              {/* Card 1: Total */}
-              <div style={{
-                background: 'var(--bg-secondary, #f8fafc)',
-                border: '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>📋</span> TOTAL SLOTS
+              {/* Card 1: TOTAL SLOTS */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter('ALL')}
+                title="Click to show all scheduled slots"
+                style={{
+                  background: dashboardStatusFilter === 'ALL' ? '#eff6ff' : 'var(--bg-secondary, #f8fafc)',
+                  border: dashboardStatusFilter === 'ALL' ? '2px solid #6366f1' : '1px solid var(--border-color, #e2e8f0)',
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'ALL' ? '0 0 0 3px rgba(99,102,241,0.22), 0 4px 12px rgba(99,102,241,0.12)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: dashboardStatusFilter === 'ALL' ? '#4f46e5' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><span>📋</span> TOTAL SLOTS</span>
+                  {dashboardStatusFilter === 'ALL' && (
+                    <span style={{ fontSize: '0.62rem', background: '#6366f1', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: dashboardStatusFilter === 'ALL' ? '#4338ca' : 'var(--text-primary, #0f172a)' }}>
                   {dashboardMetrics.total}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                <div style={{ fontSize: '0.72rem', color: dashboardStatusFilter === 'ALL' ? '#4f46e5' : 'var(--text-secondary, #64748b)', fontWeight: dashboardStatusFilter === 'ALL' ? 600 : 400 }}>
                   Scheduled slots
                 </div>
               </div>
 
               {/* Card 2: Open Now (Active On-Time) */}
-              <div style={{
-                background: dashboardMetrics.openOnTime > 0 ? '#f0fdf4' : 'var(--bg-secondary, #f8fafc)',
-                border: dashboardMetrics.openOnTime > 0 ? '1.5px solid #86efac' : '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>🟢</span> OPEN NOW
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'OPEN_NOW' ? 'ALL' : 'OPEN_NOW')}
+                title="Click to filter by open checklists in buffer window"
+                style={{
+                  background: dashboardStatusFilter === 'OPEN_NOW' ? '#dcfce7' : (dashboardMetrics.openOnTime > 0 ? '#f0fdf4' : 'var(--bg-secondary, #f8fafc)'),
+                  border: dashboardStatusFilter === 'OPEN_NOW' ? '2.5px solid #16a34a' : (dashboardMetrics.openOnTime > 0 ? '1.5px solid #86efac' : '1px solid var(--border-color, #e2e8f0)'),
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'OPEN_NOW' ? '0 0 0 3px rgba(34,197,94,0.28), 0 4px 14px rgba(34,197,94,0.18)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><span>🟢</span> OPEN NOW</span>
+                  {dashboardStatusFilter === 'OPEN_NOW' && (
+                    <span style={{ fontSize: '0.62rem', background: '#16a34a', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a' }}>
                   {dashboardMetrics.openOnTime}
@@ -2615,17 +2687,33 @@ export default function ChecklistModule({
               </div>
 
               {/* Card 3: Late Allowed (Past Buffer, Delayed Submission Allowed) */}
-              <div style={{
-                background: dashboardMetrics.activeDelayed > 0 ? '#fffbeb' : 'var(--bg-secondary, #f8fafc)',
-                border: dashboardMetrics.activeDelayed > 0 ? '1.5px solid #fde68a' : '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: dashboardMetrics.activeDelayed > 0 ? '#92400e' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <Clock size={13} color={dashboardMetrics.activeDelayed > 0 ? '#d97706' : '#94a3b8'} /> LATE ALLOWED
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'LATE_ALLOWED' ? 'ALL' : 'LATE_ALLOWED')}
+                title="Click to filter by late allowed checklists"
+                style={{
+                  background: dashboardStatusFilter === 'LATE_ALLOWED' ? '#fef3c7' : (dashboardMetrics.activeDelayed > 0 ? '#fffbeb' : 'var(--bg-secondary, #f8fafc)'),
+                  border: dashboardStatusFilter === 'LATE_ALLOWED' ? '2.5px solid #d97706' : (dashboardMetrics.activeDelayed > 0 ? '1.5px solid #fde68a' : '1px solid var(--border-color, #e2e8f0)'),
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'LATE_ALLOWED' ? '0 0 0 3px rgba(217,119,6,0.28), 0 4px 14px rgba(217,119,6,0.18)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: dashboardMetrics.activeDelayed > 0 ? '#92400e' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Clock size={13} color={dashboardMetrics.activeDelayed > 0 ? '#d97706' : '#94a3b8'} /> LATE ALLOWED
+                  </span>
+                  {dashboardStatusFilter === 'LATE_ALLOWED' && (
+                    <span style={{ fontSize: '0.62rem', background: '#d97706', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: dashboardMetrics.activeDelayed > 0 ? '#d97706' : 'var(--text-primary, #0f172a)' }}>
                   {dashboardMetrics.activeDelayed}
@@ -2636,17 +2724,31 @@ export default function ChecklistModule({
               </div>
 
               {/* Card 4: Completed */}
-              <div style={{
-                background: '#f0fdf4',
-                border: '1px solid #bbf7d0',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>✓</span> COMPLETED
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED')}
+                title="Click to filter by completed checklists"
+                style={{
+                  background: dashboardStatusFilter === 'COMPLETED' ? '#dcfce7' : '#f0fdf4',
+                  border: dashboardStatusFilter === 'COMPLETED' ? '2.5px solid #15803d' : '1px solid #bbf7d0',
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'COMPLETED' ? '0 0 0 3px rgba(22,128,61,0.25), 0 4px 14px rgba(22,128,61,0.18)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><span>✓</span> COMPLETED</span>
+                  {dashboardStatusFilter === 'COMPLETED' && (
+                    <span style={{ fontSize: '0.62rem', background: '#15803d', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a' }}>
                   {dashboardMetrics.completed}
@@ -2657,17 +2759,31 @@ export default function ChecklistModule({
               </div>
 
               {/* Card 5: Upcoming / Locked */}
-              <div style={{
-                background: 'var(--bg-secondary, #f8fafc)',
-                border: '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <Lock size={12} /> UPCOMING
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'UPCOMING' ? 'ALL' : 'UPCOMING')}
+                title="Click to filter by upcoming locked checklists"
+                style={{
+                  background: dashboardStatusFilter === 'UPCOMING' ? '#e2e8f0' : 'var(--bg-secondary, #f8fafc)',
+                  border: dashboardStatusFilter === 'UPCOMING' ? '2.5px solid #475569' : '1px solid var(--border-color, #e2e8f0)',
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'UPCOMING' ? '0 0 0 3px rgba(71,85,105,0.25), 0 4px 12px rgba(71,85,105,0.15)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Lock size={12} /> UPCOMING</span>
+                  {dashboardStatusFilter === 'UPCOMING' && (
+                    <span style={{ fontSize: '0.62rem', background: '#475569', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary, #334155)' }}>
                   {dashboardMetrics.locked}
@@ -2678,17 +2794,31 @@ export default function ChecklistModule({
               </div>
 
               {/* Card 6: Missed / Expired */}
-              <div style={{
-                background: dashboardMetrics.expired > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)',
-                border: dashboardMetrics.expired > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>❌</span> MISSED / EXPIRED
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'EXPIRED' ? 'ALL' : 'EXPIRED')}
+                title="Click to filter by missed/expired checklists"
+                style={{
+                  background: dashboardStatusFilter === 'EXPIRED' ? '#fee2e2' : (dashboardMetrics.expired > 0 ? '#fef2f2' : 'var(--bg-secondary, #f8fafc)'),
+                  border: dashboardStatusFilter === 'EXPIRED' ? '2.5px solid #dc2626' : (dashboardMetrics.expired > 0 ? '1.5px solid #fca5a5' : '1px solid var(--border-color, #e2e8f0)'),
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: dashboardStatusFilter === 'EXPIRED' ? '0 0 0 3px rgba(220,38,38,0.25), 0 4px 14px rgba(220,38,38,0.18)' : 'none',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><span>❌</span> MISSED / EXPIRED</span>
+                  {dashboardStatusFilter === 'EXPIRED' && (
+                    <span style={{ fontSize: '0.62rem', background: '#dc2626', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 800 }}>ACTIVE</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#dc2626' }}>
                   {dashboardMetrics.expired}
@@ -2699,15 +2829,24 @@ export default function ChecklistModule({
               </div>
 
               {/* Card 7: Compliance Rate */}
-              <div style={{
-                background: '#faf5ff',
-                border: '1px solid #e9d5ff',
-                borderRadius: '10px',
-                padding: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-              }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDashboardStatusFilter(dashboardStatusFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED')}
+                title="Click to view completed checklists"
+                style={{
+                  background: '#faf5ff',
+                  border: '1px solid #e9d5ff',
+                  borderRadius: '10px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7e22ce', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Award size={13} /> COMPLIANCE
                 </div>
@@ -2766,10 +2905,49 @@ export default function ChecklistModule({
             <>
               {/* View Mode Toggle Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', margin: '0.25rem 0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                    Showing <strong>{liveDashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
+                    Showing <strong>{filteredDashboardChecklists.length}</strong> {dashboardStatusFilter !== 'ALL' ? (
+                      <span style={{
+                        background: dashboardStatusFilter === 'OPEN_NOW' ? '#dcfce7' : dashboardStatusFilter === 'LATE_ALLOWED' ? '#fef3c7' : dashboardStatusFilter === 'COMPLETED' ? '#dcfce7' : dashboardStatusFilter === 'EXPIRED' ? '#fee2e2' : '#e2e8f0',
+                        color: dashboardStatusFilter === 'OPEN_NOW' ? '#15803d' : dashboardStatusFilter === 'LATE_ALLOWED' ? '#92400e' : dashboardStatusFilter === 'COMPLETED' ? '#166534' : dashboardStatusFilter === 'EXPIRED' ? '#991b1b' : '#334155',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        {getStatusFilterLabel(dashboardStatusFilter)}
+                      </span>
+                    ) : null} of <strong>{liveDashboardChecklists.length}</strong> scheduled checklists for <strong>{selectedFrequency === 'ALL' ? 'All Frequencies' : selectedFrequency}</strong>
                   </span>
+
+                  {dashboardStatusFilter !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => setDashboardStatusFilter('ALL')}
+                      style={{
+                        background: '#f1f5f9',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '0.2rem 0.6rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        color: '#475569',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Clear filter and show all slots"
+                    >
+                      ✕ Clear Filter ({liveDashboardChecklists.length} Total)
+                    </button>
+                  )}
+
                   {loading && (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#2563eb', padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'rgba(37,99,235,0.08)', fontWeight: 600 }}>
                       <RefreshCw size={11} className="spin" /> Syncing...
@@ -2823,10 +3001,47 @@ export default function ChecklistModule({
                 </div>
               </div>
 
-              {/* 1. TILES VIEW */}
-              {myChecklistsViewMode === 'tiles' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
-                  {liveDashboardChecklists.map((item, idx) => {
+              {filteredDashboardChecklists.length === 0 ? (
+                <div style={{
+                  background: 'var(--bg-secondary, #f8fafc)',
+                  border: '1px dashed var(--border-color, #cbd5e1)',
+                  borderRadius: '12px',
+                  padding: '3rem 2rem',
+                  textAlign: 'center',
+                  color: 'var(--text-secondary, #64748b)',
+                  margin: '1.25rem 0'
+                }}>
+                  <Clock size={42} style={{ opacity: 0.35, margin: '0 auto 0.75rem', color: '#64748b' }} />
+                  <h3 style={{ margin: '0 0 0.5rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
+                    No Checklists Found for "{getStatusFilterLabel(dashboardStatusFilter)}"
+                  </h3>
+                  <p style={{ margin: '0 0 1.25rem', fontSize: '0.9rem', maxWidth: '500px', marginLeft: 'auto', marginRight: 'auto' }}>
+                    There are <strong>{liveDashboardChecklists.length}</strong> total slots scheduled for {new Date(`${dashboardDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}, but none currently match the selected <strong>{getStatusFilterLabel(dashboardStatusFilter)}</strong> status.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDashboardStatusFilter('ALL')}
+                    style={{
+                      background: 'var(--primary-color, #2563eb)',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '0.55rem 1.4rem',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      boxShadow: '0 2px 6px rgba(37,99,235,0.25)'
+                    }}
+                  >
+                    View All {liveDashboardChecklists.length} Scheduled Slots
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* 1. TILES VIEW */}
+                  {myChecklistsViewMode === 'tiles' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
+                      {filteredDashboardChecklists.map((item, idx) => {
                     const tmpl = item.template;
                     const isCompleted = item.status === 'COMPLETED';
                     const percent = item.stats.percent;
@@ -3109,7 +3324,7 @@ export default function ChecklistModule({
                       </tr>
                     </thead>
                     <tbody>
-                      {liveDashboardChecklists.map((item, idx) => {
+                      {filteredDashboardChecklists.map((item, idx) => {
                         const tmpl = item.template;
                         const isCompleted = item.status === 'COMPLETED';
                         const percent = item.stats.percent;
@@ -3363,6 +3578,8 @@ export default function ChecklistModule({
                     </tbody>
                   </table>
                 </div>
+              )}
+                </>
               )}
             </>
           )}
