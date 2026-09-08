@@ -223,3 +223,87 @@ export async function getUserAssignedWorkSummary({
     };
   }
 }
+
+/**
+ * Fetch Attendance + Checklist Compliance + Recruitment summaries for Dashboard
+ */
+export async function getDashboardSummaries({ targetDate = null } = {}) {
+  try {
+    const { getTeamAttendanceMaster } = await import('@/app/actions/attendance');
+    const { createClient: createAdminClient } = await import('@/utils/supabase/server');
+
+    // IST today date
+    const istNow = new Date(new Date().toLocaleString('en-CA', { timeZone: 'Asia/Kolkata' }));
+    const todayIST = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
+    const useDate = targetDate || todayIST;
+
+    // 1. Attendance summary (today)
+    let attendanceSummary = { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, totalRegularized: 0, presentPercent: 0 };
+    try {
+      const attRes = await getTeamAttendanceMaster({ date: useDate });
+      if (attRes?.success && attRes.summary) {
+        const s = attRes.summary;
+        attendanceSummary = {
+          ...s,
+          presentPercent: s.totalEmployees > 0 ? Math.round(((s.totalPresent + s.totalHalfDay) / s.totalEmployees) * 100) : 0
+        };
+      }
+    } catch (e) {
+      console.warn('Attendance summary error:', e.message);
+    }
+
+    // 2. Checklist compliance — today's overall
+    let checklistSummary = { totalSubmissions: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0 };
+    try {
+      const { getChecklistComplianceReport } = await import('@/app/actions/checklist');
+      // Daily period key for today
+      const periodKey = `DAILY_${useDate}`;
+      const clRes = await getChecklistComplianceReport({ frequency: 'DAILY', periodKey });
+      if (clRes?.success && Array.isArray(clRes.data)) {
+        const subs = clRes.data;
+        const completed = subs.filter(s => s.status === 'COMPLETED').length;
+        const late = subs.filter(s => s.status === 'COMPLETED' && s.delayInfo?.isDelayed).length;
+        checklistSummary = {
+          totalSubmissions: subs.length,
+          completed,
+          pending: subs.filter(s => s.status !== 'COMPLETED').length,
+          onTime: completed - late,
+          late,
+          complianceRate: subs.length > 0 ? Math.round((completed / subs.length) * 100) : 0
+        };
+      }
+    } catch (e) {
+      console.warn('Checklist summary error:', e.message);
+    }
+
+    // 3. Recruitment summary — open positions, total applications, recent
+    let recruitmentSummary = { openPositions: 0, totalApplications: 0, newToday: 0, shortlisted: 0, rejected: 0 };
+    try {
+      const supabase = await createAdminClient();
+      const [posRes, appRes, todayAppRes] = await Promise.all([
+        supabase.from('job_positions').select('id', { count: 'exact', head: true }).eq('status', 'OPEN'),
+        supabase.from('job_applications').select('id, status', { count: 'exact' }),
+        supabase.from('job_applications').select('id', { count: 'exact', head: true }).gte('created_at', `${useDate}T00:00:00+05:30`)
+      ]);
+      const apps = appRes.data || [];
+      recruitmentSummary = {
+        openPositions: posRes.count || 0,
+        totalApplications: apps.length,
+        newToday: todayAppRes.count || 0,
+        shortlisted: apps.filter(a => a.status === 'SHORTLISTED' || a.status === 'INTERVIEW').length,
+        rejected: apps.filter(a => a.status === 'REJECTED').length
+      };
+    } catch (e) {
+      console.warn('Recruitment summary error:', e.message);
+    }
+
+    return {
+      success: true,
+      data: { attendanceSummary, checklistSummary, recruitmentSummary, date: useDate }
+    };
+  } catch (error) {
+    console.error('getDashboardSummaries error:', error);
+    return { success: false, error: error.message, data: { attendanceSummary: {}, checklistSummary: {}, recruitmentSummary: {} } };
+  }
+}
+

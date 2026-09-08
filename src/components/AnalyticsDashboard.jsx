@@ -5,10 +5,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
-import { getDashboardMetrics, getUserAssignedWorkSummary } from '@/app/actions/analytics';
+import { getDashboardMetrics, getUserAssignedWorkSummary, getDashboardSummaries } from '@/app/actions/analytics';
 import {
   Activity, Loader2, Users, AlertTriangle, TrendingUp, ArrowRight,
-  Target, RefreshCw, User, CheckSquare, CheckCircle2, CalendarClock
+  Target, RefreshCw, User, CheckSquare, CheckCircle2, CalendarClock,
+  ClipboardList, UserCheck, Briefcase
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
@@ -66,6 +67,13 @@ export default function AnalyticsDashboard({
     checklists: { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, isSunday: false, items: [] },
     effectiveEmail: ''
   });
+  const [dashboardSummaries, setDashboardSummaries] = useState({
+    attendanceSummary: { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, presentPercent: 0 },
+    checklistSummary: { totalSubmissions: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0 },
+    recruitmentSummary: { openPositions: 0, totalApplications: 0, newToday: 0, shortlisted: 0, rejected: 0 }
+  });
+  const [loadingSummaries, setLoadingSummaries] = useState(true);
+
 
   const dateFilterLabel = (() => {
     if (datePreset === 'today') return 'Today';
@@ -272,6 +280,26 @@ export default function AnalyticsDashboard({
   };
 
   useEffect(() => { fetchAssignedWork(); }, [userEmail, effectiveTargetEmail, selectedEmployee]);
+
+  // Load attendance, checklist compliance, recruitment summaries (always global, not filtered by employee)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSummaries() {
+      setLoadingSummaries(true);
+      try {
+        const res = await getDashboardSummaries({});
+        if (!cancelled && res?.success) {
+          setDashboardSummaries(res.data);
+        }
+      } catch (e) {
+        console.warn('Dashboard summaries error:', e);
+      } finally {
+        if (!cancelled) setLoadingSummaries(false);
+      }
+    }
+    loadSummaries();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
@@ -525,10 +553,91 @@ export default function AnalyticsDashboard({
         </div>
       )}
 
+      {/* ======== 3 SUMMARY CARDS: Checklist / Attendance / Recruitment ======== */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '1rem' }}>
+
+        {/* Checklist Summary */}
+        <div className="card" style={{ padding: '1.1rem', borderLeft: `4px solid ${dashboardSummaries.checklistSummary.complianceRate >= 75 ? '#10b981' : dashboardSummaries.checklistSummary.complianceRate >= 45 ? '#f59e0b' : '#ef4444'}`, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <ClipboardList size={13} /> ✅ Checklist Compliance
+            </span>
+            {loadingSummaries && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />}
+          </div>
+          <div style={{ fontSize: '1.9rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>
+            {loadingSummaries ? '—' : `${dashboardSummaries.checklistSummary.complianceRate}%`}
+          </div>
+          <div style={{ width: '100%', height: '4px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ width: `${dashboardSummaries.checklistSummary.complianceRate}%`, height: '100%', backgroundColor: dashboardSummaries.checklistSummary.complianceRate >= 75 ? '#10b981' : dashboardSummaries.checklistSummary.complianceRate >= 45 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', fontSize: '0.72rem' }}>
+            <span style={{ color: '#16a34a', fontWeight: 700 }}>✅ {loadingSummaries ? '…' : dashboardSummaries.checklistSummary.completed} Done</span>
+            <span style={{ color: '#d97706', fontWeight: 600 }}>⏳ {loadingSummaries ? '…' : dashboardSummaries.checklistSummary.pending} Pending</span>
+            {!loadingSummaries && dashboardSummaries.checklistSummary.late > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>⚠️ {dashboardSummaries.checklistSummary.late} Late</span>}
+          </div>
+          {onNavigateTab && (
+            <button onClick={() => onNavigateTab('checklist')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#10b981', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.3rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              Open Checklist <ArrowRight size={11} />
+            </button>
+          )}
+        </div>
+
+        {/* Attendance Summary */}
+        <div className="card" style={{ padding: '1.1rem', borderLeft: `4px solid ${dashboardSummaries.attendanceSummary.presentPercent >= 80 ? '#10b981' : dashboardSummaries.attendanceSummary.presentPercent >= 60 ? '#f59e0b' : '#ef4444'}`, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <UserCheck size={13} /> 🏢 Today's Attendance
+            </span>
+            {loadingSummaries && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />}
+          </div>
+          <div style={{ fontSize: '1.9rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>
+            {loadingSummaries ? '—' : `${dashboardSummaries.attendanceSummary.totalPresent}/${dashboardSummaries.attendanceSummary.totalEmployees}`}
+          </div>
+          <div style={{ width: '100%', height: '4px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ width: `${dashboardSummaries.attendanceSummary.presentPercent || 0}%`, height: '100%', backgroundColor: dashboardSummaries.attendanceSummary.presentPercent >= 80 ? '#10b981' : dashboardSummaries.attendanceSummary.presentPercent >= 60 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', fontSize: '0.72rem' }}>
+            <span style={{ color: '#16a34a', fontWeight: 700 }}>✅ {loadingSummaries ? '…' : dashboardSummaries.attendanceSummary.totalPresent} Present</span>
+            <span style={{ color: '#dc2626', fontWeight: 600 }}>🚫 {loadingSummaries ? '…' : dashboardSummaries.attendanceSummary.totalAbsent} Absent</span>
+            {!loadingSummaries && dashboardSummaries.attendanceSummary.totalLate > 0 && <span style={{ color: '#d97706', fontWeight: 600 }}>⏰ {dashboardSummaries.attendanceSummary.totalLate} Late</span>}
+            {!loadingSummaries && dashboardSummaries.attendanceSummary.totalHalfDay > 0 && <span style={{ color: '#8b5cf6', fontWeight: 600 }}>½ {dashboardSummaries.attendanceSummary.totalHalfDay} Half Day</span>}
+          </div>
+          {onNavigateTab && (
+            <button onClick={() => onNavigateTab('attendance')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.3rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              Attendance Module <ArrowRight size={11} />
+            </button>
+          )}
+        </div>
+
+        {/* Recruitment Summary */}
+        <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #8b5cf6', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Briefcase size={13} /> 🧑‍💼 Recruitment
+            </span>
+            {loadingSummaries && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />}
+          </div>
+          <div style={{ fontSize: '1.9rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>
+            {loadingSummaries ? '—' : dashboardSummaries.recruitmentSummary.openPositions}
+            <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>open positions</span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', fontSize: '0.72rem' }}>
+            <span style={{ color: '#6d28d9', fontWeight: 700 }}>📄 {loadingSummaries ? '…' : dashboardSummaries.recruitmentSummary.totalApplications} Applications</span>
+            {!loadingSummaries && dashboardSummaries.recruitmentSummary.newToday > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>🆕 {dashboardSummaries.recruitmentSummary.newToday} Today</span>}
+            <span style={{ color: '#16a34a', fontWeight: 600 }}>⭐ {loadingSummaries ? '…' : dashboardSummaries.recruitmentSummary.shortlisted} Shortlisted</span>
+          </div>
+          {onNavigateTab && (
+            <button onClick={() => onNavigateTab('recruiter')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#8b5cf6', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.3rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              Recruiter Module <ArrowRight size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* ======== CHARTS + ACTIVITY ROW ======== */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '1.25rem', alignItems: 'start' }}>
 
-        {/* Leads by Stage Bar Chart — spans full width */}
+        {/* Leads by Stage Bar Chart — spans full width on wide screens */}
         <div className="card" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Leads by Stage</h3>
@@ -547,13 +656,13 @@ export default function AnalyticsDashboard({
           </ResponsiveContainer>
         </div>
 
-        {/* Employee Activity — Top 10 */}
-        <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
+        {/* Employee Activity — FIXED: overflowX scroll on mobile, no clipping */}
+        <div className="card" style={{ padding: '0', overflow: 'hidden', minWidth: 0 }}>
           <div style={{ padding: '0.85rem 1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)' }}>
             <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Activity size={15} style={{ color: 'var(--accent-color)' }} /> Employee Activity
             </h3>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{dateFilterLabel}</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{dateFilterLabel}</span>
           </div>
           {loading ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -564,35 +673,37 @@ export default function AnalyticsDashboard({
               No activity recorded for {dateFilterLabel.toLowerCase()}.
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-              <thead>
-                <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Employee</th>
-                  <th style={{ textAlign: 'center', padding: '0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Leads Touched</th>
-                  <th style={{ textAlign: 'right', padding: '0.5rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Updates</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metrics.employeeActivity.slice(0, 10).map((act, i) => (
-                  <tr key={act.employee} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                    <td style={{ padding: '0.55rem 1rem', color: 'var(--text-primary)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div style={{
-                          width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
-                          backgroundColor: COLORS[i % COLORS.length], color: 'white',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700
-                        }}>
-                          {act.employee.substring(0, 2).toUpperCase()}
-                        </div>
-                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '130px' }}>{act.employee}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '0.55rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>{act.uniqueLeads}</td>
-                    <td style={{ padding: '0.55rem 1rem', textAlign: 'right', fontWeight: 700, color: 'var(--accent-color)' }}>{act.actions}</td>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', minWidth: '280px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+                    <th style={{ textAlign: 'left', padding: '0.45rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Employee</th>
+                    <th style={{ textAlign: 'center', padding: '0.45rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Leads</th>
+                    <th style={{ textAlign: 'right', padding: '0.45rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Updates</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {metrics.employeeActivity.slice(0, 10).map((act, i) => (
+                    <tr key={act.employee} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-primary)', maxWidth: '180px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                          <div style={{
+                            width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
+                            backgroundColor: COLORS[i % COLORS.length], color: 'white',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', fontWeight: 700
+                          }}>
+                            {act.employee.substring(0, 2).toUpperCase()}
+                          </div>
+                          <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.employee}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.5rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{act.uniqueLeads}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 700, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>{act.actions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
@@ -640,6 +751,7 @@ export default function AnalyticsDashboard({
         </div>
 
       </div>
+
     </div>
   );
 }
