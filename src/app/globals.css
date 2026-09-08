@@ -1,12 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg-primary: #f8fafc;
+  --bg-primary: #f1f5f9;
   --bg-surface: #ffffff;
   --bg-surface-rgb: 255, 255, 255;
   --text-primary: #0f172a;
-  --text-secondary: #64748b;
+  --text-secondary: #475569;
   --border-light: #e2e8f0;
+  --border-strong: #cbd5e1;
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
   
@@ -17,14 +18,25 @@
   --status-converted-bg: #dcfce7;
   --status-converted-text: #166534;
   
-  --th-bg: #f1f5f9;
-  --th-hover-bg: #e2e8f0;
-  --th-active-bg: #cbd5e1;
+  /* Executive Pro SaaS Table Tokens */
+  --table-header-bg: #e2e8f0;
+  --table-header-text: #1e293b;
+  --table-header-border: #cbd5e1;
+  --table-row-odd: #ffffff;
+  --table-row-even: #f8fafc;
+  --table-row-hover: rgba(37, 99, 235, 0.08);
+  --table-row-selected: rgba(37, 99, 235, 0.15);
+  --table-border: #e2e8f0;
+  --table-alt-row: var(--table-row-even);
+  
+  --th-bg: #e2e8f0;
+  --th-hover-bg: #cbd5e1;
+  --th-active-bg: #94a3b8;
   --th-filtered-bg: #dbeafe;
   --th-filtered-hover-bg: #bfdbfe;
   
   --nav-active-bg: #eff6ff;
-  --nav-hover-bg: rgba(241, 245, 249, 0.8);
+  --nav-hover-bg: rgba(226, 232, 240, 0.7);
 
   --chart-1: #2563eb;
   --chart-2: #10b981;
@@ -53,21 +65,30 @@
 
 /* THEMES */
 .theme-light {
-  --bg-primary: #fcfcfd;
+  --bg-primary: #f1f5f9;
   --bg-surface: #ffffff;
   --bg-surface-rgb: 255, 255, 255;
   --text-primary: #09090b;
-  --text-secondary: #52525b;
-  --border-light: #e4e4e7;
+  --text-secondary: #475569;
+  --border-light: #e2e8f0;
+  --border-strong: #cbd5e1;
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
-  --th-bg: #f4f4f5;
-  --th-hover-bg: #e4e4e7;
-  --th-active-bg: #d4d4d8;
+  --table-header-bg: #e2e8f0;
+  --table-header-text: #1e293b;
+  --table-header-border: #cbd5e1;
+  --table-row-odd: #ffffff;
+  --table-row-even: #f8fafc;
+  --table-row-hover: rgba(37, 99, 235, 0.08);
+  --table-row-selected: rgba(37, 99, 235, 0.15);
+  --table-border: #e2e8f0;
+  --th-bg: #e2e8f0;
+  --th-hover-bg: #cbd5e1;
+  --th-active-bg: #94a3b8;
   --th-filtered-bg: #e0e7ff;
   --th-filtered-hover-bg: #c7d2fe;
   --nav-active-bg: #eff6ff;
-  --nav-hover-bg: #f4f4f5;
+  --nav-hover-bg: #f1f5f9;
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 8px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 12px 20px -3px rgba(0, 0, 0, 0.08);
@@ -78,16 +99,25 @@
 }
 
 .theme-m3-light {
-  --bg-primary: #f3f4f8;
+  --bg-primary: #ebedf2;
   --bg-surface: #ffffff;
   --text-primary: #1a1c1e;
   --text-secondary: #43474e;
   --border-light: #cbd5e1;
+  --border-strong: #94a3b8;
   --accent-color: #005faf;
   --accent-hover: #004b8c;
-  --th-bg: #e2e8f0;
+  --table-header-bg: #dde2ea;
+  --table-header-text: #1e293b;
+  --table-header-border: #cbd5e1;
+  --table-row-odd: #ffffff;
+  --table-row-even: #f4f6f9;
+  --table-row-hover: rgba(0, 95, 175, 0.09);
+  --table-row-selected: rgba(0, 95, 175, 0.16);
+  --table-border: #cbd5e1;
+  --th-bg: #dde2ea;
   --th-hover-bg: #cbd5e1;
-  --th-active-bg: #cbd5e1;
+  --th-active-bg: #b8c7d9;
   --th-filtered-bg: #d1e4ff;
   --th-filtered-hover-bg: #b8d4fc;
   --nav-active-bg: #d0e4ff;
@@ -98,17 +128,26 @@
 }
 
 .theme-dark, .theme-m3-dark {
-  --bg-primary: #090d16;
-  --bg-surface: #0f172a;
-  --bg-surface-rgb: 15, 23, 42;
+  --bg-primary: #070a12;
+  --bg-surface: #0e1526;
+  --bg-surface-rgb: 14, 21, 38;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --border-light: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
   --accent-color: #3b82f6;
   --accent-hover: #60a5fa;
-  --th-bg: #131d33;
-  --th-hover-bg: #1a2744;
-  --th-active-bg: #1e293b;
+  --table-header-bg: #152038;
+  --table-header-text: #e2e8f0;
+  --table-header-border: rgba(255, 255, 255, 0.15);
+  --table-row-odd: #0e1526;
+  --table-row-even: #121c32;
+  --table-row-hover: rgba(59, 130, 246, 0.15);
+  --table-row-selected: rgba(59, 130, 246, 0.24);
+  --table-border: rgba(255, 255, 255, 0.08);
+  --th-bg: #152038;
+  --th-hover-bg: #1d2c4c;
+  --th-active-bg: #25375f;
   --th-filtered-bg: #1e3a8a;
   --th-filtered-hover-bg: #1d4ed8;
   --nav-active-bg: rgba(59, 130, 246, 0.16);
@@ -1218,32 +1257,36 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   padding: 2rem;
 }
 
-/* Table Header Enhancements - Sticky Header Freeze Across All Tables */
+/* ========================================================================= */
+/* EXECUTIVE PRO SAAS TABLE SYSTEM (High-Contrast Header, Zebra Rows, Glow)   */
+/* ========================================================================= */
 table {
   border-collapse: separate !important;
   border-spacing: 0 !important;
+  width: 100%;
 }
 
+/* Sticky Header Freeze with Distinct Elevated SaaS Style */
 table th, .table-header-cell {
   position: sticky !important;
   top: 0 !important;
   z-index: 30 !important;
-  background-color: var(--th-bg) !important;
-  color: var(--text-secondary);
-  font-weight: 600;
+  background-color: var(--table-header-bg, var(--th-bg)) !important;
+  color: var(--table-header-text, var(--text-primary)) !important;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  border-bottom: 2px solid var(--border-strong, var(--border-light)) !important;
+  padding: 0.75rem 1rem;
   transition: background-color 0.2s ease, color 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
-}
-
-/* Search Input Fix - Ensure search icon does not overlap input text */
-input.search-input-field:not([type="checkbox"]):not([type="radio"]),
-.search-input-field {
-  padding-left: 2.85rem !important;
-  padding-right: 2.5rem !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 table th:hover, .table-header-cell:hover {
-  background-color: var(--th-hover-bg);
+  background-color: var(--th-hover-bg) !important;
 }
 
 .table-header-cell.active-dropdown,
@@ -1251,6 +1294,66 @@ th.active-dropdown {
   background-color: var(--th-active-bg) !important;
   color: var(--text-primary) !important;
   z-index: 99999 !important;
+}
+
+.table-header-cell.is-filtered {
+  background-color: var(--th-filtered-bg) !important;
+  border-bottom: 2px solid var(--accent-color) !important;
+}
+
+.table-header-cell.is-filtered:hover {
+  background-color: var(--th-filtered-hover-bg) !important;
+}
+
+/* Clear Alternating Zebra Row Contrast Across All Tables */
+table tbody tr:nth-child(odd) {
+  background-color: var(--table-row-odd, var(--bg-surface));
+}
+
+table tbody tr:nth-child(even) {
+  background-color: var(--table-row-even, var(--bg-primary));
+}
+
+/* Cell Borders & Numerical Formatting */
+table tbody td {
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+  vertical-align: middle;
+  transition: background-color 0.15s ease;
+}
+
+/* High-Performance Interactive Row Hover Illumination */
+table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+  transition: background-color 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease !important;
+}
+
+table tbody tr:hover,
+table tbody tr:hover td,
+.table-responsive-wrapper table tbody tr:hover td {
+  background-color: var(--table-row-hover, rgba(37, 99, 235, 0.08)) !important;
+}
+
+/* Selected / Active Row Highlight with Left Accent Focus */
+table tbody tr.active-row,
+table tbody tr.active-row td,
+table tbody tr[data-selected="true"],
+table tbody tr[data-selected="true"] td,
+table tbody tr.is-selected,
+table tbody tr.is-selected td {
+  background-color: var(--table-row-selected, rgba(37, 99, 235, 0.14)) !important;
+}
+
+table td, .tabular-nums, .stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search Input Fix - Ensure search icon does not overlap input text */
+input.search-input-field:not([type="checkbox"]):not([type="radio"]),
+.search-input-field {
+  padding-left: 2.85rem !important;
+  padding-right: 2.5rem !important;
 }
 
 .column-filter-popup {
@@ -1269,30 +1372,6 @@ th.active-dropdown {
   padding: 0.65rem;
   font-weight: normal;
   color: var(--text-primary);
-}
-
-.table-header-cell.is-filtered {
-  background-color: var(--th-filtered-bg);
-  border-bottom: 2px solid var(--accent-color) !important;
-}
-
-.table-header-cell.is-filtered:hover {
-  background-color: var(--th-filtered-hover-bg);
-}
-
-/* High-Performance Table Row Virtualization & Rendering */
-.table-responsive-wrapper table tbody tr {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 50px;
-  transition: background-color 0.12s ease;
-}
-
-.table-responsive-wrapper table tbody tr:hover td {
-  background-color: var(--nav-hover-bg, rgba(37, 99, 235, 0.035)) !important;
-}
-
-table td, .tabular-nums, .stat-value {
-  font-variant-numeric: tabular-nums;
 }
 
 /* Pro SaaS Badges & Utility Components */

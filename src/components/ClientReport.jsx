@@ -1643,15 +1643,17 @@ export default function ClientReport({
               <tr 
                 key={lead.id} 
                 onClick={() => setActiveRowId(lead.id)}
+                className={activeRowId === lead.id || selectedRows.includes(lead.id) ? 'active-row' : ''}
                 style={{ 
                   borderBottom: '1px solid var(--border-light)', 
                   backgroundColor: activeRowId === lead.id 
-                    ? 'var(--th-filtered-hover-bg)' 
+                    ? 'var(--table-row-selected, var(--th-filtered-hover-bg))' 
                     : (selectedRows.includes(lead.id) 
-                      ? 'var(--th-filtered-bg)' 
-                      : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)')),
+                      ? 'var(--table-row-selected, var(--th-filtered-bg))' 
+                      : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))')),
+                  borderLeft: activeRowId === lead.id ? '3px solid var(--accent-color)' : (selectedRows.includes(lead.id) ? '3px solid #3b82f6' : '3px solid transparent'),
                   cursor: 'pointer',
-                  transition: 'background-color 0.2s ease'
+                  transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}
               >
                 {(canDelete || canAssign) && (

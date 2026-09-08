@@ -835,18 +835,23 @@ const columns = [
 ];
 
 const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
+  const isActive = activeRowId === row.id;
   return (
     <tr 
       onClick={() => onRowClick(row.id)}
+      className={isActive ? 'active-row' : ''}
       style={{ 
         borderBottom: '1px solid var(--border-light)', 
-        backgroundColor: activeRowId === row.id ? 'var(--th-filtered-bg)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'),
+        backgroundColor: isActive 
+          ? 'var(--table-row-selected, var(--th-filtered-bg))' 
+          : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))'),
+        borderLeft: isActive ? '3px solid var(--accent-color)' : '3px solid transparent',
         cursor: 'pointer',
-        transition: 'background-color 0.15s ease'
+        transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
       }}
     >
       {row.getVisibleCells().map(cell => (
-        <td key={cell.id} style={{ padding: '0.85rem 1.25rem', fontSize: '0.88rem' }}>
+        <td key={cell.id} style={{ padding: '0.78rem 1.15rem', fontSize: '0.86rem' }}>
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
         </td>
       ))}
@@ -1711,7 +1716,7 @@ export default function LeadTable({
     <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       
       {/* Search, Filters, and Export Header */}
-      <div style={{ padding: isMobile ? '0.65rem 0.75rem' : '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.5rem 0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary)' }}>
+      <div style={{ padding: isMobile ? '0.65rem 0.75rem' : '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.5rem 0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-surface)' }}>
         
         {/* Left Side: Search, Status Filter & Clear Filters */}
         <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center', flex: '1 1 260px', minWidth: 0 }}>
@@ -2482,7 +2487,7 @@ export default function LeadTable({
       </div>
       )}
       
-      <div style={{ padding: '1rem 1.25rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+      <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
           <span>
             {(() => {

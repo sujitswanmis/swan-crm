@@ -1737,10 +1737,15 @@ export default function AnalyticsDashboard({
                       <tr
                         key={row.empEmail}
                         onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
+                        className={selectedEmployee === (row.emp.user_id || row.empEmail) ? 'active-row' : ''}
                         style={{
-                          borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) ? 'var(--th-bg)' : 'transparent',
-                          transition: 'background 0.15s'
+                          borderBottom: '1px solid var(--border-light)', 
+                          cursor: 'pointer',
+                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) 
+                            ? 'var(--table-row-selected, var(--th-filtered-bg))' 
+                            : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))'),
+                          borderLeft: selectedEmployee === (row.emp.user_id || row.empEmail) ? '3px solid var(--accent-color)' : '3px solid transparent',
+                          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
                       >
                         {/* Rank */}

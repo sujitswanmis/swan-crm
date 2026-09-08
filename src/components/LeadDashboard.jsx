@@ -2171,10 +2171,9 @@ export default function LeadDashboard({
                         key={item.id || idx}
                         style={{ 
                           borderBottom: '1px solid var(--border-light)',
-                          transition: 'background 0.15s'
+                          backgroundColor: idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))',
+                          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.015)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
                         {/* Employee Name & Dept */}
                         <td style={{ padding: '0.65rem 1rem', borderRight: '1px solid var(--border-light)' }}>
@@ -2742,13 +2741,13 @@ export default function LeadDashboard({
                               {tSlot.activeEmployees.map((emp, idx) => {
                                 const isEven = idx % 2 === 0;
                                 return (
-                                  <tr 
-                                    key={emp.id} 
-                                    style={{ 
-                                      background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)',
-                                      borderBottom: '1px solid var(--border-light)'
-                                    }}
-                                  >
+                                    <tr 
+                                      key={emp.id} 
+                                      style={{ 
+                                        backgroundColor: isEven ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))',
+                                        borderBottom: '1px solid var(--border-light)'
+                                      }}
+                                    >
                                     <td style={{ padding: '0.55rem 1rem', borderRight: '1px solid var(--border-light)' }}>
                                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
                                       <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{emp.dept} • {emp.role}</div>
@@ -2983,7 +2982,7 @@ export default function LeadDashboard({
                         const isEven = idx % 2 === 0;
                         const targetSlot = HOURLY_SLOTS.find(s => s.id === row.slotId) || { id: row.slotId, label: row.slotLabel };
                         return (
-                          <tr key={`${row.slotId}-${row.id}`} style={{ background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                          <tr key={`${row.slotId}-${row.id}`} style={{ backgroundColor: isEven ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))', borderBottom: '1px solid var(--border-light)', transition: 'all 0.15s ease' }}>
                             <td style={{ padding: '0.65rem 0.85rem', borderRight: '1px solid var(--border-light)', fontWeight: 600, color: '#1e40af', background: 'rgba(59, 130, 246, 0.02)' }}>
                               ⏰ {row.slotShort}
                             </td>
@@ -3153,7 +3152,7 @@ export default function LeadDashboard({
                       employeeHourlyMatrix.map((emp, idx) => {
                         const isEven = idx % 2 === 0;
                         return (
-                          <tr key={emp.id} style={{ background: isEven ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
+                          <tr key={emp.id} style={{ backgroundColor: isEven ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))', borderBottom: '1px solid var(--border-light)', transition: 'all 0.15s ease' }}>
                             <td style={{ padding: '0.6rem 1rem', borderRight: '1px solid var(--border-light)' }}>
                               <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
                               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{emp.dept}</div>
@@ -3405,7 +3404,8 @@ export default function LeadDashboard({
                           key={item.id}
                           style={{
                             borderBottom: '1px solid var(--border-light)',
-                            background: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, #f8fafc)'
+                            backgroundColor: idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))',
+                            transition: 'all 0.15s ease'
                           }}
                         >
                           {/* Index */}
