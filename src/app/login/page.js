@@ -460,9 +460,9 @@ function LoginFormContent() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
-                    style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.4rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                   />
-                  <Mail size={16} style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
                 </div>
               </div>
 
@@ -556,9 +556,9 @@ function LoginFormContent() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g. employee@company.com"
-                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.4rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     />
-                    <Mail size={16} style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                    <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
                   </div>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
                     We'll send a 6-digit login verification code directly to this official mailbox.
@@ -772,9 +772,9 @@ function LoginFormContent() {
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       placeholder="e.g. employee@company.com"
-                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.4rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     />
-                    <Mail size={16} style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                    <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
                   </div>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
                     We will send a 6-digit verification code to this email via SuPuja Creations Admin Mail.
