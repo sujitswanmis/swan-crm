@@ -293,11 +293,17 @@ export default function CRMContainer({
   // State variables
   const [dashboardSubTab, setDashboardSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
-    const cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
-    const queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
-    if (['scorecard', 'overview', 'pipeline'].includes(cleanPath)) return cleanPath;
-    if (cleanPath && cleanPath.startsWith('dashboard/')) return cleanPath.split('/')[1] || 'overview';
-    if (queryTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(queryTab)) return queryTab;
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (cleanPath === 'pipeline' || cleanPath === 'leads-data') cleanPath = 'lead-data';
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (queryTab === 'pipeline' || queryTab === 'leads-data') queryTab = 'lead-data';
+    if (['scorecard', 'overview', 'lead-data'].includes(cleanPath)) return cleanPath;
+    if (cleanPath && cleanPath.startsWith('dashboard/')) {
+      let sub = cleanPath.split('/')[1] || 'overview';
+      if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
+      return sub;
+    }
+    if (queryTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(queryTab)) return queryTab;
     return 'overview';
   });
 
@@ -309,7 +315,7 @@ export default function CRMContainer({
     }
     
     // Check if path is a dashboard subtab or alias
-    if (['scorecard', 'overview', 'pipeline'].includes(path) || (path && path.startsWith('dashboard/'))) {
+    if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/'))) {
       return 'dashboard';
     }
     if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path)) {
@@ -373,13 +379,14 @@ export default function CRMContainer({
       if (attTab && (path === 'delegation' || (path && path.startsWith('delegation/')))) {
         setDelegationSubTab(attTab);
       }
-      if (['scorecard', 'overview', 'pipeline'].includes(path)) {
-        setDashboardSubTab(path);
+      if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
+        setDashboardSubTab(path === 'pipeline' || path === 'leads-data' ? 'lead-data' : path);
       } else if (path && path.startsWith('dashboard/')) {
-        const sub = path.split('/')[1];
+        let sub = path.split('/')[1];
+        if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
       } else if (path === 'dashboard' && attTab) {
-        setDashboardSubTab(attTab);
+        setDashboardSubTab(attTab === 'pipeline' || attTab === 'leads-data' ? 'lead-data' : attTab);
       }
     }
   }, [pathname]);
@@ -1496,15 +1503,17 @@ export default function CRMContainer({
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
     const params = new URLSearchParams(window.location.search);
     let tab = path || params.get('tab');
-    if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
-      setDashboardSubTab(tab);
+    if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
+      setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
       tab = 'dashboard';
     } else if (tab && tab.startsWith('dashboard/')) {
-      const sub = tab.split('/')[1];
+      let sub = tab.split('/')[1];
+      if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
       if (sub) setDashboardSubTab(sub);
       tab = 'dashboard';
     } else if (tab === 'dashboard') {
-      const sub = params.get('subtab') || params.get('tab');
+      let sub = params.get('subtab') || params.get('tab');
+      if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
       if (sub) setDashboardSubTab(sub);
     } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
       tab = 'settings';
@@ -1546,15 +1555,17 @@ export default function CRMContainer({
       let tab = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       if (!tab) tab = params.get('tab');
-      if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
-        setDashboardSubTab(tab);
+      if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
+        setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
         tab = 'dashboard';
       } else if (tab && tab.startsWith('dashboard/')) {
-        const sub = tab.split('/')[1];
+        let sub = tab.split('/')[1];
+        if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
         tab = 'dashboard';
       } else if (tab === 'dashboard') {
-        const sub = params.get('subtab') || params.get('tab');
+        let sub = params.get('subtab') || params.get('tab');
+        if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
       } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
         tab = 'settings';
@@ -1642,12 +1653,13 @@ export default function CRMContainer({
       setLastScreenCapture(null);
     }
 
-    if (['scorecard', 'overview', 'pipeline'].includes(tabId)) {
+    if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tabId)) {
+      const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
       React.startTransition(() => {
         setActiveTab('dashboard');
-        setDashboardSubTab(tabId);
+        setDashboardSubTab(canonical);
       });
-      window.history.pushState(null, '', `/${tabId}`);
+      window.history.pushState(null, '', `/${canonical}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
@@ -4866,11 +4878,16 @@ export default function CRMContainer({
                     userId={userId}
                     userRole={userRole}
                     initialSubTab={dashboardSubTab}
-                    onNavigateTab={(tab, subTab) => {
-                      if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
+                    onNavigateTab={(tab, subTab, stage) => {
+                      if (tab === 'leads' && (stage || subTab)) {
+                        const targetStage = stage || (typeof subTab === 'string' && subTab.includes('Stage') ? subTab : null);
+                        if (targetStage) handleStageChange(targetStage);
+                        handleTabChange('leads');
+                      } else if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
+                        const canonical = (tab === 'pipeline' || tab === 'leads-data') ? 'lead-data' : tab;
                         setActiveTab('dashboard');
-                        setDashboardSubTab(tab);
-                        window.history.pushState(null, '', `/${tab}`);
+                        setDashboardSubTab(canonical);
+                        window.history.pushState(null, '', `/${canonical}`);
                       } else if (subTab) {
                         setActiveTab(tab);
                         window.history.pushState(null, '', `/${tab}?tab=${subTab}`);

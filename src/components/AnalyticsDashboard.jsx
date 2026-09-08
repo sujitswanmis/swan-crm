@@ -12,7 +12,7 @@ import {
   ClipboardList, UserCheck, Briefcase, Award, Search, Flame,
   ChevronRight, Star, ShieldAlert, PhoneCall, Check, Clock, AlertCircle,
   Filter, Layers, MessageSquare, Zap, ExternalLink, FileText, UserPlus,
-  Phone, Mail
+  Phone, Mail, Database
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
@@ -54,21 +54,26 @@ export default function AnalyticsDashboard({
   initialSubTab = ''
 }) {
   const [activeTab, setActiveTabState] = useState(() => {
-    if (initialSubTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(initialSubTab)) {
-      return initialSubTab;
+    let initial = initialSubTab;
+    if (initial === 'pipeline' || initial === 'leads-data') initial = 'lead-data';
+    if (initial && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(initial)) {
+      return initial;
     }
     if (typeof window !== 'undefined') {
       const rawPath = window.location.pathname || '';
-      const cleanPath = (typeof rawPath === 'string' ? rawPath : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+      let cleanPath = (typeof rawPath === 'string' ? rawPath : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (cleanPath === 'pipeline' || cleanPath === 'leads-data') cleanPath = 'lead-data';
       const params = new URLSearchParams(window.location.search);
-      const urlTab = params.get('subtab') || params.get('tab');
-      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
+      let urlTab = params.get('subtab') || params.get('tab');
+      if (urlTab === 'pipeline' || urlTab === 'leads-data') urlTab = 'lead-data';
+      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(urlTab)) {
         return urlTab;
       }
-      if (['scorecard', 'overview', 'pipeline'].includes(cleanPath)) return cleanPath;
+      if (['scorecard', 'overview', 'lead-data'].includes(cleanPath)) return cleanPath;
       if (cleanPath && cleanPath.startsWith('dashboard/')) {
-        const sub = cleanPath.split('/')[1];
-        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
+        let sub = cleanPath.split('/')[1];
+        if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
+        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(sub)) {
           return sub;
         }
       }
@@ -77,39 +82,47 @@ export default function AnalyticsDashboard({
   });
 
   const setActiveTab = (tabId) => {
-    setActiveTabState(tabId);
+    const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
+    setActiveTabState(canonical);
     if (typeof window !== 'undefined') {
-      let routePath = `/dashboard?tab=${tabId}`;
-      if (tabId === 'scorecard') routePath = '/scorecard';
-      else if (tabId === 'overview') routePath = '/dashboard';
-      else if (tabId === 'pipeline') routePath = '/pipeline';
+      let routePath = `/dashboard?tab=${canonical}`;
+      if (canonical === 'scorecard') routePath = '/scorecard';
+      else if (canonical === 'overview') routePath = '/dashboard';
+      else if (canonical === 'lead-data') routePath = '/lead-data';
       
-      window.history.pushState({ tab: 'dashboard', subTab: tabId }, '', routePath);
+      window.history.pushState({ tab: 'dashboard', subTab: canonical }, '', routePath);
     }
   };
 
   // Sync when initialSubTab changes from parent
   useEffect(() => {
-    if (initialSubTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(initialSubTab)) {
-      setActiveTabState(initialSubTab);
+    if (initialSubTab) {
+      const canonical = (initialSubTab === 'pipeline' || initialSubTab === 'leads-data') ? 'lead-data' : initialSubTab;
+      if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(canonical)) {
+        setActiveTabState(canonical);
+      }
     }
   }, [initialSubTab]);
 
   // Handle browser back/forward navigation
   useEffect(() => {
     const handlePop = () => {
-      const cleanPath = (typeof window !== 'undefined' ? window.location.pathname : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+      const rawPath = typeof window !== 'undefined' ? (window.location.pathname || '') : '';
+      let cleanPath = (typeof rawPath === 'string' ? rawPath : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (cleanPath === 'pipeline' || cleanPath === 'leads-data') cleanPath = 'lead-data';
       const params = new URLSearchParams(window.location.search);
-      const urlTab = params.get('subtab') || params.get('tab');
-      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
+      let urlTab = params.get('subtab') || params.get('tab');
+      if (urlTab === 'pipeline' || urlTab === 'leads-data') urlTab = 'lead-data';
+      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(urlTab)) {
         setActiveTabState(urlTab);
       } else if (cleanPath === 'scorecard') {
         setActiveTabState('scorecard');
-      } else if (cleanPath === 'pipeline') {
-        setActiveTabState('pipeline');
+      } else if (cleanPath === 'lead-data') {
+        setActiveTabState('lead-data');
       } else if (cleanPath && cleanPath.startsWith('dashboard/')) {
-        const sub = cleanPath.split('/')[1];
-        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
+        let sub = cleanPath.split('/')[1];
+        if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
+        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'recruiter', 'lead-data'].includes(sub)) {
           setActiveTabState(sub);
         }
       } else if (cleanPath === 'dashboard' && !urlTab) {
@@ -1076,14 +1089,14 @@ export default function AnalyticsDashboard({
           {[
             { id: 'overview', label: 'Executive Overview', icon: Layers, badge: null },
             { id: 'scorecard', label: 'Team Scorecard', icon: Award, badge: `${teamScorecardData.length} Reps` },
+            { id: 'lead-data', label: 'Lead Data', icon: Database, badge: `${kpis.total.toLocaleString('en-IN')} Leads` },
             { id: 'delegation', label: 'Delegation Tasks', icon: CheckSquare, badge: delegation.overdue > 0 ? `${delegation.overdue} Overdue` : `${delegation.total}` },
             { id: 'checklist', label: 'Daily Checklists', icon: ClipboardList, badge: `${dashboardSummaries.checklistSummary.complianceRate || checklists.complianceRate}%` },
             { id: 'attendance', label: 'Attendance Ops', icon: UserCheck, badge: `${attendanceStats.effectivePresent}/${attendanceStats.total}` },
             { id: 'recruiter', label: 'Recruiter Hub', icon: Briefcase, badge: `${dashboardSummaries.recruitmentSummary?.openPositions ?? 0} Open` },
-            { id: 'pipeline', label: 'Pipeline & Outreach', icon: Target, badge: `${kpis.inPipeline} Active` },
           ].map(tab => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const isActive = activeTab === tab.id || (tab.id === 'lead-data' && activeTab === 'pipeline');
             return (
               <button
                 key={tab.id}
@@ -1163,8 +1176,8 @@ export default function AnalyticsDashboard({
               </div>
               <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>{kpis.won}</div>
               <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>{kpis.inPipeline} in active pipeline</div>
-              <button onClick={() => setActiveTab('pipeline')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#10b981', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
-                Pipeline View <ArrowRight size={11} />
+              <button onClick={() => setActiveTab('lead-data')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#10b981', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+                Lead Data View <ArrowRight size={11} />
               </button>
             </div>
 
@@ -2234,14 +2247,73 @@ export default function AnalyticsDashboard({
       )}
 
       {/* ========================================================================= */}
-      {/* 🎯 TAB 6: PIPELINE & OUTREACH DASHBOARD                                    */}
+      {/* 🎯 TAB 6: LEAD DATA & PIPELINE DASHBOARD                                  */}
       {/* ========================================================================= */}
-      {activeTab === 'pipeline' && (
+      {(activeTab === 'lead-data' || activeTab === 'pipeline') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Header Action Banner */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem',
+            padding: '1rem 1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: '12px',
+            border: '1px solid var(--border-light)'
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Database size={18} style={{ color: 'var(--accent-color)' }} />
+                Lead Data & Pipeline Analytics
+              </h3>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                Total lead distribution across CRM sales stages, outreach touchpoints, and caller allocations
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateTab?.('leads')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
+                padding: '0.5rem 1rem', borderRadius: '8px',
+                backgroundColor: 'var(--accent-color)', color: '#fff',
+                fontSize: '0.82rem', fontWeight: 600, border: 'none',
+                cursor: 'pointer', transition: 'opacity 0.15s ease'
+              }}
+            >
+              <span>Open Full Leads Database</span>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '0.85rem' }}>
+            {[
+              { label: 'Total Leads in CRM', value: kpis.total, color: '#3b82f6', icon: Database },
+              { label: 'Fresh / New Leads', value: kpis.newLeads, color: '#06b6d4', icon: Zap },
+              { label: 'In Active Pipeline', value: kpis.inPipeline, color: '#8b5cf6', icon: Target },
+              { label: 'Follow-ups Pending', value: kpis.followUps, color: '#f59e0b', icon: Clock },
+              { label: 'Deals Won / Converted', value: kpis.won, color: '#10b981', icon: CheckCircle2 },
+              { label: 'WhatsApp Sent', value: loading ? '…' : metrics.whatsappStats.period, color: '#25D366', icon: MessageSquare }
+            ].map(card => {
+              const Icon = card.icon;
+              return (
+                <div key={card.label} className="card" style={{ padding: '0.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{card.label}</span>
+                    <Icon size={14} style={{ color: card.color }} />
+                  </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: card.color }}>
+                    {typeof card.value === 'number' ? card.value.toLocaleString('en-IN') : card.value}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           {/* Stage Funnel Table & Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
             <div className="card" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>
-              <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 700 }}>Sales Pipeline Stage Distribution</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Sales Pipeline Stage Distribution</h3>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{filteredLeadsSync.length.toLocaleString('en-IN')} Leads in View</span>
+              </div>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
@@ -2278,6 +2350,85 @@ export default function AnalyticsDashboard({
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Representative / Telecaller Lead Allocation Table */}
+          <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Sales Representative & Telecaller Lead Allocation</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Live breakdown of leads assigned and contacted per caller
+                </div>
+              </div>
+              <button
+                onClick={() => onNavigateTab?.('leads')}
+                style={{
+                  fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-color)',
+                  background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'
+                }}
+              >
+                Go to Leads Table <ArrowRight size={12} />
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', backgroundColor: 'var(--th-bg)' }}>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Representative</th>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Department</th>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Leads Assigned</th>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Leads Touched / Called</th>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Contact Rate</th>
+                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center' }}>Calling Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamScorecardData
+                    .filter(r => r.leadsAssigned > 0 || r.roleCategory === 'SALES_CALLER')
+                    .slice(0, 15)
+                    .map((row, idx) => {
+                      const contactRate = row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0;
+                      return (
+                        <tr key={row.empEmail || idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background 0.15s' }}>
+                          <td style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {row.empName}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {row.department || 'Sales & Telecalling'}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>
+                            📦 {row.leadsAssigned.toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>
+                            📞 {row.leadsTouched.toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444' }}>
+                            {contactRate}%
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
+                              backgroundColor: row.calling?.score >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: row.calling?.score >= 15 ? '#10b981' : '#ef4444'
+                            }}>
+                              {row.calling?.score ?? 0} / 25 pts
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {teamScorecardData.filter(r => r.leadsAssigned > 0 || r.roleCategory === 'SALES_CALLER').length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No caller lead allocations found for this period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
