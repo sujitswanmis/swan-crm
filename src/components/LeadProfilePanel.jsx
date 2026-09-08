@@ -6,7 +6,19 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { X, Send, Play, Pause, Phone, Volume2, RotateCw } from 'lucide-react';
+import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2 } from 'lucide-react';
+import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
+
+// Standard 7 CRM Stages Fallback Definition
+const DEFAULT_STAGES = [
+  { name: '01 - New Stage', substages: ['New Lead', 'Assigned', 'Contact Pending'] },
+  { name: '02 - Contact Stage', substages: ['Contacted', 'Wrong Number', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '03 - Qualification Stage', substages: ['Interested', 'Qualified', 'Unqualified', 'Need Identified', 'Budget Confirmed', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '04 - Follow Up Stage', substages: ['Catalog Shared', 'Follow Up Required', 'Next Follow Up Set', 'Follow Up Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] }
+];
 
 // Strict IST Timezone Formatter
 const formatIST = (isoString) => {
@@ -222,7 +234,19 @@ function CallAudioPlayer({ audioUrl }) {
   );
 }
 
-export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, onLeadUpdate, userName }) {
+export default function LeadProfilePanel({ 
+  lead, 
+  isOpen = true, 
+  mode, 
+  onClose, 
+  onLeadUpdate, 
+  onUpdateLead, 
+  userName,
+  userRole,
+  userId,
+  teamMembers = [],
+  stages: propStages
+}) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [callLogs, setCallLogs] = useState([]);
@@ -232,6 +256,250 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
   const [followUpDate, setFollowUpDate] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
+
+  // Status management states
+  const [currentStatus, setCurrentStatus] = useState(lead?.status || '01 - New Stage');
+  const [statusForNewNote, setStatusForNewNote] = useState('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
+  const [stages, setStages] = useState(propStages || DEFAULT_STAGES);
+
+  // Voice-to-Text (Speech Recognition) states
+  const [isListening, setIsListening] = useState(false);
+  const [speechLang, setSpeechLang] = useState('en-IN'); // 'en-IN' (English/Hinglish) or 'hi-IN' (Hindi)
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [speechError, setSpeechError] = useState(null);
+  const recognitionRef = useRef(null);
+
+  const notifyLeadUpdate = (updatedLeadObj) => {
+    if (onLeadUpdate) onLeadUpdate(updatedLeadObj);
+    if (onUpdateLead) onUpdateLead(updatedLeadObj);
+  };
+
+  useEffect(() => {
+    if (lead?.status) {
+      setCurrentStatus(lead.status);
+    }
+  }, [lead?.status]);
+
+  useEffect(() => {
+    if (propStages && propStages.length > 0) {
+      setStages(propStages);
+      return;
+    }
+    const loadConfig = () => {
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.stages && parsed.stages.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
+            setStages(parsed.stages);
+          }
+        }
+      } catch (e) {}
+    };
+    loadConfig();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm_config_updated', loadConfig);
+      return () => window.removeEventListener('crm_config_updated', loadConfig);
+    }
+  }, [propStages]);
+
+  // Speech Recognition Initializer & Listener
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = speechLang;
+
+          recognition.onstart = () => {
+            setIsListening(true);
+            setSpeechError(null);
+          };
+
+          recognition.onresult = (event) => {
+            let finalChunk = '';
+            let interimChunk = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalChunk += transcript;
+              } else {
+                interimChunk += transcript;
+              }
+            }
+            if (finalChunk) {
+              setNewNote(prev => {
+                const trimmed = (prev || '').trim();
+                return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
+              });
+            }
+            setInterimTranscript(interimChunk);
+          };
+
+          recognition.onerror = (e) => {
+            console.warn('SpeechRecognition error:', e.error);
+            if (e.error === 'not-allowed') {
+              setSpeechError('Microphone permission denied. Allow mic in browser.');
+            } else if (e.error !== 'no-speech') {
+              setSpeechError(`Voice error: ${e.error}`);
+            }
+            setIsListening(false);
+            setInterimTranscript('');
+          };
+
+          recognition.onend = () => {
+            setIsListening(false);
+            setInterimTranscript('');
+          };
+
+          recognitionRef.current = recognition;
+        } catch (err) {
+          console.warn('SpeechRecognition initialization error:', err);
+        }
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, [speechLang]);
+
+  const toggleSpeechRecognition = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Voice dictation is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setIsListening(false);
+      setInterimTranscript('');
+    } else {
+      setSpeechError(null);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.lang = speechLang;
+          recognitionRef.current.start();
+          setIsListening(true);
+        } catch (err) {
+          console.warn('Could not start speech recognition:', err);
+          setIsListening(false);
+        }
+      }
+    }
+  };
+
+  const handleStatusUpdate = async (newStatus) => {
+    if (!newStatus || newStatus === currentStatus || isUpdatingStatus) return;
+
+    const oldStatus = currentStatus || lead.status || '01 - New Stage';
+    const nowIso = new Date().toISOString();
+    const actor = normalizeEmployeeName(userName || 'Agent');
+    const noteText = `Status changed from ${oldStatus} to ${newStatus}`;
+
+    const statusNote = {
+      id: `local_note_${Date.now()}`,
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: actor,
+      created_at: nowIso
+    };
+
+    setCurrentStatus(newStatus);
+    setNotes(prev => [statusNote, ...prev]);
+
+    const updatedLeadObj = {
+      ...lead,
+      status: newStatus,
+      last_status: newStatus,
+      updated_at: nowIso,
+      last_timestamp: nowIso,
+      latest_remark: noteText
+    };
+
+    notifyLeadUpdate(updatedLeadObj);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
+      await enqueueOfflineAction('update', 'lead', {
+        id: lead.id,
+        status: newStatus,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText
+      });
+      await enqueueOfflineAction('create', 'lead_note', {
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor
+      });
+      setStatusUpdateSuccess(true);
+      setTimeout(() => setStatusUpdateSuccess(false), 2000);
+      return;
+    }
+
+    setIsUpdatingStatus(true);
+    try {
+      const { error: updateError } = await supabase.from('leads').update({
+        status: newStatus,
+        updated_at: nowIso,
+        last_timestamp: nowIso,
+        latest_remark: noteText
+      }).eq('id', lead.id);
+
+      if (updateError) throw updateError;
+
+      await supabase.from('lead_notes').insert([{
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor
+      }]);
+
+      try {
+        await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}" via History Panel`);
+      } catch (e) {}
+
+      try {
+        triggerWhatsappAutomationForStage(lead.id, newStatus);
+      } catch (e) {}
+
+      setStatusUpdateSuccess(true);
+      setTimeout(() => setStatusUpdateSuccess(false), 2000);
+    } catch (err) {
+      console.error('Status update failed:', err);
+      const check = canPerformOfflineAction('leadStatusUpdate');
+      if (check.allowed) {
+        await enqueueOfflineAction('update', 'lead', {
+          id: lead.id,
+          status: newStatus,
+          updated_at: nowIso,
+          last_timestamp: nowIso,
+          latest_remark: noteText
+        });
+      }
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const fetchCalls = async () => {
     if (!lead) return;
@@ -412,61 +680,135 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
 
   const handleAddNote = async (e) => {
     e.preventDefault();
-    if (!newNote.trim()) return;
+    if (!newNote.trim() && !statusForNewNote) return;
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('leadNotes');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
-      }
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      setIsListening(false);
     }
 
     const actor = normalizeEmployeeName(userName || 'Agent');
-    const createdNote = {
-      id: `local_note_${Date.now()}`,
-      lead_id: lead.id,
-      note_text: newNote,
-      created_by: actor,
-      created_at: new Date().toISOString()
+    const nowIso = new Date().toISOString();
+    const noteContent = newNote.trim();
+    const statusToUpdate = (statusForNewNote && statusForNewNote !== currentStatus) ? statusForNewNote : null;
+
+    let localNotesToAdd = [];
+    let createdNote = null;
+
+    if (noteContent) {
+      createdNote = {
+        id: `local_note_${Date.now()}`,
+        lead_id: lead.id,
+        note_text: noteContent,
+        created_by: actor,
+        created_at: nowIso
+      };
+      localNotesToAdd.push(createdNote);
+    }
+
+    if (statusToUpdate) {
+      const statusNote = {
+        id: `local_note_${Date.now() + 1}`,
+        lead_id: lead.id,
+        note_text: `Status changed from ${currentStatus} to ${statusToUpdate}`,
+        created_by: actor,
+        created_at: nowIso
+      };
+      localNotesToAdd.push(statusNote);
+      setCurrentStatus(statusToUpdate);
+    }
+
+    const updatedNotes = [...localNotesToAdd, ...notes];
+    setNotes(updatedNotes);
+
+    const updatedLeadObj = {
+      ...lead,
+      ...(statusToUpdate ? {
+        status: statusToUpdate,
+        last_status: statusToUpdate
+      } : {}),
+      updated_at: nowIso,
+      last_timestamp: nowIso,
+      latest_remark: noteContent || `Status changed to ${statusToUpdate}`,
+      lead_notes: updatedNotes,
+      is_offline_pending: typeof navigator !== 'undefined' && !navigator.onLine
     };
 
-    const updatedNotes = [createdNote, ...notes];
-    setNotes(updatedNotes);
-    if (onLeadUpdate) {
-      onLeadUpdate({
-        ...lead,
-        lead_notes: updatedNotes,
-        is_offline_pending: true
-      });
-    }
-    const noteContent = newNote;
+    notifyLeadUpdate(updatedLeadObj);
+
     setNewNote('');
+    setStatusForNewNote('');
+    setInterimTranscript('');
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      if (noteContent) {
+        await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      }
+      if (statusToUpdate) {
+        await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteContent || `Status changed to ${statusToUpdate}` });
+        await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: `Status changed from ${currentStatus} to ${statusToUpdate}`, created_by: actor });
+      }
       return;
     }
 
     try {
-      const { data: inserted, error } = await supabase
-        .from('lead_notes')
-        .insert([{ lead_id: lead.id, note_text: noteContent, created_by: actor }])
-        .select()
-        .single();
+      if (noteContent) {
+        const { data: inserted, error: noteError } = await supabase
+          .from('lead_notes')
+          .insert([{ lead_id: lead.id, note_text: noteContent, created_by: actor }])
+          .select()
+          .single();
 
-      if (error) throw error;
-      if (inserted) {
-        setNotes((current) => current.map(n => n.id === createdNote.id ? inserted : n));
+        if (noteError) throw noteError;
+        if (inserted && createdNote) {
+          setNotes((current) => current.map(n => n.id === createdNote.id ? inserted : n));
+        }
+
+        try {
+          logAuditAction('Add Note', `Added note for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}": "${noteContent.substring(0, 50)}${noteContent.length > 50 ? '...' : ''}"`);
+        } catch (e) {}
+      }
+
+      if (statusToUpdate) {
+        const { error: statusError } = await supabase.from('leads').update({
+          status: statusToUpdate,
+          updated_at: nowIso,
+          last_timestamp: nowIso,
+          latest_remark: noteContent || `Status changed to ${statusToUpdate}`
+        }).eq('id', lead.id);
+
+        if (statusError) throw statusError;
+
+        await supabase.from('lead_notes').insert([{
+          lead_id: lead.id,
+          note_text: `Status changed from ${currentStatus} to ${statusToUpdate}`,
+          created_by: actor
+        }]);
+
+        try {
+          await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${statusToUpdate}" via History Panel`);
+        } catch (e) {}
+
+        try {
+          triggerWhatsappAutomationForStage(lead.id, statusToUpdate);
+        } catch (e) {}
       }
     } catch (netErr) {
-      console.warn('Network addNote failed, fallback to offline queue:', netErr);
-      const check = canPerformOfflineAction('leadNotes');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
+      console.warn('Network addNote/status update failed, fallback to offline queue:', netErr);
+      if (noteContent) {
+        const check = canPerformOfflineAction('leadNotes');
+        if (check.allowed) {
+          await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+        }
       }
-      await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      if (statusToUpdate) {
+        const check = canPerformOfflineAction('leadStatusUpdate');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteContent || `Status changed to ${statusToUpdate}` });
+        }
+      }
     }
   };
 
@@ -619,7 +961,7 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
   return (
     <>
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 999 }} onClick={onClose} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '400px', backgroundColor: 'var(--bg-surface)', zIndex: 1000, boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '420px', maxWidth: '96vw', backgroundColor: 'var(--bg-surface)', zIndex: 1000, boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
         
         {/* Header */}
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -660,9 +1002,63 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Status:</span> <b>{lead.status}</b></div>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Priority:</span> <b>{lead.priority}</b></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}>
+                Status:
+                {isUpdatingStatus && <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />}
+                {statusUpdateSuccess && <Check size={13} color="#10b981" title="Status updated!" />}
+              </span>
+              <select
+                value={currentStatus}
+                disabled={isUpdatingStatus}
+                onChange={(e) => handleStatusUpdate(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: isUpdatingStatus ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentStatus}
+              >
+                {!stages.some(s => s.substages?.some(sub => sub === currentStatus || sub.includes(currentStatus) || currentStatus.includes(sub))) && (
+                  <option value={currentStatus}>
+                    {currentStatus.includes('>') ? currentStatus.split('>').pop() : currentStatus}
+                  </option>
+                )}
+                {stages.map((stageObj, i) => {
+                  const stageNum = i + 1;
+                  const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                  return (
+                    <optgroup key={`top-stage-${i}`} label={stageObj.name}>
+                      {stageObj.substages.map((sub, j) => {
+                        const subNum = String(j + 1).padStart(2, '0');
+                        const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                        const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                        const displayName = sub.includes('>') ? sub.split('>').pop() : sub;
+                        return (
+                          <option key={`top-sub-${val}`} value={val}>
+                            {displayName}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem', fontSize: '0.78rem' }}>Priority:</span>
+              <b style={{ fontSize: '0.82rem' }}>{lead.priority || 'None'}</b>
+            </div>
             
             {isEditing ? (
               <>
@@ -888,20 +1284,181 @@ export default function LeadProfilePanel({ lead, isOpen = true, mode, onClose, o
               )}
             </div>
 
-            {/* Add Note Input */}
-            <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
-              <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '0.5rem' }}>
+            {/* Add Note & Voice Dictation Area */}
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary, #f8fafc)' }}>
+              {/* Optional Quick Status Transition Bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Add Remark / Note
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Status:</span>
+                  <select
+                    value={statusForNewNote}
+                    onChange={e => setStatusForNewNote(e.target.value)}
+                    style={{
+                      fontSize: '0.72rem',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-light)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      maxWidth: '170px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">Keep current ({currentStatus.includes('>') ? currentStatus.split('>').pop() : currentStatus})</option>
+                    {stages.map((stageObj, i) => {
+                      const stageNum = i + 1;
+                      const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                      return (
+                        <optgroup key={`note-stage-${i}`} label={stageObj.name}>
+                          {stageObj.substages.map((sub, j) => {
+                            const subNum = String(j + 1).padStart(2, '0');
+                            const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                            const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                            const displayName = sub.includes('>') ? sub.split('>').pop() : sub;
+                            return (
+                              <option key={`note-sub-${val}`} value={val}>
+                                {displayName}
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+
+              {/* Realtime Voice Dictation Status */}
+              {isListening && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontSize: '0.74rem',
+                  color: '#b91c1c',
+                  backgroundColor: '#fee2e2',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  marginBottom: '0.5rem',
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444', animation: 'pulse-dot 1s infinite' }} />
+                  <span style={{ fontWeight: 600 }}>Listening ({speechLang === 'hi-IN' ? 'Hindi' : 'English / Hinglish'})...</span>
+                  {interimTranscript && <span style={{ color: '#450a0a', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{interimTranscript}"</span>}
+                </div>
+              )}
+
+              {speechError && (
+                <div style={{
+                  fontSize: '0.72rem',
+                  color: '#b91c1c',
+                  backgroundColor: '#fef2f2',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  marginBottom: '0.5rem'
+                }}>
+                  ⚠️ {speechError}
+                </div>
+              )}
+
+              <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                 <input 
                   type="text" 
                   value={newNote} 
                   onChange={e => setNewNote(e.target.value)} 
-                  placeholder="Add a note..." 
-                  style={{ flex: 1, padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} 
+                  placeholder={isListening ? "Listening... speak now..." : "Type or dictate remark..."} 
+                  style={{ 
+                    flex: 1, 
+                    padding: '0.65rem 0.8rem', 
+                    borderRadius: '8px', 
+                    border: isListening ? '2px solid #ef4444' : '1px solid var(--border-light)', 
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.84rem',
+                    outline: 'none'
+                  }} 
                 />
-                <button type="submit" style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', padding: '0 1rem', cursor: 'pointer' }}>
-                  <Send size={18} />
+
+                {/* Voice Language Toggle (EN / HI) */}
+                <button
+                  type="button"
+                  onClick={() => setSpeechLang(prev => prev === 'en-IN' ? 'hi-IN' : 'en-IN')}
+                  title={`Click to switch speech language (Current: ${speechLang === 'en-IN' ? 'English / Hinglish' : 'Hindi'})`}
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '0 0.45rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--accent-color)',
+                    cursor: 'pointer',
+                    height: '38px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    userSelect: 'none'
+                  }}
+                >
+                  {speechLang === 'en-IN' ? 'EN' : 'HI'}
+                </button>
+
+                {/* Microphone Toggle Button */}
+                <button
+                  type="button"
+                  onClick={toggleSpeechRecognition}
+                  title={isListening ? "Stop Voice Dictation" : "Dictate note with Voice"}
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    border: isListening ? 'none' : '1px solid var(--border-light)',
+                    backgroundColor: isListening ? '#ef4444' : 'var(--bg-surface)',
+                    color: isListening ? '#ffffff' : 'var(--accent-color)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    boxShadow: isListening ? '0 0 10px rgba(239, 68, 68, 0.5)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+
+                {/* Send Note Button */}
+                <button 
+                  type="submit" 
+                  disabled={!newNote.trim() && !statusForNewNote}
+                  title="Send Note"
+                  style={{ 
+                    width: '38px',
+                    height: '38px',
+                    background: (!newNote.trim() && !statusForNewNote) ? 'var(--border-light)' : 'var(--accent-color)', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    cursor: (!newNote.trim() && !statusForNewNote) ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <Send size={16} />
                 </button>
               </form>
+              <style>{`
+                @keyframes pulse-dot {
+                  0% { opacity: 1; transform: scale(1); }
+                  50% { opacity: 0.3; transform: scale(0.8); }
+                  100% { opacity: 1; transform: scale(1); }
+                }
+              `}</style>
             </div>
           </>
         )}

@@ -1702,6 +1702,7 @@ export default function LeadTable({
             userRole={userRole}
             userId={userId}
             userName={userName}
+            stages={stages}
             onUpdateLead={(updatedLead) => {
               setData(curr => curr.map(item => item.id === updatedLead.id ? { ...item, ...updatedLead } : item));
               if (onLeadsChange) onLeadsChange(updatedLead);
@@ -2661,6 +2662,7 @@ export default function LeadTable({
           onClose={() => setSelectedLead(null)} 
           mode="history"
           userName={userName}
+          stages={stages}
           onLeadUpdate={(updatedRawLead) => {
              // Process just this single lead to get its new formatted fields
              // Since processLeads expects an array of raw leads, we can pass it
