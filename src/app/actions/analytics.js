@@ -146,7 +146,12 @@ export async function getUserAssignedWorkSummary({
       submitted: tasks.filter(t => t.status === 'SUBMITTED').length,
       completed: tasks.filter(t => t.status === 'COMPLETED').length,
       overdue: tasks.filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status) && (t.is_overdue || (t.deadline && new Date(t.deadline) < now))).length,
-      recentTasks: tasks.slice(0, 15).map(t => ({
+      priorityBreakdown: {
+        high: tasks.filter(t => t.priority === 'HIGH' || t.priority === 'URGENT').length,
+        medium: tasks.filter(t => t.priority === 'MEDIUM' || !t.priority).length,
+        low: tasks.filter(t => t.priority === 'LOW').length
+      },
+      recentTasks: tasks.slice(0, 60).map(t => ({
         id: t.id,
         task_code: t.task_code,
         title: t.title,
@@ -164,15 +169,13 @@ export async function getUserAssignedWorkSummary({
 
     // 2. Fetch Checklists Dashboard for today
     let checklistRes = { success: true, data: [] };
-    if (effectiveEmail) {
-      try {
-        checklistRes = await getEmployeeChecklistDashboard({
-          employeeEmail: effectiveEmail,
-          targetDate: targetDate || new Date()
-        });
-      } catch (e) {
-        console.warn('Error fetching employee checklists for analytics:', e.message);
-      }
+    try {
+      checklistRes = await getEmployeeChecklistDashboard({
+        employeeEmail: isAllSelected && !targetEmail ? '' : effectiveEmail,
+        targetDate: targetDate || new Date()
+      });
+    } catch (e) {
+      console.warn('Error fetching employee checklists for analytics:', e.message);
     }
 
     const checkItems = checklistRes.data || [];
@@ -190,7 +193,7 @@ export async function getUserAssignedWorkSummary({
       complianceRate,
       isSunday: checklistRes.isSunday || false,
       holidayInfo: checklistRes.holidayInfo || null,
-      items: checkItems.slice(0, 15).map(c => ({
+      items: checkItems.slice(0, 60).map(c => ({
         id: c.id,
         slot_id: c.slot_id,
         title: c.title,
@@ -198,7 +201,8 @@ export async function getUserAssignedWorkSummary({
         due_time: c.due_time || '18:00',
         status: c.status,
         isDelayed: c.delayInfo?.isDelayed || false,
-        department: c.department || 'General'
+        department: c.department || 'General',
+        assigned_employee_email: c.assigned_employee_email || ''
       }))
     };
 
@@ -216,7 +220,7 @@ export async function getUserAssignedWorkSummary({
       success: false,
       error: error.message,
       data: {
-        delegation: { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, recentTasks: [] },
+        delegation: { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, priorityBreakdown: { high: 0, medium: 0, low: 0 }, recentTasks: [] },
         checklists: { totalSlots: 0, completed: 0, completedLate: 0, pending: 0, complianceRate: 0, items: [] },
         effectiveEmail: ''
       }
@@ -230,6 +234,7 @@ export async function getUserAssignedWorkSummary({
 export async function getDashboardSummaries({ targetDate = null } = {}) {
   try {
     const { getTeamAttendanceMaster } = await import('@/app/actions/attendance');
+    const { getEmployeeChecklistDashboard } = await import('@/app/actions/checklist');
     const { createClient: createAdminClient } = await import('@/utils/supabase/server');
 
     // IST today date
@@ -238,13 +243,14 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
     const useDate = targetDate || todayIST;
 
     // 1. Attendance summary (today)
-    let attendanceSummary = { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, totalRegularized: 0, presentPercent: 0 };
+    let attendanceSummary = { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, totalRegularized: 0, presentPercent: 0, records: [] };
     try {
       const attRes = await getTeamAttendanceMaster({ date: useDate });
       if (attRes?.success && attRes.summary) {
         const s = attRes.summary;
         attendanceSummary = {
           ...s,
+          records: Array.isArray(attRes.records) ? attRes.records : [],
           presentPercent: s.totalEmployees > 0 ? Math.round(((s.totalPresent + s.totalHalfDay) / s.totalEmployees) * 100) : 0
         };
       }
@@ -252,24 +258,32 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
       console.warn('Attendance summary error:', e.message);
     }
 
-    // 2. Checklist compliance — today's overall
-    let checklistSummary = { totalSubmissions: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0 };
+    // 2. Checklist compliance — reconciled from scheduled templates and slots
+    let checklistSummary = { totalSlots: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0, items: [] };
     try {
-      const { getChecklistComplianceReport } = await import('@/app/actions/checklist');
-      // Daily period key for today
-      const periodKey = `DAILY_${useDate}`;
-      const clRes = await getChecklistComplianceReport({ frequency: 'DAILY', periodKey });
+      const clRes = await getEmployeeChecklistDashboard({ employeeEmail: '', targetDate: new Date() });
       if (clRes?.success && Array.isArray(clRes.data)) {
-        const subs = clRes.data;
-        const completed = subs.filter(s => s.status === 'COMPLETED').length;
-        const late = subs.filter(s => s.status === 'COMPLETED' && s.delayInfo?.isDelayed).length;
+        const items = clRes.data;
+        const completed = items.filter(s => s.status === 'COMPLETED').length;
+        const late = items.filter(s => s.status === 'COMPLETED' && s.delayInfo?.isDelayed).length;
         checklistSummary = {
-          totalSubmissions: subs.length,
+          totalSlots: items.length,
           completed,
-          pending: subs.filter(s => s.status !== 'COMPLETED').length,
+          pending: items.filter(s => s.status !== 'COMPLETED').length,
           onTime: completed - late,
           late,
-          complianceRate: subs.length > 0 ? Math.round((completed / subs.length) * 100) : 0
+          complianceRate: items.length > 0 ? Math.round((completed / items.length) * 100) : 0,
+          items: items.slice(0, 60).map(c => ({
+            id: c.id,
+            slot_id: c.slot_id,
+            title: c.title,
+            frequency: c.frequency || 'DAILY',
+            due_time: c.due_time || '18:00',
+            status: c.status,
+            isDelayed: c.delayInfo?.isDelayed || false,
+            department: c.department || 'General',
+            assigned_employee_email: c.assigned_employee_email || ''
+          }))
         };
       }
     } catch (e) {
@@ -303,7 +317,7 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
     };
   } catch (error) {
     console.error('getDashboardSummaries error:', error);
-    return { success: false, error: error.message, data: { attendanceSummary: {}, checklistSummary: {}, recruitmentSummary: {} } };
+    return { success: false, error: error.message, data: { attendanceSummary: { records: [] }, checklistSummary: { items: [] }, recruitmentSummary: {} } };
   }
 }
 
