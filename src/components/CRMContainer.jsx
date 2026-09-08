@@ -247,6 +247,49 @@ export default function CRMContainer({
     }
   }, [initialUserEmail]);
 
+  // Real-time Permission Synchronizer: Automatically updates permissions without refreshing
+  useEffect(() => {
+    if (!userId) return;
+
+    // 1. Broadcast channel listener (instant cross-session notification)
+    const broadcastChannel = supabase
+      .channel('crm_realtime_permission_sync')
+      .on('broadcast', { event: 'permission_updated' }, (message) => {
+        if (message?.payload?.userId === userId) {
+          setModuleAccess(message.payload.moduleAccess || {});
+        }
+      })
+      .subscribe();
+
+    // 2. Postgres changes fallback on user_roles
+    const roleChannel = supabase
+      .channel(`user_role_realtime_${userId}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'user_roles', 
+        filter: `user_id=eq.${userId}` 
+      }, (payload) => {
+        if (payload.new && payload.new.module_access) {
+          setModuleAccess(payload.new.module_access);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(roleChannel);
+    };
+  }, [userId, supabase]);
+
+  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const hasLeadsAccess = isAdmin || 
+    !!(moduleAccess?.['leads']?.view || 
+      moduleAccess?.['callcenter']?.view || 
+      moduleAccess?.['analytics']?.view ||
+      moduleAccess?.['calladmin']?.view ||
+      moduleAccess?.['aicallcenter']?.view);
+
   // State variables
   const [dashboardSubTab, setDashboardSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
