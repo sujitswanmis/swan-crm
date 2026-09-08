@@ -1717,6 +1717,7 @@ export default function AnalyticsDashboard({
                     <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
                     <th style={{ textAlign: 'left', padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
                     <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
+                    <th style={{ textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '115px' }}>🎯 Leads Touched</th>
                     <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>📞 Outreach / 🧑‍💼 Hiring (30p)</th>
                     <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
                     <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
@@ -1727,7 +1728,7 @@ export default function AnalyticsDashboard({
                 <tbody>
                   {filteredScorecard.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                         No team members found matching the selected filter.
                       </td>
                     </tr>
@@ -1791,6 +1792,20 @@ export default function AnalyticsDashboard({
                           }}>
                             {row.tierLabel}
                           </span>
+                        </td>
+
+                        {/* Leads Touched */}
+                        <td style={{ textAlign: 'center', padding: '0.65rem 0.65rem' }}>
+                          <div style={{
+                            fontSize: '0.95rem',
+                            fontWeight: 800,
+                            color: row.leadsTouched > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)'
+                          }}>
+                            {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                            {row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : 'No leads')}
+                          </div>
                         </td>
 
                         {/* Primary Process (Calling / Hiring) */}
@@ -2605,7 +2620,7 @@ export default function AnalyticsDashboard({
                   {[
                     { id: 'ALL', label: 'All Reps' },
                     { id: 'WITH_LEADS', label: 'With Leads' },
-                    { id: 'TOP_PERFORMERS', label: 'Contact Rate >50%' }
+                    { id: 'TOP_PERFORMERS', label: 'Touch Rate >50%' }
                   ].map(f => (
                     <button
                       key={f.id}
@@ -2656,14 +2671,14 @@ export default function AnalyticsDashboard({
                     <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
                       Total Assigned
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '85px' }}>
-                      Contacted
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                      🎯 Leads Touched
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}>
-                      Contact Rate
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                      Touch Rate %
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '90px' }}>
-                      Calling Score
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '95px' }}>
+                      Outreach Score
                     </th>
                   </tr>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '2px solid var(--border-light)' }}>
@@ -2743,8 +2758,8 @@ export default function AnalyticsDashboard({
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6', borderRight: '1px solid var(--border-light)' }}>
                             📦 {row.leadsAssigned.toLocaleString('en-IN')}
                           </td>
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981', borderRight: '1px solid var(--border-light)' }}>
-                            📞 {row.leadsTouched.toLocaleString('en-IN')}
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#10b981', borderRight: '1px solid var(--border-light)' }}>
+                            🎯 {row.leadsTouched.toLocaleString('en-IN')}
                           </td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444', borderRight: '1px solid var(--border-light)' }}>
                             {contactRate}%
@@ -2752,10 +2767,10 @@ export default function AnalyticsDashboard({
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
                             <span style={{
                               padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
-                              backgroundColor: row.calling?.score >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                              color: row.calling?.score >= 15 ? '#10b981' : '#ef4444'
+                              backgroundColor: (row.primaryProcess?.score ?? 0) >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: (row.primaryProcess?.score ?? 0) >= 15 ? '#10b981' : '#ef4444'
                             }}>
-                              {row.calling?.score ?? 0} / 25 pts
+                              {row.primaryProcess?.score ?? 0} / {row.primaryProcess?.max ?? 30} pts
                             </span>
                           </td>
                         </tr>
