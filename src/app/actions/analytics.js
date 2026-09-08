@@ -262,6 +262,8 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
       console.warn('Attendance summary error:', e.message);
     }
 
+    const supabase = await createAdminClient();
+
     // 2. Real Checklist compliance for useDate
     let checklistSummary = { totalSlots: 0, completed: 0, pending: 0, complianceRate: 0, submissionsByEmail: {}, items: [] };
     try {
@@ -335,7 +337,6 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
     // 3. Recruitment summary — open positions, total applications, recent
     let recruitmentSummary = { openPositions: 0, totalApplications: 0, newToday: 0, shortlisted: 0, rejected: 0 };
     try {
-      const supabase = await createAdminClient();
       const [posRes, appRes, todayAppRes] = await Promise.all([
         supabase.from('job_positions').select('id', { count: 'exact', head: true }).eq('status', 'OPEN'),
         supabase.from('job_applications').select('id, status', { count: 'exact' }),
