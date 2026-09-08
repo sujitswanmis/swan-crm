@@ -16,8 +16,22 @@ export default function ColumnSelectorModal({
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [alignment, setAlignment] = useState('left');
   const modalRef = useRef(null);
   const prevIsOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      const parentRect = modalRef.current.parentElement?.getBoundingClientRect();
+      if (parentRect && typeof window !== 'undefined') {
+        if (window.innerWidth - parentRect.left < 340) {
+          setAlignment('right');
+        } else {
+          setAlignment('left');
+        }
+      }
+    }
+  }, [isOpen]);
 
   // Keep latest props in refs to avoid capturing stale values on open
   const visibleColumnsRef = useRef(visibleColumns);
@@ -136,7 +150,8 @@ export default function ColumnSelectorModal({
       style={{
         position: 'absolute',
         top: '100%',
-        right: 0,
+        left: alignment === 'left' ? 0 : 'auto',
+        right: alignment === 'right' ? 0 : 'auto',
         marginTop: '6px',
         width: '320px',
         maxWidth: '90vw',

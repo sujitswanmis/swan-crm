@@ -25,8 +25,22 @@ export default function MultiColumnFilterModal({
   const [expandedColumn, setExpandedColumn] = useState(null);
   const [searchFieldTerm, setSearchFieldTerm] = useState('');
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [alignment, setAlignment] = useState('left');
   const modalRef = useRef(null);
   const prevIsOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      const parentRect = modalRef.current.parentElement?.getBoundingClientRect();
+      if (parentRect && typeof window !== 'undefined') {
+        if (window.innerWidth - parentRect.left < 340) {
+          setAlignment('right');
+        } else {
+          setAlignment('left');
+        }
+      }
+    }
+  }, [isOpen]);
 
   // Keep latest props in refs to avoid capturing stale values on open
   const filterRulesRef = useRef(filterRules);
@@ -129,7 +143,8 @@ export default function MultiColumnFilterModal({
       style={{
         position: 'absolute',
         top: '100%',
-        right: 0,
+        left: alignment === 'left' ? 0 : 'auto',
+        right: alignment === 'right' ? 0 : 'auto',
         marginTop: '6px',
         width: '320px',
         maxWidth: '90vw',
