@@ -55,16 +55,30 @@ export default function AnalyticsDashboard({
     );
   }, [teamMembers, userEmail, userName, userId]);
 
+  // Only include team members approved in Team Management (is_approved === true, non-customer, active status)
   const formattedEmployees = useMemo(() => {
-    return teamMembers.map(m => ({
-      ...m,
-      name: m.emp_name || m.name || m.user_id,
-      emp_name: m.emp_name || m.name || m.user_id,
-      email: m.email || m.user_id,
-      user_id: m.user_id || m.email,
-      department: m.department || m.emp_department || m.dept || 'Staff',
-      designation: m.designation || m.role || 'Member'
-    }));
+    if (!Array.isArray(teamMembers)) return [];
+    return teamMembers
+      .filter(m => {
+        // Exclude customers
+        if (m.role === 'customer') return false;
+        // Check approval in Team Management (Admins are always approved)
+        const isApproved = m.is_approved === true || m.is_approved === 'true' || m.role === 'admin' || m.role === 'Admin';
+        if (!isApproved) return false;
+        // Check active employment status
+        const status = m.emp_status || (m.module_access && m.module_access.emp_status) || 'Active';
+        if (['InActive', 'Terminated', 'Resigned', 'Trash', 'Draft'].includes(status)) return false;
+        return true;
+      })
+      .map(m => ({
+        ...m,
+        name: m.emp_name || m.name || m.user_id,
+        emp_name: m.emp_name || m.name || m.user_id,
+        email: (m.email || m.user_id || '').trim().toLowerCase(),
+        user_id: m.user_id || m.email,
+        department: m.department || m.emp_department || m.dept || 'Staff',
+        designation: m.designation || m.emp_designation || m.role || 'Member'
+      }));
   }, [teamMembers]);
 
   const [selectedEmployee, setSelectedEmployee] = useState('All');
@@ -231,13 +245,22 @@ export default function AnalyticsDashboard({
           (lead.lead_notes || []).forEach(note => {
             const noteTime = new Date(note.created_at).getTime();
             if ((!startTimestamp || noteTime >= startTimestamp) && (!endTimestamp || noteTime <= endTimestamp)) {
-              let empKey = note.created_by || lead.assigned_to || 'Unknown';
-              let empName = empKey;
-              const tm = teamMembers.find(t => t.user_id === empKey || t.email === empKey || (t.email && t.email.split('@')[0] === empKey) || t.emp_name === empKey);
-              if (tm?.emp_name) empName = tm.emp_name;
-              if (!employeeActivityMap[empName]) employeeActivityMap[empName] = { updates: 0, uniqueLeads: new Set() };
-              employeeActivityMap[empName].updates += 1;
-              employeeActivityMap[empName].uniqueLeads.add(lead.id);
+              let empKey = note.created_by || lead.assigned_to || '';
+              if (!empKey) return;
+              const empKeyLower = empKey.toLowerCase();
+              const tm = formattedEmployees.find(t =>
+                t.user_id === empKey ||
+                t.email === empKeyLower ||
+                (t.email && t.email.split('@')[0] === empKeyLower) ||
+                (t.emp_name && t.emp_name.toLowerCase() === empKeyLower)
+              );
+              // Only attribute activity to team members approved in Team Management
+              if (tm) {
+                const empName = tm.emp_name || tm.name;
+                if (!employeeActivityMap[empName]) employeeActivityMap[empName] = { updates: 0, uniqueLeads: new Set() };
+                employeeActivityMap[empName].updates += 1;
+                employeeActivityMap[empName].uniqueLeads.add(lead.id);
+              }
             }
           });
         });
@@ -259,7 +282,7 @@ export default function AnalyticsDashboard({
       setLoading(false);
     }
     loadMetrics();
-  }, [filteredLeadsSync, startDate, endDate, datePreset, teamMembers]);
+  }, [filteredLeadsSync, startDate, endDate, datePreset, formattedEmployees]);
 
   const fetchAssignedWork = async () => {
     setLoadingAssignedWork(true);
