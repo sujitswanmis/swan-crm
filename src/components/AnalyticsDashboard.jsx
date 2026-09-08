@@ -146,6 +146,8 @@ export default function AnalyticsDashboard({
   const [attendanceFilter, setAttendanceFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'CRM_ACTIVE' | 'ABSENT' | 'LATE'
   const [recruiterFilter, setRecruiterFilter] = useState('ALL'); // 'ALL' | 'INTERVIEW' | 'SHORTLISTED' | 'HIRED' | 'REJECTED'
   const [recruiterSearch, setRecruiterSearch] = useState('');
+  const [leadBreakdownSearch, setLeadBreakdownSearch] = useState('');
+  const [leadBreakdownFilter, setLeadBreakdownFilter] = useState('ALL'); // 'ALL' | 'WITH_LEADS' | 'TOP_PERFORMERS'
 
   const myTeamMember = useMemo(() => {
     if (!teamMembers || teamMembers.length === 0) return null;
@@ -262,6 +264,21 @@ export default function AnalyticsDashboard({
     return '01 - New Stage';
   };
 
+  const getStageNumber = (status) => {
+    if (!status) return 1;
+    const st = String(status).trim();
+    if (st.startsWith('1;') || st.startsWith('01') || st.startsWith('1')) return 1;
+    if (st.startsWith('2;') || st.startsWith('02') || st.startsWith('2')) return 2;
+    if (st.startsWith('3;') || st.startsWith('03') || st.startsWith('3')) return 3;
+    if (st.startsWith('4;') || st.startsWith('04') || st.startsWith('4')) return 4;
+    if (st.startsWith('5;') || st.startsWith('05') || st.startsWith('5')) return 5;
+    if (st.startsWith('6;') || st.startsWith('06') || st.startsWith('6')) return 6;
+    if (st.startsWith('7;') || st.startsWith('07') || st.startsWith('7') || ['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => st.toLowerCase().includes(k.toLowerCase()))) return 7;
+    const m = st.match(/^0?([1-7])/);
+    if (m) return parseInt(m[1], 10);
+    return 1;
+  };
+
   const filteredLeadsSync = useMemo(() => {
     if (selectedEmployee === 'All') return leads;
     return leads.filter(l => {
@@ -323,6 +340,65 @@ export default function AnalyticsDashboard({
       name: stage.split('- ')[1] || stage,
       count: stageCounts[stage]
     }));
+  }, [filteredLeadsSync]);
+
+  // Comprehensive Pipeline Stage & Sub-stage breakdown data
+  const detailedStageBreakdown = useMemo(() => {
+    const stageMap = {
+      1: { fullStage: '01 - New Stage', shortName: 'New Stage', color: '#3b82f6', count: 0, subMap: {} },
+      2: { fullStage: '02 - Contact Stage', shortName: 'Contact Stage', color: '#06b6d4', count: 0, subMap: {} },
+      3: { fullStage: '03 - Qualification Stage', shortName: 'Qualification Stage', color: '#8b5cf6', count: 0, subMap: {} },
+      4: { fullStage: '04 - Follow Up Stage', shortName: 'Follow Up Stage', color: '#f59e0b', count: 0, subMap: {} },
+      5: { fullStage: '05 - Sales Process Stage', shortName: 'Sales Process Stage', color: '#ec4899', count: 0, subMap: {} },
+      6: { fullStage: '06 - Conversion Stage', shortName: 'Conversion Stage', color: '#10b981', count: 0, subMap: {} },
+      7: { fullStage: '07 - Final Stage', shortName: 'Final Stage', color: '#6366f1', count: 0, subMap: {} },
+    };
+
+    filteredLeadsSync.forEach(l => {
+      const num = getStageNumber(l.status);
+      const target = stageMap[num] || stageMap[1];
+      target.count++;
+
+      let subName = 'General / Direct';
+      const st = l.status || '';
+      if (st) {
+        if (st.includes('>')) {
+          const parts = st.split('>');
+          subName = parts[parts.length - 1].trim() || parts[0];
+        } else if (st.includes(';')) {
+          const parts = st.split(';');
+          subName = parts[parts.length - 1].trim();
+        } else {
+          subName = st;
+        }
+      }
+      target.subMap[subName] = (target.subMap[subName] || 0) + 1;
+    });
+
+    return Object.values(stageMap).map(item => {
+      const substages = Object.keys(item.subMap).map(subLabel => ({
+        label: subLabel,
+        count: item.subMap[subLabel]
+      })).sort((a, b) => b.count - a.count);
+
+      return {
+        ...item,
+        substages
+      };
+    });
+  }, [filteredLeadsSync]);
+
+  // Lead Acquisition Source Breakdown
+  const sourceBreakdown = useMemo(() => {
+    const map = {};
+    filteredLeadsSync.forEach(l => {
+      const src = (l.source || l.source_name || 'Direct / Unspecified').trim();
+      map[src] = (map[src] || 0) + 1;
+    });
+    return Object.keys(map)
+      .map(name => ({ name, count: map[name] }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
   }, [filteredLeadsSync]);
 
   const delegation = assignedWork.delegation || { total: 0, pending: 0, inProgress: 0, submitted: 0, completed: 0, overdue: 0, priorityBreakdown: { high: 0, medium: 0, low: 0 }, recentTasks: [] };
@@ -557,6 +633,13 @@ export default function AnalyticsDashboard({
         if (!l.assigned_to) return false;
         const a = l.assigned_to.toLowerCase();
         return a === empEmail || a === emp.user_id?.toLowerCase() || a === empName.toLowerCase();
+      });
+
+      const stageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+      empLeads.forEach(l => {
+        const num = getStageNumber(l.status);
+        if (stageBreakdown[num] !== undefined) stageBreakdown[num]++;
+        else stageBreakdown[1]++;
       });
 
       // Overdue follow-ups for this rep (evaluated strictly in IST)
@@ -796,6 +879,7 @@ export default function AnalyticsDashboard({
         roleBadgeColor,
         leadsAssigned: empLeads.length,
         leadsTouched: act.uniqueLeads,
+        stageBreakdown,
         updatesCount: act.actions,
         overdueFollowups,
         todayFollowups,
@@ -2307,6 +2391,84 @@ export default function AnalyticsDashboard({
             })}
           </div>
 
+          {/* Pipeline Stage & Sub-Stage Breakdown Interactive Grid */}
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Layers size={18} style={{ color: 'var(--accent-color)' }} />
+                  Pipeline Stage & Sub-Stage Breakdown
+                </h3>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Click any stage card to jump directly to those filtered leads in the database.
+                </p>
+              </div>
+              <span style={{ fontSize: '0.78rem', background: 'var(--th-bg)', padding: '0.25rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                {filteredLeadsSync.length.toLocaleString('en-IN')} Total Filtered Leads
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '0.85rem' }}>
+              {detailedStageBreakdown.map(item => (
+                <div
+                  key={item.fullStage}
+                  onClick={() => onNavigateTab?.('leads', null, item.fullStage)}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    padding: '1rem 0.85rem',
+                    borderRadius: '10px',
+                    border: `1px solid ${item.color}33`,
+                    borderLeft: `4px solid ${item.color}`,
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s, boxShadow 0.15s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {item.fullStage.split(' - ')[0]}
+                  </div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.shortName}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.5rem' }}>
+                    <span style={{ fontSize: '1.4rem', fontWeight: 800, color: item.color }}>{item.count.toLocaleString('en-IN')}</span>
+                    <span style={{ fontSize: '0.72rem', color: item.color, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                      View <ArrowRight size={11} />
+                    </span>
+                  </div>
+
+                  {/* Sub-stages count breakdown list */}
+                  {item.substages && item.substages.length > 0 && (
+                    <div style={{ marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)', display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '110px', overflowY: 'auto' }}>
+                      {item.substages.slice(0, 4).map(sub => (
+                        <div key={sub.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '75%' }} title={sub.label}>
+                            ↳ {sub.label}
+                          </span>
+                          <span style={{ fontWeight: 700, color: item.color, background: 'var(--th-bg)', padding: '0.05rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.68rem' }}>
+                            {sub.count}
+                          </span>
+                        </div>
+                      ))}
+                      {item.substages.length > 4 && (
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textAlign: 'right', fontStyle: 'italic' }}>
+                          +{item.substages.length - 4} more
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Stage Funnel Table & Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
             <div className="card" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>
@@ -2353,62 +2515,241 @@ export default function AnalyticsDashboard({
             </div>
           </div>
 
-          {/* Representative / Telecaller Lead Allocation Table */}
+          {/* Lead Source Breakdown Cards */}
+          {sourceBreakdown.length > 0 && (
+            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Filter size={16} style={{ color: 'var(--accent-color)' }} />
+                    Lead Acquisition Sources Breakdown
+                  </h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                    Origin channel distribution across active leads
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {sourceBreakdown.length} Sources Tracked
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.65rem' }}>
+                {sourceBreakdown.map((src) => {
+                  const share = kpis.total > 0 ? Math.round((src.count / kpis.total) * 100) : 0;
+                  return (
+                    <div
+                      key={src.name}
+                      style={{
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--th-bg)',
+                        border: '1px solid var(--border-light)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={src.name}>
+                        {src.name}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.2rem' }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-color)' }}>
+                          {src.count.toLocaleString('en-IN')}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', backgroundColor: 'var(--bg-surface)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                          {share}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Team Member Lead & Stage-Wise Breakdown Matrix (Stages 1 – 7) */}
           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Sales Representative & Telecaller Lead Allocation</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                  Live breakdown of leads assigned and contacted per caller
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <Users size={17} style={{ color: 'var(--accent-color)' }} />
+                  Team Member Lead & Stage-Wise Breakdown Matrix
+                </h3>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Live distribution of leads across Stages 1 to 7 and operational performance per representative
                 </div>
               </div>
-              <button
-                onClick={() => onNavigateTab?.('leads')}
-                style={{
-                  fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-color)',
-                  background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'
-                }}
-              >
-                Go to Leads Table <ArrowRight size={12} />
-              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={13} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Filter representative..."
+                    value={leadBreakdownSearch}
+                    onChange={(e) => setLeadBreakdownSearch(e.target.value)}
+                    style={{
+                      padding: '0.35rem 0.6rem 0.35rem 1.8rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      backgroundColor: 'var(--th-bg)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      width: '160px'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'inline-flex', borderRadius: '8px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
+                  {[
+                    { id: 'ALL', label: 'All Reps' },
+                    { id: 'WITH_LEADS', label: 'With Leads' },
+                    { id: 'TOP_PERFORMERS', label: 'Contact Rate >50%' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setLeadBreakdownFilter(f.id)}
+                      style={{
+                        padding: '0.35rem 0.65rem',
+                        fontSize: '0.74rem',
+                        fontWeight: leadBreakdownFilter === f.id ? 700 : 500,
+                        backgroundColor: leadBreakdownFilter === f.id ? 'var(--accent-color)' : 'var(--bg-surface)',
+                        color: leadBreakdownFilter === f.id ? '#fff' : 'var(--text-secondary)',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => onNavigateTab?.('leads')}
+                  style={{
+                    fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent-color)',
+                    background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'
+                  }}
+                >
+                  Go to Leads Table <ArrowRight size={12} />
+                </button>
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                 <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', backgroundColor: 'var(--th-bg)' }}>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Representative</th>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Department</th>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Leads Assigned</th>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Leads Touched / Called</th>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>Contact Rate</th>
-                    <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center' }}>Calling Score</th>
+                  <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
+                      Representative
+                    </th>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '130px' }}>
+                      Department
+                    </th>
+                    <th colSpan={7} style={{ padding: '0.45rem 0.65rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', background: 'rgba(59, 130, 246, 0.06)', borderRight: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                        <Layers size={13} style={{ color: 'var(--accent-color)' }} />
+                        <span>Stage Breakdown (Stages 1 – 7)</span>
+                      </div>
+                    </th>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                      Total Assigned
+                    </th>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '85px' }}>
+                      Contacted
+                    </th>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '90px' }}>
+                      Contact Rate
+                    </th>
+                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '90px' }}>
+                      Calling Score
+                    </th>
+                  </tr>
+                  <tr style={{ background: 'var(--th-bg)', borderBottom: '2px solid var(--border-light)' }}>
+                    {[
+                      { num: 1, label: 'S1 New', color: '#3b82f6' },
+                      { num: 2, label: 'S2 Contact', color: '#06b6d4' },
+                      { num: 3, label: 'S3 Qual', color: '#8b5cf6' },
+                      { num: 4, label: 'S4 Follow', color: '#f59e0b' },
+                      { num: 5, label: 'S5 Process', color: '#ec4899' },
+                      { num: 6, label: 'S6 Convert', color: '#10b981' },
+                      { num: 7, label: 'S7 Final', color: '#6366f1' },
+                    ].map(st => (
+                      <th
+                        key={st.num}
+                        style={{
+                          padding: '0.35rem 0.45rem',
+                          textAlign: 'center',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          color: st.color,
+                          borderRight: '1px solid var(--border-light)',
+                          minWidth: '58px'
+                        }}
+                      >
+                        {st.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {teamScorecardData
-                    .filter(r => r.leadsAssigned > 0 || r.roleCategory === 'SALES_CALLER')
-                    .slice(0, 15)
+                    .filter(r => {
+                      if (leadBreakdownFilter === 'WITH_LEADS' && r.leadsAssigned === 0) return false;
+                      if (leadBreakdownFilter === 'TOP_PERFORMERS') {
+                        const contactRate = r.leadsAssigned > 0 ? (r.leadsTouched / r.leadsAssigned) * 100 : 0;
+                        if (contactRate < 50) return false;
+                      }
+                      if (leadBreakdownSearch.trim()) {
+                        const q = leadBreakdownSearch.toLowerCase();
+                        const matchName = r.empName?.toLowerCase().includes(q);
+                        const matchDept = r.department?.toLowerCase().includes(q);
+                        if (!matchName && !matchDept) return false;
+                      }
+                      return true;
+                    })
                     .map((row, idx) => {
                       const contactRate = row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0;
                       return (
                         <tr key={row.empEmail || idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background 0.15s' }}>
-                          <td style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <td style={{ padding: '0.6rem 0.8rem', fontWeight: 600, color: 'var(--text-primary)', borderRight: '1px solid var(--border-light)' }}>
                             {row.empName}
                           </td>
-                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)' }}>
+                          <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)' }}>
                             {row.department || 'Sales & Telecalling'}
                           </td>
-                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>
+                          {[1, 2, 3, 4, 5, 6, 7].map(stNum => {
+                            const count = row.stageBreakdown?.[stNum] || 0;
+                            const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#10b981', '#6366f1'];
+                            const colColor = colors[stNum - 1];
+                            return (
+                              <td
+                                key={stNum}
+                                style={{
+                                  padding: '0.55rem 0.45rem',
+                                  textAlign: 'center',
+                                  fontWeight: count > 0 ? 700 : 400,
+                                  color: count > 0 ? colColor : 'var(--text-secondary)',
+                                  backgroundColor: count > 0 ? `${colColor}0D` : 'transparent',
+                                  borderRight: '1px solid var(--border-light)',
+                                  fontSize: '0.78rem'
+                                }}
+                              >
+                                {count > 0 ? count : '—'}
+                              </td>
+                            );
+                          })}
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6', borderRight: '1px solid var(--border-light)' }}>
                             📦 {row.leadsAssigned.toLocaleString('en-IN')}
                           </td>
-                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981', borderRight: '1px solid var(--border-light)' }}>
                             📞 {row.leadsTouched.toLocaleString('en-IN')}
                           </td>
-                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444' }}>
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444', borderRight: '1px solid var(--border-light)' }}>
                             {contactRate}%
                           </td>
-                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
                             <span style={{
                               padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
                               backgroundColor: row.calling?.score >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
@@ -2420,13 +2761,6 @@ export default function AnalyticsDashboard({
                         </tr>
                       );
                     })}
-                  {teamScorecardData.filter(r => r.leadsAssigned > 0 || r.roleCategory === 'SALES_CALLER').length === 0 && (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        No caller lead allocations found for this period.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
