@@ -334,21 +334,63 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
       console.warn('Checklist summary error:', e.message);
     }
 
-    // 3. Recruitment summary — open positions, total applications, recent
-    let recruitmentSummary = { openPositions: 0, totalApplications: 0, newToday: 0, shortlisted: 0, rejected: 0 };
+    // 3. Recruitment summary — positions, candidates pipeline, recent activity
+    let recruitmentSummary = {
+      openPositions: 0,
+      totalPositions: 0,
+      totalApplications: 0,
+      totalCandidates: 0,
+      newToday: 0,
+      inInterview: 0,
+      shortlisted: 0,
+      hired: 0,
+      rejected: 0,
+      positions: [],
+      candidates: []
+    };
     try {
-      const [posRes, appRes, todayAppRes] = await Promise.all([
-        supabase.from('job_positions').select('id', { count: 'exact', head: true }).eq('status', 'OPEN'),
-        supabase.from('job_applications').select('id, status', { count: 'exact' }),
-        supabase.from('job_applications').select('id', { count: 'exact', head: true }).gte('created_at', `${useDate}T00:00:00+05:30`)
+      const [posRes, canRes] = await Promise.all([
+        supabase
+          .from('recruitment_positions')
+          .select('id, title, department, openings, status, recruiter_assigned, interviewer_name, salary_min, salary_max, deadline_date, created_at')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('recruitment_candidates')
+          .select('id, name, email, phone, candidate_code, current_stage, candidate_status, position_id, resume_url, created_at, actual_joining_date, expected_salary_min, expected_salary_max, recruitment_positions(title, department)')
+          .order('created_at', { ascending: false })
       ]);
-      const apps = appRes.data || [];
+
+      const positions = posRes.data || [];
+      const candidates = canRes.data || [];
+
+      const openPositions = positions.filter(p => p.status !== 'CLOSED');
+      const inInterview = candidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview'));
+      const shortlisted = candidates.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist'));
+      const hired = candidates.filter(c =>
+        c.current_stage === 'S09' ||
+        (c.candidate_status || '').toLowerCase().includes('joined') ||
+        c.current_stage === 'S08' ||
+        (c.candidate_status || '').toLowerCase().includes('loi')
+      );
+      const rejected = candidates.filter(c =>
+        (c.candidate_status || '').toLowerCase().includes('reject') ||
+        (c.candidate_status || '').toLowerCase().includes('dropped') ||
+        (c.candidate_status || '').toLowerCase().includes('no show')
+      );
+      const newToday = candidates.filter(c => c.created_at && c.created_at.startsWith(useDate));
+
       recruitmentSummary = {
-        openPositions: posRes.count || 0,
-        totalApplications: apps.length,
-        newToday: todayAppRes.count || 0,
-        shortlisted: apps.filter(a => a.status === 'SHORTLISTED' || a.status === 'INTERVIEW').length,
-        rejected: apps.filter(a => a.status === 'REJECTED').length
+        openPositions: openPositions.length,
+        totalPositions: positions.length,
+        totalApplications: candidates.length,
+        totalCandidates: candidates.length,
+        newToday: newToday.length,
+        inInterview: inInterview.length,
+        shortlisted: shortlisted.length,
+        hired: hired.length,
+        rejected: rejected.length,
+        positions: positions.slice(0, 30),
+        candidates: candidates.slice(0, 50)
       };
     } catch (e) {
       console.warn('Recruitment summary error:', e.message);

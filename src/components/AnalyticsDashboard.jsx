@@ -11,7 +11,8 @@ import {
   Target, RefreshCw, User, CheckSquare, CheckCircle2, CalendarClock,
   ClipboardList, UserCheck, Briefcase, Award, Search, Flame,
   ChevronRight, Star, ShieldAlert, PhoneCall, Check, Clock, AlertCircle,
-  Filter, Layers, MessageSquare, Zap
+  Filter, Layers, MessageSquare, Zap, ExternalLink, FileText, UserPlus,
+  Phone, Mail
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
@@ -26,6 +27,22 @@ const COLORS = [
   'var(--chart-7, #f97316)'
 ];
 
+const getStageBadgeInfo = (stage, status) => {
+  switch (stage) {
+    case 'S00': return { label: 'S00 Unassigned', bg: '#fef3c7', color: '#b45309' };
+    case 'S01': return { label: 'S01 Requisition', bg: '#dbeafe', color: '#1d4ed8' };
+    case 'S02': return { label: 'S02 Screening', bg: '#f1f5f9', color: '#475569' };
+    case 'S03': return { label: 'S03 Interview', bg: '#ede9fe', color: '#6d28d9' };
+    case 'S04': return { label: 'S04 Skill Test', bg: '#f3e8ff', color: '#7e22ce' };
+    case 'S05': return { label: 'S05 ED Approval', bg: '#cffafe', color: '#0e7490' };
+    case 'S06': return { label: 'S06 Salary Neg.', bg: '#fef3c7', color: '#b45309' };
+    case 'S07': return { label: 'S07 Shortlisted', bg: '#dcfce7', color: '#15803d' };
+    case 'S08': return { label: 'S08 LOI Offered', bg: '#e0e7ff', color: '#3730a3' };
+    case 'S09': return { label: 'S09 Joined/Onboard', bg: '#bbf7d0', color: '#166534' };
+    default: return { label: stage || status || 'Applied', bg: '#f3f4f6', color: '#374151' };
+  }
+};
+
 export default function AnalyticsDashboard({ 
   leads = [], 
   teamMembers = [],
@@ -35,7 +52,7 @@ export default function AnalyticsDashboard({
   userRole = '',
   onNavigateTab
 }) {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'scorecard' | 'delegation' | 'checklist' | 'attendance' | 'pipeline'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'scorecard' | 'delegation' | 'checklist' | 'attendance' | 'pipeline' | 'recruiter'
   const [datePreset, setDatePreset] = useState('today');
   const [startDate, setStartDate] = useState(() => computeDateRange('today').startDate);
   const [endDate, setEndDate] = useState(() => computeDateRange('today').endDate);
@@ -46,6 +63,8 @@ export default function AnalyticsDashboard({
   const [checklistSearch, setChecklistSearch] = useState('');
   const [checklistViewMode, setChecklistViewMode] = useState('BY_EMPLOYEE'); // 'BY_EMPLOYEE' | 'BY_SLOTS'
   const [attendanceFilter, setAttendanceFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'CRM_ACTIVE' | 'ABSENT' | 'LATE'
+  const [recruiterFilter, setRecruiterFilter] = useState('ALL'); // 'ALL' | 'INTERVIEW' | 'SHORTLISTED' | 'HIRED' | 'REJECTED'
+  const [recruiterSearch, setRecruiterSearch] = useState('');
 
   const myTeamMember = useMemo(() => {
     if (!teamMembers || teamMembers.length === 0) return null;
@@ -94,7 +113,19 @@ export default function AnalyticsDashboard({
   const [dashboardSummaries, setDashboardSummaries] = useState({
     attendanceSummary: { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, presentPercent: 0, records: [] },
     checklistSummary: { totalSlots: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0, items: [] },
-    recruitmentSummary: { openPositions: 0, totalApplications: 0, newToday: 0, shortlisted: 0, rejected: 0 }
+    recruitmentSummary: {
+      openPositions: 0,
+      totalPositions: 0,
+      totalApplications: 0,
+      totalCandidates: 0,
+      newToday: 0,
+      inInterview: 0,
+      shortlisted: 0,
+      hired: 0,
+      rejected: 0,
+      positions: [],
+      candidates: []
+    }
   });
   const [loadingSummaries, setLoadingSummaries] = useState(true);
 
@@ -608,6 +639,36 @@ export default function AnalyticsDashboard({
     );
   }, [employeeChecklistMatrix, checklistSearch]);
 
+  // Filtered Recruitment Candidates
+  const filteredCandidatesList = useMemo(() => {
+    let list = dashboardSummaries.recruitmentSummary?.candidates || [];
+    if (recruiterFilter !== 'ALL') {
+      if (recruiterFilter === 'REJECTED') {
+        list = list.filter(c => (c.candidate_status || '').toLowerCase().includes('reject') || (c.candidate_status || '').toLowerCase().includes('dropped') || (c.candidate_status || '').toLowerCase().includes('no show'));
+      } else if (recruiterFilter === 'INTERVIEW') {
+        list = list.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview'));
+      } else if (recruiterFilter === 'SHORTLISTED') {
+        list = list.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist'));
+      } else if (recruiterFilter === 'HIRED') {
+        list = list.filter(c => c.current_stage === 'S09' || (c.candidate_status || '').toLowerCase().includes('joined') || c.current_stage === 'S08' || (c.candidate_status || '').toLowerCase().includes('loi'));
+      } else {
+        list = list.filter(c => c.current_stage === recruiterFilter);
+      }
+    }
+    if (recruiterSearch.trim()) {
+      const q = recruiterSearch.toLowerCase().trim();
+      list = list.filter(c =>
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q) ||
+        (c.phone || '').toLowerCase().includes(q) ||
+        (c.candidate_code || '').toLowerCase().includes(q) ||
+        (c.recruitment_positions?.title || '').toLowerCase().includes(q) ||
+        (c.recruitment_positions?.department || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [dashboardSummaries.recruitmentSummary?.candidates, recruiterFilter, recruiterSearch]);
+
   const handleRefreshAll = () => {
     fetchAssignedWork();
     fetchDashboardSummaries();
@@ -725,6 +786,7 @@ export default function AnalyticsDashboard({
             { id: 'delegation', label: 'Delegation Tasks', icon: CheckSquare, badge: delegation.overdue > 0 ? `${delegation.overdue} Overdue` : `${delegation.total}` },
             { id: 'checklist', label: 'Daily Checklists', icon: ClipboardList, badge: `${dashboardSummaries.checklistSummary.complianceRate || checklists.complianceRate}%` },
             { id: 'attendance', label: 'Attendance Ops', icon: UserCheck, badge: `${attendanceStats.effectivePresent}/${attendanceStats.total}` },
+            { id: 'recruiter', label: 'Recruiter Hub', icon: Briefcase, badge: `${dashboardSummaries.recruitmentSummary?.openPositions ?? 0} Open` },
             { id: 'pipeline', label: 'Pipeline & Outreach', icon: Target, badge: `${kpis.inPipeline} Active` },
           ].map(tab => {
             const Icon = tab.icon;
@@ -947,7 +1009,7 @@ export default function AnalyticsDashboard({
             </div>
 
             {/* Pulse 3: Team Scorecard Quick Preview */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', borderRight: '1px solid var(--border-light)', paddingRight: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <Award size={14} style={{ color: '#f59e0b' }} /> Top Reps Scoreboard
@@ -961,6 +1023,26 @@ export default function AnalyticsDashboard({
               </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                 Score: <strong style={{ color: '#16a34a' }}>{teamScorecardData[0]?.totalScore || 0}%</strong> · {teamScorecardData[0]?.updatesCount || 0} updates logged today
+              </div>
+            </div>
+
+            {/* Pulse 4: Hiring & Recruiter Hub */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Briefcase size={14} style={{ color: '#8b5cf6' }} /> Recruiter Hub
+                </span>
+                <span style={{ fontSize: '0.72rem', color: '#8b5cf6', fontWeight: 600, cursor: 'pointer' }} onClick={() => setActiveTab('recruiter')}>
+                  View Talent →
+                </span>
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {dashboardSummaries.recruitmentSummary?.openPositions || 0} Open Positions
+              </div>
+              <div style={{ fontSize: '0.72rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8b5cf6', fontWeight: 600 }}>👥 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0} Pipeline</span>
+                <span style={{ color: '#2563eb', fontWeight: 600 }}>🎯 {dashboardSummaries.recruitmentSummary?.inInterview || 0} Interview</span>
+                <span style={{ color: '#16a34a', fontWeight: 600 }}>🎉 {dashboardSummaries.recruitmentSummary?.hired || 0} Hired</span>
               </div>
             </div>
           </div>
@@ -1751,6 +1833,384 @@ export default function AnalyticsDashboard({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 🧑‍💼 TAB 7: RECRUITER & TALENT ACQUISITION HUB                             */}
+      {/* ========================================================================= */}
+      {activeTab === 'recruiter' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Header Action Banner */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem',
+            padding: '1rem 1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: '12px',
+            border: '1px solid var(--border-light)'
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Briefcase size={18} style={{ color: 'var(--accent-color)' }} />
+                Recruitment & Talent Acquisition Hub
+              </h3>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                Live job requisitions, candidate pipeline tracking & multi-stage interview progress
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateTab?.('recruiter')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
+                padding: '0.5rem 1rem', borderRadius: '8px',
+                backgroundColor: 'var(--accent-color)', color: '#fff',
+                fontSize: '0.82rem', fontWeight: 600, border: 'none',
+                cursor: 'pointer', transition: 'opacity 0.15s ease'
+              }}
+            >
+              <span>Open Full Recruiter Module</span>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+
+          {/* Top KPI Metric Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '1rem' }}>
+            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #3b82f6' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Open Positions</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#3b82f6', margin: '0.3rem 0' }}>
+                {dashboardSummaries.recruitmentSummary?.openPositions || 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                {dashboardSummaries.recruitmentSummary?.positions?.reduce((a, b) => a + (b.openings || 1), 0) || 0} Total vacancies
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #8b5cf6' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Candidates</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#8b5cf6', margin: '0.3rem 0' }}>
+                {dashboardSummaries.recruitmentSummary?.totalCandidates || 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                {dashboardSummaries.recruitmentSummary?.newToday || 0} Added today (IST)
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #6366f1' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>In Interview</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#6366f1', margin: '0.3rem 0' }}>
+                {dashboardSummaries.recruitmentSummary?.inInterview || 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                Stages S03 & Scheduling
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Shortlisted</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.3rem 0' }}>
+                {dashboardSummaries.recruitmentSummary?.shortlisted || 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                Stage S07 Qualified
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #16a34a' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Offers & Joined</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#16a34a', margin: '0.3rem 0' }}>
+                {dashboardSummaries.recruitmentSummary?.hired || 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                LOI Accepted & Joined
+              </div>
+            </div>
+          </div>
+
+          {/* Active Positions Table */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{
+              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
+              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'
+            }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Briefcase size={15} style={{ color: 'var(--accent-color)' }} />
+                  Active Job Positions ({dashboardSummaries.recruitmentSummary?.positions?.length || 0})
+                </h4>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Current open requisitions and department headcount requirements
+                </span>
+              </div>
+
+              <button
+                onClick={() => onNavigateTab?.('recruiter')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.3rem',
+                  fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-color)',
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0
+                }}
+              >
+                <span>Manage in Recruiter</span>
+                <ExternalLink size={12} />
+              </button>
+            </div>
+
+            {dashboardSummaries.recruitmentSummary?.positions?.length === 0 ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                No job positions created yet.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Job Title</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Department</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Openings</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Recruiter Assigned</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Salary Range</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Deadline</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(dashboardSummaries.recruitmentSummary?.positions || []).map((pos, idx) => {
+                      const isClosed = pos.status === 'CLOSED';
+                      return (
+                        <tr key={pos.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{pos.title}</div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{pos.id?.substring(0, 8)}</div>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px',
+                              backgroundColor: 'var(--th-bg)', fontSize: '0.73rem', fontWeight: 600, color: 'var(--text-primary)'
+                            }}>
+                              {pos.department || 'General'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.65rem 0.75rem', fontWeight: 700 }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: '24px', height: '24px', borderRadius: '50%',
+                              backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: 700
+                            }}>
+                              {pos.openings || 1}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                            {pos.recruiter_assigned || 'Unassigned'}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.78rem' }}>
+                            {pos.salary_min || pos.salary_max ? (
+                              <span>
+                                {pos.salary_min ? `₹${Number(pos.salary_min).toLocaleString('en-IN')}` : ''}
+                                {pos.salary_min && pos.salary_max ? ' - ' : ''}
+                                {pos.salary_max ? `₹${Number(pos.salary_max).toLocaleString('en-IN')}` : ''}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)' }}>Best in industry</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '12px',
+                              fontSize: '0.72rem', fontWeight: 700,
+                              backgroundColor: isClosed ? '#fee2e2' : '#dcfce7',
+                              color: isClosed ? '#dc2626' : '#15803d'
+                            }}>
+                              {isClosed ? 'Closed' : 'Active Requisition'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Candidates Pipeline Table */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{
+              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
+              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem'
+            }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Users size={15} style={{ color: 'var(--accent-color)' }} />
+                  Candidate Talent Pipeline ({filteredCandidatesList.length})
+                </h4>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Screening, evaluation stages & hiring decisions
+                </span>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search candidate, role, phone..."
+                    value={recruiterSearch}
+                    onChange={(e) => setRecruiterSearch(e.target.value)}
+                    style={{
+                      padding: '0.35rem 0.65rem 0.35rem 1.75rem', fontSize: '0.78rem', borderRadius: '6px',
+                      border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
+                      width: '200px'
+                    }}
+                  />
+                  {recruiterSearch && (
+                    <button
+                      onClick={() => setRecruiterSearch('')}
+                      style={{ position: 'absolute', right: '0.4rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={recruiterFilter}
+                  onChange={(e) => setRecruiterFilter(e.target.value)}
+                  style={{
+                    padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)'
+                  }}
+                >
+                  <option value="ALL">All Stages ({dashboardSummaries.recruitmentSummary?.candidates?.length || 0})</option>
+                  <option value="INTERVIEW">In Interview ({dashboardSummaries.recruitmentSummary?.inInterview || 0})</option>
+                  <option value="SHORTLISTED">Shortlisted ({dashboardSummaries.recruitmentSummary?.shortlisted || 0})</option>
+                  <option value="HIRED">Offers & Joined ({dashboardSummaries.recruitmentSummary?.hired || 0})</option>
+                  <option value="REJECTED">Dropped / Rejected ({dashboardSummaries.recruitmentSummary?.rejected || 0})</option>
+                  <option value="S02">Stage S02 (Screening)</option>
+                  <option value="S03">Stage S03 (Interview)</option>
+                  <option value="S04">Stage S04 (Skill Test)</option>
+                  <option value="S05">Stage S05 (ED Approval)</option>
+                  <option value="S06">Stage S06 (Salary Neg.)</option>
+                  <option value="S07">Stage S07 (Shortlisted)</option>
+                  <option value="S08">Stage S08 (LOI Offered)</option>
+                  <option value="S09">Stage S09 (Joined)</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredCandidatesList.length === 0 ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                {recruiterSearch || recruiterFilter !== 'ALL' ? 'No candidates match your search or filter.' : 'No candidates in the pipeline.'}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Candidate</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Position</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Pipeline Stage</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Current Status</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Contact Info</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Applied Date</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCandidatesList.map((cand, idx) => {
+                      const badge = getStageBadgeInfo(cand.current_stage, cand.candidate_status);
+                      const isJoined = (cand.candidate_status || '').toLowerCase().includes('joined') || cand.current_stage === 'S09';
+                      const isRejected = (cand.candidate_status || '').toLowerCase().includes('reject') || (cand.candidate_status || '').toLowerCase().includes('dropped');
+                      return (
+                        <tr key={cand.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{cand.name}</div>
+                            {cand.candidate_code && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                {cand.candidate_code}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>
+                              {cand.recruitment_positions?.title || 'General Position'}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              {cand.recruitment_positions?.department || '—'}
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '12px',
+                              fontSize: '0.72rem', fontWeight: 700,
+                              backgroundColor: badge.bg, color: badge.color
+                            }}>
+                              {badge.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px',
+                              fontSize: '0.73rem', fontWeight: 600,
+                              backgroundColor: isJoined ? '#dcfce7' : isRejected ? '#fee2e2' : 'var(--th-bg)',
+                              color: isJoined ? '#15803d' : isRejected ? '#dc2626' : 'var(--text-primary)'
+                            }}>
+                              {cand.candidate_status || 'Under Review'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {cand.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Phone size={11} /> {cand.phone}</div>}
+                            {cand.email && <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Mail size={11} /> {cand.email}</div>}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {cand.created_at ? new Date(cand.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.65rem 0.85rem' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                              {cand.resume_url && (
+                                <a
+                                  href={cand.resume_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="View Resume"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    padding: '0.3rem 0.45rem', borderRadius: '6px',
+                                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)',
+                                    color: 'var(--accent-color)', textDecoration: 'none', fontSize: '0.72rem', fontWeight: 600
+                                  }}
+                                >
+                                  <FileText size={12} style={{ marginRight: '0.2rem' }} />
+                                  Resume
+                                </a>
+                              )}
+                              <button
+                                onClick={() => onNavigateTab?.('recruiter')}
+                                title="Open in Recruiter module"
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  padding: '0.3rem 0.55rem', borderRadius: '6px',
+                                  border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)',
+                                  color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600
+                                }}
+                              >
+                                View
+                                <ArrowRight size={11} style={{ marginLeft: '0.2rem' }} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

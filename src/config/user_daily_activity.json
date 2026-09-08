@@ -244,11 +244,24 @@
       "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
       "email": "sujitswanmis@gmail.com",
       "empName": "Sujit Gupta",
-      "activeSeconds": 5222,
-      "idleSeconds": 21496,
+      "activeSeconds": 9371,
+      "idleSeconds": 24275,
       "firstSeen": "2026-09-08T04:47:39.698194+00:00",
-      "lastSeen": "2026-09-08T14:10:04.339Z",
-      "status": "away",
+      "lastSeen": "2026-09-08T18:29:11.849Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-09-09": {
+    "7712ec30-c633-4e21-94ca-b12408a8dafa": {
+      "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "email": "sujitswanmis@gmail.com",
+      "empName": "Sujit Gupta",
+      "activeSeconds": 1278,
+      "idleSeconds": 1000,
+      "firstSeen": "2026-09-08T18:30:12.380483+00:00",
+      "lastSeen": "2026-09-08T19:05:55.747Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
     }
   }
