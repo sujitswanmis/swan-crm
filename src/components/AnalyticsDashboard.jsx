@@ -292,7 +292,7 @@ export default function AnalyticsDashboard({
         userEmail,
         targetEmail: effectiveTargetEmail,
         isAllSelected: selectedEmployee === 'All',
-        targetDate: new Date()
+        targetDate: startDate || new Date()
       });
       if (res?.success) setAssignedWork(res.data);
     } catch (err) {
@@ -302,13 +302,13 @@ export default function AnalyticsDashboard({
     }
   };
 
-  useEffect(() => { fetchAssignedWork(); }, [userEmail, effectiveTargetEmail, selectedEmployee]);
+  useEffect(() => { fetchAssignedWork(); }, [userEmail, effectiveTargetEmail, selectedEmployee, startDate]);
 
   // Load attendance, checklist compliance, recruitment summaries
   const fetchDashboardSummaries = async () => {
     setLoadingSummaries(true);
     try {
-      const res = await getDashboardSummaries({});
+      const res = await getDashboardSummaries({ targetDate: startDate });
       if (res?.success) setDashboardSummaries(res.data);
     } catch (e) {
       console.warn('Dashboard summaries error:', e);
@@ -319,7 +319,7 @@ export default function AnalyticsDashboard({
 
   useEffect(() => {
     fetchDashboardSummaries();
-  }, []);
+  }, [startDate]);
 
   // Compute CRM Active employees map (employees who made updates today/period)
   const crmActiveEmployeesMap = useMemo(() => {
@@ -367,11 +367,12 @@ export default function AnalyticsDashboard({
 
       // Checklists done vs pending for this employee
       const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
-        if (!c.assigned_employee_email) return true; // all
-        return c.assigned_employee_email.toLowerCase().includes(empEmail);
+        if (c.assigned_type === 'ALL' || !c.assigned_employee_email) return true;
+        const emails = c.assigned_employee_email.toLowerCase().split(',').map(e => e.trim());
+        return emails.includes(empEmail);
       });
-      const checkDone = empChecklistSlots.filter(c => c.status === 'COMPLETED').length;
       const checkTotal = empChecklistSlots.length;
+      const checkDone = dashboardSummaries.checklistSummary?.submissionsByEmail?.[empEmail] ?? 0;
 
       // Delegated tasks
       const empTasks = (assignedWork.delegation?.recentTasks || []).filter(t => {
@@ -545,23 +546,22 @@ export default function AnalyticsDashboard({
 
   // Employee-wise checklist compliance matrix for approved staff
   const employeeChecklistMatrix = useMemo(() => {
-    const allItems = dashboardSummaries.checklistSummary?.items?.length > 0
-      ? dashboardSummaries.checklistSummary.items
-      : assignedWork.checklists?.items || [];
+    const allItems = dashboardSummaries.checklistSummary?.items || [];
+    const submissionsByEmail = dashboardSummaries.checklistSummary?.submissionsByEmail || {};
 
     return formattedEmployees.map(emp => {
-      const email = (emp.email || '').toLowerCase();
+      const email = (emp.email || '').toLowerCase().trim();
       // Slots assigned to this employee
       const assignedSlots = allItems.filter(c => {
-        if (!c.assigned_employee_email || c.assigned_type === 'ALL') return true;
-        return c.assigned_employee_email.toLowerCase().includes(email);
+        if (c.assigned_type === 'ALL' || !c.assigned_employee_email) return true;
+        const emails = c.assigned_employee_email.toLowerCase().split(',').map(e => e.trim());
+        return emails.includes(email);
       });
 
-      const completed = assignedSlots.filter(s => s.status === 'COMPLETED').length;
       const total = assignedSlots.length;
-      const pending = total - completed;
-      const late = assignedSlots.filter(s => s.status === 'COMPLETED' && s.isDelayed).length;
-      const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const completed = submissionsByEmail[email] || 0;
+      const pending = Math.max(0, total - completed);
+      const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
 
       let statusLabel = 'Pending';
       let statusColor = '#b45309';
@@ -571,12 +571,12 @@ export default function AnalyticsDashboard({
         statusLabel = 'No Slots Scheduled';
         statusColor = 'var(--text-secondary)';
         statusBg = 'var(--th-bg)';
-      } else if (completed === total) {
-        statusLabel = 'All Done';
+      } else if (completed >= total) {
+        statusLabel = `All Done (${completed})`;
         statusColor = '#15803d';
         statusBg = '#dcfce7';
       } else if (completed > 0) {
-        statusLabel = `${completed}/${total} Completed`;
+        statusLabel = `${completed}/${total} Done (${rate}%)`;
         statusColor = '#2563eb';
         statusBg = '#dbeafe';
       }
@@ -590,14 +590,13 @@ export default function AnalyticsDashboard({
         total,
         completed,
         pending,
-        late,
         rate,
         statusLabel,
         statusColor,
         statusBg
       };
-    }).sort((a, b) => b.rate - a.rate || a.pending - b.pending);
-  }, [formattedEmployees, dashboardSummaries.checklistSummary, assignedWork.checklists]);
+    }).sort((a, b) => b.rate - a.rate || b.completed - a.completed);
+  }, [formattedEmployees, dashboardSummaries.checklistSummary]);
 
   const filteredEmployeeChecklist = useMemo(() => {
     if (!checklistSearch.trim()) return employeeChecklistMatrix;

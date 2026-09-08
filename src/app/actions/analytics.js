@@ -262,38 +262,72 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
       console.warn('Attendance summary error:', e.message);
     }
 
-    // 2. Checklist compliance — reconciled from scheduled templates and slots
-    let checklistSummary = { totalSlots: 0, completed: 0, pending: 0, onTime: 0, late: 0, complianceRate: 0, items: [] };
+    // 2. Real Checklist compliance for useDate
+    let checklistSummary = { totalSlots: 0, completed: 0, pending: 0, complianceRate: 0, submissionsByEmail: {}, items: [] };
     try {
-      const clRes = await getEmployeeChecklistDashboard({ employeeEmail: '', targetDate: new Date() });
-      if (clRes?.success && Array.isArray(clRes.data)) {
-        const items = clRes.data;
-        const completed = items.filter(s => s.status === 'COMPLETED').length;
-        const late = items.filter(s => s.status === 'COMPLETED' && s.delayInfo?.isDelayed).length;
-        checklistSummary = {
-          totalSlots: items.length,
-          completed,
-          pending: items.filter(s => s.status !== 'COMPLETED').length,
-          onTime: completed - late,
-          late,
-          complianceRate: items.length > 0 ? Math.round((completed / items.length) * 100) : 0,
-          items: items.map(c => ({
-            id: c.template?.id || c.id || Math.random().toString(),
-            slot_id: c.template?.slot_id || c.slotInfo?.slot_id || (c.slotIndex ? `Slot ${c.slotIndex}` : 'Daily Slot'),
-            title: c.template?.title || c.template?.base_title || 'Daily Checklist',
-            base_title: c.template?.base_title || c.template?.title || 'Daily Checklist',
-            frequency: c.template?.frequency || 'DAILY',
-            due_time: c.template?.due_time || c.slotInfo?.due_time || '18:00',
-            status: c.status || 'PENDING',
-            isDelayed: c.delayInfo?.isDelayed || false,
-            department: c.template?.department || 'General',
-            assigned_type: c.template?.assigned_type || 'ALL',
-            assigned_employee_email: c.template?.assigned_employee_email || '',
-            submitted_at: c.submission?.submitted_at || null,
-            submitted_by: c.submission?.submitted_by_name || c.submission?.employee_email || null
-          }))
-        };
-      }
+      const [tmplsRes, subsRes] = await Promise.all([
+        supabase.from('checklist_templates').select('id, title, department, frequency, assigned_type, assigned_employee_email, due_time, description').eq('is_active', true),
+        supabase.from('checklist_submissions').select('id, template_id, period_key, status, employee_email, submitted_at').like('period_key', `${useDate}%`)
+      ]);
+
+      const tmpls = tmplsRes.data || [];
+      const subs = subsRes.data || [];
+
+      const submissionsByEmail = {};
+      subs.forEach(s => {
+        const em = (s.employee_email || '').toLowerCase().trim();
+        if (em) submissionsByEmail[em] = (submissionsByEmail[em] || 0) + 1;
+      });
+
+      // Expand slot definitions
+      const templateSlots = [];
+      tmpls.forEach(t => {
+        let dailySlots = [];
+        if (t.description) {
+          const m = t.description.match(/<!--__SWAN_SCHEDULE_META__(.*?)__END_META__-->/s);
+          if (m && m[1]) {
+            try {
+              const meta = JSON.parse(m[1]);
+              if (Array.isArray(meta.daily_slots) && meta.daily_slots.length > 0) dailySlots = meta.daily_slots;
+            } catch {}
+          }
+        }
+        if (dailySlots.length === 0) {
+          dailySlots = [{ slot_id: 'S1', label: 'Daily Cutoff', due_time: t.due_time || '18:00' }];
+        }
+
+        dailySlots.forEach((s, idx) => {
+          const slotLabel = s.label || `Slot ${idx + 1}`;
+          const dueTime = s.due_time || t.due_time || '18:00';
+          templateSlots.push({
+            id: `${t.id}_${s.slot_id || idx}`,
+            template_id: t.id,
+            slot_id: `${slotLabel} (${dueTime})`,
+            title: t.title,
+            base_title: t.title,
+            frequency: t.frequency || 'DAILY',
+            department: t.department || 'General',
+            assigned_type: t.assigned_type || 'ALL',
+            assigned_employee_email: t.assigned_employee_email || '',
+            due_time: dueTime,
+            status: subs.some(sub => sub.template_id === t.id) ? 'COMPLETED' : 'PENDING'
+          });
+        });
+      });
+
+      const totalCompletedSubs = subs.filter(s => s.status === 'COMPLETED').length;
+      const totalSlots = templateSlots.length;
+      const expectedTotalSubs = totalSlots * 6; // approximate daily expectation across team
+      const complianceRate = totalSlots > 0 ? Math.min(100, Math.round((totalCompletedSubs / (expectedTotalSubs || 1)) * 100)) : 0;
+
+      checklistSummary = {
+        totalSlots,
+        completed: totalCompletedSubs,
+        pending: Math.max(0, expectedTotalSubs - totalCompletedSubs),
+        complianceRate,
+        submissionsByEmail,
+        items: templateSlots
+      };
     } catch (e) {
       console.warn('Checklist summary error:', e.message);
     }
