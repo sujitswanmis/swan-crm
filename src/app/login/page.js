@@ -282,32 +282,69 @@ function LoginFormContent() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '2rem' }}>
-      <div className="card" style={{ padding: '2.25rem 2rem', width: '100%', maxWidth: '460px', borderRadius: '18px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid var(--border-light)' }}>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'radial-gradient(circle at 10% 10%, rgba(37, 99, 235, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 90%, rgba(124, 58, 237, 0.08) 0%, transparent 40%), #f8fafc',
+      padding: '2rem'
+    }}>
+      <div className="card" style={{
+        padding: '2.5rem 2.25rem',
+        width: '100%',
+        maxWidth: '460px',
+        borderRadius: '20px',
+        backgroundColor: 'rgba(255, 255, 255, 0.92)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.8)',
+        border: '1px solid #e2e8f0'
+      }}>
         
         {/* Logo / Header */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.85rem' }}>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.6rem 1.25rem',
+            borderRadius: '14px',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06), 0 0 0 1px #e2e8f0',
+            marginBottom: '1rem'
+          }}>
             <img 
               src="/supuja-logo.png" 
               alt="SuPuja Creations" 
-              style={{ width: '140px', height: 'auto', maxHeight: '76px', objectFit: 'contain' }} 
+              style={{ width: '135px', height: 'auto', maxHeight: '68px', objectFit: 'contain' }} 
             />
           </div>
-          <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0, color: '#0f172a', lineHeight: 1.25 }}>
+          <h1 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: '#0f172a', lineHeight: 1.25, letterSpacing: '-0.02em' }}>
             {mode === 'login' && (
               <>
                 <div>SuPuja Creations</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#4338ca', marginTop: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
-                  <span>Workplace Login</span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '0.12rem 0.5rem', borderRadius: '12px', border: '1px solid #c7d2fe' }}>v{pkg.version || '1.0.228'}</span>
+                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#4338ca', marginTop: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
+                  <span>Workplace Gateway</span>
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: '#4338ca',
+                    background: '#eef2ff',
+                    padding: '0.12rem 0.55rem',
+                    borderRadius: '9999px',
+                    border: '1px solid #c7d2fe',
+                    letterSpacing: '0.02em'
+                  }}>
+                    v{pkg.version || '1.0.520'} PRO
+                  </span>
                 </div>
               </>
             )}
             {mode === 'register' && 'Create Employee Account'}
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', marginBottom: 0, fontSize: '0.88rem' }}>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.45rem', marginBottom: 0, fontSize: '0.86rem', lineHeight: 1.45 }}>
             {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using 6-Digit Email OTP')}
             {mode === 'register' && 'Enter your official details to register'}
             {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure reset code' : 'Enter OTP and create your new password')}
@@ -855,6 +892,23 @@ function LoginFormContent() {
             </button>
           </div>
         )}
+
+        {/* Enterprise Security Badge */}
+        <div style={{
+          marginTop: '1.75rem',
+          paddingTop: '1rem',
+          borderTop: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.4rem',
+          fontSize: '0.73rem',
+          color: 'var(--text-secondary)',
+          fontWeight: 600
+        }}>
+          <ShieldCheck size={14} style={{ color: '#10b981' }} />
+          <span>256-Bit SSL Encrypted Enterprise Workspace</span>
+        </div>
 
       </div>
     </div>

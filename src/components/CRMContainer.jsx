@@ -2447,23 +2447,51 @@ export default function CRMContainer({
 
       {/* Sidebar */}
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-header" style={{ display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', alignItems: 'center', position: 'relative', padding: isSidebarCollapsed ? '1rem 0.5rem' : '0.85rem 1rem' }}>
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', alignItems: 'center', position: 'relative', padding: isSidebarCollapsed ? '1rem 0.5rem' : '0.9rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
           <div 
             onClick={() => { if (isSidebarCollapsed) setIsSidebarCollapsed(false); }}
             style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', minWidth: 0, cursor: isSidebarCollapsed ? 'pointer' : 'default', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', width: isSidebarCollapsed ? '100%' : 'auto' }}
             title={isSidebarCollapsed ? "Click to expand sidebar" : undefined}
           >
-            <img 
-              src="/supuja-logo.png" 
-              alt="SuPuja Creations" 
-              style={{ width: isSidebarCollapsed ? '38px' : '34px', height: isSidebarCollapsed ? '38px' : '34px', borderRadius: '8px', objectFit: 'contain', background: '#fff', padding: '2px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }} 
-            />
+            <div style={{
+              width: isSidebarCollapsed ? '38px' : '36px',
+              height: isSidebarCollapsed ? '38px' : '36px',
+              borderRadius: '10px',
+              background: '#ffffff',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08), 0 0 0 1px var(--border-light)',
+              overflow: 'hidden'
+            }}>
+              <img 
+                src="/supuja-logo.png" 
+                alt="SuPuja Creations" 
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+              />
+            </div>
             {!isSidebarCollapsed && (
               <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.15 }}>
-                <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent-color)', letterSpacing: '-0.01em', margin: 0 }}>SuPuja</span>
-                <div className="sidebar-title" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
-                  <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', letterSpacing: '0.01em' }}>Creations</span>
-                  <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', opacity: 0.85, fontWeight: 500 }}>v{pkg.version || '1.0.228'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>SuPuja</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-color)', letterSpacing: '-0.01em' }}>Creations</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '2px' }}>
+                  <span style={{
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-color)',
+                    background: 'var(--nav-active-bg)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '9999px',
+                    border: '1px solid rgba(37, 99, 235, 0.2)',
+                    letterSpacing: '0.02em'
+                  }}>
+                    v{pkg.version || '1.0.520'} PRO
+                  </span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', opacity: 0.75 }}>Enterprise</span>
                 </div>
               </div>
             )}
@@ -2472,27 +2500,28 @@ export default function CRMContainer({
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
             className="sidebar-collapse-toggle desktop-only-icon"
             style={{
-              background: isSidebarCollapsed ? 'var(--bg-surface)' : 'none',
-              border: isSidebarCollapsed ? '1px solid var(--border-light)' : 'none',
+              background: isSidebarCollapsed ? 'var(--bg-surface)' : 'var(--nav-active-bg)',
+              border: '1px solid var(--border-light)',
               cursor: 'pointer',
-              color: 'var(--text-secondary)',
+              color: 'var(--accent-color)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: isSidebarCollapsed ? '0.25rem' : '0.25rem',
-              borderRadius: isSidebarCollapsed ? '50%' : '4px',
+              padding: '0.25rem',
+              borderRadius: isSidebarCollapsed ? '50%' : '8px',
               position: isSidebarCollapsed ? 'absolute' : 'static',
               right: isSidebarCollapsed ? '-10px' : 'auto',
               top: isSidebarCollapsed ? '50%' : 'auto',
               transform: isSidebarCollapsed ? 'translateY(-50%)' : 'none',
-              boxShadow: isSidebarCollapsed ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
               zIndex: 25,
-              width: isSidebarCollapsed ? '22px' : 'auto',
-              height: isSidebarCollapsed ? '22px' : 'auto'
+              width: isSidebarCollapsed ? '24px' : '26px',
+              height: isSidebarCollapsed ? '24px' : '26px',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
             title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           >
-            {isSidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={18} />}
+            {isSidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={15} />}
           </button>
         </div>
         <nav className="nav-list">
@@ -3449,23 +3478,23 @@ export default function CRMContainer({
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
-                <h1 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                <h1 style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1, letterSpacing: '-0.015em' }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
                       ? 'Hourly Work Report'
                       : (leadsFilterStage === 'lead_dashboard' || leadsFilterStage === 'dashboard' 
                         ? 'Lead Dashboard' 
-                        : (leadsFilterStage ? `Lead Data - ${leadsFilterStage}` : 'Lead Data - All Leads'))
+                        : (leadsFilterStage ? `Lead Data — ${leadsFilterStage}` : 'Lead Data — All Leads'))
                   )}
                   {activeTab === 'orders' && 'Order Management'}
                   {activeTab === 'mrp' && 'MRP System'}
                   {activeTab === 'mrp_against' && 'MRP Against'}
                   {activeTab === 'recruiter' && (
                     recruiterFilterStage === 'dashboard' ? 'Recruiter Dashboard' :
-                    recruiterFilterStage === 'all_stages' ? 'Recruiter - All Stages' :
-                    recruiterFilterStage ? `Recruiter - ${recruiterFilterStage}` : 'Recruiter'
+                    recruiterFilterStage === 'all_stages' ? 'Recruiter — All Stages' :
+                    recruiterFilterStage ? `Recruiter — ${recruiterFilterStage}` : 'Recruiter'
                   )}
                   {activeTab === 'joining' && 'Joining Process'}
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
@@ -3494,15 +3523,17 @@ export default function CRMContainer({
                 </h1>
                 
                 <span className="desktop-only" style={{ 
-                  fontSize: '0.65rem', 
-                  padding: '0.1rem 0.35rem', 
-                  borderRadius: '4px', 
-                  background: (userRole === 'admin' || userRole === 'Admin') ? '#fef08a' : '#e0f2fe', 
-                  color: (userRole === 'admin' || userRole === 'Admin') ? '#854d0e' : '#0369a1', 
+                  fontSize: '0.66rem', 
+                  padding: '0.15rem 0.5rem', 
+                  borderRadius: '9999px', 
+                  background: (userRole === 'admin' || userRole === 'Admin') ? 'rgba(245, 158, 11, 0.12)' : 'rgba(37, 99, 235, 0.12)', 
+                  color: (userRole === 'admin' || userRole === 'Admin') ? '#d97706' : 'var(--accent-color)', 
+                  border: (userRole === 'admin' || userRole === 'Admin') ? '1px solid rgba(245, 158, 11, 0.28)' : '1px solid rgba(37, 99, 235, 0.28)',
                   textTransform: 'uppercase', 
-                  fontWeight: 'bold',
-                  letterSpacing: '0.02em',
-                  flexShrink: 0
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  flexShrink: 0,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                 }}>
                   {userRole}
                 </span>
@@ -3510,7 +3541,7 @@ export default function CRMContainer({
             )}
 
             {activeTab !== 'ai' && (
-              <div className="desktop-only" style={{ width: '1.5px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.25rem' }}></div>
+              <div className="desktop-only" style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.4rem' }}></div>
             )}
 
             {/* Desktop Intelligent Global Spotlight Search Trigger */}
@@ -3521,42 +3552,45 @@ export default function CRMContainer({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.45rem',
+                gap: '0.55rem',
                 backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-light)',
-                borderRadius: '8px',
-                padding: '0.35rem 0.6rem',
+                borderRadius: '10px',
+                padding: '0.38rem 0.75rem',
                 cursor: 'pointer',
                 color: 'var(--text-secondary)',
-                transition: 'all 0.15s',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                boxShadow: 'var(--shadow-xs)',
                 flexShrink: 0
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.borderColor = 'var(--accent-color)';
                 e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
               }}
               onMouseOut={(e) => {
                 e.currentTarget.style.borderColor = 'var(--border-light)';
                 e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
               }}
               title="Quick Spotlight Search (Ctrl + K)"
             >
-              <Search size={15} style={{ color: 'var(--accent-color)' }} />
-              <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                Search CRM...
+              <Search size={14} style={{ color: 'var(--accent-color)' }} />
+              <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                Type <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>/</strong> or search CRM...
               </span>
               <kbd className="desktop-only" style={{
                 fontSize: '0.68rem',
-                padding: '0.1rem 0.35rem',
-                borderRadius: '4px',
+                padding: '0.12rem 0.4rem',
+                borderRadius: '6px',
                 background: 'var(--bg-primary)',
                 border: '1px solid var(--border-light)',
                 color: 'var(--text-secondary)',
-                fontWeight: 600,
-                lineHeight: 1
+                fontWeight: 700,
+                lineHeight: 1,
+                boxShadow: '0 1px 1px rgba(0,0,0,0.05)'
               }}>
-                Ctrl+K
+                ⌘K
               </kbd>
             </button>
             {isSyncing && (
@@ -3567,15 +3601,16 @@ export default function CRMContainer({
                 alignItems: 'center', 
                 gap: '0.4rem',
                 backgroundColor: 'var(--nav-active-bg)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '20px',
-                fontWeight: '500'
+                padding: '0.2rem 0.65rem',
+                borderRadius: '9999px',
+                border: '1px solid rgba(37, 99, 235, 0.2)',
+                fontWeight: '600'
               }}>
                 <svg className="animate-spin" style={{ width: '12px', height: '12px' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}></circle>
                   <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style={{ opacity: 0.75 }}></path>
                 </svg>
-                Syncing leads: {syncLoadedCount} / {syncTotalCount || '...'}
+                Syncing: {syncLoadedCount} / {syncTotalCount || '...'}
               </span>
             )}
           </div>
@@ -3629,8 +3664,8 @@ export default function CRMContainer({
               }}
               className="header-icon-btn desktop-only"
               style={{
-                width: '38px',
-                height: '38px',
+                width: '36px',
+                height: '36px',
                 borderRadius: '10px',
                 border: '1px solid var(--border-light)',
                 backgroundColor: 'var(--bg-surface)',
@@ -3639,12 +3674,24 @@ export default function CRMContainer({
                 justifyContent: 'center',
                 cursor: 'pointer',
                 color: 'var(--text-primary)',
-                transition: 'all 0.2s',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                boxShadow: 'var(--shadow-xs)'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.borderColor = 'var(--accent-color)';
+                e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                e.currentTarget.style.color = 'var(--accent-color)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-light)';
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
               }}
               title="Toggle CRM Softphone"
             >
-              <PhoneCall size={18} />
+              <PhoneCall size={17} />
             </button>
 
             {/* Notifications Button (Square Button Box) */}
@@ -3657,9 +3704,9 @@ export default function CRMContainer({
                     onClick={() => setShowNotifications(!showNotifications)}
                     className="header-icon-btn"
                     style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '8px',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
                       border: '1px solid var(--border-light)',
                       backgroundColor: showNotifications ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
                       display: 'flex',
@@ -3667,31 +3714,47 @@ export default function CRMContainer({
                       justifyContent: 'center',
                       cursor: 'pointer',
                       color: showNotifications ? 'var(--accent-color)' : 'var(--text-primary)',
-                      transition: 'all 0.2s',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                      transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxShadow: 'var(--shadow-xs)',
                       position: 'relative'
                     }}
-                    title="Notifications"
+                    onMouseOver={(e) => {
+                      if (!showNotifications) {
+                        e.currentTarget.style.borderColor = 'var(--accent-color)';
+                        e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                        e.currentTarget.style.color = 'var(--accent-color)';
+                        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!showNotifications) {
+                        e.currentTarget.style.borderColor = 'var(--border-light)';
+                        e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                        e.currentTarget.style.color = 'var(--text-primary)';
+                        e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
+                      }
+                    }}
+                    title="Notifications & Alerts"
                   >
-                    <Bell size={16} />
+                    <Bell size={17} />
                     {totalAlertCount > 0 && (
                       <div style={{
                         position: 'absolute',
-                        top: '-5px',
-                        right: '-6px',
+                        top: '-4px',
+                        right: '-4px',
                         backgroundColor: '#ef4444',
                         color: '#ffffff',
-                        fontSize: '0.6rem',
-                        fontWeight: 700,
-                        minWidth: '16px',
-                        height: '16px',
+                        fontSize: '0.62rem',
+                        fontWeight: 800,
+                        minWidth: '17px',
+                        height: '17px',
                         padding: '0 4px',
-                        borderRadius: '8px',
+                        borderRadius: '9999px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        border: '1.5px solid var(--bg-surface)',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                        border: '2px solid var(--bg-surface)',
+                        boxShadow: '0 0 10px rgba(239, 68, 68, 0.45)',
                         pointerEvents: 'none',
                         lineHeight: 1,
                         whiteSpace: 'nowrap'
@@ -4499,8 +4562,8 @@ export default function CRMContainer({
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 className="header-icon-btn"
                 style={{
-                  width: '38px',
-                  height: '38px',
+                  width: '36px',
+                  height: '36px',
                   borderRadius: '10px',
                   border: '1px solid var(--border-light)',
                   backgroundColor: showThemeMenu ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
@@ -4509,20 +4572,50 @@ export default function CRMContainer({
                   justifyContent: 'center',
                   cursor: 'pointer',
                   color: showThemeMenu ? 'var(--accent-color)' : 'var(--text-primary)',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: 'var(--shadow-xs)'
+                }}
+                onMouseOver={(e) => {
+                  if (!showThemeMenu) {
+                    e.currentTarget.style.borderColor = 'var(--accent-color)';
+                    e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                    e.currentTarget.style.color = 'var(--accent-color)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (!showThemeMenu) {
+                    e.currentTarget.style.borderColor = 'var(--border-light)';
+                    e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
+                  }
                 }}
                 title="Change Color Theme"
               >
-                <Palette size={18} />
+                <Palette size={17} />
               </button>
 
               {showThemeMenu && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '220px', maxWidth: 'calc(100vw - 32px)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', zIndex: 10000, overflow: 'hidden' }}>
-                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '600', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                    Select Theme
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '220px',
+                  maxWidth: 'calc(100vw - 32px)',
+                  backgroundColor: 'var(--bg-surface)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '12px',
+                  boxShadow: 'var(--shadow-xl)',
+                  zIndex: 10000,
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '700', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.86rem', letterSpacing: '-0.01em' }}>
+                    🎨 Color Theme
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '360px', overflowY: 'auto' }}>
                     {THEMES.map(theme => (
                       <button
                         key={theme.id}
@@ -4534,16 +4627,16 @@ export default function CRMContainer({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '0.75rem 1rem',
+                          padding: '0.65rem 1rem',
                           background: currentTheme === theme.id ? 'var(--nav-active-bg)' : 'transparent',
                           border: 'none',
                           borderBottom: '1px solid var(--border-light)',
                           cursor: 'pointer',
                           textAlign: 'left',
                           fontFamily: 'inherit',
-                          fontSize: '0.85rem',
+                          fontSize: '0.82rem',
                           color: currentTheme === theme.id ? 'var(--accent-color)' : 'var(--text-primary)',
-                          fontWeight: currentTheme === theme.id ? '600' : '400',
+                          fontWeight: currentTheme === theme.id ? '700' : '500',
                           transition: 'background 0.15s'
                         }}
                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
@@ -4553,7 +4646,7 @@ export default function CRMContainer({
                           <span>{theme.icon}</span>
                           <span>{theme.name}</span>
                         </div>
-                        {currentTheme === theme.id && <Check size={16} />}
+                        {currentTheme === theme.id && <Check size={15} />}
                       </button>
                     ))}
                   </div>
@@ -4569,47 +4662,72 @@ export default function CRMContainer({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.35rem',
-                  padding: '2px 4px 2px 2px',
-                  borderRadius: '8px',
+                  gap: '0.45rem',
+                  padding: '3px 8px 3px 4px',
+                  borderRadius: '10px',
                   border: '1px solid var(--border-light)',
                   backgroundColor: showProfileMenu ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
                   cursor: 'pointer',
                   color: 'var(--text-primary)',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  minHeight: '34px'
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: 'var(--shadow-xs)',
+                  minHeight: '36px'
+                }}
+                onMouseOver={(e) => {
+                  if (!showProfileMenu) {
+                    e.currentTarget.style.borderColor = 'var(--accent-color)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (!showProfileMenu) {
+                    e.currentTarget.style.borderColor = 'var(--border-light)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
+                  }
                 }}
                 title="User Profile"
               >
-                {/* Avatar / Photo */}
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  backgroundColor: 'var(--accent-color)',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 'bold',
-                  fontSize: '0.85rem',
-                  overflow: 'hidden',
-                  flexShrink: 0
-                }}>
-                  {userAvatar ? (
-                    <img src={userAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    userName ? userName.charAt(0).toUpperCase() : 'U'
-                  )}
+                {/* Avatar / Photo with Online Presence Indicator */}
+                <div style={{ position: 'relative', width: '28px', height: '28px', flexShrink: 0 }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--accent-color)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  }}>
+                    {userAvatar ? (
+                      <img src={userAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      userName ? userName.charAt(0).toUpperCase() : 'U'
+                    )}
+                  </div>
+                  <span style={{
+                    position: 'absolute',
+                    bottom: '-1px',
+                    right: '-1px',
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    backgroundColor: '#10b981',
+                    border: '1.5px solid var(--bg-surface)'
+                  }} />
                 </div>
 
                 {/* User Details (Desktop) */}
-                <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', margin: '0 0.25rem' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1 }}>{userName || 'User'}</span>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{userRole}</span>
+                <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', margin: '0 0.15rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.15 }}>{userName || 'User'}</span>
+                  <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', textTransform: 'capitalize', fontWeight: 500 }}>{userRole}</span>
                 </div>
-                <ChevronDown size={13} className="desktop-only" style={{ color: 'var(--text-secondary)', marginRight: '2px' }} />
+                <ChevronDown size={13} className="desktop-only" style={{ color: 'var(--text-secondary)', marginLeft: '1px' }} />
               </button>
               
               {/* Profile Dropdown Menu */}
@@ -4621,9 +4739,11 @@ export default function CRMContainer({
                   width: '280px',
                   maxWidth: 'calc(100vw - 20px)',
                   backgroundColor: 'var(--bg-surface)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-light)',
                   borderRadius: '14px',
-                  boxShadow: '0 15px 30px -5px rgba(0,0,0,0.2)',
+                  boxShadow: 'var(--shadow-xl)',
                   zIndex: 10000,
                   overflow: 'hidden'
                 }}>
