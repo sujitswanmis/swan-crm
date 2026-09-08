@@ -193,16 +193,20 @@ export async function getUserAssignedWorkSummary({
       complianceRate,
       isSunday: checklistRes.isSunday || false,
       holidayInfo: checklistRes.holidayInfo || null,
-      items: checkItems.slice(0, 60).map(c => ({
-        id: c.id,
-        slot_id: c.slot_id,
-        title: c.title,
-        frequency: c.frequency || 'DAILY',
-        due_time: c.due_time || '18:00',
-        status: c.status,
+      items: checkItems.map(c => ({
+        id: c.template?.id || c.id || Math.random().toString(),
+        slot_id: c.template?.slot_id || c.slotInfo?.slot_id || (c.slotIndex ? `Slot ${c.slotIndex}` : 'Daily Slot'),
+        title: c.template?.title || c.template?.base_title || 'Daily Checklist',
+        base_title: c.template?.base_title || c.template?.title || 'Daily Checklist',
+        frequency: c.template?.frequency || 'DAILY',
+        due_time: c.template?.due_time || c.slotInfo?.due_time || '18:00',
+        status: c.status || 'PENDING',
         isDelayed: c.delayInfo?.isDelayed || false,
-        department: c.department || 'General',
-        assigned_employee_email: c.assigned_employee_email || ''
+        department: c.template?.department || 'General',
+        assigned_type: c.template?.assigned_type || 'ALL',
+        assigned_employee_email: c.template?.assigned_employee_email || '',
+        submitted_at: c.submission?.submitted_at || null,
+        submitted_by: c.submission?.submitted_by_name || c.submission?.employee_email || null
       }))
     };
 
@@ -273,16 +277,20 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
           onTime: completed - late,
           late,
           complianceRate: items.length > 0 ? Math.round((completed / items.length) * 100) : 0,
-          items: items.slice(0, 60).map(c => ({
-            id: c.id,
-            slot_id: c.slot_id,
-            title: c.title,
-            frequency: c.frequency || 'DAILY',
-            due_time: c.due_time || '18:00',
-            status: c.status,
+          items: items.map(c => ({
+            id: c.template?.id || c.id || Math.random().toString(),
+            slot_id: c.template?.slot_id || c.slotInfo?.slot_id || (c.slotIndex ? `Slot ${c.slotIndex}` : 'Daily Slot'),
+            title: c.template?.title || c.template?.base_title || 'Daily Checklist',
+            base_title: c.template?.base_title || c.template?.title || 'Daily Checklist',
+            frequency: c.template?.frequency || 'DAILY',
+            due_time: c.template?.due_time || c.slotInfo?.due_time || '18:00',
+            status: c.status || 'PENDING',
             isDelayed: c.delayInfo?.isDelayed || false,
-            department: c.department || 'General',
-            assigned_employee_email: c.assigned_employee_email || ''
+            department: c.template?.department || 'General',
+            assigned_type: c.template?.assigned_type || 'ALL',
+            assigned_employee_email: c.template?.assigned_employee_email || '',
+            submitted_at: c.submission?.submitted_at || null,
+            submitted_by: c.submission?.submitted_by_name || c.submission?.employee_email || null
           }))
         };
       }

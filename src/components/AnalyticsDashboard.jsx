@@ -44,6 +44,7 @@ export default function AnalyticsDashboard({
   const [scorecardSearch, setScorecardSearch] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
   const [checklistSearch, setChecklistSearch] = useState('');
+  const [checklistViewMode, setChecklistViewMode] = useState('BY_EMPLOYEE'); // 'BY_EMPLOYEE' | 'BY_SLOTS'
   const [attendanceFilter, setAttendanceFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'CRM_ACTIVE' | 'ABSENT' | 'LATE'
 
   const myTeamMember = useMemo(() => {
@@ -541,6 +542,72 @@ export default function AnalyticsDashboard({
       c.due_time?.toLowerCase().includes(q)
     );
   }, [dashboardSummaries.checklistSummary, assignedWork.checklists, checklistSearch]);
+
+  // Employee-wise checklist compliance matrix for approved staff
+  const employeeChecklistMatrix = useMemo(() => {
+    const allItems = dashboardSummaries.checklistSummary?.items?.length > 0
+      ? dashboardSummaries.checklistSummary.items
+      : assignedWork.checklists?.items || [];
+
+    return formattedEmployees.map(emp => {
+      const email = (emp.email || '').toLowerCase();
+      // Slots assigned to this employee
+      const assignedSlots = allItems.filter(c => {
+        if (!c.assigned_employee_email || c.assigned_type === 'ALL') return true;
+        return c.assigned_employee_email.toLowerCase().includes(email);
+      });
+
+      const completed = assignedSlots.filter(s => s.status === 'COMPLETED').length;
+      const total = assignedSlots.length;
+      const pending = total - completed;
+      const late = assignedSlots.filter(s => s.status === 'COMPLETED' && s.isDelayed).length;
+      const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      let statusLabel = 'Pending';
+      let statusColor = '#b45309';
+      let statusBg = '#fef3c7';
+
+      if (total === 0) {
+        statusLabel = 'No Slots Scheduled';
+        statusColor = 'var(--text-secondary)';
+        statusBg = 'var(--th-bg)';
+      } else if (completed === total) {
+        statusLabel = 'All Done';
+        statusColor = '#15803d';
+        statusBg = '#dcfce7';
+      } else if (completed > 0) {
+        statusLabel = `${completed}/${total} Completed`;
+        statusColor = '#2563eb';
+        statusBg = '#dbeafe';
+      }
+
+      return {
+        emp,
+        empName: emp.emp_name || emp.name,
+        empEmail: email,
+        department: emp.department || 'General',
+        designation: emp.designation || 'Staff',
+        total,
+        completed,
+        pending,
+        late,
+        rate,
+        statusLabel,
+        statusColor,
+        statusBg
+      };
+    }).sort((a, b) => b.rate - a.rate || a.pending - b.pending);
+  }, [formattedEmployees, dashboardSummaries.checklistSummary, assignedWork.checklists]);
+
+  const filteredEmployeeChecklist = useMemo(() => {
+    if (!checklistSearch.trim()) return employeeChecklistMatrix;
+    const q = checklistSearch.toLowerCase();
+    return employeeChecklistMatrix.filter(m =>
+      m.empName.toLowerCase().includes(q) ||
+      m.empEmail.toLowerCase().includes(q) ||
+      m.department.toLowerCase().includes(q)
+    );
+  }, [employeeChecklistMatrix, checklistSearch]);
 
   const handleRefreshAll = () => {
     fetchAssignedWork();
@@ -1338,23 +1405,56 @@ export default function AnalyticsDashboard({
             </div>
           </div>
 
-          {/* Checklist Items Table */}
+          {/* Checklist Dual View Selector & Actions */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>Today's Scheduled Checklist Slots ({checklistItemsList.length})</h4>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Slots execution status</span>
+            <div style={{
+              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
+              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem'
+            }}>
+              {/* Toggle: By Employee vs By Slots */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-primary)', padding: '0.18rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                  <button
+                    onClick={() => setChecklistViewMode('BY_EMPLOYEE')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.35rem',
+                      padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
+                      border: 'none', cursor: 'pointer',
+                      backgroundColor: checklistViewMode === 'BY_EMPLOYEE' ? 'var(--accent-color)' : 'transparent',
+                      color: checklistViewMode === 'BY_EMPLOYEE' ? '#fff' : 'var(--text-primary)',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <Users size={13} /> Team Status ({employeeChecklistMatrix.length})
+                  </button>
+                  <button
+                    onClick={() => setChecklistViewMode('BY_SLOTS')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.35rem',
+                      padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
+                      border: 'none', cursor: 'pointer',
+                      backgroundColor: checklistViewMode === 'BY_SLOTS' ? 'var(--accent-color)' : 'transparent',
+                      color: checklistViewMode === 'BY_SLOTS' ? '#fff' : 'var(--text-primary)',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <ClipboardList size={13} /> All Slots ({checklistItemsList.length})
+                  </button>
+                </div>
               </div>
 
+              {/* Search & Direct Link */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <input
                   type="text"
-                  placeholder="Filter checklist..."
+                  placeholder={checklistViewMode === 'BY_EMPLOYEE' ? "Search team member..." : "Filter checklist title..."}
                   value={checklistSearch}
                   onChange={(e) => setChecklistSearch(e.target.value)}
                   style={{
                     padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
-                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)'
+                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
+                    minWidth: '180px'
                   }}
                 />
                 <button
@@ -1370,42 +1470,127 @@ export default function AnalyticsDashboard({
               </div>
             </div>
 
-            {checklistItemsList.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                No checklist slots scheduled for today.
-              </div>
-            ) : (
+            {/* VIEW 1: Team Members Checklist Status Matrix */}
+            {checklistViewMode === 'BY_EMPLOYEE' && (
               <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                   <thead>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Slot ID</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Checklist Title</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Due Time</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Staff Member</th>
+                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Assigned Slots</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Completed</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Pending</th>
+                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', width: '130px' }}>Compliance</th>
                       <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {checklistItemsList.map(item => (
-                      <tr key={item.id + (item.slot_id || '')} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <td style={{ padding: '0.6rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{item.slot_id || 'SLOT'}</td>
-                        <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)' }}>{item.department || 'General'}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 600 }}>⏰ {item.due_time}</td>
+                    {filteredEmployeeChecklist.map((row, idx) => (
+                      <tr
+                        key={row.empEmail}
+                        onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
+                        style={{
+                          borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
+                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) ? 'var(--th-bg)' : 'transparent',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <td style={{ padding: '0.6rem 0.85rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{
+                              width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                              backgroundColor: COLORS[idx % COLORS.length], color: 'white',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 700
+                            }}>
+                              {row.empName.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{row.empEmail}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>{row.department}</td>
+                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700 }}>{row.total}</td>
+                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700, color: '#16a34a' }}>{row.completed}</td>
+                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700, color: row.pending > 0 ? '#d97706' : '#16a34a' }}>
+                          {row.pending > 0 ? row.pending : '0'}
+                        </td>
+                        <td style={{ padding: '0.6rem 0.85rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            <div style={{ flex: 1, height: '6px', backgroundColor: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ width: `${row.rate}%`, height: '100%', backgroundColor: row.rate === 100 ? '#10b981' : row.rate > 0 ? '#3b82f6' : '#f59e0b' }} />
+                            </div>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, minWidth: '32px' }}>{row.rate}%</span>
+                          </div>
+                        </td>
                         <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
                           <span style={{
                             fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
-                            backgroundColor: item.status === 'COMPLETED' ? '#dcfce7' : item.status === 'PARTIAL' ? '#fef3c7' : '#fee2e2',
-                            color: item.status === 'COMPLETED' ? '#15803d' : item.status === 'PARTIAL' ? '#b45309' : '#dc2626'
+                            backgroundColor: row.statusBg, color: row.statusColor, whiteSpace: 'nowrap'
                           }}>
-                            {item.status === 'COMPLETED' ? (item.isDelayed ? '✅ Done (Late)' : '✅ Completed') : '⏳ Pending'}
+                            {row.statusLabel}
                           </span>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* VIEW 2: Scheduled Slots Details */}
+            {checklistViewMode === 'BY_SLOTS' && (
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                {checklistItemsList.length === 0 ? (
+                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                    No checklist slots scheduled for today.
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Slot ID</th>
+                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Checklist Title</th>
+                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
+                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Assigned To</th>
+                        <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Due Time</th>
+                        <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checklistItemsList.map((item, idx) => (
+                        <tr key={item.id + (item.slot_id || '') + idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 700, color: 'var(--accent-color)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                            {item.slot_id || `Slot ${idx + 1}`}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {item.title || item.base_title || 'Daily Operational Checklist'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {item.department || 'General'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                            {item.assigned_type === 'ALL' ? '👥 All Team Staff' : (item.assigned_employee_email || 'General Staff')}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            ⏰ {item.due_time || '18:00'}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
+                            <span style={{
+                              fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
+                              backgroundColor: item.status === 'COMPLETED' ? '#dcfce7' : item.status === 'PARTIAL' ? '#fef3c7' : '#fee2e2',
+                              color: item.status === 'COMPLETED' ? '#15803d' : item.status === 'PARTIAL' ? '#b45309' : '#dc2626'
+                            }}>
+                              {item.status === 'COMPLETED' ? (item.isDelayed ? '✅ Done (Late)' : '✅ Completed') : '⏳ Pending'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>
