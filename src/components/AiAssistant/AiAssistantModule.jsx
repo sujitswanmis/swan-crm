@@ -60,6 +60,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   const isVoiceSessionRef = useRef(false);
   const isTypingRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const isActuallyListeningRef = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
 
@@ -231,13 +232,27 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
     saveSessions(updatedSessions);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior
+      });
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    // Reset any unwanted ancestor scroll on mount
+    window.scrollTo(0, 0);
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) mainContent.scrollTop = 0;
+    const pageContent = document.querySelector('.page-content');
+    if (pageContent) pageContent.scrollTop = 0;
+  }, []);
 
   useEffect(() => {
     promptRef.current = prompt;
@@ -903,7 +918,10 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 0.75rem', paddingBottom: '140px', width: '100%', minWidth: 0 }}>
+        <div 
+          ref={messagesContainerRef}
+          style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 0.75rem', paddingBottom: '140px', width: '100%', minWidth: 0 }}
+        >
           <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', minWidth: 0 }}>
             {messages.length === 1 && messages[0].role === 'ai' && (
                <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-secondary)' }}>

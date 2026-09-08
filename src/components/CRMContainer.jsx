@@ -4742,13 +4742,28 @@ export default function CRMContainer({
         </header>
 
         {/* Page Content */}
-        <div className="page-content" style={{ padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 2rem)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div 
+          className="page-content" 
+          style={{ 
+            padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 2rem)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%',
+            overflow: activeTab === 'ai' ? 'hidden' : 'auto'
+          }}
+        >
           
-
-
-
-
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div 
+          style={{ 
+            flex: 1, 
+            minHeight: 0, 
+            overflowY: activeTab === 'ai' ? 'hidden' : 'auto', 
+            overflowX: 'hidden', 
+            display: 'flex', 
+            flexDirection: 'column',
+            height: '100%'
+          }}
+        >
           {(!canRead && activeTab === 'leads') ? (
             <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
               <h2 style={{ color: 'var(--text-secondary)' }}>You do not have permission to view leads.</h2>
