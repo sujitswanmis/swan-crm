@@ -24,6 +24,7 @@ export default function MultiColumnFilterModal({
   const [draftConditionType, setDraftConditionType] = useState(conditionType);
   const [expandedColumn, setExpandedColumn] = useState(null);
   const [searchFieldTerm, setSearchFieldTerm] = useState('');
+  const [tooltipVisible, setTooltipVisible] = useState(false);
   const modalRef = useRef(null);
   const prevIsOpenRef = useRef(false);
 

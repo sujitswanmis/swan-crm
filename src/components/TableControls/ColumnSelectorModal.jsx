@@ -15,6 +15,7 @@ export default function ColumnSelectorModal({
   const [draftOrder, setDraftOrder] = useState(columns);
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   const modalRef = useRef(null);
   const prevIsOpenRef = useRef(false);
 
