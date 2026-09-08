@@ -108,6 +108,8 @@ export default async function Home({ params, searchParams }) {
         isImpersonating={isImpersonating}
         impersonatorAdmin={impersonatorAdmin}
         impersonatedUser={isImpersonating ? effectiveRoleData : null}
+        initialRoute={Array.isArray(route) ? route.join('/') : (route || '')}
+        initialSearchParams={resolvedSearchParams}
       />
     </main>
   );

@@ -50,9 +50,75 @@ export default function AnalyticsDashboard({
   userName = '',
   userId = '',
   userRole = '',
-  onNavigateTab
+  onNavigateTab,
+  initialSubTab = ''
 }) {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'scorecard' | 'delegation' | 'checklist' | 'attendance' | 'pipeline' | 'recruiter'
+  const [activeTab, setActiveTabState] = useState(() => {
+    if (initialSubTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(initialSubTab)) {
+      return initialSubTab;
+    }
+    if (typeof window !== 'undefined') {
+      const cleanPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get('subtab') || params.get('tab');
+      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
+        return urlTab;
+      }
+      if (['scorecard', 'overview', 'pipeline'].includes(cleanPath)) return cleanPath;
+      if (cleanPath.startsWith('dashboard/')) {
+        const sub = cleanPath.split('/')[1];
+        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
+          return sub;
+        }
+      }
+    }
+    return 'overview';
+  });
+
+  const setActiveTab = (tabId) => {
+    setActiveTabState(tabId);
+    if (typeof window !== 'undefined') {
+      let routePath = `/dashboard?tab=${tabId}`;
+      if (tabId === 'scorecard') routePath = '/scorecard';
+      else if (tabId === 'overview') routePath = '/dashboard';
+      else if (tabId === 'pipeline') routePath = '/pipeline';
+      
+      window.history.pushState({ tab: 'dashboard', subTab: tabId }, '', routePath);
+    }
+  };
+
+  // Sync when initialSubTab changes from parent
+  useEffect(() => {
+    if (initialSubTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(initialSubTab)) {
+      setActiveTabState(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePop = () => {
+      const cleanPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get('subtab') || params.get('tab');
+      if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
+        setActiveTabState(urlTab);
+      } else if (cleanPath === 'scorecard') {
+        setActiveTabState('scorecard');
+      } else if (cleanPath === 'pipeline') {
+        setActiveTabState('pipeline');
+      } else if (cleanPath.startsWith('dashboard/')) {
+        const sub = cleanPath.split('/')[1];
+        if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
+          setActiveTabState(sub);
+        }
+      } else if (cleanPath === 'dashboard' && !urlTab) {
+        setActiveTabState('overview');
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
+
   const [datePreset, setDatePreset] = useState('today');
   const [startDate, setStartDate] = useState(() => computeDateRange('today').startDate);
   const [endDate, setEndDate] = useState(() => computeDateRange('today').endDate);

@@ -225,7 +225,9 @@ export default function CRMContainer({
   initialAvatar = null,
   isImpersonating = false,
   impersonatorAdmin = null,
-  impersonatedUser = null
+  impersonatedUser = null,
+  initialRoute = '',
+  initialSearchParams = null
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -245,54 +247,31 @@ export default function CRMContainer({
     }
   }, [initialUserEmail]);
 
-  // Real-time Permission Synchronizer: Automatically updates permissions without refreshing
-  useEffect(() => {
-    if (!userId) return;
-
-    // 1. Broadcast channel listener (instant cross-session notification)
-    const broadcastChannel = supabase
-      .channel('crm_realtime_permission_sync')
-      .on('broadcast', { event: 'permission_updated' }, (message) => {
-        if (message?.payload?.userId === userId) {
-          setModuleAccess(message.payload.moduleAccess || {});
-        }
-      })
-      .subscribe();
-
-    // 2. Postgres changes fallback on user_roles
-    const roleChannel = supabase
-      .channel(`user_role_realtime_${userId}`)
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'user_roles', 
-        filter: `user_id=eq.${userId}` 
-      }, (payload) => {
-        if (payload.new && payload.new.module_access) {
-          setModuleAccess(payload.new.module_access);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(broadcastChannel);
-      supabase.removeChannel(roleChannel);
-    };
-  }, [userId, supabase]);
-
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
-  const hasLeadsAccess = isAdmin || 
-    !!(moduleAccess?.['leads']?.view || 
-      moduleAccess?.['callcenter']?.view || 
-      moduleAccess?.['analytics']?.view ||
-      moduleAccess?.['calladmin']?.view ||
-      moduleAccess?.['aicallcenter']?.view);
-
   // State variables
+  const [dashboardSubTab, setDashboardSubTab] = useState(() => {
+    let path = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    const queryTab = searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab;
+    if (['scorecard', 'overview', 'pipeline'].includes(path)) return path;
+    if (path.startsWith('dashboard/')) return path.split('/')[1];
+    if (queryTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(queryTab)) return queryTab;
+    return 'overview';
+  });
+
   const [activeTab, setActiveTab] = useState(() => {
-    let path = pathname.replace('/', '');
-    if (!path) path = searchParams?.get('tab');
+    let path = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (!path) path = searchParams?.get('tab') || initialSearchParams?.tab;
     
+    // Check if path is a dashboard subtab or alias
+    if (['scorecard', 'overview', 'pipeline'].includes(path) || path.startsWith('dashboard/')) {
+      return 'dashboard';
+    }
+    if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path)) {
+      return 'settings';
+    }
+    if (path === 'location-master' || path === 'location_territory') {
+      return 'location_master';
+    }
+
     if (!path) {
       const isAdmin = userRole === 'admin' || userRole === 'Admin';
       if (isAdmin || moduleAccess['analytics']?.view) path = 'dashboard';
@@ -331,20 +310,29 @@ export default function CRMContainer({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const search = new URLSearchParams(window.location.search);
       const param = search.get('setting');
       if (param) {
         setCurrentSettingSubTab(param);
       }
       const attTab = search.get('tab') || search.get('subtab');
-      if (attTab && (pathname === '/attendance' || pathname === 'attendance')) {
+      if (attTab && (path === 'attendance' || path.startsWith('attendance/'))) {
         setAttendanceSubTab(attTab);
       }
-      if (attTab && (pathname === '/checklist' || pathname === 'checklist')) {
+      if (attTab && (path === 'checklist' || path.startsWith('checklist/'))) {
         setChecklistSubTab(attTab);
       }
-      if (attTab && (pathname === '/delegation' || pathname === 'delegation')) {
+      if (attTab && (path === 'delegation' || path.startsWith('delegation/'))) {
         setDelegationSubTab(attTab);
+      }
+      if (['scorecard', 'overview', 'pipeline'].includes(path)) {
+        setDashboardSubTab(path);
+      } else if (path.startsWith('dashboard/')) {
+        const sub = path.split('/')[1];
+        if (sub) setDashboardSubTab(sub);
+      } else if (path === 'dashboard' && attTab) {
+        setDashboardSubTab(attTab);
       }
     }
   }, [pathname]);
@@ -1458,10 +1446,20 @@ export default function CRMContainer({
     setIsSidebarCollapsed(collapsed);
 
     // Sync initial route path and parameters on mount
-    const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
     const params = new URLSearchParams(window.location.search);
     let tab = path || params.get('tab');
-    if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
+    if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
+      setDashboardSubTab(tab);
+      tab = 'dashboard';
+    } else if (tab && tab.startsWith('dashboard/')) {
+      const sub = tab.split('/')[1];
+      if (sub) setDashboardSubTab(sub);
+      tab = 'dashboard';
+    } else if (tab === 'dashboard') {
+      const sub = params.get('subtab') || params.get('tab');
+      if (sub) setDashboardSubTab(sub);
+    } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
       tab = 'settings';
       setCurrentSettingSubTab('sessions');
     } else if (tab === 'settings') {
@@ -1469,6 +1467,8 @@ export default function CRMContainer({
       if (settingParam) {
         setCurrentSettingSubTab(settingParam);
       }
+    } else if (tab === 'location-master' || tab === 'location_territory') {
+      tab = 'location_master';
     }
     if (tab) {
       setActiveTab(tab);
@@ -1496,10 +1496,20 @@ export default function CRMContainer({
   // Listen for browser back/forward popstate events
   useEffect(() => {
     const handlePopState = () => {
-      let tab = window.location.pathname.replace(/^\/+|\/+$/g, '');
+      let tab = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       if (!tab) tab = params.get('tab');
-      if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
+      if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
+        setDashboardSubTab(tab);
+        tab = 'dashboard';
+      } else if (tab && tab.startsWith('dashboard/')) {
+        const sub = tab.split('/')[1];
+        if (sub) setDashboardSubTab(sub);
+        tab = 'dashboard';
+      } else if (tab === 'dashboard') {
+        const sub = params.get('subtab') || params.get('tab');
+        if (sub) setDashboardSubTab(sub);
+      } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
         tab = 'settings';
         setCurrentSettingSubTab('sessions');
       } else if (tab === 'settings') {
@@ -1507,6 +1517,8 @@ export default function CRMContainer({
         if (settingParam) {
           setCurrentSettingSubTab(settingParam);
         }
+      } else if (tab === 'location-master' || tab === 'location_territory') {
+        tab = 'location_master';
       }
       
       if (!tab) {
@@ -1581,6 +1593,18 @@ export default function CRMContainer({
       }
     } else if (tabId !== 'ai') {
       setLastScreenCapture(null);
+    }
+
+    if (['scorecard', 'overview', 'pipeline'].includes(tabId)) {
+      React.startTransition(() => {
+        setActiveTab('dashboard');
+        setDashboardSubTab(tabId);
+      });
+      window.history.pushState(null, '', `/${tabId}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
     }
 
     React.startTransition(() => {
@@ -4794,7 +4818,19 @@ export default function CRMContainer({
                     userName={userName}
                     userId={userId}
                     userRole={userRole}
-                    onNavigateTab={(tab) => setActiveTab(tab)}
+                    initialSubTab={dashboardSubTab}
+                    onNavigateTab={(tab, subTab) => {
+                      if (['scorecard', 'overview', 'pipeline'].includes(tab)) {
+                        setActiveTab('dashboard');
+                        setDashboardSubTab(tab);
+                        window.history.pushState(null, '', `/${tab}`);
+                      } else if (subTab) {
+                        setActiveTab(tab);
+                        window.history.pushState(null, '', `/${tab}?tab=${subTab}`);
+                      } else {
+                        handleTabChange(tab);
+                      }
+                    }}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
