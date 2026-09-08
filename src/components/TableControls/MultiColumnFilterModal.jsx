@@ -24,20 +24,30 @@ export default function MultiColumnFilterModal({
   const [draftConditionType, setDraftConditionType] = useState(conditionType);
   const [expandedColumn, setExpandedColumn] = useState(null);
   const [searchFieldTerm, setSearchFieldTerm] = useState('');
-  const [tooltipVisible, setTooltipVisible] = useState(false);
   const modalRef = useRef(null);
+  const prevIsOpenRef = useRef(false);
 
-  // Sync state whenever opened
+  // Keep latest props in refs to avoid capturing stale values on open
+  const filterRulesRef = useRef(filterRules);
+  filterRulesRef.current = filterRules;
+  const conditionTypeRef = useRef(conditionType);
+  conditionTypeRef.current = conditionType;
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+
+  // Sync state ONLY when transitioning from closed to open.
+  // This guarantees that background realtime updates from other agents will NEVER wipe out active filter rules!
   useEffect(() => {
-    if (isOpen) {
-      setDraftRules(filterRules || {});
-      setDraftConditionType(conditionType || 'AND');
+    if (isOpen && !prevIsOpenRef.current) {
+      setDraftRules(filterRulesRef.current || {});
+      setDraftConditionType(conditionTypeRef.current || 'AND');
       setSearchFieldTerm('');
-      if (columns.length > 0) {
-        setExpandedColumn(columns[0].key);
+      if (columnsRef.current && columnsRef.current.length > 0) {
+        setExpandedColumn(columnsRef.current[0].key);
       }
     }
-  }, [isOpen, filterRules, conditionType, columns]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   // Outside click to close
   useEffect(() => {

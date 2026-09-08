@@ -1656,6 +1656,17 @@ export default function LeadTable({
     }
   };
 
+  const { leadTableColumns, leadTableVisibleKeys } = useMemo(() => {
+    const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
+    return {
+      leadTableColumns: filterableCols.map(c => ({
+        key: c.id,
+        label: typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id
+      })),
+      leadTableVisibleKeys: filterableCols.filter(c => c.getIsVisible()).map(c => c.id)
+    };
+  }, [table, columnVisibility, columnOrder]);
+
   if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
     return (
       <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
@@ -1805,82 +1816,63 @@ export default function LeadTable({
           
           {/* Settings ⚙️ Icon Button with ColumnSelectorModal (Image 1) */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
-            {(() => {
-              const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
-              const leadTableColumns = filterableCols.map(c => ({
-                key: c.id,
-                label: typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id
-              }));
-              const leadTableVisibleKeys = filterableCols.filter(c => c.getIsVisible()).map(c => c.id);
+            <button 
+              onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
+              style={{ 
+                padding: '0.5rem 0.65rem', 
+                background: showColumnModal ? '#0284c7' : 'var(--bg-surface)', 
+                color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
+                border: '1px solid var(--border-light)', 
+                borderRadius: '6px', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.4rem', 
+                fontWeight: 500,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              }}
+              title="Column Settings (Show/Hide & Push/Keep Reordering)"
+            >
+              <Settings size={17} />
+            </button>
 
-              return (
-                <>
-                  <button 
-                    onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
-                    style={{ 
-                      padding: '0.5rem 0.65rem', 
-                      background: showColumnModal ? '#0284c7' : 'var(--bg-surface)', 
-                      color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
-                      border: '1px solid var(--border-light)', 
-                      borderRadius: '6px', 
-                      cursor: 'pointer', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.4rem', 
-                      fontWeight: 500,
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                    }}
-                    title="Column Settings (Show/Hide & Push/Keep Reordering)"
-                  >
-                    <Settings size={17} />
-                  </button>
-
-                  <ColumnSelectorModal
-                    isOpen={showColumnModal}
-                    onClose={() => setShowColumnModal(false)}
-                    columns={leadTableColumns}
-                    visibleColumns={leadTableVisibleKeys}
-                    onApply={(newVisKeys, newOrderedCols) => {
-                      const newVis = {};
-                      table.getAllLeafColumns().forEach(col => {
-                        newVis[col.id] = newVisKeys.includes(col.id) || col.id === 'actions' || col.id === 'select';
-                      });
-                      setColumnVisibility(newVis);
-                      
-                      const newOrderIds = ['select', ...newOrderedCols.map(c => c.key), 'actions'];
-                      setColumnOrder(newOrderIds);
-                      if (typeof window !== 'undefined') {
-                        localStorage.setItem('leadTableColumnVisibility', JSON.stringify(newVis));
-                        localStorage.setItem('leadTableColumnOrder', JSON.stringify(newOrderIds));
-                      }
-                    }}
-                    onReset={() => {
-                      const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
-                      setColumnOrder(allColIds);
-                      const allVisible = {};
-                      table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
-                      setColumnVisibility(allVisible);
-                      if (typeof window !== 'undefined') {
-                        localStorage.removeItem('leadTableColumnVisibility');
-                        localStorage.removeItem('leadTableColumnOrder');
-                      }
-                    }}
-                  />
-                </>
-              );
-            })()}
+            <ColumnSelectorModal
+              isOpen={showColumnModal}
+              onClose={() => setShowColumnModal(false)}
+              columns={leadTableColumns}
+              visibleColumns={leadTableVisibleKeys}
+              onApply={(newVisKeys, newOrderedCols) => {
+                const newVis = {};
+                table.getAllLeafColumns().forEach(col => {
+                  newVis[col.id] = newVisKeys.includes(col.id) || col.id === 'actions' || col.id === 'select';
+                });
+                setColumnVisibility(newVis);
+                
+                const newOrderIds = ['select', ...newOrderedCols.map(c => c.key), 'actions'];
+                setColumnOrder(newOrderIds);
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('leadTableColumnVisibility', JSON.stringify(newVis));
+                  localStorage.setItem('leadTableColumnOrder', JSON.stringify(newOrderIds));
+                }
+              }}
+              onReset={() => {
+                const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
+                setColumnOrder(allColIds);
+                const allVisible = {};
+                table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
+                setColumnVisibility(allVisible);
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('leadTableColumnVisibility');
+                  localStorage.removeItem('leadTableColumnOrder');
+                }
+              }}
+            />
           </div>
 
           {/* Filter 🌪️ Icon Button with MultiColumnFilterModal (Image 2) */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
             {(() => {
-              const filterableCols = table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select');
-              const leadTableColumns = filterableCols.map(c => ({
-                key: c.id,
-                label: typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id
-              }));
               const activeRuleCount = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '').length;
-
               return (
                 <>
                   <button 

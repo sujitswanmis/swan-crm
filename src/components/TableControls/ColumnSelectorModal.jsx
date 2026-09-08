@@ -15,17 +15,25 @@ export default function ColumnSelectorModal({
   const [draftOrder, setDraftOrder] = useState(columns);
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedIndex, setDraggedIndex] = useState(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
   const modalRef = useRef(null);
+  const prevIsOpenRef = useRef(false);
 
-  // Sync with props whenever opened
+  // Keep latest props in refs to avoid capturing stale values on open
+  const visibleColumnsRef = useRef(visibleColumns);
+  visibleColumnsRef.current = visibleColumns;
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+
+  // Sync with props ONLY when the modal transitions from closed to open.
+  // This guarantees that background realtime updates from other agents will NEVER reset the user's active selections!
   useEffect(() => {
-    if (isOpen) {
-      setDraftVisible(visibleColumns);
-      setDraftOrder(columns);
+    if (isOpen && !prevIsOpenRef.current) {
+      setDraftVisible(visibleColumnsRef.current || []);
+      setDraftOrder(columnsRef.current || []);
       setSearchTerm('');
     }
-  }, [isOpen, visibleColumns, columns]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   // Close on outside click
   useEffect(() => {
@@ -391,7 +399,10 @@ export default function ColumnSelectorModal({
         <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-light, #e2e8f0)', display: 'flex', justifyContent: 'space-between', backgroundColor: 'var(--bg-primary, #f8fafc)' }}>
           <button
             type="button"
-            onClick={onReset}
+            onClick={() => {
+              if (onReset) onReset();
+              onClose();
+            }}
             style={{
               background: 'none',
               border: 'none',
