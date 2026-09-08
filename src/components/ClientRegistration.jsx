@@ -61,8 +61,27 @@ const IMPORT_FIELDS = [
   { key: 'address', label: 'Full Address', standardHeaders: ['Full Address', 'Address', 'fulladdress'] },
   { key: 'requirement', label: 'Requirement', standardHeaders: ['Requirement'] },
   { key: 'investment', label: 'Investment', standardHeaders: ['Investment'] },
-  { key: 'buying_timeline', label: 'Buying Timeline', standardHeaders: ['Buying Timeline', 'buyingtimeline'] }
 ];
+
+const ALL_CONTACT_FIELDS = [
+  { key: 'phone', label: 'CP1 Mobile 1' },
+  { key: 'cp1_mobile_2', label: 'CP1 Mobile 2' },
+  { key: 'cp1_alt_1', label: 'CP1 Alternate 1' },
+  { key: 'cp1_alt_2', label: 'CP1 Alternate 2' },
+  { key: 'business_contact_1', label: 'Business Contact 1' },
+  { key: 'business_contact_2', label: 'Business Contact 2' },
+  { key: 'business_alt_1', label: 'Business Alternate 1' },
+  { key: 'business_alt_2', label: 'Business Alternate 2' },
+  { key: 'cp2_mobile_1', label: 'CP2 Mobile 1' },
+  { key: 'cp2_mobile_2', label: 'CP2 Mobile 2' },
+  { key: 'cp2_alt_1', label: 'CP2 Alternate 1' },
+  { key: 'cp2_alt_2', label: 'CP2 Alternate 2' },
+  { key: 'cp3_mobile_1', label: 'CP3 Mobile 1' },
+  { key: 'cp3_mobile_2', label: 'CP3 Mobile 2' },
+  { key: 'cp3_alt_1', label: 'CP3 Alternate 1' },
+  { key: 'cp3_alt_2', label: 'CP3 Alternate 2' }
+];
+const ALL_CONTACT_KEYS = ALL_CONTACT_FIELDS.map(f => f.key);
 
 const SAMPLE_DATA = [
   [
@@ -670,34 +689,16 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [duplicateInfo, setDuplicateInfo] = useState(null);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
-  const ALL_CONTACT_FIELDS = useMemo(() => [
-    { key: 'phone', label: 'CP1 Mobile 1' },
-    { key: 'cp1_mobile_2', label: 'CP1 Mobile 2' },
-    { key: 'cp1_alt_1', label: 'CP1 Alternate 1' },
-    { key: 'cp1_alt_2', label: 'CP1 Alternate 2' },
-    { key: 'business_contact_1', label: 'Business Contact 1' },
-    { key: 'business_contact_2', label: 'Business Contact 2' },
-    { key: 'business_alt_1', label: 'Business Alternate 1' },
-    { key: 'business_alt_2', label: 'Business Alternate 2' },
-    { key: 'cp2_mobile_1', label: 'CP2 Mobile 1' },
-    { key: 'cp2_mobile_2', label: 'CP2 Mobile 2' },
-    { key: 'cp2_alt_1', label: 'CP2 Alternate 1' },
-    { key: 'cp2_alt_2', label: 'CP2 Alternate 2' },
-    { key: 'cp3_mobile_1', label: 'CP3 Mobile 1' },
-    { key: 'cp3_mobile_2', label: 'CP3 Mobile 2' },
-    { key: 'cp3_alt_1', label: 'CP3 Alternate 1' },
-    { key: 'cp3_alt_2', label: 'CP3 Alternate 2' }
-  ], []);
-
-  // Comprehensive Real-time duplicate check across ALL 16 contact/mobile numbers & GST
+  // Comprehensive Real-time duplicate check across ALL 16 contact/mobile numbers (CP1, CP2, CP3, Business 1 & 2) & GST
   useEffect(() => {
     if (isEditMode) return; // Do not check against oneself in edit mode
 
     const enteredNumbers = [];
     ALL_CONTACT_FIELDS.forEach(f => {
       const val = (formData[f.key] || '').trim();
-      if (val && val.length >= 8 && !enteredNumbers.some(e => e.val === val)) {
-        enteredNumbers.push({ key: f.key, label: f.label, val });
+      const normVal = normalizePhoneTo10(val);
+      if (normVal && normVal.length >= 7 && !enteredNumbers.some(e => e.normVal === normVal)) {
+        enteredNumbers.push({ key: f.key, label: f.label, val, normVal });
       }
     });
 
@@ -713,17 +714,13 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         setIsCheckingDuplicate(true);
         const filters = [];
 
-        // Build exhaustive match filters across all 16 database phone/contact columns
-        const dbColumns = [
-          'phone', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2',
-          'business_contact_1', 'business_contact_2', 'business_alt_1', 'business_alt_2',
-          'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
-          'cp3_mobile_1', 'cp3_mobile_2', 'cp3_alt_1', 'cp3_alt_2'
-        ];
-
-        enteredNumbers.forEach(({ val }) => {
-          dbColumns.forEach(col => {
-            filters.push(`${col}.eq.${val}`);
+        // Build match filters across all 16 database phone/contact columns using normalized 10 digits
+        enteredNumbers.forEach(({ val, normVal }) => {
+          ALL_CONTACT_KEYS.forEach(col => {
+            filters.push(`${col}.eq.${normVal}`);
+            if (val && val !== normVal) {
+              filters.push(`${col}.eq.${val}`);
+            }
           });
         });
 
@@ -737,9 +734,14 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           return;
         }
 
+        const selectQuery = [
+          'id', 'lead_ref_id', 'name', 'company', 'business_gst', 'status', 'created_at', 'created_by', 'entry_by', 'assigned_to',
+          ...ALL_CONTACT_KEYS
+        ].join(', ');
+
         const { data, error } = await supabase
           .from('leads')
-          .select('id, lead_ref_id, name, company, phone, business_contact_1, business_gst, status, created_at, created_by, entry_by, assigned_to')
+          .select(selectQuery)
           .or(filters.join(','))
           .limit(1);
 
@@ -752,15 +754,29 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             matchedOn = 'Business GSTIN';
             matchVal = gst;
           } else {
-            // Find which exact number matched
-            const matchedEntry = enteredNumbers.find(e => 
-              match.phone === e.val || 
-              match.business_contact_1 === e.val
-            ) || enteredNumbers[0];
-            
-            if (matchedEntry) {
-              matchedOn = matchedEntry.label;
-              matchVal = matchedEntry.val;
+            // Find which exact number and column matched
+            let foundMatch = null;
+            for (const e of enteredNumbers) {
+              for (const col of ALL_CONTACT_KEYS) {
+                const dbNorm = normalizePhoneTo10(match[col]);
+                if (dbNorm && dbNorm === e.normVal) {
+                  const dbFieldLabel = ALL_CONTACT_FIELDS.find(f => f.key === col)?.label || col;
+                  foundMatch = {
+                    label: `${e.label} (matches ${dbFieldLabel} in DB)`,
+                    val: e.val
+                  };
+                  break;
+                }
+              }
+              if (foundMatch) break;
+            }
+
+            if (foundMatch) {
+              matchedOn = foundMatch.label;
+              matchVal = foundMatch.val;
+            } else {
+              matchedOn = enteredNumbers[0]?.label || 'Contact Number';
+              matchVal = enteredNumbers[0]?.val || '';
             }
           }
 
@@ -773,6 +789,15 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             }
           }
 
+          // Pick first available phone number from matched record
+          let matchedPhoneDisplay = matchVal;
+          for (const col of ALL_CONTACT_KEYS) {
+            if (match[col]) {
+              matchedPhoneDisplay = match[col];
+              break;
+            }
+          }
+
           setDuplicateInfo({
             matchedOn,
             matchVal,
@@ -780,7 +805,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             lead_ref_id: match.lead_ref_id,
             name: match.name,
             company: match.company,
-            phone: match.phone || match.business_contact_1 || matchVal,
+            phone: matchedPhoneDisplay,
             status: match.status,
             created_by: match.created_by || 'System',
             entry_by: match.entry_by || 'N/A',
@@ -802,7 +827,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     formData.business_contact_1, formData.business_contact_2, formData.business_alt_1, formData.business_alt_2,
     formData.cp2_mobile_1, formData.cp2_mobile_2, formData.cp2_alt_1, formData.cp2_alt_2,
     formData.cp3_mobile_1, formData.cp3_mobile_2, formData.cp3_alt_1, formData.cp3_alt_2,
-    formData.business_gst, isEditMode, supabase, ALL_CONTACT_FIELDS
+    formData.business_gst, isEditMode, supabase, teamMembers
   ]);
 
   const toggleSection = (section) => {
@@ -1302,9 +1327,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
   const handleProceedToPreview = async () => {
     // Check if at least one contact field or GST is mapped
-    const hasContactMapped = mapping['phone'] || mapping['business_contact_1'] || mapping['business_gst'];
+    const hasContactMapped = ALL_CONTACT_KEYS.some(k => mapping[k]) || mapping['business_gst'];
     if (!hasContactMapped) {
-      if (!confirm("Warning: You have not mapped 'CP1 Mobile 1', 'Business Contact 1', or 'Business GST'. Duplicate checking will be skipped and all rows will be marked ready. Do you want to proceed?")) {
+      if (!confirm("Warning: You have not mapped any Contact/Mobile Number or Business GST. Duplicate checking will be skipped and all rows will be marked ready. Do you want to proceed?")) {
         return;
       }
     }
@@ -1355,13 +1380,22 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       let duplicatesList = [];
 
       if (hasContactMapped) {
-        // Query database for duplicates by phone, business_contact_1, and business_gst
+        // Query database for duplicates across all 16 contact columns & business_gst
+        const selectFields = [
+          'id',
+          'lead_ref_id',
+          'name',
+          'company',
+          'business_gst',
+          ...ALL_CONTACT_KEYS
+        ].join(', ');
+
         let existingLeads = [];
         let fetchPage = 0;
         while (true) {
           const { data: pageData, error: fetchErr } = await supabase
             .from('leads')
-            .select('phone, business_contact_1, business_gst')
+            .select(selectFields)
             .range(fetchPage * 1000, (fetchPage + 1) * 1000 - 1);
           
           if (fetchErr) throw fetchErr;
@@ -1372,46 +1406,91 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           fetchPage++;
         }
         
-        // Build normalized sets from database
-        const existingPhones10 = new Set();
-        const existingGSTs = new Set();
+        // Build normalized lookup maps from database
+        const existingPhonesMap = new Map(); // normalized 10-digit -> { lead_ref_id, company, field }
+        const existingGSTMap = new Map();    // uppercase GSTIN -> { lead_ref_id, company }
 
         existingLeads.forEach(l => {
-          const p1 = normalizePhoneTo10(l.phone);
-          if (p1 && p1.length >= 7) existingPhones10.add(p1);
-          const p2 = normalizePhoneTo10(l.business_contact_1);
-          if (p2 && p2.length >= 7) existingPhones10.add(p2);
+          ALL_CONTACT_KEYS.forEach(col => {
+            const p10 = normalizePhoneTo10(l[col]);
+            if (p10 && p10.length >= 7 && !existingPhonesMap.has(p10)) {
+              existingPhonesMap.set(p10, {
+                lead_ref_id: l.lead_ref_id || l.id,
+                company: l.company || l.name || 'Existing Lead',
+                field: col
+              });
+            }
+          });
           if (l.business_gst && String(l.business_gst).trim().length >= 8) {
-            existingGSTs.add(String(l.business_gst).trim().toUpperCase());
+            const cleanGST = String(l.business_gst).trim().toUpperCase();
+            if (!existingGSTMap.has(cleanGST)) {
+              existingGSTMap.set(cleanGST, {
+                lead_ref_id: l.lead_ref_id || l.id,
+                company: l.company || l.name || 'Existing Lead'
+              });
+            }
           }
         });
 
-        // Intra-file tracking sets to detect duplicate rows within the uploaded file itself
-        const seenInFilePhones = new Set();
-        const seenInFileGSTs = new Set();
+        // Intra-file tracking maps to detect duplicate rows within the uploaded file itself
+        const seenInFilePhones = new Map(); // normalized 10-digit -> rowNum
+        const seenInFileGSTs = new Map();   // uppercase GSTIN -> rowNum
 
         mapped.forEach(row => {
-          const rowP1 = normalizePhoneTo10(row.phone);
-          const rowP2 = normalizePhoneTo10(row.business_contact_1);
+          const rowNumbers = [];
+          ALL_CONTACT_KEYS.forEach(col => {
+            const val = normalizePhoneTo10(row[col]);
+            if (val && val.length >= 7) {
+              const fieldLabel = ALL_CONTACT_FIELDS.find(f => f.key === col)?.label || col;
+              rowNumbers.push({ col, val, fieldLabel, raw: row[col] });
+            }
+          });
+
           const rowGST = row.business_gst ? String(row.business_gst).trim().toUpperCase() : '';
 
-          const isPhoneDupInDB = (rowP1 && existingPhones10.has(rowP1)) || (rowP2 && existingPhones10.has(rowP2));
-          const isPhoneDupInFile = (rowP1 && seenInFilePhones.has(rowP1)) || (rowP2 && seenInFilePhones.has(rowP2));
-          const isGSTDupInDB = rowGST && rowGST.length >= 8 && existingGSTs.has(rowGST);
-          const isGSTDupInFile = rowGST && rowGST.length >= 8 && seenInFileGSTs.has(rowGST);
+          let dbMatch = null;
+          let fileMatch = null;
 
-          if (isPhoneDupInDB || isPhoneDupInFile || isGSTDupInDB || isGSTDupInFile) {
+          for (const item of rowNumbers) {
+            if (existingPhonesMap.has(item.val)) {
+              dbMatch = {
+                type: item.fieldLabel,
+                val: item.val,
+                details: existingPhonesMap.get(item.val)
+              };
+              break;
+            }
+            if (seenInFilePhones.has(item.val)) {
+              fileMatch = {
+                type: item.fieldLabel,
+                val: item.val,
+                rowNum: seenInFilePhones.get(item.val)
+              };
+              break;
+            }
+          }
+
+          if (!dbMatch && rowGST && rowGST.length >= 8) {
+            if (existingGSTMap.has(rowGST)) {
+              dbMatch = { type: 'Business GSTIN', val: rowGST, details: existingGSTMap.get(rowGST) };
+            } else if (seenInFileGSTs.has(rowGST)) {
+              fileMatch = { type: 'Business GSTIN', val: rowGST, rowNum: seenInFileGSTs.get(rowGST) };
+            }
+          }
+
+          if (dbMatch) {
             row._isDuplicate = true;
-            row._dupReason = isPhoneDupInDB ? 'Phone in database' :
-                             isPhoneDupInFile ? 'Duplicate phone in file' :
-                             isGSTDupInDB ? 'GSTIN in database' : 'Duplicate GSTIN in file';
+            row._dupReason = `${dbMatch.type} (${dbMatch.val}) matches existing lead #${dbMatch.details.lead_ref_id} (${dbMatch.details.company})`;
+            duplicatesList.push(row);
+          } else if (fileMatch) {
+            row._isDuplicate = true;
+            row._dupReason = `Duplicate ${fileMatch.type} (${fileMatch.val}) matches Row #${fileMatch.rowNum} in this file`;
             duplicatesList.push(row);
           } else {
             row._isDuplicate = false;
             ready.push(row);
-            if (rowP1 && rowP1.length >= 7) seenInFilePhones.add(rowP1);
-            if (rowP2 && rowP2.length >= 7) seenInFilePhones.add(rowP2);
-            if (rowGST && rowGST.length >= 8) seenInFileGSTs.add(rowGST);
+            rowNumbers.forEach(item => seenInFilePhones.set(item.val, row._rowNum));
+            if (rowGST && rowGST.length >= 8) seenInFileGSTs.set(rowGST, row._rowNum);
           }
         });
       } else {
