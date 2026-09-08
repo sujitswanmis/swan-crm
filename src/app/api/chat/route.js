@@ -473,11 +473,30 @@ async function executeTool(toolCall, userId, isAdmin, currentUser = {}) {
 
       const employeeList = Object.values(employees).sort((a, b) => (b.total_actions + b.notes_count) - (a.total_actions + a.notes_count));
 
+      // Calculate company-wide stage breakdown
+      const companyStageBreakdown = {};
+      allAudit.filter(l => l.action === 'Stage Changed').forEach(log => {
+        const match = log.target.match(/to\s+"([^"]+)"/i);
+        const stageName = match ? match[1].split('>').pop() || match[1] : 'Updated';
+        companyStageBreakdown[stageName] = (companyStageBreakdown[stageName] || 0) + 1;
+      });
+
+      // Calculate employee-wise stage breakdown list
+      const employeeStageBreakdown = employeeList
+        .filter(e => e.stage_changes_count > 0)
+        .map(e => ({
+          employee_name: e.emp_name,
+          total_stage_changes: e.stage_changes_count,
+          stage_breakdown: e.stage_breakdown
+        }));
+
       return JSON.stringify({
         date: targetDate,
         total_team_actions: allAudit.length,
         total_notes_written: (todayNotes || []).length,
         active_employees_count: employeeList.length,
+        company_stage_breakdown: companyStageBreakdown,
+        employee_stage_breakdown: employeeStageBreakdown,
         employees_summary: employeeList
       });
     }
@@ -1667,10 +1686,16 @@ CORE CRM DOMAIN TOOL DISPATCH RULES:
    - ALWAYS call 'get_client_registrations_summary' IMMEDIATELY!
    - Report total new clients registered today in IST, breakdown by source, breakdown by registered_by (which employee entered them), and a clear table of registered clients (Company, Contact Person, Phone, City, Source, Time).
 
-7. DAILY EXECUTIVE WORK SUMMARY & LEAD DETAILS REPORT:
-   - Whenever the user asks for daily summary, work summary, employee performance, "aaj ka summary", "daily report", "kaun kya kam kia", "aaj ka kaam", or specific employee work / updates:
+7. DAILY EXECUTIVE WORK SUMMARY, TEAM SUMMARY & LEAD DETAILS REPORT:
+   - Whenever the user asks for daily summary, work summary, employee performance, "aaj ka summary", "daily report", "kaun kya kam kia", "aaj ka kaam", "lead summary", or specific employee work / updates:
    - ALWAYS CALL 'get_daily_team_activity_summary' or 'get_employee_daily_activity'!
-   - When asked for "lead details report", "updates ka detail", "103 update ka report dikhao", or specific leads updated by an employee:
+   - When asked for TEAM lead summary / "kaun kitna kam kia" / "stage breakdown wise batao":
+     1. Display the Activity Overview summary metrics (Total Actions, Total Notes Written, Active Employees).
+     2. Display the Employee Activity Summary Table (Columns: Employee Name, Total Actions, Stage Changes, Notes Written, Follow-ups Set).
+     3. CRITICAL: If the user asks "stage breakdown wise" or mentions stage breakdown:
+        - ALWAYS display the Company-Wide Stage Breakdown (Call not connected, Contacted, ReSchedule, No Response, Interested, Unqualified, Catalog Shared).
+        - ALWAYS display an Employee-wise Stage Breakdown Table showing each calling executive and their exact stage counts (Call not connected, Contacted, ReSchedule, Interested, No Response)! NEVER omit this table when the user asked for stage breakdown!
+   - When asked for individual "lead details report", "updates ka detail", "103 update ka report dikhao", or specific leads updated by an employee:
      1. Clearly explain the Activity Overview (total actions, stage changes count, notes written, leads assigned, breaks).
      2. ALWAYS display the complete Stage Breakdown Table with ALL stages from 'stage_breakdown_table' (e.g. Call not connected, Contacted, ReSchedule, Interested, No Response) with exact counts so the sum matches stage_changes_count. NEVER drop or omit any stage!
      3. CRITICALLY: ALWAYS present a clean, comprehensive 'Lead Details Report' Markdown Table from 'leads_worked_on_details' (Columns: Lead Ref ID, Company / Business Name, Contact Person, Phone, City, Stage, Latest Remark / Note, Time).
