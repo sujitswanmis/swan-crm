@@ -875,6 +875,16 @@ export default function CRMContainer({
   
   const prevLeadsSigRef = useRef('');
   const initialSyncFinishedRef = useRef(false);
+  const saveLeadsTimeoutRef = useRef(null);
+
+  const debouncedSaveLeadsLocally = (updatedLeads) => {
+    if (saveLeadsTimeoutRef.current) {
+      clearTimeout(saveLeadsTimeoutRef.current);
+    }
+    saveLeadsTimeoutRef.current = setTimeout(() => {
+      saveLeadsLocally(updatedLeads);
+    }, 800);
+  };
 
   const updateLeadsIfChanged = (newList) => {
     const listToProcess = Array.isArray(newList) ? newList : (newList ? [newList] : []);
@@ -1206,14 +1216,14 @@ export default function CRMContainer({
         setRawLeads((current) => {
           if (current.some(item => item.id === payload.new.id)) return current;
           const updated = [{ ...payload.new, lead_notes: [] }, ...current];
-          saveLeadsLocally(updated);
+          debouncedSaveLeadsLocally(updated);
           return updated;
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => {
           const updated = current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item);
-          saveLeadsLocally(updated);
+          debouncedSaveLeadsLocally(updated);
           return updated;
         });
         setLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
@@ -1221,7 +1231,7 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => {
           const updated = current.filter(item => item.id !== payload.old.id);
-          saveLeadsLocally(updated);
+          debouncedSaveLeadsLocally(updated);
           return updated;
         });
         setLeads((current) => current.filter(item => item.id !== payload.old.id));
@@ -1235,7 +1245,7 @@ export default function CRMContainer({
             if (existingNotes.some(n => n.id === incoming.id)) return item;
             return { ...item, lead_notes: [incoming, ...existingNotes] };
           });
-          saveLeadsLocally(updated);
+          debouncedSaveLeadsLocally(updated);
           return updated;
         });
         setLeads((current) => current.map(item => {
@@ -1257,6 +1267,7 @@ export default function CRMContainer({
     window.addEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
 
     return () => {
+      if (saveLeadsTimeoutRef.current) clearTimeout(saveLeadsTimeoutRef.current);
       supabase.removeChannel(channel);
       window.removeEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
     };
@@ -4889,7 +4900,11 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('registration', moduleAccess, userRole) && visitedTabs.has('registration')}
               >
                 <ErrorBoundary>
-                  <ClientRegistration onRegistrationSuccess={() => handleTabChange('report')} canWrite={canWrite} />
+                  <ClientRegistration 
+                    onRegistrationSuccess={() => handleTabChange('report')} 
+                    canWrite={canWrite} 
+                    teamMembers={teamMembers}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 

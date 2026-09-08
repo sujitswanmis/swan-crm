@@ -687,7 +687,7 @@ const ALL_COLUMNS = [
   { key: 'created_by', label: 'Created By' },
   { key: 'entry_by', label: 'Entry By' },
   { key: 'assigned_to_name', label: 'Assigned To' },
-  { key: 'status', label: 'Client Status' },
+  { key: 'status', label: 'Lead Status' },
   { key: 'priority', label: 'Lead Priority Type' },
   
   { key: 'company', label: 'Business Name' },
@@ -793,6 +793,7 @@ export default function ClientReport({
   // Selection State for Deletion & Assignment
   const [selectedRows, setSelectedRows] = useState([]);
   const [selectedAssignee, setSelectedAssignee] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
 
   // Search, Filter & Pagination State
   const [globalSearch, setGlobalSearch] = useState('');
@@ -1079,28 +1080,40 @@ export default function ClientReport({
     if (!confirm(`Are you sure you want to assign ${selectedRows.length} lead(s) to ${assigneeName}?`)) return;
 
     try {
-      setLoading(true);
-      for (let i = 0; i < selectedRows.length; i += 500) {
-        const chunk = selectedRows.slice(i, i + 500);
+      setIsAssigning(true);
+      const chunkSize = 200;
+      for (let i = 0; i < selectedRows.length; i += chunkSize) {
+        const chunk = selectedRows.slice(i, i + chunkSize);
         const { error } = await supabase
           .from('leads')
           .update({ assigned_to: selectedAssignee })
           .in('id', chunk);
         if (error) throw error;
+        // Yield briefly to event loop to keep the UI responsive
+        await new Promise(r => setTimeout(r, 20));
       }
       
       try {
         await logAuditAction('Bulk Assign Leads', `Assigned ${selectedRows.length} lead(s) to ${assigneeName} via Report Page`);
       } catch(e) { console.error('Audit Log failed', e); }
 
-      setLeads(prev => prev.map(l => selectedRows.includes(l.id) ? { 
-        ...l, 
-        assigned_to: selectedAssignee,
-        assigned_to_name: assigneeName
-      } : l));
+      const selectedSet = new Set(selectedRows);
+      const updatedLeadsList = [];
+      setLeads(prev => prev.map(l => {
+        if (selectedSet.has(l.id)) {
+          const updated = { 
+            ...l, 
+            assigned_to: selectedAssignee,
+            assigned_to_name: assigneeName
+          };
+          updatedLeadsList.push(updated);
+          return updated;
+        }
+        return l;
+      }));
       
-      if (onLeadsChange) {
-        onLeadsChange();
+      if (onLeadsChange && updatedLeadsList.length > 0) {
+        onLeadsChange(updatedLeadsList);
       }
 
       setSelectedRows([]);
@@ -1110,19 +1123,24 @@ export default function ClientReport({
       console.error("Error assigning leads:", err);
       alert("Failed to assign leads: " + err.message);
     } finally {
-      setLoading(false);
+      setIsAssigning(false);
     }
   };
 
   const handleBulkUpdateCompleted = (affectedIds, colKey, directVal, updatesMap) => {
+    const affectedSet = new Set(affectedIds);
+    const updatedList = [];
     setLeads(prev => prev.map(l => {
-      if (!affectedIds.includes(l.id)) return l;
+      if (!affectedSet.has(l.id)) return l;
+      let val = directVal;
       if (updatesMap && updatesMap[l.id] !== undefined) {
-        return { ...l, [colKey]: updatesMap[l.id] };
+        val = updatesMap[l.id];
       }
-      return { ...l, [colKey]: directVal };
+      const updated = { ...l, [colKey]: val };
+      updatedList.push(updated);
+      return updated;
     }));
-    if (onLeadsChange) onLeadsChange();
+    if (onLeadsChange && updatedList.length > 0) onLeadsChange(updatedList);
   };
 
   const toggleRowSelection = (id) => {
@@ -1474,10 +1492,10 @@ export default function ClientReport({
                   />
                   <button 
                     onClick={handleAssignSelected}
-                    disabled={!selectedAssignee}
-                    style={{ padding: '0.4rem 0.8rem', background: selectedAssignee ? '#10b981' : '#d1fae5', color: selectedAssignee ? 'white' : '#6ee7b7', border: 'none', borderRadius: '4px', cursor: selectedAssignee ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
+                    disabled={!selectedAssignee || isAssigning}
+                    style={{ padding: '0.4rem 0.8rem', background: (selectedAssignee && !isAssigning) ? '#10b981' : '#d1fae5', color: (selectedAssignee && !isAssigning) ? 'white' : '#6ee7b7', border: 'none', borderRadius: '4px', cursor: (selectedAssignee && !isAssigning) ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}
                   >
-                    <UserPlus size={14} /> Assign ({selectedRows.length})
+                    <UserPlus size={14} /> {isAssigning ? 'Assigning...' : `Assign (${selectedRows.length})`}
                   </button>
                 </>
               )}

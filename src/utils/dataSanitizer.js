@@ -327,6 +327,75 @@ export function extractEmpId(str) {
   return match ? match[1] : null;
 }
 
+// Caching maps to prevent repetitive computation (e.g. Levenshtein distance on 5,000+ items)
+const stateCache = new Map();
+const employeeNameCache = new Map();
+
+/**
+ * Standardizes a phone number to its last 10 digits for accurate duplicate checking.
+ * Handles +91, 0 prefix, spaces, dashes, parentheses, etc.
+ */
+export function normalizePhoneTo10(phoneStr) {
+  if (!phoneStr) return '';
+  const digits = String(phoneStr).replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+/**
+ * Resolves an employee identifier (Name, Email, Employee Code, or UUID)
+ * to their official Supabase user_id / id. Returns null if unassigned or not found.
+ */
+export function resolveTeamMemberId(rawVal, teamMembers = []) {
+  if (!rawVal || typeof rawVal !== 'string') return null;
+  const trimmed = rawVal.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'unassigned' || trimmed.toLowerCase() === 'open lead' || trimmed.toLowerCase() === 'none' || trimmed === '-') {
+    return null;
+  }
+
+  if (!teamMembers || teamMembers.length === 0) {
+    // If it's already a valid UUID format, return it directly
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      return trimmed;
+    }
+    return null;
+  }
+
+  // 1. Direct match by UUID / ID
+  const byUuid = teamMembers.find(m => m.user_id === trimmed || m.id === trimmed);
+  if (byUuid) return byUuid.user_id || byUuid.id;
+
+  // 2. Direct match by Email (case-insensitive)
+  const rawLower = trimmed.toLowerCase();
+  const byEmail = teamMembers.find(m => m.email && m.email.toLowerCase() === rawLower);
+  if (byEmail) return byEmail.user_id || byEmail.id;
+
+  // 3. Match by Employee Code (e.g. 50745)
+  const idCode = extractEmpId(trimmed);
+  if (idCode) {
+    const byCode = teamMembers.find(m => {
+      const mCode = String(m.emp_id || m.emp_code || extractEmpId(m.emp_name) || extractEmpId(m.user_id) || '');
+      return mCode === idCode;
+    });
+    if (byCode) return byCode.user_id || byCode.id;
+  }
+
+  // 4. Match by Employee Name (case-insensitive)
+  const byName = teamMembers.find(m => {
+    const mName = String(m.emp_name || '').toLowerCase();
+    const mPrefix = String(m.email || '').toLowerCase().split('@')[0];
+    return mName === rawLower || (mPrefix && mPrefix === rawLower);
+  });
+  if (byName) return byName.user_id || byName.id;
+
+  // 5. Fallback: if already a valid UUID
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
 /**
  * Normalizes an employee identifier to the official registered employee name from Team Management.
  */
@@ -344,8 +413,15 @@ export function normalizeEmployeeName(rawIdentifier, teamMembers = []) {
     return rawTrimmed;
   }
 
+  const cacheKey = `${rawTrimmed}__${teamMembers.length}`;
+  if (employeeNameCache.has(cacheKey)) {
+    return employeeNameCache.get(cacheKey);
+  }
+
   const idCode = extractEmpId(rawTrimmed);
   const rawLower = rawTrimmed.toLowerCase();
+
+  let resolved = rawTrimmed;
 
   // 1. Match by Employee Code (e.g. 50745)
   if (idCode) {
@@ -354,14 +430,18 @@ export function normalizeEmployeeName(rawIdentifier, teamMembers = []) {
       return mCode === idCode;
     });
     if (memberByCode && memberByCode.emp_name) {
-      return memberByCode.emp_name;
+      resolved = memberByCode.emp_name;
+      employeeNameCache.set(cacheKey, resolved);
+      return resolved;
     }
   }
 
   // 2. Match by UUID (user_id / id)
   const memberByUuid = teamMembers.find(m => m.user_id === rawTrimmed || m.id === rawTrimmed);
   if (memberByUuid && memberByUuid.emp_name) {
-    return memberByUuid.emp_name;
+    resolved = memberByUuid.emp_name;
+    employeeNameCache.set(cacheKey, resolved);
+    return resolved;
   }
 
   // 3. Match by exact Name or Email
@@ -372,10 +452,13 @@ export function normalizeEmployeeName(rawIdentifier, teamMembers = []) {
     return mName === rawLower || mEmail === rawLower || (mPrefix && mPrefix === rawLower);
   });
   if (memberByNameOrEmail && memberByNameOrEmail.emp_name) {
-    return memberByNameOrEmail.emp_name;
+    resolved = memberByNameOrEmail.emp_name;
+    employeeNameCache.set(cacheKey, resolved);
+    return resolved;
   }
 
-  return rawTrimmed;
+  employeeNameCache.set(cacheKey, resolved);
+  return resolved;
 }
 
 /**
@@ -392,22 +475,31 @@ export function normalizeStateName(rawState) {
   const trimmed = rawState.trim();
   if (!trimmed) return '';
 
+  if (stateCache.has(trimmed)) {
+    return stateCache.get(trimmed);
+  }
+
   const lower = trimmed.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ').replace(/\s+/g, ' ').trim();
 
   // 1. Direct match in expanded Alias Map
   if (STATE_ALIAS_MAP[lower]) {
-    return STATE_ALIAS_MAP[lower];
+    const res = STATE_ALIAS_MAP[lower];
+    stateCache.set(trimmed, res);
+    return res;
   }
 
   // 2. Direct match without spaces (e.g. "uttarpradesh", "westbengal")
   const noSpace = lower.replace(/\s+/g, '');
   if (STATE_ALIAS_MAP[noSpace]) {
-    return STATE_ALIAS_MAP[noSpace];
+    const res = STATE_ALIAS_MAP[noSpace];
+    stateCache.set(trimmed, res);
+    return res;
   }
 
   // 3. Exact match against official states list (case-insensitive)
   const officialExact = OFFICIAL_INDIAN_STATES.find(s => s.toLowerCase() === lower);
   if (officialExact) {
+    stateCache.set(trimmed, officialExact);
     return officialExact;
   }
 
@@ -425,10 +517,13 @@ export function normalizeStateName(rawState) {
 
   // If similarity is 70% or higher, snap to the official state
   if (highestSimilarity >= 0.70 && bestMatch) {
+    stateCache.set(trimmed, bestMatch);
     return bestMatch;
   }
 
-  return toTitleCase(trimmed);
+  const res = toTitleCase(trimmed);
+  stateCache.set(trimmed, res);
+  return res;
 }
 
 /**

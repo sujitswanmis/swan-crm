@@ -8,7 +8,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
-import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
+import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 
 const IMPORT_FIELDS = [
@@ -16,13 +16,14 @@ const IMPORT_FIELDS = [
   { key: 'our_company', label: 'Our Company Name', standardHeaders: ['Our Company Name', 'Our Company', 'companyname'] },
   { key: 'source', label: 'Lead Source', standardHeaders: ['Lead Source', 'source'] },
   { key: 'source_name', label: 'Source Name', standardHeaders: ['Source Name', 'sourcename'] },
-  { key: 'entry_by', label: 'Entry By', standardHeaders: ['Entry By', 'entryby'] },
-  { key: 'status', label: 'Client Status', standardHeaders: ['Client Status', 'status'] },
+  { key: 'entry_by', label: 'Entry By', standardHeaders: ['Entry By', 'entryby', 'Lead Entry By'] },
+  { key: 'assigned_to', label: 'Assigned To', standardHeaders: ['Assigned To', 'assignedto', 'assign_to', 'assigned_to', 'agent', 'assigned agent', 'assignee'] },
+  { key: 'status', label: 'Lead Status', standardHeaders: ['Lead Status', 'leadstatus', 'Client Status', 'clientstatus', 'status'] },
   { key: 'priority', label: 'Lead Priority Type', standardHeaders: ['Lead Priority Type', 'priority'] },
   { key: 'company', label: 'Business Name', standardHeaders: ['Business Name', 'BusinessName', 'company'] },
   { key: 'business_type', label: 'Business Type', standardHeaders: ['Business Type', 'businesstype'] },
-  { key: 'business_gst', label: 'Business GST', standardHeaders: ['Business GST', 'gst', 'gstin'] },
-  { key: 'business_contact_1', label: 'Business Contact 1', standardHeaders: ['Business Contact 1', 'contact1'] },
+  { key: 'business_gst', label: 'Business GST', standardHeaders: ['Business GST', 'gst', 'gstin', 'gst_no', 'gstno'] },
+  { key: 'business_contact_1', label: 'Business Contact 1', standardHeaders: ['Business Contact 1', 'contact1', 'business_contact_1', 'company contact', 'business contact'] },
   { key: 'business_contact_2', label: 'Business Contact 2', standardHeaders: ['Business Contact 2', 'contact2'] },
   { key: 'business_alt_1', label: 'Business Alt 1', standardHeaders: ['Business Alt 1', 'alt1'] },
   { key: 'business_alt_2', label: 'Business Alt 2', standardHeaders: ['Business Alt 2', 'alt2'] },
@@ -30,8 +31,8 @@ const IMPORT_FIELDS = [
   { key: 'business_email_2', label: 'Business Email 2', standardHeaders: ['Business Email 2', 'email2'] },
   { key: 'business_alt_email_1', label: 'Business Alt Email 1', standardHeaders: ['Business Alt Email 1', 'altemail1'] },
   { key: 'business_alt_email_2', label: 'Business Alt Email 2', standardHeaders: ['Business Alt Email 2', 'altemail2'] },
-  { key: 'name', label: 'CP1 Name', standardHeaders: ['CP1 Name', 'Name', 'cpname', 'cp1name'] },
-  { key: 'phone', label: 'CP1 Mobile 1', standardHeaders: ['CP1 Mobile 1', 'Phone', 'Mobile', 'cp1mobile1'] },
+  { key: 'name', label: 'CP1 Name', standardHeaders: ['CP1 Name', 'Name', 'cpname', 'cp1name', 'contact person'] },
+  { key: 'phone', label: 'CP1 Mobile 1', standardHeaders: ['CP1 Mobile 1', 'Phone', 'Mobile', 'Mobile No', 'Mobile Number', 'Phone Number', 'Phone No', 'Contact', 'Contact No', 'Contact Number', 'cp1mobile1', 'cp1_mobile_1', 'cp1 mobile'] },
   { key: 'cp1_mobile_2', label: 'CP1 Mobile 2', standardHeaders: ['CP1 Mobile 2', 'cpmobile2'] },
   { key: 'cp1_alt_1', label: 'CP1 Alt 1', standardHeaders: ['CP1 Alt 1'] },
   { key: 'cp1_alt_2', label: 'CP1 Alt 2', standardHeaders: ['CP1 Alt 2'] },
@@ -65,7 +66,7 @@ const IMPORT_FIELDS = [
 
 const SAMPLE_DATA = [
   [
-    '2026-06-27', 'Swan Enterprises', 'Google Ads', 'Search Campaign', 'admin', '1;01>New Stage>New Lead', 'LP02: High Priority',
+    '2026-06-27', 'Swan Enterprises', 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', '1;01>New Stage>New Lead', 'LP02: High Priority',
     'Apex Retailers Ltd', 'Retailer', '07AAAAA1111A1Z1', '9876543210', '9876543211',
     '', '', 'info@apexretail.com', '', '', '',
     'Rahul Sharma', '9876543210', '', '', '', 'rahul@apexretail.com', '',
@@ -75,7 +76,7 @@ const SAMPLE_DATA = [
     'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate'
   ],
   [
-    '2026-06-26', 'Swan Enterprises', 'Organic', 'Google Search', 'admin', '3;01>Qualification Stage>Interested', 'LP03: Medium Priority',
+    '2026-06-26', 'Swan Enterprises', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', '3;01>Qualification Stage>Interested', 'LP03: Medium Priority',
     'Global Distributors', 'Distributor', '09BBBBB2222B2Z2', '8765432109', '',
     '', '', 'purchase@globaldist.com', '', '', '',
     'Sanjay Verma', '8765432109', '', '', '', 'sanjay@globaldist.com', '',
@@ -85,13 +86,14 @@ const SAMPLE_DATA = [
     'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days'
   ],
   [
-    '2026-06-25', 'Swan Enterprises', 'WhatsApp', 'Inbound Chat', 'user1', '2;01>Contact Stage>Contacted', 'LP04: Low Priority',
+    '2026-06-25', 'Swan Enterprises', 'WhatsApp', 'Inbound Chat', 'user1', '', '2;01>Contact Stage>Contacted', 'LP04: Low Priority',
     'Tech Solutions', 'Service Provider', '', '7654321098', '',
     '', '', 'contact@techsol.com', '', '', '',
     'Preeti Sen', '7654321098', '', '', '', 'preeti@techsol.com', '',
     '', '', '', '', '', '', '',
     '', '', '', '', '', '', '',
     'Haryana', 'Gurugram', '122018', 'Gurugram', 'Gurgaon', 'Gurugram', 'Sohna Road, Gurugram, HR',
+    'Wants IT solutions', 'Below 1 Lakh', 'Immediate'
   ]
 ];
 
@@ -415,7 +417,7 @@ function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
   );
 }
 
-export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null }) {
+export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null, teamMembers: propTeamMembers = null }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -481,8 +483,14 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     requirements: true
   });
   
-  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamMembers, setTeamMembers] = useState(propTeamMembers || []);
   const [dbExtraStates, setDbExtraStates] = useState([]);
+
+  useEffect(() => {
+    if (propTeamMembers && Array.isArray(propTeamMembers) && propTeamMembers.length > 0) {
+      setTeamMembers(propTeamMembers);
+    }
+  }, [propTeamMembers]);
 
   useEffect(() => {
     async function loadStates() {
@@ -998,11 +1006,84 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       const ExcelJS = (await import('exceljs')).default;
       const { saveAs } = await import('file-saver');
 
+      // Ensure teamMembers is loaded even if clicked immediately on page load
+      let currentMembers = teamMembers;
+      if (!currentMembers || currentMembers.length === 0) {
+        if (propTeamMembers && propTeamMembers.length > 0) {
+          currentMembers = propTeamMembers;
+        } else {
+          try {
+            const fetched = await getTeamMembers();
+            if (fetched && Array.isArray(fetched) && fetched.length > 0) {
+              currentMembers = fetched;
+              setTeamMembers(fetched);
+            }
+          } catch (e) {
+            console.warn("Could not pre-fetch team members for template:", e);
+          }
+        }
+      }
+
+      const activeMemberNames = (currentMembers || [])
+        .filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')))
+        .map(m => String(m.emp_name).replace(/,/g, '').trim())
+        .filter(Boolean);
+
+      const businessTypes = ['Dealer', 'Distributor', 'Retailer', 'Farmer', 'Trader', 'Manufacturer', 'Service Provider', 'Other'];
+      const investmentRanges = ['Below 1 Lakh', '1 Lakh - 5 Lakh', '5 Lakh - 10 Lakh', '10 Lakh - 25 Lakh', '25 Lakh - 50 Lakh', 'Above 50 Lakh'];
+      const timelines = ['Immediate', 'Within 7 Days', 'Within 15 Days', 'Within 30 Days', 'Within 60 Days', 'After 60 Days', 'Not Decided'];
+
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Client Registration');
 
-      const headers = IMPORT_FIELDS.map(f => f.label);
+      // Create a hidden lookup sheet to store full lists.
+      // This eliminates Excel's 255-character inline formula limit so all 190+ employees appear in dropdowns without errors.
+      const listSheet = workbook.addWorksheet('Lists');
+      listSheet.state = 'hidden';
 
+      // Column A: Assigned To (Employees)
+      listSheet.getCell('A1').value = 'Assigned To';
+      activeMemberNames.forEach((name, idx) => {
+        listSheet.getCell(`A${idx + 2}`).value = name;
+      });
+
+      // Column B: Lead Statuses
+      listSheet.getCell('B1').value = 'Lead Status';
+      clientStatuses.forEach((st, idx) => {
+        listSheet.getCell(`B${idx + 2}`).value = st;
+      });
+
+      // Column C: Lead Sources
+      listSheet.getCell('C1').value = 'Lead Source';
+      sources.forEach((src, idx) => {
+        listSheet.getCell(`C${idx + 2}`).value = src;
+      });
+
+      // Column D: Priorities
+      listSheet.getCell('D1').value = 'Lead Priority';
+      priorities.forEach((p, idx) => {
+        listSheet.getCell(`D${idx + 2}`).value = p;
+      });
+
+      // Column E: Business Types
+      listSheet.getCell('E1').value = 'Business Type';
+      businessTypes.forEach((b, idx) => {
+        listSheet.getCell(`E${idx + 2}`).value = b;
+      });
+
+      // Column F: Investments
+      listSheet.getCell('F1').value = 'Investment';
+      investmentRanges.forEach((inv, idx) => {
+        listSheet.getCell(`F${idx + 2}`).value = inv;
+      });
+
+      // Column G: Timelines
+      listSheet.getCell('G1').value = 'Timeline';
+      timelines.forEach((t, idx) => {
+        listSheet.getCell(`G${idx + 2}`).value = t;
+      });
+
+      const headers = IMPORT_FIELDS.map(f => f.label);
       sheet.addRow(headers);
       
       // Style headers
@@ -1010,57 +1091,112 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
       
       // Set column widths
-      sheet.columns.forEach(column => { column.width = 20; });
+      sheet.columns.forEach(column => { column.width = 22; });
 
       // Add Sample Data Rows
       SAMPLE_DATA.forEach(row => {
         sheet.addRow(row);
       });
 
-      // Add Data Validation Dropdowns for first 100 rows
-      for (let i = 2; i <= 100; i++) {
-        // Our Company Name (Column 2)
-        sheet.getCell(i, 2).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: ['"NSMLR,NSTLP"']
-        };
-        // Lead Source (Column 3)
-        sheet.getCell(i, 3).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: [`"${sources.join(',')}"`]
-        };
-        // Client Status (Column 6)
-        sheet.getCell(i, 6).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: [`"${clientStatuses.join(',')}"`]
-        };
-        // Lead Priority Type (Column 7)
-        sheet.getCell(i, 7).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: [`"${priorities.join(',')}"`]
-        };
-        // Business Type (Column 9)
-        sheet.getCell(i, 9).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: ['"Dealer,Distributor,Retailer,Farmer,Trader,Manufacturer,Service Provider,Other"']
-        };
-        // Investment (Column 48)
-        sheet.getCell(i, 48).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: ['"Below 1 Lakh,1 Lakh - 5 Lakh,5 Lakh - 10 Lakh,10 Lakh - 25 Lakh,25 Lakh - 50 Lakh,Above 50 Lakh"']
-        };
-        // Buying Timeline (Column 49)
-        sheet.getCell(i, 49).dataValidation = {
-          type: 'list', allowBlank: true,
-          formulae: ['"Immediate,Within 7 Days,Within 15 Days,Within 30 Days,Within 60 Days,After 60 Days,Not Decided"']
-        };
+      // Create Defined Names for workbook to ensure 100% universal dropdown compatibility in Excel, Google Sheets, & LibreOffice
+      if (activeMemberNames.length > 0) {
+        workbook.definedNames.add(`Lists!$A$2:$A$${activeMemberNames.length + 1}`, 'AssignedToEmployees');
+      }
+      if (clientStatuses.length > 0) {
+        workbook.definedNames.add(`Lists!$B$2:$B$${clientStatuses.length + 1}`, 'LeadStatuses');
+      }
+      if (sources.length > 0) {
+        workbook.definedNames.add(`Lists!$C$2:$C$${sources.length + 1}`, 'LeadSources');
+      }
+      if (priorities.length > 0) {
+        workbook.definedNames.add(`Lists!$D$2:$D$${priorities.length + 1}`, 'LeadPriorities');
+      }
+      if (businessTypes.length > 0) {
+        workbook.definedNames.add(`Lists!$E$2:$E$${businessTypes.length + 1}`, 'BusinessTypes');
+      }
+      if (investmentRanges.length > 0) {
+        workbook.definedNames.add(`Lists!$F$2:$F$${investmentRanges.length + 1}`, 'InvestmentRanges');
+      }
+      if (timelines.length > 0) {
+        workbook.definedNames.add(`Lists!$G$2:$G$${timelines.length + 1}`, 'TimelineRanges');
+      }
+
+      // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
+      // Our Company Name (Column 2 -> B)
+      sheet.dataValidations.add('B2:B500', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"NSMLR,NSTLP"']
+      });
+
+      // Lead Source (Column 3 -> C)
+      if (sources.length > 0) {
+        sheet.dataValidations.add('C2:C500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=LeadSources']
+        });
+      }
+
+      // Assigned To (Column 6 -> F)
+      if (activeMemberNames.length > 0) {
+        sheet.dataValidations.add('F2:F500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=AssignedToEmployees']
+        });
+      }
+
+      // Lead Status (Column 7 -> G)
+      if (clientStatuses.length > 0) {
+        sheet.dataValidations.add('G2:G500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=LeadStatuses']
+        });
+      }
+
+      // Lead Priority Type (Column 8 -> H)
+      if (priorities.length > 0) {
+        sheet.dataValidations.add('H2:H500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=LeadPriorities']
+        });
+      }
+
+      // Business Type (Column 10 -> J)
+      if (businessTypes.length > 0) {
+        sheet.dataValidations.add('J2:J500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=BusinessTypes']
+        });
+      }
+
+      // Investment (Column 49 -> AW)
+      if (investmentRanges.length > 0) {
+        sheet.dataValidations.add('AW2:AW500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=InvestmentRanges']
+        });
+      }
+
+      // Buying Timeline (Column 50 -> AX)
+      if (timelines.length > 0) {
+        sheet.dataValidations.add('AX2:AX500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=TimelineRanges']
+        });
       }
 
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), 'Client_Registration_Template.xlsx');
     } catch (err) {
       console.error("Error generating Excel template:", err);
-      alert("Could not generate Excel template.");
+      alert("Could not generate Excel template: " + err.message);
     }
   };
 
@@ -1165,10 +1301,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   };
 
   const handleProceedToPreview = async () => {
-    // Check if CP1 Mobile 1 field is mapped (critical for duplicates checking)
-    const phoneMappedHeader = mapping['phone'];
-    if (!phoneMappedHeader) {
-      if (!confirm("Warning: You have not mapped 'CP1 Mobile 1'. Duplicates checking will be skipped and all rows will be imported. Do you want to proceed?")) {
+    // Check if at least one contact field or GST is mapped
+    const hasContactMapped = mapping['phone'] || mapping['business_contact_1'] || mapping['business_gst'];
+    if (!hasContactMapped) {
+      if (!confirm("Warning: You have not mapped 'CP1 Mobile 1', 'Business Contact 1', or 'Business GST'. Duplicate checking will be skipped and all rows will be marked ready. Do you want to proceed?")) {
         return;
       }
     }
@@ -1205,20 +1341,27 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         if (!leadObj.status) leadObj.status = 'None';
         leadObj.created_by = actor;
         
+        // Resolve assigned_to to team member ID (UUID)
+        if (leadObj.assigned_to) {
+          leadObj.assigned_to = resolveTeamMemberId(leadObj.assigned_to, teamMembers);
+        } else {
+          leadObj.assigned_to = null;
+        }
+        
         return leadObj;
       });
 
       let ready = [];
       let duplicatesList = [];
 
-      if (phoneMappedHeader) {
-        // Query database for duplicates by phone
+      if (hasContactMapped) {
+        // Query database for duplicates by phone, business_contact_1, and business_gst
         let existingLeads = [];
         let fetchPage = 0;
         while (true) {
           const { data: pageData, error: fetchErr } = await supabase
             .from('leads')
-            .select('phone')
+            .select('phone, business_contact_1, business_gst')
             .range(fetchPage * 1000, (fetchPage + 1) * 1000 - 1);
           
           if (fetchErr) throw fetchErr;
@@ -1229,16 +1372,46 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           fetchPage++;
         }
         
-        const existingPhones = new Set(existingLeads.map(l => String(l.phone).trim()).filter(Boolean));
+        // Build normalized sets from database
+        const existingPhones10 = new Set();
+        const existingGSTs = new Set();
+
+        existingLeads.forEach(l => {
+          const p1 = normalizePhoneTo10(l.phone);
+          if (p1 && p1.length >= 7) existingPhones10.add(p1);
+          const p2 = normalizePhoneTo10(l.business_contact_1);
+          if (p2 && p2.length >= 7) existingPhones10.add(p2);
+          if (l.business_gst && String(l.business_gst).trim().length >= 8) {
+            existingGSTs.add(String(l.business_gst).trim().toUpperCase());
+          }
+        });
+
+        // Intra-file tracking sets to detect duplicate rows within the uploaded file itself
+        const seenInFilePhones = new Set();
+        const seenInFileGSTs = new Set();
 
         mapped.forEach(row => {
-          const cleanPhone = row.phone ? String(row.phone).trim() : '';
-          if (cleanPhone && existingPhones.has(cleanPhone)) {
+          const rowP1 = normalizePhoneTo10(row.phone);
+          const rowP2 = normalizePhoneTo10(row.business_contact_1);
+          const rowGST = row.business_gst ? String(row.business_gst).trim().toUpperCase() : '';
+
+          const isPhoneDupInDB = (rowP1 && existingPhones10.has(rowP1)) || (rowP2 && existingPhones10.has(rowP2));
+          const isPhoneDupInFile = (rowP1 && seenInFilePhones.has(rowP1)) || (rowP2 && seenInFilePhones.has(rowP2));
+          const isGSTDupInDB = rowGST && rowGST.length >= 8 && existingGSTs.has(rowGST);
+          const isGSTDupInFile = rowGST && rowGST.length >= 8 && seenInFileGSTs.has(rowGST);
+
+          if (isPhoneDupInDB || isPhoneDupInFile || isGSTDupInDB || isGSTDupInFile) {
             row._isDuplicate = true;
+            row._dupReason = isPhoneDupInDB ? 'Phone in database' :
+                             isPhoneDupInFile ? 'Duplicate phone in file' :
+                             isGSTDupInDB ? 'GSTIN in database' : 'Duplicate GSTIN in file';
             duplicatesList.push(row);
           } else {
             row._isDuplicate = false;
             ready.push(row);
+            if (rowP1 && rowP1.length >= 7) seenInFilePhones.add(rowP1);
+            if (rowP2 && rowP2.length >= 7) seenInFilePhones.add(rowP2);
+            if (rowGST && rowGST.length >= 8) seenInFileGSTs.add(rowGST);
           }
         });
       } else {
@@ -1262,41 +1435,59 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   };
 
   const handleConfirmImport = async () => {
+    if (filteredImportData.length === 0) {
+      alert("No valid new client rows to import.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const chunkSize = 500;
+      // 1. Fetch current lead count once to generate incremental lead_ref_ids cleanly beforehand
+      const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+      let currentSeq = count || 0;
+
+      const chunkSize = 200;
       for (let i = 0; i < filteredImportData.length; i += chunkSize) {
         const chunk = filteredImportData.slice(i, i + chunkSize);
-        // Strip out internal preview metadata before inserting into Supabase
-        const cleanChunk = chunk.map(r => {
+        
+        // Strip out internal preview metadata and assign lead_ref_id before inserting
+        const cleanChunk = chunk.map((r) => {
           const copy = normalizeLeadRecord({ ...r }, teamMembers);
           delete copy._rowNum;
           delete copy._isDuplicate;
+          delete copy._dupReason;
+
+          currentSeq++;
+          const d = new Date();
+          const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+          const seq = String(currentSeq).padStart(7, '0');
+          copy.lead_ref_id = dateStr + seq;
+
+          // Resolve assigned_to to valid UUID or null
+          if (copy.assigned_to) {
+            copy.assigned_to = resolveTeamMemberId(copy.assigned_to, teamMembers);
+          } else {
+            copy.assigned_to = null;
+          }
+
+          // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
+          Object.keys(copy).forEach(k => {
+            if (copy[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to')) {
+              copy[k] = null;
+            }
+          });
+
           return copy;
         });
 
-        const { data: insertedData, error } = await supabase.from('leads').insert(cleanChunk).select();
+        const { error } = await supabase.from('leads').insert(cleanChunk);
         if (error) {
           console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
           throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
         }
-        
-        // Update lead_ref_id for the inserted chunk
-        if (insertedData && insertedData.length > 0) {
-          const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
-          const startCount = count - insertedData.length;
-          
-          // Sort insertedData by created_at to assign sequence numbers in correct order
-          const sortedInserted = [...insertedData].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-          
-          await Promise.all(sortedInserted.map(async (lead, idx) => {
-            const d = new Date(lead.created_at || new Date());
-            const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-            const seq = String(startCount + idx + 1).padStart(7, '0');
-            const newFormattedId = dateStr + seq;
-            await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', lead.id);
-          }));
-        }
+
+        // Brief yield to avoid blocking the main thread
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
 
       alert(`Successfully uploaded ${filteredImportData.length} new clients!\n${duplicatesCount > 0 ? `(${duplicatesCount} duplicates were safely skipped)` : ''}`);
@@ -1973,20 +2164,32 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                                 </td>
                                 <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap' }}>
                                   {isDup ? (
-                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
-                                      ⚠️ Duplicate
-                                    </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                                        ⚠️ Duplicate
+                                      </span>
+                                      {row._dupReason && (
+                                        <span style={{ fontSize: '0.65rem', color: '#b91c1c', fontWeight: 500 }}>{row._dupReason}</span>
+                                      )}
+                                    </div>
                                   ) : (
                                     <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>
                                       🟢 Ready
                                     </span>
                                   )}
                                 </td>
-                                {mappedDisplayFields.map(field => (
-                                  <td key={field.key} style={{ padding: '0.5rem 0.75rem', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {row[field.key] ? String(row[field.key]) : <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>-</span>}
-                                  </td>
-                                ))}
+                                {mappedDisplayFields.map(field => {
+                                  let cellVal = row[field.key];
+                                  if (field.key === 'assigned_to' && cellVal) {
+                                    const member = teamMembers.find(m => (m.user_id === cellVal || m.id === cellVal));
+                                    if (member) cellVal = member.emp_name || member.email;
+                                  }
+                                  return (
+                                    <td key={field.key} style={{ padding: '0.5rem 0.75rem', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {cellVal ? String(cellVal) : <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>-</span>}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             );
                           })}
