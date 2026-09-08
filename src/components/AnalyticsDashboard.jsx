@@ -544,7 +544,16 @@ export default function AnalyticsDashboard({
         primaryProcess.metricText = `${act.uniqueLeads} touched · ${act.actions} updates`;
         primaryProcess.applicable = empLeads.length > 0 || act.uniqueLeads > 0 || act.actions > 0;
       } else if (roleCategory === 'RECRUITER') {
-        const myCandidates = (dashboardSummaries.recruitmentSummary?.candidates || []).filter(c => isRecruiterMatch(c.created_by, emp));
+        const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => 
+          isRecruiterMatch(p.recruiter_assigned, emp) || 
+          isRecruiterMatch(p.created_by, emp) ||
+          (p.department && emp.department && p.department.toLowerCase() === emp.department.toLowerCase())
+        );
+        const myPositionIds = new Set(myPositions.map(p => p.id));
+        const myCandidates = (dashboardSummaries.recruitmentSummary?.candidates || []).filter(c => 
+          isRecruiterMatch(c.created_by, emp) || 
+          myPositionIds.has(c.position_id)
+        );
         const inInterview = myCandidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview')).length;
         const shortlisted = myCandidates.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist')).length;
         const hired = myCandidates.filter(c => c.current_stage === 'S09' || (c.candidate_status || '').toLowerCase().includes('joined') || c.current_stage === 'S08').length;
@@ -553,7 +562,7 @@ export default function AnalyticsDashboard({
         // Benchmark: 5 candidates handled, or interviews/hires
         const recScore = Math.min(30, Math.round((recruiterWorkCount / 5) * 15 + (inInterview * 5) + (shortlisted * 5) + (hired * 10)));
         primaryProcess.score = recScore;
-        primaryProcess.metricText = `${recruiterWorkCount} candidates · ${inInterview} interview · ${hired} hired`;
+        primaryProcess.metricText = `${recruiterWorkCount} candidates · ${inInterview} in-interview · ${hired} hired`;
         primaryProcess.applicable = true;
       } else {
         const checkRate = checkTotal > 0 ? (checkDone / checkTotal) : 0;
@@ -575,7 +584,11 @@ export default function AnalyticsDashboard({
       };
 
       if (roleCategory === 'RECRUITER') {
-        const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => isRecruiterMatch(p.recruiter_assigned || p.created_by, emp));
+        const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => 
+          isRecruiterMatch(p.recruiter_assigned, emp) || 
+          isRecruiterMatch(p.created_by, emp) ||
+          (p.department && emp.department && p.department.toLowerCase() === emp.department.toLowerCase())
+        );
         const activeCount = myPositions.filter(p => p.status !== 'CLOSED').length;
         followupProcess.score = myPositions.length > 0 ? 25 : 15;
         followupProcess.adherenceRate = 100;
@@ -646,6 +659,13 @@ export default function AnalyticsDashboard({
       else if (attRecord?.presenceStatus === 'HALF_DAY') attendanceProcess.score = 5;
       else attendanceProcess.score = 0;
 
+      // Ensure backward/forward compatible properties on each process object
+      [primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].forEach(p => {
+        p.earned = p.score;
+        p.weight = p.max;
+        p.metric = p.metricText;
+      });
+
       // Dynamic normalization across applicable processes
       const applicableList = [primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
       const earnedPoints = applicableList.reduce((acc, p) => acc + p.score, 0);
@@ -702,6 +722,7 @@ export default function AnalyticsDashboard({
         checkDone,
         checkTotal,
         tasksDone,
+        tasksTotal: empTasks.length,
         tasksOverdue,
         attRecord,
         hasActiveWork,
@@ -982,8 +1003,8 @@ export default function AnalyticsDashboard({
 
         {/* Row 2: Secondary Navigation Tabs */}
         <div style={{
-          display: 'flex', gap: '0.4rem', borderTop: '1px solid var(--border-light)',
-          paddingTop: '0.65rem', overflowX: 'auto', WebkitOverflowScrolling: 'touch'
+          display: 'flex', flexWrap: 'wrap', gap: '0.45rem', borderTop: '1px solid var(--border-light)',
+          paddingTop: '0.65rem'
         }}>
           {[
             { id: 'overview', label: 'Executive Overview', icon: Layers, badge: null },
@@ -1469,26 +1490,31 @@ export default function AnalyticsDashboard({
                     <div style={{ width: `${rep.totalScore}%`, height: '100%', backgroundColor: rep.tierColor }} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', fontSize: '0.72rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.72rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border-light)' }}>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)' }}>{rep.primaryProcess.name}:</span>{' '}
-                      <strong>{rep.primaryProcess.metric}</strong> ({rep.primaryProcess.earned}/{rep.primaryProcess.weight}p)
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>{rep.primaryProcess.name}</span>
+                      <strong>{rep.primaryProcess.metricText || rep.primaryProcess.metric || 'No Activity'}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.primaryProcess.score}/{rep.primaryProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)' }}>{rep.followupProcess.name}:</span>{' '}
-                      <strong>{rep.followupProcess.metric}</strong> ({rep.followupProcess.earned}/{rep.followupProcess.weight}p)
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>{rep.followupProcess.name}</span>
+                      <strong>{rep.followupProcess.metricText || rep.followupProcess.metric}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.followupProcess.score}/{rep.followupProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)' }}>Checklists:</span>{' '}
-                      <strong>{rep.checklistProcess.metric}</strong> ({rep.checklistProcess.earned}/{rep.checklistProcess.weight}p)
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Checklists</span>
+                      <strong>{rep.checklistProcess.applicable ? (rep.checklistProcess.metricText || rep.checklistProcess.metric) : 'Exempt'}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.checklistProcess.score}/{rep.checklistProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)' }}>Tasks:</span>{' '}
-                      <strong>{rep.taskProcess.metric}</strong> ({rep.taskProcess.earned}/{rep.taskProcess.weight}p)
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Tasks</span>
+                      <strong>{rep.taskProcess.applicable ? (rep.taskProcess.metricText || rep.taskProcess.metric) : 'Exempt'}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.taskProcess.score}/{rep.taskProcess.max}p)</span>
                     </div>
                     <div style={{ gridColumn: 'span 2' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Attendance:</span>{' '}
-                      <strong>{rep.attendanceProcess.metric}</strong> ({rep.attendanceProcess.earned}/{rep.attendanceProcess.weight}p)
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Attendance</span>
+                      <strong>{rep.attendanceProcess.metricText || rep.attendanceProcess.metric}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.attendanceProcess.score}/{rep.attendanceProcess.max}p)</span>
                     </div>
                   </div>
                 </div>
@@ -1568,7 +1594,7 @@ export default function AnalyticsDashboard({
                               {row.empName.substring(0, 2).toUpperCase()}
                             </div>
                             <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                                 <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</span>
                                 <span style={{
                                   fontSize: '0.6rem', fontWeight: 700, padding: '0.05rem 0.35rem', borderRadius: '3px',
@@ -1577,6 +1603,11 @@ export default function AnalyticsDashboard({
                                 }}>
                                   {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
                                 </span>
+                                {row.leadsAssigned > 0 && (
+                                  <span style={{ fontSize: '0.6rem', fontWeight: 600, padding: '0.05rem 0.35rem', borderRadius: '3px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)' }}>
+                                    {row.leadsAssigned.toLocaleString('en-IN')} Leads
+                                  </span>
+                                )}
                               </div>
                               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                                 {row.department} · {row.designation}
@@ -1601,10 +1632,10 @@ export default function AnalyticsDashboard({
                         {/* Primary Process (Calling / Hiring) */}
                         <td style={{ padding: '0.65rem 0.65rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.primaryProcess.metric}
+                            {row.primaryProcess.metricText || row.primaryProcess.metric || 'No Activity'}
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: row.primaryProcess.earned > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.primaryProcess.earned} / {row.primaryProcess.weight} pts
+                          <div style={{ fontSize: '0.68rem', color: row.primaryProcess.score > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.primaryProcess.score} / {row.primaryProcess.max} pts
                           </div>
                         </td>
 
@@ -1614,40 +1645,40 @@ export default function AnalyticsDashboard({
                             fontWeight: 600, fontSize: '0.78rem',
                             color: row.overdueFollowups > 0 ? '#dc2626' : 'var(--text-primary)'
                           }}>
-                            {row.followupProcess.metric}
+                            {row.followupProcess.metricText || row.followupProcess.metric}
                           </div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.followupProcess.earned} / {row.followupProcess.weight} pts
+                            {row.followupProcess.score} / {row.followupProcess.max} pts
                           </div>
                         </td>
 
                         {/* Checklists */}
                         <td style={{ padding: '0.65rem 0.65rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.checklistProcess.metric}
+                            {row.checklistProcess.applicable ? (row.checklistProcess.metricText || row.checklistProcess.metric) : 'Exempt (No slots)'}
                           </div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.checklistProcess.earned} / {row.checklistProcess.weight} pts
+                            {row.checklistProcess.applicable ? `${row.checklistProcess.score} / ${row.checklistProcess.max} pts` : 'Exempt (Not scored)'}
                           </div>
                         </td>
 
                         {/* Tasks */}
                         <td style={{ padding: '0.65rem 0.65rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.taskProcess.metric}
+                            {row.taskProcess.applicable ? (row.taskProcess.metricText || row.taskProcess.metric) : 'Exempt (No tasks)'}
                           </div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.taskProcess.earned} / {row.taskProcess.weight} pts
+                            {row.taskProcess.applicable ? `${row.taskProcess.score} / ${row.taskProcess.max} pts` : 'Exempt (Not scored)'}
                           </div>
                         </td>
 
                         {/* Attendance */}
                         <td style={{ padding: '0.65rem 0.65rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.attendanceProcess.metric}
+                            {row.attendanceProcess.metricText || row.attendanceProcess.metric}
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: row.attendanceProcess.earned >= 7 ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.attendanceProcess.earned} / {row.attendanceProcess.weight} pts
+                          <div style={{ fontSize: '0.68rem', color: row.attendanceProcess.score >= 7 ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.attendanceProcess.score} / {row.attendanceProcess.max} pts
                           </div>
                         </td>
                       </tr>
