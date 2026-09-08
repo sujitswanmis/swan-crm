@@ -356,7 +356,7 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
           .order('created_at', { ascending: false }),
         supabase
           .from('recruitment_candidates')
-          .select('id, name, email, phone, candidate_code, current_stage, candidate_status, position_id, resume_url, created_at, actual_joining_date, expected_salary_min, expected_salary_max, recruitment_positions(title, department)')
+          .select('id, name, email, phone, candidate_code, current_stage, candidate_status, position_id, resume_url, created_by, created_at, actual_joining_date, expected_salary_min, expected_salary_max, recruitment_positions(title, department)')
           .order('created_at', { ascending: false })
       ]);
 

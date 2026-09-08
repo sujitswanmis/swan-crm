@@ -59,6 +59,7 @@ export default function AnalyticsDashboard({
 
   // Search/filter state inside sub-tabs
   const [scorecardSearch, setScorecardSearch] = useState('');
+  const [scorecardDeptFilter, setScorecardDeptFilter] = useState('ALL'); // 'ALL' | 'SALES' | 'RECRUITER' | 'OPERATIONS'
   const [taskSearch, setTaskSearch] = useState('');
   const [checklistSearch, setChecklistSearch] = useState('');
   const [checklistViewMode, setChecklistViewMode] = useState('BY_EMPLOYEE'); // 'BY_EMPLOYEE' | 'BY_SLOTS'
@@ -361,129 +362,7 @@ export default function AnalyticsDashboard({
     return map;
   }, [metrics.employeeActivity]);
 
-  // Comprehensive Team Scorecard & Leaderboard calculations
-  const teamScorecardData = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    return formattedEmployees.map(emp => {
-      const empEmail = (emp.email || '').toLowerCase();
-      const empName = emp.emp_name || emp.name || empEmail;
-
-      // Leads assigned to this rep
-      const empLeads = leads.filter(l => {
-        if (!l.assigned_to) return false;
-        const a = l.assigned_to.toLowerCase();
-        return a === empEmail || a === emp.user_id?.toLowerCase() || a === empName.toLowerCase();
-      });
-
-      // Overdue follow-ups for this rep
-      let overdueFollowups = 0;
-      let todayFollowups = 0;
-      empLeads.forEach(l => {
-        const fDate = l.follow_up_date || l.next_follow_up_date;
-        if (fDate) {
-          const d = new Date(fDate);
-          if (!isNaN(d.getTime())) {
-            const dStr = d.toISOString().split('T')[0];
-            if (dStr < todayStr) overdueFollowups++;
-            else if (dStr === todayStr) todayFollowups++;
-          }
-        }
-      });
-
-      // Activity stats from metrics
-      const act = crmActiveEmployeesMap.get(empName.toLowerCase()) || 
-                  crmActiveEmployeesMap.get(empEmail) || 
-                  { actions: 0, uniqueLeads: 0 };
-
-      // Checklists done vs pending for this employee
-      const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
-        if (c.assigned_type === 'ALL' || !c.assigned_employee_email) return true;
-        const emails = c.assigned_employee_email.toLowerCase().split(',').map(e => e.trim());
-        return emails.includes(empEmail);
-      });
-      const checkTotal = empChecklistSlots.length;
-      const checkDone = dashboardSummaries.checklistSummary?.submissionsByEmail?.[empEmail] ?? 0;
-
-      // Delegated tasks
-      const empTasks = (assignedWork.delegation?.recentTasks || []).filter(t => {
-        return (t.assigned_to_email && t.assigned_to_email.toLowerCase() === empEmail) ||
-               (t.assigned_to_name && t.assigned_to_name.toLowerCase() === empName.toLowerCase());
-      });
-      const tasksDone = empTasks.filter(t => t.status === 'COMPLETED').length;
-      const tasksOverdue = empTasks.filter(t => t.is_overdue).length;
-
-      // SCORING ENGINE (0-100)
-      // 1. Activity (Max 35): 15 leads touched or 40 updates gives full points
-      const actScore = Math.min(35, Math.round((act.uniqueLeads / 15) * 20 + (act.actions / 40) * 15));
-      // 2. Follow-up Discipline (Max 35): 35 minus 4 pts per overdue follow-up
-      const overdueDeduction = Math.min(35, overdueFollowups * 4);
-      const followUpScore = Math.max(0, 35 - overdueDeduction);
-      // 3. Checklist Compliance (Max 15)
-      const checklistScore = checkTotal > 0 ? Math.round((checkDone / checkTotal) * 15) : 15;
-      // 4. Task Execution (Max 15)
-      const taskScore = empTasks.length > 0 ? Math.max(0, Math.round((tasksDone / empTasks.length) * 15 - tasksOverdue * 3)) : 15;
-
-      const totalScore = Math.min(100, Math.max(0, actScore + followUpScore + checklistScore + taskScore));
-
-      let tier = 'CRITICAL';
-      let tierLabel = 'Critical / Lagging';
-      let tierColor = '#dc2626';
-      let tierBg = '#fee2e2';
-
-      if (totalScore >= 80) {
-        tier = 'STAR';
-        tierLabel = 'Star Performer';
-        tierColor = '#15803d';
-        tierBg = '#dcfce7';
-      } else if (totalScore >= 60) {
-        tier = 'ON_TRACK';
-        tierLabel = 'On Track';
-        tierColor = '#2563eb';
-        tierBg = '#dbeafe';
-      } else if (totalScore >= 40) {
-        tier = 'NEEDS_ATTENTION';
-        tierLabel = 'Needs Attention';
-        tierColor = '#b45309';
-        tierBg = '#fef3c7';
-      }
-
-      return {
-        emp,
-        empName,
-        empEmail,
-        department: emp.department || 'General',
-        designation: emp.designation || 'Staff',
-        leadsAssigned: empLeads.length,
-        leadsTouched: act.uniqueLeads,
-        updatesCount: act.actions,
-        overdueFollowups,
-        todayFollowups,
-        checkDone,
-        checkTotal,
-        tasksDone,
-        tasksOverdue,
-        totalScore,
-        tier,
-        tierLabel,
-        tierColor,
-        tierBg
-      };
-    }).sort((a, b) => b.totalScore - a.totalScore || b.updatesCount - a.updatesCount);
-  }, [formattedEmployees, leads, crmActiveEmployeesMap, dashboardSummaries.checklistSummary, assignedWork.delegation]);
-
-  // Filtered leaderboard
-  const filteredScorecard = useMemo(() => {
-    if (!scorecardSearch.trim()) return teamScorecardData;
-    const q = scorecardSearch.toLowerCase();
-    return teamScorecardData.filter(s =>
-      s.empName.toLowerCase().includes(q) ||
-      s.empEmail.toLowerCase().includes(q) ||
-      s.department.toLowerCase().includes(q)
-    );
-  }, [teamScorecardData, scorecardSearch]);
-
-  // Combined attendance records with CRM activity intelligence
+  // Combined attendance records with CRM activity intelligence (defined before Scorecard so Scorecard can use attendance)
   const enrichedAttendanceRecords = useMemo(() => {
     const rawRecords = dashboardSummaries.attendanceSummary?.records || [];
     const recordMap = new Map();
@@ -547,6 +426,332 @@ export default function AnalyticsDashboard({
     const effectivePercent = total > 0 ? Math.round((effectivePresent / total) * 100) : 0;
     return { total, punched, crmActiveOnly, effectivePresent, absent, effectivePercent };
   }, [enrichedAttendanceRecords]);
+
+  // Attendance lookup map for fast employee presence checking
+  const attendanceRecordMap = useMemo(() => {
+    const map = new Map();
+    enrichedAttendanceRecords.forEach(att => {
+      if (att.email) map.set(att.email.toLowerCase(), att);
+      if (att.empName) map.set(att.empName.toLowerCase(), att);
+    });
+    return map;
+  }, [enrichedAttendanceRecords]);
+
+  // Helper: Categorize employee role for dynamic process weighting
+  const getEmployeeRoleCategory = (emp, leadsAssignedCount) => {
+    const dept = (emp.department || '').toLowerCase();
+    const desig = (emp.designation || '').toLowerCase();
+    if (dept.includes('human resource') || dept.includes('hr') || desig.includes('recruiter') || desig.includes('talent') || desig.includes('hra')) {
+      return 'RECRUITER';
+    }
+    if (leadsAssignedCount > 0 || dept.includes('sales') || desig.includes('tele') || desig.includes('caller') || desig.includes('crm') || desig.includes('coordinator')) {
+      return 'SALES';
+    }
+    return 'OPERATIONS';
+  };
+
+  // Helper: Match recruiter assigned/created_by string to employee
+  const isRecruiterMatch = (recruiterField, emp) => {
+    if (!recruiterField) return false;
+    const f = recruiterField.toLowerCase();
+    const name = (emp.emp_name || emp.name || '').toLowerCase();
+    const email = (emp.email || '').toLowerCase();
+    const code = (emp.emp_code || emp.emp_id || '').toLowerCase();
+    if (name && f.includes(name)) return true;
+    if (email && f.includes(email)) return true;
+    if (code && f.includes(code)) return true;
+    return false;
+  };
+
+  // Comprehensive Team Scorecard & Leaderboard calculations (Multi-Process Performance Engine)
+  const teamScorecardData = useMemo(() => {
+    const istNow = new Date(new Date().toLocaleString('en-CA', { timeZone: 'Asia/Kolkata' }));
+    const todayIST = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
+
+    return formattedEmployees.map(emp => {
+      const empEmail = (emp.email || '').toLowerCase();
+      const empName = emp.emp_name || emp.name || empEmail;
+
+      // Leads assigned to this rep
+      const empLeads = leads.filter(l => {
+        if (!l.assigned_to) return false;
+        const a = l.assigned_to.toLowerCase();
+        return a === empEmail || a === emp.user_id?.toLowerCase() || a === empName.toLowerCase();
+      });
+
+      // Overdue follow-ups for this rep (evaluated strictly in IST)
+      let overdueFollowups = 0;
+      let todayFollowups = 0;
+      empLeads.forEach(l => {
+        const fDate = l.follow_up_date || l.next_follow_up_date;
+        if (fDate) {
+          const d = new Date(fDate);
+          if (!isNaN(d.getTime())) {
+            const dStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+            if (dStr < todayIST) overdueFollowups++;
+            else if (dStr === todayIST) todayFollowups++;
+          }
+        }
+      });
+
+      // Activity stats from metrics
+      const act = crmActiveEmployeesMap.get(empName.toLowerCase()) || 
+                  crmActiveEmployeesMap.get(empEmail) || 
+                  { actions: 0, uniqueLeads: 0 };
+
+      // Checklists done vs pending for this employee
+      const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
+        if (c.assigned_type === 'ALL' || !c.assigned_employee_email) return true;
+        const emails = c.assigned_employee_email.toLowerCase().split(',').map(e => e.trim());
+        return emails.includes(empEmail);
+      });
+      const checkTotal = empChecklistSlots.length;
+      const checkDone = dashboardSummaries.checklistSummary?.submissionsByEmail?.[empEmail] ?? 0;
+
+      // Delegated tasks
+      const empTasks = (assignedWork.delegation?.recentTasks || []).filter(t => {
+        return (t.assigned_to_email && t.assigned_to_email.toLowerCase() === empEmail) ||
+               (t.assigned_to_name && t.assigned_to_name.toLowerCase() === empName.toLowerCase());
+      });
+      const tasksDone = empTasks.filter(t => t.status === 'COMPLETED').length;
+      const tasksOverdue = empTasks.filter(t => t.is_overdue).length;
+
+      // Attendance record
+      const attRecord = attendanceRecordMap.get(empEmail) || attendanceRecordMap.get(empName.toLowerCase());
+
+      // Role categorization
+      const roleCategory = getEmployeeRoleCategory(emp, empLeads.length);
+      const roleLabel = roleCategory === 'SALES' ? 'Sales Rep' : roleCategory === 'RECRUITER' ? 'Recruiter / HR' : 'Operations';
+      const roleBadgeBg = roleCategory === 'SALES' ? '#dbeafe' : roleCategory === 'RECRUITER' ? '#ede9fe' : '#f1f5f9';
+      const roleBadgeColor = roleCategory === 'SALES' ? '#1d4ed8' : roleCategory === 'RECRUITER' ? '#6d28d9' : '#475569';
+
+      // ------------------------------------------------------------------
+      // PROCESS 1: PRIMARY OUTREACH / PIPELINE (Max 30 pts)
+      // ------------------------------------------------------------------
+      let primaryProcess = {
+        name: roleCategory === 'SALES' ? 'Calling & Outreach' : roleCategory === 'RECRUITER' ? 'Candidate Pipeline' : 'SOP Execution',
+        type: roleCategory,
+        score: 0,
+        max: 30,
+        metricText: '',
+        applicable: true
+      };
+
+      let recruiterWorkCount = 0;
+      if (roleCategory === 'SALES') {
+        const callingScore = Math.min(30, Math.round((act.uniqueLeads / 15) * 20 + (act.actions / 30) * 10));
+        primaryProcess.score = callingScore;
+        primaryProcess.metricText = `${act.uniqueLeads} touched · ${act.actions} updates`;
+        primaryProcess.applicable = empLeads.length > 0 || act.uniqueLeads > 0 || act.actions > 0;
+      } else if (roleCategory === 'RECRUITER') {
+        const myCandidates = (dashboardSummaries.recruitmentSummary?.candidates || []).filter(c => isRecruiterMatch(c.created_by, emp));
+        const inInterview = myCandidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview')).length;
+        const shortlisted = myCandidates.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist')).length;
+        const hired = myCandidates.filter(c => c.current_stage === 'S09' || (c.candidate_status || '').toLowerCase().includes('joined') || c.current_stage === 'S08').length;
+        recruiterWorkCount = myCandidates.length;
+
+        // Benchmark: 5 candidates handled, or interviews/hires
+        const recScore = Math.min(30, Math.round((recruiterWorkCount / 5) * 15 + (inInterview * 5) + (shortlisted * 5) + (hired * 10)));
+        primaryProcess.score = recScore;
+        primaryProcess.metricText = `${recruiterWorkCount} candidates · ${inInterview} interview · ${hired} hired`;
+        primaryProcess.applicable = true;
+      } else {
+        const checkRate = checkTotal > 0 ? (checkDone / checkTotal) : 0;
+        primaryProcess.score = Math.round(checkRate * 30);
+        primaryProcess.metricText = checkTotal > 0 ? `${checkDone}/${checkTotal} checklists done` : 'Operations execution';
+        primaryProcess.applicable = checkTotal > 0;
+      }
+
+      // ------------------------------------------------------------------
+      // PROCESS 2: FOLLOW-UP DISCIPLINE / REQUISITIONS (Max 25 pts)
+      // ------------------------------------------------------------------
+      let followupProcess = {
+        name: roleCategory === 'RECRUITER' ? 'Requisition Mgmt' : 'Follow-up Discipline',
+        score: 0,
+        max: 25,
+        metricText: roleCategory === 'RECRUITER' ? 'Openings tracked' : 'No leads assigned',
+        applicable: roleCategory === 'RECRUITER' ? true : empLeads.length > 0,
+        adherenceRate: 100
+      };
+
+      if (roleCategory === 'RECRUITER') {
+        const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => isRecruiterMatch(p.recruiter_assigned || p.created_by, emp));
+        const activeCount = myPositions.filter(p => p.status !== 'CLOSED').length;
+        followupProcess.score = myPositions.length > 0 ? 25 : 15;
+        followupProcess.adherenceRate = 100;
+        followupProcess.metricText = `${activeCount} active requisitions`;
+      } else if (empLeads.length > 0) {
+        if (overdueFollowups === 0) {
+          followupProcess.score = 25;
+          followupProcess.adherenceRate = 100;
+          followupProcess.metricText = '0 overdue (100% on time)';
+        } else {
+          // Tiered adherence based on overdue count
+          if (overdueFollowups <= 2) followupProcess.score = 22;
+          else if (overdueFollowups <= 5) followupProcess.score = 18;
+          else if (overdueFollowups <= 10) followupProcess.score = 14;
+          else if (overdueFollowups <= 20) followupProcess.score = 10;
+          else if (overdueFollowups <= 40) followupProcess.score = 5;
+          else followupProcess.score = 0;
+
+          followupProcess.adherenceRate = Math.round((followupProcess.score / 25) * 100);
+          followupProcess.metricText = `${overdueFollowups} overdue (${followupProcess.adherenceRate}% adherence)`;
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // PROCESS 3: DAILY CHECKLIST COMPLIANCE (Max 20 pts)
+      // ------------------------------------------------------------------
+      let checklistProcess = {
+        name: 'Daily Checklists',
+        score: 0,
+        max: 20,
+        metricText: checkTotal > 0 ? `${checkDone}/${checkTotal} slots (${Math.round((checkDone / checkTotal) * 100)}%)` : 'No slots scheduled',
+        applicable: checkTotal > 0,
+        complianceRate: checkTotal > 0 ? Math.min(100, Math.round((checkDone / checkTotal) * 100)) : 0
+      };
+      if (checkTotal > 0) {
+        checklistProcess.score = Math.round((checklistProcess.complianceRate / 100) * 20);
+      }
+
+      // ------------------------------------------------------------------
+      // PROCESS 4: DELEGATION & TASKS (Max 15 pts)
+      // ------------------------------------------------------------------
+      let taskProcess = {
+        name: 'Delegation Tasks',
+        score: 0,
+        max: 15,
+        metricText: empTasks.length > 0 ? `${tasksDone}/${empTasks.length} done` : 'No tasks assigned',
+        applicable: empTasks.length > 0,
+        taskRate: empTasks.length > 0 ? Math.max(0, Math.min(100, Math.round((tasksDone / empTasks.length) * 100) - (tasksOverdue * 15))) : 0
+      };
+      if (empTasks.length > 0) {
+        taskProcess.score = Math.round((taskProcess.taskRate / 100) * 15);
+      }
+
+      // ------------------------------------------------------------------
+      // PROCESS 5: ATTENDANCE & PRESENCE (Max 10 pts)
+      // ------------------------------------------------------------------
+      let attendanceProcess = {
+        name: 'Attendance & Presence',
+        score: 0,
+        max: 10,
+        metricText: attRecord?.statusLabel || 'Absent',
+        applicable: true,
+        presenceStatus: attRecord?.presenceStatus || 'ABSENT'
+      };
+      if (attRecord?.presenceStatus === 'PRESENT') attendanceProcess.score = 10;
+      else if (attRecord?.presenceStatus === 'CRM_ACTIVE') attendanceProcess.score = 8.5;
+      else if (attRecord?.presenceStatus === 'LATE') attendanceProcess.score = 7;
+      else if (attRecord?.presenceStatus === 'HALF_DAY') attendanceProcess.score = 5;
+      else attendanceProcess.score = 0;
+
+      // Dynamic normalization across applicable processes
+      const applicableList = [primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
+      const earnedPoints = applicableList.reduce((acc, p) => acc + p.score, 0);
+      const maxPoints = applicableList.reduce((acc, p) => acc + p.max, 0);
+
+      const hasActiveWork = act.actions > 0 || act.uniqueLeads > 0 || checkDone > 0 || tasksDone > 0 || recruiterWorkCount > 0 || (attRecord?.presenceStatus && attRecord.presenceStatus !== 'ABSENT');
+
+      let totalScore = 0;
+      let tier = 'INACTIVE';
+      let tierLabel = 'Shift Not Started';
+      let tierColor = '#94a3b8';
+      let tierBg = '#f1f5f9';
+
+      if (hasActiveWork && maxPoints > 0) {
+        totalScore = Math.min(100, Math.round((earnedPoints / maxPoints) * 100));
+        if (totalScore >= 80) {
+          tier = 'STAR';
+          tierLabel = 'Star Performer';
+          tierColor = '#15803d';
+          tierBg = '#dcfce7';
+        } else if (totalScore >= 60) {
+          tier = 'ON_TRACK';
+          tierLabel = 'On Track';
+          tierColor = '#2563eb';
+          tierBg = '#dbeafe';
+        } else if (totalScore >= 40) {
+          tier = 'NEEDS_ATTENTION';
+          tierLabel = 'Needs Attention';
+          tierColor = '#b45309';
+          tierBg = '#fef3c7';
+        } else {
+          tier = 'CRITICAL';
+          tierLabel = 'Critical / Lagging';
+          tierColor = '#dc2626';
+          tierBg = '#fee2e2';
+        }
+      }
+
+      return {
+        emp,
+        empName,
+        empEmail,
+        department: emp.department || 'General',
+        designation: emp.designation || 'Staff',
+        roleCategory,
+        roleLabel,
+        roleBadgeBg,
+        roleBadgeColor,
+        leadsAssigned: empLeads.length,
+        leadsTouched: act.uniqueLeads,
+        updatesCount: act.actions,
+        overdueFollowups,
+        todayFollowups,
+        checkDone,
+        checkTotal,
+        tasksDone,
+        tasksOverdue,
+        attRecord,
+        hasActiveWork,
+        primaryProcess,
+        followupProcess,
+        checklistProcess,
+        taskProcess,
+        attendanceProcess,
+        totalScore,
+        tier,
+        tierLabel,
+        tierColor,
+        tierBg
+      };
+    }).sort((a, b) => {
+      const aActive = a.hasActiveWork ? 1 : 0;
+      const bActive = b.hasActiveWork ? 1 : 0;
+      if (bActive !== aActive) return bActive - aActive;
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const aVol = a.updatesCount + a.checkDone + a.tasksDone;
+      const bVol = b.updatesCount + b.checkDone + b.tasksDone;
+      if (bVol !== aVol) return bVol - aVol;
+      return b.leadsAssigned - a.leadsAssigned;
+    });
+  }, [formattedEmployees, leads, crmActiveEmployeesMap, dashboardSummaries.checklistSummary, dashboardSummaries.recruitmentSummary, assignedWork.delegation, attendanceRecordMap]);
+
+  // Filtered leaderboard with Role/Department filter
+  const filteredScorecard = useMemo(() => {
+    let list = teamScorecardData;
+    if (scorecardDeptFilter !== 'ALL') {
+      list = list.filter(s => s.roleCategory === scorecardDeptFilter);
+    }
+    if (scorecardSearch.trim()) {
+      const q = scorecardSearch.toLowerCase();
+      list = list.filter(s =>
+        s.empName.toLowerCase().includes(q) ||
+        s.empEmail.toLowerCase().includes(q) ||
+        s.department.toLowerCase().includes(q) ||
+        s.designation.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [teamScorecardData, scorecardDeptFilter, scorecardSearch]);
+
+  // Active Top 3 Podium Winners (Only reps with real logged performance)
+  const activePodiumWinners = useMemo(() => {
+    return teamScorecardData
+      .filter(r => r.totalScore > 0 && r.hasActiveWork)
+      .slice(0, 3);
+  }, [teamScorecardData]);
 
   // Filtered Delegation tasks
   const delegationTasksList = useMemo(() => {
@@ -1153,158 +1358,301 @@ export default function AnalyticsDashboard({
             backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)'
           }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <Award size={20} style={{ color: '#f59e0b' }} /> Sales Executive Performance Scorecard & Leaderboard
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Award size={22} style={{ color: '#f59e0b' }} /> Team Performance Scorecard & Leaderboard
               </h3>
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Weighted evaluation (0-100%) based on Leads Touched, Follow-up Discipline, Task Completion, and Checklists.
+              <p style={{ margin: '0.3rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Multi-process operational index (100 pts max) across Calling/Recruitment (30 pts), Follow-up Adherence (25 pts), Daily Checklists (20 pts), Delegation Tasks (15 pts), and Attendance (10 pts).
               </p>
             </div>
 
-            <div style={{ position: 'relative', width: '240px' }}>
-              <input
-                type="text"
-                placeholder="Search rep or department..."
-                value={scorecardSearch}
-                onChange={(e) => setScorecardSearch(e.target.value)}
-                style={{
-                  width: '100%', padding: '0.45rem 0.75rem 0.45rem 2rem', fontSize: '0.8rem',
-                  borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)'
-                }}
-              />
-              <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {/* Role filter buttons */}
+              <div style={{ display: 'flex', gap: '0.35rem', backgroundColor: 'var(--bg-primary)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                {[
+                  { key: 'ALL', label: 'All Roles', count: teamScorecardData.length },
+                  { key: 'SALES', label: '📞 Sales & Calls', count: teamScorecardData.filter(s => s.roleCategory === 'SALES').length },
+                  { key: 'RECRUITER', label: '🧑‍💼 Recruiter & HR', count: teamScorecardData.filter(s => s.roleCategory === 'RECRUITER').length },
+                  { key: 'OPERATIONS', label: '⚙️ Operations', count: teamScorecardData.filter(s => s.roleCategory === 'OPERATIONS').length }
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setScorecardDeptFilter(tab.key)}
+                    style={{
+                      padding: '0.35rem 0.65rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      backgroundColor: scorecardDeptFilter === tab.key ? 'var(--accent-color, #2563eb)' : 'transparent',
+                      color: scorecardDeptFilter === tab.key ? '#ffffff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {tab.label} <span style={{ opacity: 0.8, fontSize: '0.68rem' }}>({tab.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Box */}
+              <div style={{ position: 'relative', width: '220px' }}>
+                <input
+                  type="text"
+                  placeholder="Search executive or dept..."
+                  value={scorecardSearch}
+                  onChange={(e) => setScorecardSearch(e.target.value)}
+                  style={{
+                    width: '100%', padding: '0.45rem 0.75rem 0.45rem 2rem', fontSize: '0.78rem',
+                    borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)',
+                    color: 'var(--text-primary)'
+                  }}
+                />
+                <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              </div>
             </div>
           </div>
 
-          {/* Top 3 Podium Highlights */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '1rem' }}>
-            {teamScorecardData.slice(0, 3).map((rep, idx) => (
-              <div
-                key={rep.empEmail}
-                className="card"
-                onClick={() => setSelectedEmployee(rep.emp.user_id || rep.empEmail)}
-                style={{
-                  padding: '1.15rem', cursor: 'pointer', transition: 'all 0.2s',
-                  borderTop: idx === 0 ? '4px solid #f59e0b' : idx === 1 ? '4px solid #94a3b8' : '4px solid #b45309',
-                  position: 'relative', overflow: 'hidden'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{
-                      width: '32px', height: '32px', borderRadius: '50%',
-                      backgroundColor: idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5',
-                      color: idx === 0 ? '#b45309' : idx === 1 ? '#475569' : '#c2410c',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem'
+          {/* Top 3 Podium Highlights (Strictly Verified Active Performers) */}
+          {activePodiumWinners.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
+              {activePodiumWinners.map((rep, idx) => (
+                <div
+                  key={rep.empEmail}
+                  className="card"
+                  onClick={() => setSelectedEmployee(rep.emp.user_id || rep.empEmail)}
+                  style={{
+                    padding: '1.15rem', cursor: 'pointer', transition: 'all 0.2s',
+                    borderTop: idx === 0 ? '4px solid #f59e0b' : idx === 1 ? '4px solid #94a3b8' : '4px solid #b45309',
+                    position: 'relative', overflow: 'hidden'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{
+                        width: '32px', height: '32px', borderRadius: '50%',
+                        backgroundColor: idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5',
+                        color: idx === 0 ? '#b45309' : idx === 1 ? '#475569' : '#c2410c',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem'
+                      }}>
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>{rep.empName}</h4>
+                          <span style={{
+                            fontSize: '0.62rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px',
+                            backgroundColor: rep.roleCategory === 'RECRUITER' ? '#ede9fe' : rep.roleCategory === 'SALES' ? '#dbeafe' : '#f1f5f9',
+                            color: rep.roleCategory === 'RECRUITER' ? '#6d28d9' : rep.roleCategory === 'SALES' ? '#1d4ed8' : '#475569'
+                          }}>
+                            {rep.roleCategory === 'RECRUITER' ? 'Recruiter' : rep.roleCategory === 'SALES' ? 'Sales' : 'Ops'}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{rep.department} · {rep.designation}</span>
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px',
+                      backgroundColor: rep.tierBg, color: rep.tierColor
                     }}>
-                      #{idx + 1}
+                      {rep.tierLabel}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', margin: '0.85rem 0 0.45rem' }}>
+                    <span style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>{rep.totalScore}%</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Performance Index</span>
+                  </div>
+
+                  <div style={{ width: '100%', height: '5px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.75rem' }}>
+                    <div style={{ width: `${rep.totalScore}%`, height: '100%', backgroundColor: rep.tierColor }} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', fontSize: '0.72rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)' }}>{rep.primaryProcess.name}:</span>{' '}
+                      <strong>{rep.primaryProcess.metric}</strong> ({rep.primaryProcess.earned}/{rep.primaryProcess.weight}p)
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>{rep.empName}</h4>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{rep.department} · {rep.designation}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{rep.followupProcess.name}:</span>{' '}
+                      <strong>{rep.followupProcess.metric}</strong> ({rep.followupProcess.earned}/{rep.followupProcess.weight}p)
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)' }}>Checklists:</span>{' '}
+                      <strong>{rep.checklistProcess.metric}</strong> ({rep.checklistProcess.earned}/{rep.checklistProcess.weight}p)
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)' }}>Tasks:</span>{' '}
+                      <strong>{rep.taskProcess.metric}</strong> ({rep.taskProcess.earned}/{rep.taskProcess.weight}p)
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Attendance:</span>{' '}
+                      <strong>{rep.attendanceProcess.metric}</strong> ({rep.attendanceProcess.earned}/{rep.attendanceProcess.weight}p)
                     </div>
                   </div>
-                  <span style={{
-                    fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px',
-                    backgroundColor: rep.tierBg, color: rep.tierColor
-                  }}>
-                    {rep.tierLabel}
-                  </span>
                 </div>
+              ))}
+            </div>
+          ) : (
+            <div className="card" style={{ padding: '1.25rem', textAlign: 'center', backgroundColor: 'var(--bg-surface)', border: '1px dashed var(--border-light)' }}>
+              <div style={{ display: 'inline-flex', padding: '0.6rem', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', marginBottom: '0.5rem' }}>
+                <Clock size={24} />
+              </div>
+              <h4 style={{ margin: '0 0 0.35rem', fontSize: '0.95rem', fontWeight: 700 }}>Live Shift In Progress — Scoring Active</h4>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '540px', marginLeft: 'auto', marginRight: 'auto' }}>
+                Executives are actively clocking in, updating CRM leads, candidate pipelines, and fulfilling checklist slots. As operational actions are recorded today, top performers will automatically take the podium!
+              </p>
+            </div>
+          )}
 
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', margin: '0.85rem 0 0.45rem' }}>
-                  <span style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>{rep.totalScore}%</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Performance Index</span>
-                </div>
-
-                <div style={{ width: '100%', height: '5px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-                  <div style={{ width: `${rep.totalScore}%`, height: '100%', backgroundColor: rep.tierColor }} />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.73rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
-                  <div>🎯 Leads Touched: <strong>{rep.leadsTouched}</strong></div>
-                  <div>⚡ Updates: <strong>{rep.updatesCount}</strong></div>
-                  <div>🚨 Overdue: <strong style={{ color: rep.overdueFollowups > 0 ? '#dc2626' : '#16a34a' }}>{rep.overdueFollowups}</strong></div>
-                  <div>✅ Checklist: <strong>{rep.checkDone}/{rep.checkTotal}</strong></div>
+          {/* Full Leaderboard Table with Process Performance Breakdown */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>
+                  Process-Wise Performance Leaderboard ({filteredScorecard.length})
+                </h4>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Transparent scoring breakdown: Calling/Hiring (30p) + Follow-up/Requisitions (25p) + Checklists (20p) + Delegation (15p) + Attendance (10p)
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Full Leaderboard Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>Team Leaderboard Ranking ({filteredScorecard.length})</h4>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Click any row to filter dashboard</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Click any executive row to filter dashboard</span>
             </div>
 
             <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '50px' }}>Rank</th>
-                    <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Executive</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Performance Score</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Leads Assigned</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Leads Touched</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Updates Today</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Overdue Follow-ups</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Status Badge</th>
+                  <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
+                    <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
+                    <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>📞 Outreach / 🧑‍💼 Hiring (30p)</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>📋 Tasks (15p)</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>🏢 Attendance (10p)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredScorecard.map((row, idx) => (
-                    <tr
-                      key={row.empEmail}
-                      onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
-                      style={{
-                        borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                        backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) ? 'var(--th-bg)' : 'transparent',
-                        transition: 'background 0.15s'
-                      }}
-                    >
-                      <td style={{ textAlign: 'center', padding: '0.65rem', fontWeight: 800, color: idx < 3 ? '#f59e0b' : 'var(--text-secondary)' }}>
-                        #{idx + 1}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.85rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <div style={{
-                            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
-                            backgroundColor: COLORS[idx % COLORS.length], color: 'white',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 700
-                          }}>
-                            {row.empName.substring(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{row.department} · {row.designation}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem' }}>
-                        <span style={{ fontSize: '1.1rem', fontWeight: 800, color: row.tierColor }}>{row.totalScore}%</span>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem', fontWeight: 600 }}>{row.leadsAssigned}</td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem', fontWeight: 700, color: row.leadsTouched > 0 ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                        {row.leadsTouched}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem', fontWeight: 700, color: row.updatesCount > 0 ? '#10b981' : 'var(--text-secondary)' }}>
-                        {row.updatesCount}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem', fontWeight: 700, color: row.overdueFollowups > 0 ? '#dc2626' : '#16a34a' }}>
-                        {row.overdueFollowups > 0 ? `🚨 ${row.overdueFollowups}` : '✅ 0'}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.65rem' }}>
-                        <span style={{
-                          fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
-                          backgroundColor: row.tierBg, color: row.tierColor, whiteSpace: 'nowrap'
-                        }}>
-                          {row.tierLabel}
-                        </span>
+                  {filteredScorecard.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No team members found matching the selected filter.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredScorecard.map((row, idx) => (
+                      <tr
+                        key={row.empEmail}
+                        onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
+                        style={{
+                          borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
+                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) ? 'var(--th-bg)' : 'transparent',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        {/* Rank */}
+                        <td style={{ textAlign: 'center', padding: '0.65rem 0.5rem', fontWeight: 800, color: idx < 3 && row.totalScore > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>
+                          {row.totalScore > 0 ? `#${idx + 1}` : '—'}
+                        </td>
+
+                        {/* Executive & Role */}
+                        <td style={{ padding: '0.65rem 0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                            <div style={{
+                              width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                              backgroundColor: COLORS[idx % COLORS.length], color: 'white',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 700
+                            }}>
+                              {row.empName.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</span>
+                                <span style={{
+                                  fontSize: '0.6rem', fontWeight: 700, padding: '0.05rem 0.35rem', borderRadius: '3px',
+                                  backgroundColor: row.roleCategory === 'RECRUITER' ? '#ede9fe' : row.roleCategory === 'SALES' ? '#dbeafe' : '#f1f5f9',
+                                  color: row.roleCategory === 'RECRUITER' ? '#6d28d9' : row.roleCategory === 'SALES' ? '#1d4ed8' : '#475569'
+                                }}>
+                                  {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                {row.department} · {row.designation}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Overall Score */}
+                        <td style={{ textAlign: 'center', padding: '0.65rem 0.5rem' }}>
+                          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: row.tierColor, lineHeight: 1.1 }}>
+                            {row.totalScore}%
+                          </div>
+                          <span style={{
+                            fontSize: '0.62rem', fontWeight: 700, padding: '0.12rem 0.4rem', borderRadius: '10px',
+                            backgroundColor: row.tierBg, color: row.tierColor, display: 'inline-block', marginTop: '0.2rem'
+                          }}>
+                            {row.tierLabel}
+                          </span>
+                        </td>
+
+                        {/* Primary Process (Calling / Hiring) */}
+                        <td style={{ padding: '0.65rem 0.65rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                            {row.primaryProcess.metric}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: row.primaryProcess.earned > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.primaryProcess.earned} / {row.primaryProcess.weight} pts
+                          </div>
+                        </td>
+
+                        {/* Follow-up / Requisitions */}
+                        <td style={{ padding: '0.65rem 0.65rem' }}>
+                          <div style={{
+                            fontWeight: 600, fontSize: '0.78rem',
+                            color: row.overdueFollowups > 0 ? '#dc2626' : 'var(--text-primary)'
+                          }}>
+                            {row.followupProcess.metric}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.followupProcess.earned} / {row.followupProcess.weight} pts
+                          </div>
+                        </td>
+
+                        {/* Checklists */}
+                        <td style={{ padding: '0.65rem 0.65rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                            {row.checklistProcess.metric}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.checklistProcess.earned} / {row.checklistProcess.weight} pts
+                          </div>
+                        </td>
+
+                        {/* Tasks */}
+                        <td style={{ padding: '0.65rem 0.65rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                            {row.taskProcess.metric}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.taskProcess.earned} / {row.taskProcess.weight} pts
+                          </div>
+                        </td>
+
+                        {/* Attendance */}
+                        <td style={{ padding: '0.65rem 0.65rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                            {row.attendanceProcess.metric}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: row.attendanceProcess.earned >= 7 ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.attendanceProcess.earned} / {row.attendanceProcess.weight} pts
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
