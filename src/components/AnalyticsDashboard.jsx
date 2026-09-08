@@ -58,14 +58,15 @@ export default function AnalyticsDashboard({
       return initialSubTab;
     }
     if (typeof window !== 'undefined') {
-      const cleanPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const rawPath = window.location.pathname || '';
+      const cleanPath = (typeof rawPath === 'string' ? rawPath : '').replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       const urlTab = params.get('subtab') || params.get('tab');
       if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
         return urlTab;
       }
       if (['scorecard', 'overview', 'pipeline'].includes(cleanPath)) return cleanPath;
-      if (cleanPath.startsWith('dashboard/')) {
+      if (cleanPath && cleanPath.startsWith('dashboard/')) {
         const sub = cleanPath.split('/')[1];
         if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
           return sub;
@@ -97,7 +98,7 @@ export default function AnalyticsDashboard({
   // Handle browser back/forward navigation
   useEffect(() => {
     const handlePop = () => {
-      const cleanPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const cleanPath = (typeof window !== 'undefined' ? window.location.pathname : '').replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       const urlTab = params.get('subtab') || params.get('tab');
       if (urlTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(urlTab)) {
@@ -106,7 +107,7 @@ export default function AnalyticsDashboard({
         setActiveTabState('scorecard');
       } else if (cleanPath === 'pipeline') {
         setActiveTabState('pipeline');
-      } else if (cleanPath.startsWith('dashboard/')) {
+      } else if (cleanPath && cleanPath.startsWith('dashboard/')) {
         const sub = cleanPath.split('/')[1];
         if (['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(sub)) {
           setActiveTabState(sub);

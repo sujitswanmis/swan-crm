@@ -249,20 +249,24 @@ export default function CRMContainer({
 
   // State variables
   const [dashboardSubTab, setDashboardSubTab] = useState(() => {
-    let path = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
-    const queryTab = searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab;
-    if (['scorecard', 'overview', 'pipeline'].includes(path)) return path;
-    if (path.startsWith('dashboard/')) return path.split('/')[1];
+    const raw = (initialRoute || pathname || '');
+    const cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    const queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (['scorecard', 'overview', 'pipeline'].includes(cleanPath)) return cleanPath;
+    if (cleanPath && cleanPath.startsWith('dashboard/')) return cleanPath.split('/')[1] || 'overview';
     if (queryTab && ['overview', 'scorecard', 'delegation', 'checklist', 'attendance', 'pipeline', 'recruiter'].includes(queryTab)) return queryTab;
     return 'overview';
   });
 
   const [activeTab, setActiveTab] = useState(() => {
-    let path = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
-    if (!path) path = searchParams?.get('tab') || initialSearchParams?.tab;
+    const raw = (initialRoute || pathname || '');
+    let path = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (!path) {
+      path = (searchParams?.get('tab') || initialSearchParams?.tab || '').toLowerCase();
+    }
     
     // Check if path is a dashboard subtab or alias
-    if (['scorecard', 'overview', 'pipeline'].includes(path) || path.startsWith('dashboard/')) {
+    if (['scorecard', 'overview', 'pipeline'].includes(path) || (path && path.startsWith('dashboard/'))) {
       return 'dashboard';
     }
     if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path)) {
@@ -317,18 +321,18 @@ export default function CRMContainer({
         setCurrentSettingSubTab(param);
       }
       const attTab = search.get('tab') || search.get('subtab');
-      if (attTab && (path === 'attendance' || path.startsWith('attendance/'))) {
+      if (attTab && (path === 'attendance' || (path && path.startsWith('attendance/')))) {
         setAttendanceSubTab(attTab);
       }
-      if (attTab && (path === 'checklist' || path.startsWith('checklist/'))) {
+      if (attTab && (path === 'checklist' || (path && path.startsWith('checklist/')))) {
         setChecklistSubTab(attTab);
       }
-      if (attTab && (path === 'delegation' || path.startsWith('delegation/'))) {
+      if (attTab && (path === 'delegation' || (path && path.startsWith('delegation/')))) {
         setDelegationSubTab(attTab);
       }
       if (['scorecard', 'overview', 'pipeline'].includes(path)) {
         setDashboardSubTab(path);
-      } else if (path.startsWith('dashboard/')) {
+      } else if (path && path.startsWith('dashboard/')) {
         const sub = path.split('/')[1];
         if (sub) setDashboardSubTab(sub);
       } else if (path === 'dashboard' && attTab) {
