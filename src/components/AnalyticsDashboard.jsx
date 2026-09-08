@@ -1475,13 +1475,13 @@ export default function AnalyticsDashboard({
                   No activity recorded for {dateFilterLabel.toLowerCase()}.
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto', width: '100%' }}>
-                  <table style={{ width: '100%', minWidth: '280px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                    <thead>
+                <div style={{ overflow: 'auto', maxHeight: '360px', width: '100%', position: 'relative' }}>
+                  <table style={{ width: '100%', minWidth: '280px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                       <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                        <th style={{ textAlign: 'left', padding: '0.45rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Employee</th>
-                        <th style={{ textAlign: 'center', padding: '0.45rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Leads</th>
-                        <th style={{ textAlign: 'right', padding: '0.45rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Updates</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Employee</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.55rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Leads</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'right', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Updates</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1710,19 +1710,19 @@ export default function AnalyticsDashboard({
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Click any executive row to filter dashboard</span>
             </div>
 
-            <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
-                    <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
-                    <th style={{ textAlign: 'center', padding: '0.6rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
-                    <th style={{ textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '115px' }}>🎯 Leads Touched</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>📞 Outreach / 🧑‍💼 Hiring (30p)</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>📋 Tasks (15p)</th>
-                    <th style={{ textAlign: 'left', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>🏢 Attendance (10p)</th>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
+              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
+                  <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '115px' }}>🎯 Leads Touched</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>📞 Outreach / 🧑‍💼 Hiring (30p)</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>📋 Tasks (15p)</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>🏢 Attendance (10p)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1952,16 +1952,16 @@ export default function AnalyticsDashboard({
                 No tasks found for this scope.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                  <thead>
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Code</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Task Title</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Priority</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Assigned To</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Deadline</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Code</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Task Title</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Priority</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned To</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Deadline</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2111,17 +2111,17 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 1: Team Members Checklist Status Matrix */}
             {checklistViewMode === 'BY_EMPLOYEE' && (
-              <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                  <thead>
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+                <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Staff Member</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Assigned Slots</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Completed</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Pending</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', width: '130px' }}>Compliance</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned Slots</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Completed</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Pending</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600, width: '130px' }}>Compliance</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2181,21 +2181,21 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 2: Scheduled Slots Details */}
             {checklistViewMode === 'BY_SLOTS' && (
-              <div style={{ overflowX: 'auto', width: '100%' }}>
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
                 {checklistItemsList.length === 0 ? (
                   <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                     No checklist slots scheduled for today.
                   </div>
                 ) : (
-                  <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                    <thead>
+                  <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                       <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Slot ID</th>
-                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Checklist Title</th>
-                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
-                        <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Assigned To</th>
-                        <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Due Time</th>
-                        <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Slot ID</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Checklist Title</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned To</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Due Time</th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2304,15 +2304,15 @@ export default function AnalyticsDashboard({
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                <thead>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                    <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Staff Member</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Code</th>
-                    <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Department</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>In Time</th>
-                    <th style={{ textAlign: 'center', padding: '0.55rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Status & Source</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Code</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>In Time</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status & Source</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2652,36 +2652,36 @@ export default function AnalyticsDashboard({
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                <thead>
-                  <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)' }}>
+                  <tr style={{ background: 'var(--th-bg)' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
                       Representative
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '130px' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '130px' }}>
                       Department
                     </th>
-                    <th colSpan={7} style={{ padding: '0.45rem 0.65rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', background: 'rgba(59, 130, 246, 0.06)', borderRight: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)' }}>
+                    <th colSpan={7} style={{ position: 'sticky', top: 0, zIndex: 12, padding: '0.45rem 0.65rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', backgroundColor: 'var(--th-bg)', borderRight: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)', height: '32px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
                         <Layers size={13} style={{ color: 'var(--accent-color)' }} />
                         <span>Stage Breakdown (Stages 1 – 7)</span>
                       </div>
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
                       Total Assigned
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
                       🎯 Leads Touched
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
                       Touch Rate %
                     </th>
-                    <th rowSpan={2} style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '95px' }}>
+                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '95px' }}>
                       Outreach Score
                     </th>
                   </tr>
-                  <tr style={{ background: 'var(--th-bg)', borderBottom: '2px solid var(--border-light)' }}>
+                  <tr style={{ background: 'var(--th-bg)' }}>
                     {[
                       { num: 1, label: 'S1 New', color: '#3b82f6' },
                       { num: 2, label: 'S2 Contact', color: '#06b6d4' },
@@ -2694,6 +2694,11 @@ export default function AnalyticsDashboard({
                       <th
                         key={st.num}
                         style={{
+                          position: 'sticky',
+                          top: '32px',
+                          zIndex: 11,
+                          backgroundColor: 'var(--th-bg)',
+                          boxShadow: '0 1px 0 var(--border-light)',
                           padding: '0.35rem 0.45rem',
                           textAlign: 'center',
                           fontSize: '0.72rem',
@@ -2907,17 +2912,17 @@ export default function AnalyticsDashboard({
                 No job positions created yet.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                  <thead>
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Job Title</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Department</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Openings</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Recruiter Assigned</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Salary Range</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Deadline</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Status</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Job Title</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Department</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Openings</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Recruiter Assigned</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Salary Range</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Deadline</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3054,17 +3059,17 @@ export default function AnalyticsDashboard({
                 {recruiterSearch || recruiterFilter !== 'ALL' ? 'No candidates match your search or filter.' : 'No candidates in the pipeline.'}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-                  <thead>
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+                <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Candidate</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Position</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Pipeline Stage</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Current Status</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Contact Info</th>
-                      <th style={{ textAlign: 'left', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Applied Date</th>
-                      <th style={{ textAlign: 'center', padding: '0.55rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Actions</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Candidate</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Position</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Pipeline Stage</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Current Status</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Contact Info</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Applied Date</th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -1429,17 +1429,17 @@ export default function TeamManagement({ initialUsers = [] }) {
 
       <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
         <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
-          <thead style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)' }}>
-          <tr>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp Status</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Dept / Desig</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Company</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Approval Status</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Role</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Permissions</th>
-            <th style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Actions</th>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
+          <tr style={{ backgroundColor: 'var(--th-bg)' }}>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp Status</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Dept / Desig</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Company</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Approval Status</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Role</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Permissions</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Actions</th>
           </tr>
         </thead>
         <tbody>
