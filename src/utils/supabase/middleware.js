@@ -27,10 +27,6 @@ export async function updateSession(request) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const { pathname } = request.nextUrl;
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/auth');
   const isApiRoute = pathname.startsWith('/api');
@@ -46,6 +42,15 @@ export async function updateSession(request) {
     pathname.endsWith('.ico') ||
     pathname.endsWith('.json') ||
     pathname.endsWith('.webmanifest');
+
+  // Bypass expensive auth server call for API routes, webhooks, and public assets
+  if (isApiRoute || (isPublicPage && pathname !== '/login')) {
+    return supabaseResponse;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   // Protect all web routes (except auth pages, public pages and api endpoints)
   if (!user && !isAuthPage && !isApiRoute && !isPublicPage) {

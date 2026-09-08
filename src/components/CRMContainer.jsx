@@ -611,15 +611,21 @@ export default function CRMContainer({
       if (savedAvatar) setUserAvatar(savedAvatar);
     }
 
-    // Sync latest avatar from Supabase Auth across all devices
-    supabase.auth.getUser().then(({ data }) => {
-      const liveAvatar = data?.user?.user_metadata?.avatar_url;
-      if (liveAvatar) {
-        setUserAvatar(liveAvatar);
-        if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, liveAvatar);
-        localStorage.setItem('crm_user_avatar', liveAvatar);
+    // Sync latest avatar from Supabase Auth only if not already provided via server props
+    if (!initialAvatar) {
+      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
+      const savedAvatar = typeof window !== 'undefined' ? (localStorage.getItem(userKey) || localStorage.getItem('crm_user_avatar')) : null;
+      if (!savedAvatar) {
+        supabase.auth.getUser().then(({ data }) => {
+          const liveAvatar = data?.user?.user_metadata?.avatar_url;
+          if (liveAvatar) {
+            setUserAvatar(liveAvatar);
+            if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, liveAvatar);
+            localStorage.setItem('crm_user_avatar', liveAvatar);
+          }
+        }).catch(() => {});
       }
-    }).catch(() => {});
+    }
   }, [initialAvatar, userId]);
 
   useEffect(() => {
@@ -819,21 +825,18 @@ export default function CRMContainer({
       }
     }
     
-    // Initial track
+    // Initial session track on mount (SessionExpiryTracker handles ongoing heartbeats)
     trackSession();
-
-    // Check validity & heartbeat every 20 seconds
-    const interval = setInterval(trackSession, 20 * 1000);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
   }, []);
 
-  // Fetch user email & metadata avatar
+  // Fetch user email & metadata avatar only if missing from server props
   useEffect(() => {
     async function fetchUser() {
+      if (initialUserEmail) return;
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!isImpersonating && !initialUserEmail && user?.email) {
@@ -848,7 +851,9 @@ export default function CRMContainer({
         console.warn('Error fetching auth user in CRMContainer:', err);
       }
     }
-    fetchUser();
+    if (!initialUserEmail) {
+      fetchUser();
+    }
   }, [isImpersonating, initialUserEmail]);
   
   // Fetch team members for LeadTable dropdown
@@ -2277,21 +2282,42 @@ export default function CRMContainer({
       fetchAndProcessUserAlerts();
     };
 
+    // Periodic background sync every 5 minutes (Realtime handles instant delegation alerts)
+    const alertInterval = setInterval(fetchAndProcessUserAlerts, 5 * 60 * 1000);
+
     window.addEventListener('crm_test_notification', handleTestNotificationEvent);
     window.addEventListener('crm_config_updated', handleConfigUpdatedEvent);
 
     return () => {
+      clearInterval(alertInterval);
       supabase.removeChannel(delegationRealtimeChannel);
       window.removeEventListener('crm_test_notification', handleTestNotificationEvent);
       window.removeEventListener('crm_config_updated', handleConfigUpdatedEvent);
     };
   }, [userEmail]);
 
-  // Periodic check for checklist slot times (runs every 20 seconds with ticker)
+  // Periodic check for checklist slot times (runs purely in-memory against local state, ZERO network calls)
   useEffect(() => {
-    if (!currentTime || !userEmail) return;
-    fetchAndProcessUserAlerts();
-  }, [currentTime]);
+    if (!currentTime || !userChecklistSlots || userChecklistSlots.length === 0) return;
+    for (const s of userChecklistSlots) {
+      if (s.isExpired || s.isBeforeStart || s.canExecute === false) continue;
+      const slotKey = `${s.templateId}_${s.periodKey}`;
+      if (!notifiedChecklistKeysRef.current.has(slotKey)) {
+        notifiedChecklistKeysRef.current.add(slotKey);
+        triggerUnifiedAlert({
+          id: slotKey,
+          type: 'checklist',
+          title: `📋 Checklist Due: ${s.baseTitle}`,
+          subtitle: `${s.slotLabel} (Due: ${s.dueTime})`,
+          details: 'Your scheduled checklist is open and awaiting submission.',
+          dueTime: s.dueTime,
+          targetTab: 'checklist',
+          rawItem: s,
+          isUrgent: true
+        });
+      }
+    }
+  }, [currentTime, userChecklistSlots]);
 
   if (userRole === 'customer') {
     return (

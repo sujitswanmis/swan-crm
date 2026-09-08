@@ -230,8 +230,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       const { error: updateError } = await supabase.from('leads').update({ assigned_to: valToSet }).eq('id', lead.id);
       if (updateError) throw updateError;
       
-      const { data: { user } } = await supabase.auth.getUser();
-      const actualActor = info.table.options.meta?.userName || user?.email?.split('@')[0] || actor;
+      const actualActor = info.table.options.meta?.userName || actor || 'User';
       
       await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actualActor }]);
       try {
@@ -384,8 +383,7 @@ const LeadStatusCell = React.memo(({ info }) => {
       const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
       if (updateError) throw updateError;
       
-      const { data: { user } } = await supabase.auth.getUser();
-      const actor = info.table.options.meta?.userName || user?.email?.split('@')[0] || 'System';
+      const actor = info.table.options.meta?.userName || 'System';
       const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
       if (noteError) {
         console.error("Error creating status note:", noteError.message);
@@ -1608,8 +1606,7 @@ export default function LeadTable({
       const { error: updateError } = await supabase.from('leads').update(updates).eq('id', lead.id);
       if (updateError) throw updateError;
       
-      const { data: { user } } = await supabase.auth.getUser();
-      const actor = userName || user?.email?.split('@')[0] || 'System';
+      const actor = userName || 'System';
       const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{ lead_id: lead.id, note_text: noteText, created_by: actor }]).select().single();
       if (noteError) {
         console.error("Error creating status note:", noteError.message);

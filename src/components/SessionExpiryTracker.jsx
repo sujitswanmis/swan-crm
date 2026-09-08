@@ -273,7 +273,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
   }, []);
 
-  // 4. Periodic Heartbeat to Server (Every 20 Seconds with Offline Retention)
+  // 4. Periodic Heartbeat to Server (Every 60 Seconds with Offline Retention & Full Accuracy)
   useEffect(() => {
     const sendHeartbeat = async () => {
       if (isLoggingOut.current) return;
@@ -318,7 +318,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       }
     };
 
-    const interval = setInterval(sendHeartbeat, 20000);
+    const interval = setInterval(sendHeartbeat, 60000);
     return () => clearInterval(interval);
   }, []);
 

@@ -614,36 +614,45 @@ export default function GlobalSoftphoneWidget({ userId }) {
         updateActiveSession(null);
         setOptimisticCall(null);
       } else {
-        // Fallback check via getRecentCalls
-        const { data } = await getRecentCalls(agentData.id);
-        if (data) {
-          const active = data.find(c => {
-            const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
-            const ageInMs = Date.now() - new Date(c.created_at).getTime();
-            if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 45000) return false;
-            const isRecent = ageInMs < 1000 * 60 * 60;
-            return isStatusActive && isRecent;
-          });
+        // Only run getRecentCalls fallback if we were actively recovering an ongoing session
+        if (activeSessionRef.current || optimisticCall) {
+          const { data } = await getRecentCalls(agentData.id);
+          if (data) {
+            const active = data.find(c => {
+              const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
+              const ageInMs = Date.now() - new Date(c.created_at).getTime();
+              if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 45000) return false;
+              const isRecent = ageInMs < 1000 * 60 * 60;
+              return isStatusActive && isRecent;
+            });
 
-          if (active) {
-            if (active.status === 'connected' || active.customer_answer_time) {
-              stopRingingAudio(active.room_name);
-            } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
-              if (!active.customer_answer_time) {
-                startRingingAudio(active.room_name);
+            if (active) {
+              if (active.status === 'connected' || active.customer_answer_time) {
+                stopRingingAudio(active.room_name);
+              } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
+                if (!active.customer_answer_time) {
+                  startRingingAudio(active.room_name);
+                }
               }
-            }
-            setOptimisticCall(null);
-            updateActiveSession(active);
-          } else {
-            const prev = activeSessionRef.current;
-            if (prev) {
-              stopRingingAudio(prev.room_name);
-              const latest = data.find(c => c.id === prev.id) || data[0];
-              if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
-                handleSessionTerminationAnnouncement(latest);
+              setOptimisticCall(null);
+              updateActiveSession(active);
+            } else {
+              const prev = activeSessionRef.current;
+              if (prev) {
+                stopRingingAudio(prev.room_name);
+                const latest = data.find(c => c.id === prev.id) || data[0];
+                if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
+                  handleSessionTerminationAnnouncement(latest);
+                }
               }
+              updateActiveSession(null);
+              setOptimisticCall(null);
             }
+          }
+        } else {
+          const prev = activeSessionRef.current;
+          if (prev) {
+            stopRingingAudio(prev.room_name);
             updateActiveSession(null);
             setOptimisticCall(null);
           }
@@ -654,13 +663,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
   }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement, optimisticCall?.roomName]);
 
-  // Dynamic Polling: 500ms during active interaction, 4000ms when idle
+  // Dynamic Polling: 1000ms during active call/ringing, 60s background fallback when idle (Realtime handles instant pickup)
   useEffect(() => {
     if (!agentData) return;
     fetchSession();
 
     const isEngaged = !!(activeCall || activeSession || optimisticCall);
-    const intervalMs = isEngaged ? 500 : 4000;
+    const intervalMs = isEngaged ? 1000 : 60000;
     const interval = setInterval(fetchSession, intervalMs);
 
     return () => clearInterval(interval);
