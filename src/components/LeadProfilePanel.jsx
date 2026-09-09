@@ -80,6 +80,114 @@ export const formatStatusWithNumbers = (rawStatus, stagesList = DEFAULT_STAGES) 
   return rawStatus;
 };
 
+// High-accuracy Devanagari to Hinglish transliterator for Sales & Telecalling
+const HINGLISH_DICT = {
+  'कॉल': 'call', 'कोल': 'call', 'कॉलिंग': 'calling', 'कट': 'cut',
+  'नॉट': 'not', 'पिक्ड': 'picked', 'पिक': 'pick', 'कस्टमर': 'customer',
+  'क्लाइंट': 'client', 'इंटरेस्टेड': 'interested', 'इंट्रेस्टेड': 'interested',
+  'अनइंटरेस्टेड': 'not interested', 'कोटेशन': 'quotation', 'कोट': 'quote',
+  'फोन': 'phone', 'नंबर': 'number', 'स्विच': 'switch', 'ऑफ': 'off',
+  'ऑन': 'on', 'रॉन्ग': 'wrong', 'फॉलो': 'follow', 'अप': 'up',
+  'मीटिंग': 'meeting', 'मैसेज': 'message', 'व्हाट्सएप': 'whatsapp',
+  'डिटेल': 'detail', 'डिटेल्स': 'details', 'पेमेंट': 'payment',
+  'बिल': 'bill', 'ऑर्डर': 'order', 'प्राइस': 'price', 'रेट': 'rate',
+  'डिस्काउंट': 'discount', 'लोकेशन': 'location', 'एड्रेस': 'address',
+  'डील': 'deal', 'डन': 'done', 'कैंसिल': 'cancel', 'बिजी': 'busy',
+  'रिजेक्ट': 'reject', 'रिजेक्टेड': 'rejected', 'सेंड': 'send',
+  'रिसीव्ड': 'received', 'डिस्कस': 'discuss', 'डिस्कशन': 'discussion',
+  'रिक्वायरमेंट': 'requirement', 'प्रोडक्ट': 'product', 'सैंपल': 'sample',
+  'कंपनी': 'company', 'ऑफिस': 'office', 'स्टाफ': 'staff', 'मैनेजर': 'manager',
+  'सर': 'sir', 'मैडम': 'madam', 'नहीं': 'nahi', 'नही': 'nahi',
+  'ना': 'na', 'उठाया': 'uthaya', 'उठा': 'utha', 'रहा': 'raha',
+  'रही': 'rahi', 'रहे': 'rahe', 'है': 'hai', 'हैं': 'hain',
+  'था': 'tha', 'थी': 'thi', 'थे': 'the', 'होगा': 'hoga',
+  'होगी': 'hogi', 'होंगे': 'honge', 'बोला': 'bola', 'बोले': 'bole',
+  'बोली': 'boli', 'कहा': 'kaha', 'बात': 'baat', 'हुई': 'hui',
+  'हुआ': 'hua', 'हुए': 'hue', 'करो': 'karo', 'करना': 'karna',
+  'करने': 'karne', 'किया': 'kiya', 'देंगे': 'denge', 'दिया': 'diya',
+  'दिए': 'diye', 'भेजो': 'bhejo', 'भेजा': 'bheja', 'भेज': 'bhej',
+  'दीजिये': 'dijiye', 'दीजिए': 'dijiye', 'कीजिये': 'kijiye',
+  'कीजिए': 'kijiye', 'बाद': 'baad', 'में': 'me', 'से': 'se',
+  'को': 'ko', 'का': 'ka', 'की': 'ki', 'के': 'ke', 'पर': 'par',
+  'और': 'aur', 'या': 'ya', 'भी': 'bhi', 'तो': 'to', 'कल': 'kal',
+  'आज': 'aaj', 'परसों': 'parson', 'सुबह': 'subah', 'शाम': 'shaam',
+  'दोपहर': 'dopahar', 'रात': 'raat', 'बजे': 'baje', 'दिन': 'din',
+  'महीने': 'mahine', 'साल': 'saal', 'पैसा': 'paisa', 'पैसे': 'paise',
+  'रुपये': 'rupaye', 'हजार': 'hazar', 'लाख': 'lakh', 'करोड़': 'crore',
+  'ओके': 'ok', 'हाँ': 'haan', 'हां': 'haan'
+};
+
+const DEV_VOWELS = {
+  '\u0905': 'a', '\u0906': 'aa', '\u0907': 'i', '\u0908': 'ee', '\u0909': 'u', '\u090A': 'oo',
+  '\u090B': 'ri', '\u090E': 'e', '\u090F': 'e', '\u0910': 'ai', '\u0911': 'o', '\u0912': 'o',
+  '\u0913': 'o', '\u0914': 'au'
+};
+
+const DEV_CONSONANTS = {
+  '\u0915': 'k', '\u0916': 'kh', '\u0917': 'g', '\u0918': 'gh', '\u0919': 'ng',
+  '\u091A': 'ch', '\u091B': 'chh', '\u091C': 'j', '\u091D': 'jh', '\u091E': 'ny',
+  '\u091F': 't', '\u0920': 'th', '\u0921': 'd', '\u0922': 'dh', '\u0923': 'n',
+  '\u0924': 't', '\u0925': 'th', '\u0926': 'd', '\u0927': 'dh', '\u0928': 'n',
+  '\u092A': 'p', '\u092B': 'ph', '\u092C': 'b', '\u092D': 'bh', '\u092E': 'm',
+  '\u092F': 'y', '\u0930': 'r', '\u0931': 'r', '\u0932': 'l', '\u0933': 'l',
+  '\u0935': 'v', '\u0936': 'sh', '\u0937': 'sh', '\u0938': 's', '\u0939': 'h',
+  '\u0958': 'q', '\u0959': 'kh', '\u095A': 'gh', '\u095B': 'z', '\u095C': 'd',
+  '\u095D': 'dh', '\u095E': 'f', '\u095F': 'y'
+};
+
+const DEV_MATRAS = {
+  '\u093E': 'a', '\u093F': 'i', '\u0940': 'ee', '\u0941': 'u', '\u0942': 'oo',
+  '\u0943': 'ri', '\u0945': 'e', '\u0946': 'e', '\u0947': 'e', '\u0948': 'ai',
+  '\u0949': 'o', '\u094A': 'o', '\u094B': 'o', '\u094C': 'au'
+};
+
+const transliterateDevanagariWord = (word) => {
+  if (HINGLISH_DICT[word]) return HINGLISH_DICT[word];
+  let res = '';
+  const len = word.length;
+  for (let i = 0; i < len; i++) {
+    const ch = word[i];
+    if (DEV_VOWELS[ch]) {
+      res += DEV_VOWELS[ch];
+      continue;
+    }
+    if (DEV_CONSONANTS[ch]) {
+      const cons = DEV_CONSONANTS[ch];
+      const next = i + 1 < len ? word[i + 1] : null;
+      if (next === '\u094D') {
+        res += cons;
+        i++;
+      } else if (next && DEV_MATRAS[next]) {
+        res += cons + DEV_MATRAS[next];
+        i++;
+      } else if (next === '\u093C') {
+        res += cons;
+        i++;
+      } else if (i === len - 1) {
+        res += cons;
+      } else {
+        res += cons + 'a';
+      }
+      continue;
+    }
+    if (ch === '\u0902' || ch === '\u0901') {
+      res += 'n';
+      continue;
+    }
+    if (ch === '\u0903') {
+      res += 'h';
+      continue;
+    }
+    res += ch;
+  }
+  return res;
+};
+
+export const hindiToHinglish = (text) => {
+  if (!text) return '';
+  return text.replace(/[\u0900-\u097F]+/g, (match) => transliterateDevanagariWord(match));
+};
+
 // Strict IST Timezone Formatter
 const formatIST = (isoString) => {
   if (!isoString) return '';
@@ -345,11 +453,12 @@ export default function LeadProfilePanel({
 
   // Voice-to-Text (Speech Recognition) states
   const [isListening, setIsListening] = useState(false);
-  const [speechLang, setSpeechLang] = useState('en-US'); // 'en-US' (English) or 'hi-IN' (Hindi)
+  const [speechLang, setSpeechLang] = useState('hi-IN'); // 'hi-IN' (Hindi to Hinglish) or 'en-IN' (English)
   const [interimTranscript, setInterimTranscript] = useState('');
   const [speechError, setSpeechError] = useState(null);
   const [listeningTarget, setListeningTarget] = useState('note'); // 'note' | 'requirement'
   const listeningTargetRef = useRef('note');
+  const isExplicitlyListeningRef = useRef(false);
   const latestInterimRef = useRef('');
   const recognitionRef = useRef(null);
 
@@ -430,8 +539,9 @@ export default function LeadProfilePanel({
     }
   }, [propStages]);
 
-  // Robust Speech Recognition Controller
+  // Robust Speech Recognition Controller with Hindi-to-Hinglish Transliteration
   const stopListening = () => {
+    isExplicitlyListeningRef.current = false;
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onresult = null;
@@ -442,9 +552,9 @@ export default function LeadProfilePanel({
       recognitionRef.current = null;
     }
 
-    // Immediately commit any pending interim transcript so nothing is lost
+    // Immediately commit any pending interim transcript converted to Hinglish
     if (latestInterimRef.current) {
-      const pending = latestInterimRef.current.trim();
+      const pending = hindiToHinglish(latestInterimRef.current).trim();
       if (pending) {
         if (listeningTargetRef.current === 'requirement') {
           setCurrentRequirement(prev => {
@@ -473,14 +583,16 @@ export default function LeadProfilePanel({
       return;
     }
 
-    // Stop previous instance before initializing fresh one
+    // Mark that user actively wants to listen
+    isExplicitlyListeningRef.current = true;
     stopListening();
+    isExplicitlyListeningRef.current = true;
 
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = langToUse || 'en-US';
+      recognition.lang = langToUse || 'hi-IN';
 
       listeningTargetRef.current = target;
       setListeningTarget(target);
@@ -506,36 +618,59 @@ export default function LeadProfilePanel({
 
         if (finalChunk) {
           latestInterimRef.current = '';
-          if (listeningTargetRef.current === 'requirement') {
-            setCurrentRequirement(prev => {
-              const trimmed = (prev || '').trim();
-              return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
-            });
-          } else {
-            setNewNote(prev => {
-              const trimmed = (prev || '').trim();
-              return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
-            });
+          const convertedFinal = hindiToHinglish(finalChunk).trim();
+          if (convertedFinal) {
+            if (listeningTargetRef.current === 'requirement') {
+              setCurrentRequirement(prev => {
+                const trimmed = (prev || '').trim();
+                return trimmed ? `${trimmed} ${convertedFinal}` : convertedFinal;
+              });
+            } else {
+              setNewNote(prev => {
+                const trimmed = (prev || '').trim();
+                return trimmed ? `${trimmed} ${convertedFinal}` : convertedFinal;
+              });
+            }
           }
         } else {
           latestInterimRef.current = interimChunk;
         }
 
-        setInterimTranscript(interimChunk);
+        const convertedInterim = hindiToHinglish(interimChunk);
+        setInterimTranscript(convertedInterim);
       };
 
       recognition.onerror = (e) => {
         console.warn('SpeechRecognition error:', e.error);
         if (e.error === 'not-allowed') {
           setSpeechError('Microphone permission denied. Please allow microphone in your browser settings.');
-        } else if (e.error !== 'no-speech') {
-          setSpeechError(`Voice error: ${e.error}`);
+          stopListening();
+        } else if (e.error === 'no-speech') {
+          // Do NOT stop listening on silence!
+        } else if (e.error === 'network') {
+          console.warn('Speech recognition network retry...');
+        } else {
+          setSpeechError(`Voice: ${e.error}`);
         }
-        stopListening();
       };
 
       recognition.onend = () => {
-        stopListening();
+        // Automatically restart if user hasn't clicked Stop
+        if (isExplicitlyListeningRef.current) {
+          try {
+            recognition.start();
+          } catch (err) {
+            setTimeout(() => {
+              if (isExplicitlyListeningRef.current && recognitionRef.current) {
+                try {
+                  recognitionRef.current.start();
+                } catch (e) {}
+              }
+            }, 100);
+          }
+        } else {
+          stopListening();
+        }
       };
 
       recognitionRef.current = recognition;
@@ -544,6 +679,7 @@ export default function LeadProfilePanel({
       console.warn('Could not start speech recognition:', err);
       setSpeechError('Failed to initialize microphone.');
       setIsListening(false);
+      isExplicitlyListeningRef.current = false;
     }
   };
 
@@ -556,7 +692,7 @@ export default function LeadProfilePanel({
   };
 
   const toggleSpeechLanguage = () => {
-    const nextLang = speechLang.startsWith('en') ? 'hi-IN' : 'en-US';
+    const nextLang = speechLang.startsWith('en') ? 'hi-IN' : 'en-IN';
     setSpeechLang(nextLang);
     if (isListening) {
       startListening(listeningTargetRef.current, nextLang);
@@ -2086,7 +2222,7 @@ export default function LeadProfilePanel({
                   animation: 'fadeIn 0.2s ease-out'
                 }}>
                   <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444', animation: 'pulse-dot 1s infinite' }} />
-                  <span style={{ fontWeight: 600 }}>Listening ({speechLang === 'hi-IN' ? 'Hindi' : 'English / Hinglish'})...</span>
+                  <span style={{ fontWeight: 600 }}>Listening in {speechLang === 'hi-IN' ? 'Hindi ➔ Hinglish' : 'English'}...</span>
                   {interimTranscript && <span style={{ color: '#450a0a', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{interimTranscript}"</span>}
                 </div>
               )}
