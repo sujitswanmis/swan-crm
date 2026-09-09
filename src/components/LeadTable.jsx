@@ -280,7 +280,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     return <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : 'Open Lead'}</span>;
   }
 
-  const currentDisplayName = assignedMember ? `${assignedMember.emp_name}${assignedMember.emp_department ? ` (${assignedMember.emp_department})` : ''}` : 'Open Lead (Unassigned)';
+  const currentDisplayName = assignedMember ? assignedMember.emp_name : 'Open Lead (Unassigned)';
 
   return (
     <select 
@@ -312,7 +312,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
           <option value="">Open Lead (Unassigned)</option>
           {teamMembers.filter(m => m.emp_name).map(member => (
             <option key={member.user_id} value={member.user_id}>
-              {member.emp_name}{member.emp_department ? ` (${member.emp_department})` : ''}
+              {member.emp_name}
             </option>
           ))}
         </>
