@@ -527,7 +527,7 @@ const LeadStatusCell = React.memo(({ info }) => {
 
             return (
               <React.Fragment key={`stage-${i}`}>
-                <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
+                <option disabled style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>{stageObj.name}</option>
                 {stageObj.substages.map((sub, j) => {
                   const subNum = String(j + 1).padStart(2, '0');
                   const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
@@ -893,7 +893,7 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
   return (
     <tr 
       onClick={() => onRowClick(row.id)}
-      className={isActive ? 'active-row' : ''}
+      className={`lead-table-row ${isActive ? 'active-row' : ''}`}
       style={{ 
         borderBottom: '1px solid var(--border-light)', 
         backgroundColor: isActive 
@@ -916,7 +916,8 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
             boxSizing: 'border-box',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            borderRight: '1px solid var(--border-light)'
+            borderRight: '1px solid var(--border-light)',
+            color: 'var(--text-primary)'
           }}
         >
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1919,7 +1920,7 @@ export default function LeadTable({
                   const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
                   return (
                     <React.Fragment key={`filter-stage-${i}`}>
-                      <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
+                      <option disabled style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>{stageObj.name}</option>
                       {stageObj.substages.map((sub, j) => {
                         const subNum = String(j + 1).padStart(2, '0');
                         const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
@@ -2462,7 +2463,7 @@ export default function LeadTable({
                                 const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
                                 const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
                                 return (
-                                  <option key={val} value={val} style={{ backgroundColor: '#ffffff', color: '#0f172a' }}>
+                                  <option key={val} value={val} style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
                                     {val}
                                   </option>
                                 );

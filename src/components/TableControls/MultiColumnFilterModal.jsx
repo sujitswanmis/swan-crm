@@ -350,11 +350,11 @@ export default function MultiColumnFilterModal({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   cursor: 'pointer',
-                  backgroundColor: hasActiveFilter ? '#f0f9ff' : 'transparent',
+                  backgroundColor: hasActiveFilter ? 'var(--nav-active-bg, #f0f9ff)' : 'transparent',
                   transition: 'background 0.12s'
                 }}
                 onMouseOver={e => {
-                  if (!hasActiveFilter) e.currentTarget.style.backgroundColor = '#f8fafc';
+                  if (!hasActiveFilter) e.currentTarget.style.backgroundColor = 'var(--nav-hover-bg, #f8fafc)';
                 }}
                 onMouseOut={e => {
                   if (!hasActiveFilter) e.currentTarget.style.backgroundColor = 'transparent';
@@ -365,7 +365,7 @@ export default function MultiColumnFilterModal({
                     style={{
                       fontSize: '0.85rem',
                       fontWeight: hasActiveFilter ? 700 : 500,
-                      color: hasActiveFilter ? '#0284c7' : '#1e293b'
+                      color: hasActiveFilter ? 'var(--accent-color, #0284c7)' : 'var(--text-primary)'
                     }}
                   >
                     {col.label}
@@ -390,13 +390,13 @@ export default function MultiColumnFilterModal({
                 <div
                   style={{
                     padding: '0.6rem 1rem 0.85rem 1rem',
-                    backgroundColor: '#ffffff',
-                    borderTop: '1px solid #f8fafc'
+                    backgroundColor: 'var(--bg-surface)',
+                    borderTop: '1px solid var(--border-light)'
                   }}
                 >
                   {/* Condition Radio Buttons */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.65rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: '#334155', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
                       <input
                         type="radio"
                         name={`condition_${col.key}`}
@@ -407,7 +407,7 @@ export default function MultiColumnFilterModal({
                       <span>Contains</span>
                     </label>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: '#334155', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
                       <input
                         type="radio"
                         name={`condition_${col.key}`}
@@ -418,7 +418,7 @@ export default function MultiColumnFilterModal({
                       <span>Start With</span>
                     </label>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: '#334155', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
                       <input
                         type="radio"
                         name={`condition_${col.key}`}
@@ -429,7 +429,7 @@ export default function MultiColumnFilterModal({
                       <span>Equal</span>
                     </label>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: '#334155', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
                       <input
                         type="radio"
                         name={`condition_${col.key}`}
@@ -453,15 +453,15 @@ export default function MultiColumnFilterModal({
                           fontSize: '0.8rem',
                           borderRadius: '5px',
                           border: '1px solid var(--border-light, #cbd5e1)',
-                          background: '#ffffff',
-                          color: currentRule.value ? '#1e293b' : '#94a3b8',
+                          background: 'var(--bg-surface)',
+                          color: currentRule.value ? 'var(--text-primary)' : 'var(--text-secondary)',
                           outline: 'none',
                           cursor: 'pointer'
                         }}
                       >
                         <option value="">Please Select</option>
                         {uniqueOptions.map((uVal, idx) => (
-                          <option key={idx} value={uVal} style={{ color: '#1e293b' }}>
+                          <option key={idx} value={uVal} style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-surface)' }}>
                             {uVal}
                           </option>
                         ))}
@@ -478,7 +478,8 @@ export default function MultiColumnFilterModal({
                           fontSize: '0.8rem',
                           borderRadius: '5px',
                           border: '1px solid var(--border-light, #cbd5e1)',
-                          background: '#ffffff',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
                           outline: 'none'
                         }}
                       />

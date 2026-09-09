@@ -299,25 +299,25 @@ export default function ColumnSelectorModal({
                 padding: '0.5rem 0.65rem',
                 borderRadius: '6px',
                 backgroundColor: isBeingDragged
-                  ? '#eff6ff'
+                  ? 'var(--nav-active-bg)'
                   : isDragOver
-                  ? '#dbeafe'
+                  ? 'var(--th-filtered-bg)'
                   : isChecked
-                  ? '#f8fafc'
+                  ? 'var(--nav-active-bg)'
                   : 'transparent',
-                border: isDragOver ? '1px dashed #3b82f6' : '1px solid transparent',
+                border: isDragOver ? '1px dashed var(--accent-color)' : '1px solid transparent',
                 cursor: searchTerm ? 'pointer' : 'grab',
                 transition: 'background-color 0.12s',
                 opacity: isBeingDragged ? 0.5 : 1
               }}
               onMouseOver={e => {
                 if (!isBeingDragged && !isDragOver) {
-                  e.currentTarget.style.backgroundColor = '#f1f5f9';
+                  e.currentTarget.style.backgroundColor = 'var(--nav-hover-bg)';
                 }
               }}
               onMouseOut={e => {
                 if (!isBeingDragged && !isDragOver) {
-                  e.currentTarget.style.backgroundColor = isChecked ? '#f8fafc' : 'transparent';
+                  e.currentTarget.style.backgroundColor = isChecked ? 'var(--nav-active-bg)' : 'transparent';
                 }
               }}
             >

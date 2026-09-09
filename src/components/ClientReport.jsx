@@ -1942,7 +1942,7 @@ export default function ClientReport({
               <tr 
                 key={lead.id} 
                 onClick={() => setActiveRowId(lead.id)}
-                className={activeRowId === lead.id || selectedRows.includes(lead.id) ? 'active-row' : ''}
+                className={`report-table-row ${activeRowId === lead.id || selectedRows.includes(lead.id) ? 'active-row' : ''}`}
                 style={{ 
                   borderBottom: '1px solid var(--border-light)', 
                   backgroundColor: activeRowId === lead.id 
