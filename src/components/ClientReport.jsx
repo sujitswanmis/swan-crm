@@ -945,6 +945,176 @@ export default function ClientReport({
     }
   }, [reportColumns]);
 
+  // Column width resizing state with persistence
+  const [columnWidths, setColumnWidths] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_client_report_column_sizing');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error reading crm_client_report_column_sizing', e);
+      }
+    }
+    return {};
+  });
+
+  const [resizingColKey, setResizingColKey] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('crm_client_report_column_sizing', JSON.stringify(columnWidths));
+      } catch (e) {
+        console.error('Error saving crm_client_report_column_sizing', e);
+      }
+    }
+  }, [columnWidths]);
+
+  const getDefaultColWidth = (key) => {
+    switch (key) {
+      case 'lead_formatted_id': return 120;
+      case 'id': return 80;
+      case 'created_at': return 160;
+      case 'lead_date': return 130;
+      case 'our_company': return 170;
+      case 'source': return 140;
+      case 'source_name': return 150;
+      case 'created_by':
+      case 'entry_by':
+      case 'assigned_to_name': return 140;
+      case 'status': return 140;
+      case 'priority': return 130;
+      case 'company': return 180;
+      case 'business_type': return 140;
+      case 'business_gst': return 150;
+      case 'name':
+      case 'cp2_name':
+      case 'cp3_name': return 150;
+      case 'phone':
+      case 'cp1_mobile_2':
+      case 'cp1_alt_1':
+      case 'cp1_alt_2':
+      case 'cp2_mobile_1':
+      case 'cp2_mobile_2':
+      case 'cp2_alt_1':
+      case 'cp2_alt_2':
+      case 'cp3_mobile_1':
+      case 'cp3_mobile_2':
+      case 'cp3_alt_1':
+      case 'cp3_alt_2':
+      case 'business_contact_1':
+      case 'business_contact_2':
+      case 'business_alt_1':
+      case 'business_alt_2':
+      case 'business_contact_aio': return 140;
+      case 'email':
+      case 'cp1_email_2':
+      case 'cp2_email_1':
+      case 'cp2_email_2':
+      case 'cp3_email_1':
+      case 'cp3_email_2':
+      case 'business_email_1':
+      case 'business_email_2':
+      case 'business_alt_email_1':
+      case 'business_alt_email_2':
+      case 'business_email_aio': return 180;
+      case 'state_name':
+      case 'district_name': return 140;
+      case 'city_name':
+      case 'tehsil_name':
+      case 'block_name': return 130;
+      case 'pin_code': return 100;
+      case 'address': return 240;
+      case 'requirement': return 220;
+      case 'investment': return 130;
+      case 'buying_timeline': return 140;
+      default: return 150;
+    }
+  };
+
+  const getColWidth = (key) => {
+    return columnWidths[key] || getDefaultColWidth(key);
+  };
+
+  const handleMouseDownResize = (colKey, initialWidth, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColKey(colKey);
+
+    const startX = e.clientX;
+    const startWidth = initialWidth || 160;
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + deltaX)));
+      setColumnWidths(prev => ({
+        ...prev,
+        [colKey]: newWidth
+      }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColKey(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleTouchStartResize = (colKey, initialWidth, e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    e.stopPropagation();
+    setResizingColKey(colKey);
+
+    const startX = e.touches[0].clientX;
+    const startWidth = initialWidth || 160;
+
+    const handleTouchMove = (moveEvent) => {
+      if (!moveEvent.touches || moveEvent.touches.length === 0) return;
+      const deltaX = moveEvent.touches[0].clientX - startX;
+      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + deltaX)));
+      setColumnWidths(prev => ({
+        ...prev,
+        [colKey]: newWidth
+      }));
+    };
+
+    const handleTouchEnd = () => {
+      setResizingColKey(null);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+  };
+
+  const handleResetColWidth = (colKey) => {
+    setColumnWidths(prev => {
+      const next = { ...prev };
+      delete next[colKey];
+      return next;
+    });
+  };
+
+  const visibleReportCols = useMemo(() => {
+    return reportColumns.filter(c => visibleColumns.includes(c.key));
+  }, [reportColumns, visibleColumns]);
+
+  const totalReportTableWidth = useMemo(() => {
+    let w = ((canDelete || canAssign) ? 44 : 0) + 70;
+    visibleReportCols.forEach(col => {
+      w += getColWidth(col.key);
+    });
+    return Math.max(1200, w);
+  }, [visibleReportCols, columnWidths, canDelete, canAssign]);
+
   const moveReportColumn = (key, direction) => {
     setReportColumns(prev => {
       const newOrder = [...prev];
@@ -1379,9 +1549,11 @@ export default function ClientReport({
               onReset={() => {
                 setVisibleColumns(ALL_COLUMNS.slice(0, 14).map(c => c.key));
                 setReportColumns(ALL_COLUMNS);
+                setColumnWidths({});
                 try {
                   localStorage.removeItem('clientReportVisibleColumns');
                   localStorage.removeItem('clientReportColumnsOrder');
+                  localStorage.removeItem('crm_client_report_column_sizing');
                 } catch (e) {}
               }}
             />
@@ -1569,12 +1741,12 @@ export default function ClientReport({
       )}
 
       {/* Table Container - Horizontally Scrollable */}
-      <div className="table-responsive-wrapper" style={{ flex: 1 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${visibleColumns.length * 150}px` }}>
+      <div className="table-responsive-wrapper" style={{ flex: 1, overflowX: 'auto' }}>
+        <table style={{ width: `${totalReportTableWidth}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               {(canDelete || canAssign) && (
-                <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '40px' }}>
+                <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box' }}>
                   <input 
                     type="checkbox" 
                     checked={isAllPageSelected || isAllFilteredSelected}
@@ -1588,54 +1760,112 @@ export default function ClientReport({
                   />
                 </th>
               )}
-              <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '60px' }}>
+              <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box' }}>
                 Actions
               </th>
-              {reportColumns.filter(c => visibleColumns.includes(c.key)).map(col => (
-                <th key={col.key} className={`table-header-cell ${activeFilterColumn === col.key ? 'active-dropdown' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === col.key ? 99999 : 10, textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                    <span>{col.label}</span>
-                    <button 
-                      onClick={() => {
-                        setActiveFilterColumn(activeFilterColumn === col.key ? null : col.key);
-                        setFilterSearchText('');
-                      }} 
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: (columnFilters[col.key] && columnFilters[col.key].length > 0) ? 'var(--accent-color)' : 'var(--text-secondary)' }}
-                    >
-                      <Filter size={14} />
-                    </button>
-                  </div>
-
-                  {activeFilterColumn === col.key && (
-                    <div className="column-filter-popup" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '6px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.22)', zIndex: 99999, minWidth: '320px', maxWidth: '480px', width: 'max-content', padding: '0.65rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
-                      <input 
-                        type="text"
-                        placeholder="Search..."
-                        value={filterSearchText}
-                        onChange={e => setFilterSearchText(e.target.value)}
-                        style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
-                      />
-                      <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        {getUniqueValues(col.key).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => (
-                          <label key={val} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer', padding: '0.25rem 0.35rem', borderRadius: '4px', lineHeight: '1.35' }}>
-                            <input 
-                              type="checkbox"
-                              checked={(columnFilters[col.key] || []).includes(val)}
-                              style={{ marginTop: '0.15rem', flexShrink: 0 }}
-                              onChange={() => handleToggleColumnFilter(col.key, val)}
-                            />
-                            <span title={val} style={{ wordBreak: 'break-word', whiteSpace: 'normal', flex: 1 }}>{val || '(Blank)'}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
-                        <button onClick={() => setColumnFilters(prev => ({...prev, [col.key]: []}))} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
-                        <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
-                      </div>
+              {visibleReportCols.map(col => {
+                const colWidth = getColWidth(col.key);
+                return (
+                  <th 
+                    key={col.key} 
+                    className={`table-header-cell ${activeFilterColumn === col.key ? 'active-dropdown' : ''}`} 
+                    style={{ 
+                      position: 'sticky', 
+                      top: 0, 
+                      zIndex: activeFilterColumn === col.key ? 99999 : 10, 
+                      textAlign: 'left', 
+                      padding: '0.75rem 1rem', 
+                      borderBottom: '2px solid var(--border-light)', 
+                      color: 'var(--text-secondary)', 
+                      fontWeight: 600, 
+                      fontSize: '0.85rem', 
+                      whiteSpace: 'nowrap', 
+                      verticalAlign: 'top',
+                      width: `${colWidth}px`,
+                      minWidth: '60px',
+                      maxWidth: `${colWidth}px`,
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', overflow: 'hidden' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={col.label}>{col.label}</span>
+                      <button 
+                        onClick={() => {
+                          setActiveFilterColumn(activeFilterColumn === col.key ? null : col.key);
+                          setFilterSearchText('');
+                        }} 
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, color: (columnFilters[col.key] && columnFilters[col.key].length > 0) ? 'var(--accent-color)' : 'var(--text-secondary)' }}
+                      >
+                        <Filter size={14} />
+                      </button>
                     </div>
-                  )}
-                </th>
-              ))}
+
+                    {activeFilterColumn === col.key && (
+                      <div className="column-filter-popup" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '6px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.22)', zIndex: 99999, minWidth: '320px', maxWidth: '480px', width: 'max-content', padding: '0.65rem', fontWeight: 'normal', color: 'var(--text-primary)' }}>
+                        <input 
+                          type="text"
+                          placeholder="Search..."
+                          value={filterSearchText}
+                          onChange={e => setFilterSearchText(e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
+                        />
+                        <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          {getUniqueValues(col.key).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => (
+                            <label key={val} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer', padding: '0.25rem 0.35rem', borderRadius: '4px', lineHeight: '1.35' }}>
+                              <input 
+                                type="checkbox"
+                                checked={(columnFilters[col.key] || []).includes(val)}
+                                style={{ marginTop: '0.15rem', flexShrink: 0 }}
+                                onChange={() => handleToggleColumnFilter(col.key, val)}
+                              />
+                              <span title={val} style={{ wordBreak: 'break-word', whiteSpace: 'normal', flex: 1 }}>{val || '(Blank)'}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                          <button onClick={() => setColumnFilters(prev => ({...prev, [col.key]: []}))} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                          <button onClick={() => setActiveFilterColumn(null)} style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>OK</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Column Resizer Handle */}
+                    <div
+                      onMouseDown={(e) => handleMouseDownResize(col.key, colWidth, e)}
+                      onTouchStart={(e) => handleTouchStartResize(col.key, colWidth, e)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={() => handleResetColWidth(col.key)}
+                      className={`column-resizer ${resizingColKey === col.key ? 'is-resizing' : ''}`}
+                      title="Drag to resize column width | Double-click to reset"
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: 0,
+                        height: '100%',
+                        width: '10px',
+                        cursor: 'col-resize',
+                        userSelect: 'none',
+                        touchAction: 'none',
+                        zIndex: 20,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <div 
+                        className="resizer-bar"
+                        style={{
+                          width: resizingColKey === col.key ? '3px' : '2px',
+                          height: '55%',
+                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color)' : 'transparent',
+                          borderRadius: '2px',
+                          transition: 'background-color 0.15s ease'
+                        }}
+                      />
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -1657,7 +1887,7 @@ export default function ClientReport({
                 }}
               >
                 {(canDelete || canAssign) && (
-                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
+                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box' }}>
                     <input 
                       type="checkbox" 
                       checked={selectedRows.includes(lead.id)}
@@ -1666,7 +1896,7 @@ export default function ClientReport({
                     />
                   </td>
                 )}
-                <td style={{ padding: '0.75rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '0.75rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box' }}>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                     {canEdit && (
                       <button onClick={() => { setSelectedLead(lead); setProfileMode('edit'); setIsProfileOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Lead">
@@ -1678,11 +1908,27 @@ export default function ClientReport({
                     </button>
                   </div>
                 </td>
-                {reportColumns.filter(c => visibleColumns.includes(c.key)).map(col => {
+                {visibleReportCols.map(col => {
                   let val = lead[col.key];
                   if (col.key === 'created_at' && val) val = new Date(val).toLocaleString();
+                  const colWidth = getColWidth(col.key);
                   return (
-                    <td key={col.key} style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <td 
+                      key={col.key} 
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        fontSize: '0.85rem', 
+                        color: 'var(--text-primary)', 
+                        whiteSpace: 'nowrap', 
+                        width: `${colWidth}px`, 
+                        minWidth: '60px', 
+                        maxWidth: `${colWidth}px`, 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis',
+                        boxSizing: 'border-box'
+                      }}
+                      title={typeof val === 'string' || typeof val === 'number' ? String(val) : undefined}
+                    >
                       {val || '-'}
                     </td>
                   );
@@ -1691,7 +1937,7 @@ export default function ClientReport({
             ))}
             {paginatedLeads.length === 0 && (
               <tr>
-                <td colSpan={visibleColumns.length + ((canDelete || canAssign) ? 2 : 1)} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                <td colSpan={visibleReportCols.length + ((canDelete || canAssign) ? 2 : 1)} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                   No clients registered yet.
                 </td>
               </tr>
@@ -1788,6 +2034,14 @@ export default function ClientReport({
           userName={userName}
         />
       )}
+
+      <style jsx>{`
+        .column-resizer:hover .resizer-bar,
+        .column-resizer.is-resizing .resizer-bar {
+          background-color: var(--accent-color, #2563eb) !important;
+          width: 3px !important;
+        }
+      `}</style>
     </div>
   );
 }

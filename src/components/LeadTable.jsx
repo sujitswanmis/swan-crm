@@ -496,7 +496,8 @@ const LeadStatusCell = React.memo(({ info }) => {
         textAlign: 'left',
         appearance: 'auto',
         width: '100%',
-        minWidth: '220px'
+        minWidth: '130px',
+        maxWidth: '100%'
       }}
     >
       {!isInteracting ? (
@@ -630,6 +631,9 @@ const columns = [
   {
     id: 'edit',
     header: 'Lead Profile',
+    size: 70,
+    minSize: 50,
+    maxSize: 120,
     cell: info => {
       const lead = info.row.original;
       return (
@@ -639,10 +643,13 @@ const columns = [
       );
     }
   },
-  { accessorKey: 'lead_ref_id', header: 'Lead ID', cell: info => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'monospace' }}>{info.getValue()}</span> },
+  { accessorKey: 'lead_ref_id', header: 'Lead ID', size: 110, minSize: 70, maxSize: 250, cell: info => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'monospace' }}>{info.getValue()}</span> },
   {
     accessorKey: 'lead_date',
     header: 'Lead Date',
+    size: 120,
+    minSize: 80,
+    maxSize: 250,
     cell: info => {
       const val = info.getValue();
       if (!val) return '';
@@ -656,20 +663,26 @@ const columns = [
       return val;
     }
   },
-  { accessorKey: 'source', header: 'Lead Source' },
-  { accessorKey: 'source_name', header: 'Source Name' },
-  { accessorKey: 'entry_by', header: 'Lead Entry By' },
-  { accessorKey: 'created_by', header: 'Lead Created By' },
+  { accessorKey: 'source', header: 'Lead Source', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'source_name', header: 'Source Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'entry_by', header: 'Lead Entry By', size: 140, minSize: 80, maxSize: 300 },
+  { accessorKey: 'created_by', header: 'Lead Created By', size: 140, minSize: 80, maxSize: 300 },
   {
     accessorKey: 'assigned_to',
     header: 'Assigned To',
+    size: 180,
+    minSize: 100,
+    maxSize: 400,
     cell: info => <LeadAssigneeCell info={info} />
   },
-  { accessorKey: 'business_type', header: 'Business Type' },
-  { accessorKey: 'company', header: 'Business Name' },
+  { accessorKey: 'business_type', header: 'Business Type', size: 140, minSize: 80, maxSize: 300 },
+  { accessorKey: 'company', header: 'Business Name', size: 210, minSize: 100, maxSize: 500 },
   { 
     id: 'business_contact_aio',
     header: 'Business Contact in AIO',
+    size: 180,
+    minSize: 100,
+    maxSize: 400,
     accessorFn: row => {
       const explicit = row.business_contact_aio || row.business_contact_in_aio || row['Business Contact in AIO'];
       if (explicit) return explicit;
@@ -680,16 +693,25 @@ const columns = [
   { 
     id: 'business_email_aio',
     header: 'Business Mail in AIO',
+    size: 180,
+    minSize: 100,
+    maxSize: 400,
     accessorFn: row => [row.business_email_1, row.business_email_2, row.business_alt_email_1, row.business_alt_email_2].filter(Boolean).join(', ')
   },
   { 
     id: 'cp_name_aio',
     header: 'CP Name in AIO',
+    size: 160,
+    minSize: 90,
+    maxSize: 400,
     accessorFn: row => [row.name, row.cp2_name, row.cp3_name].filter(Boolean).join(', ')
   },
   { 
     id: 'cp_mobile_aio',
     header: 'CP Mobile in AIO',
+    size: 180,
+    minSize: 100,
+    maxSize: 400,
     accessorFn: row => {
       const explicit = row.cp_mobile_aio || row.cp_mobile_in_aio || row['CP Mobile in AIO'];
       if (explicit) return explicit;
@@ -704,28 +726,37 @@ const columns = [
   { 
     id: 'cp_email_aio',
     header: 'CP Mail in AIO',
+    size: 180,
+    minSize: 100,
+    maxSize: 400,
     accessorFn: row => [row.email, row.cp1_email_2, row.cp2_email_1, row.cp2_email_2, row.cp3_email_1, row.cp3_email_2].filter(Boolean).join(', ')
   },
-  { accessorKey: 'our_company', header: 'Our Company' },
-  { accessorKey: 'state_name', header: 'State Name' },
-  { accessorKey: 'district_name', header: 'District Name' },
-  { accessorKey: 'pin_code', header: 'PIN Code' },
-  { accessorKey: 'city_name', header: 'City Name' },
-  { accessorKey: 'tehsil_name', header: 'Tehsil Name' },
-  { accessorKey: 'block_name', header: 'Block Name' },
-  { accessorKey: 'priority', header: 'Lead Priority Type' },
-  { accessorKey: 'address', header: 'Full Address' },
-  { accessorKey: 'requirement', header: 'Requirement' },
-  { accessorKey: 'investment', header: 'Investment' },
-  { accessorKey: 'buying_timeline', header: 'Buying Timeline' },
+  { accessorKey: 'our_company', header: 'Our Company', size: 150, minSize: 90, maxSize: 350 },
+  { accessorKey: 'state_name', header: 'State Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'district_name', header: 'District Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'pin_code', header: 'PIN Code', size: 100, minSize: 70, maxSize: 200 },
+  { accessorKey: 'city_name', header: 'City Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'tehsil_name', header: 'Tehsil Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'block_name', header: 'Block Name', size: 130, minSize: 80, maxSize: 300 },
+  { accessorKey: 'priority', header: 'Lead Priority Type', size: 150, minSize: 90, maxSize: 350 },
+  { accessorKey: 'address', header: 'Full Address', size: 240, minSize: 120, maxSize: 600 },
+  { accessorKey: 'requirement', header: 'Requirement', size: 220, minSize: 100, maxSize: 600 },
+  { accessorKey: 'investment', header: 'Investment', size: 140, minSize: 80, maxSize: 350 },
+  { accessorKey: 'buying_timeline', header: 'Buying Timeline', size: 140, minSize: 80, maxSize: 350 },
   {
     accessorKey: 'status',
     header: 'Lead Status',
+    size: 240,
+    minSize: 120,
+    maxSize: 500,
     cell: info => <LeadStatusCell info={info} />
   },
   {
     id: 'whatsapp',
     header: 'Whatsapp',
+    size: 90,
+    minSize: 60,
+    maxSize: 180,
     enableColumnFilter: false,
     enableGlobalFilter: false,
     cell: info => {
@@ -752,6 +783,9 @@ const columns = [
   {
     id: 'remarks_reschedule',
     header: 'Remarks and Reschedule',
+    size: 150,
+    minSize: 90,
+    maxSize: 300,
     enableColumnFilter: false,
     enableGlobalFilter: false,
     cell: info => {
@@ -766,6 +800,9 @@ const columns = [
   { 
     accessorKey: 'last_status', 
     header: 'Last Status',
+    size: 160,
+    minSize: 90,
+    maxSize: 350,
     cell: info => {
       const val = info.getValue();
       if (!val || val === 'Pending New') {
@@ -810,30 +847,30 @@ const columns = [
       );
     }
   },
-  { accessorKey: 'last_timestamp', header: 'Last Timestamp', cell: info => {
+  { accessorKey: 'last_timestamp', header: 'Last Timestamp', size: 160, minSize: 90, maxSize: 300, cell: info => {
       const val = info.getValue();
       if (!val) return '';
       const pad = (n) => String(n).padStart(2, '0');
       const d = new Date(val);
       return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }},
-  { accessorKey: 'next_follow_up_date', header: 'Next Follow-up Date', cell: info => {
+  { accessorKey: 'next_follow_up_date', header: 'Next Follow-up Date', size: 160, minSize: 90, maxSize: 300, cell: info => {
       const val = info.getValue();
       if (!val) return '';
       const pad = (n) => String(n).padStart(2, '0');
       const d = new Date(val);
       return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }},
-  { accessorKey: 'latest_remark', header: 'Remarks' },
-  { accessorKey: 'latest_emp_name', header: 'Emp Name', cell: info => {
+  { accessorKey: 'latest_remark', header: 'Remarks', size: 240, minSize: 100, maxSize: 600 },
+  { accessorKey: 'latest_emp_name', header: 'Emp Name', size: 140, minSize: 80, maxSize: 300, cell: info => {
       const val = info.getValue();
       if (!val || val === 'Agent' || val === 'System') return val || 'Agent';
       const teamMembers = info.table.options.meta?.teamMembers || [];
       const member = teamMembers.find(m => m.email?.split('@')[0] === val || m.user_id === val);
       return member ? member.emp_name : val;
   }},
-  { accessorKey: 'completion_count', header: 'Actual Completion of Count' },
-  { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute' }
+  { accessorKey: 'completion_count', header: 'Actual Completion of Count', size: 160, minSize: 90, maxSize: 300 },
+  { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute', size: 180, minSize: 90, maxSize: 350 }
 ];
 
 const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
@@ -853,7 +890,19 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
       }}
     >
       {row.getVisibleCells().map(cell => (
-        <td key={cell.id} style={{ padding: '0.78rem 1.15rem', fontSize: '0.86rem' }}>
+        <td 
+          key={cell.id} 
+          style={{ 
+            padding: '0.78rem 1rem', 
+            fontSize: '0.86rem',
+            width: cell.column.getSize(),
+            minWidth: `${cell.column.columnDef.minSize || 50}px`,
+            maxWidth: cell.column.columnDef.maxSize ? `${cell.column.columnDef.maxSize}px` : undefined,
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}
+        >
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
         </td>
       ))}
@@ -1016,6 +1065,26 @@ export default function LeadTable({
       localStorage.setItem('leadTableColumnOrder', JSON.stringify(columnOrder));
     }
   }, [columnOrder]);
+
+  const [columnSizing, setColumnSizing] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_lead_table_column_sizing');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error reading crm_lead_table_column_sizing from localStorage', e);
+      }
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && columnSizing && Object.keys(columnSizing).length > 0) {
+      try {
+        localStorage.setItem('crm_lead_table_column_sizing', JSON.stringify(columnSizing));
+      } catch (e) {}
+    }
+  }, [columnSizing]);
 
   const moveColumn = (columnId, direction) => {
     setColumnOrder(prev => {
@@ -1356,18 +1425,22 @@ export default function LeadTable({
     columns: finalColumns,
     autoResetPageIndex: false,
     globalFilterFn: customGlobalFilterFn,
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
     state: {
       globalFilter,
       columnFilters,
       columnVisibility,
       pagination,
       columnOrder,
+      columnSizing,
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
     onColumnOrderChange: setColumnOrder,
+    onColumnSizingChange: setColumnSizing,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -1909,9 +1982,11 @@ export default function LeadTable({
                 const allVisible = {};
                 table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
                 setColumnVisibility(allVisible);
+                setColumnSizing({});
                 if (typeof window !== 'undefined') {
                   localStorage.removeItem('leadTableColumnVisibility');
                   localStorage.removeItem('leadTableColumnOrder');
+                  localStorage.removeItem('crm_lead_table_column_sizing');
                 }
               }}
             />
@@ -2427,13 +2502,32 @@ export default function LeadTable({
           )}
         </div>
       ) : (
-        <div className="table-responsive-wrapper" style={{ flex: 1 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1500px' }}>
+        <div className="table-responsive-wrapper" style={{ flex: 1, overflow: 'auto' }}>
+          <table style={{ width: `${Math.max(1200, table.getTotalSize())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map(header => (
-                  <th key={header.id} className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} style={{ position: 'sticky', top: 0, zIndex: activeFilterColumn === header.id ? 99999 : 10, padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-light)' }}>
+                  <th 
+                    key={header.id} 
+                    className={`table-header-cell ${activeFilterColumn === header.id ? 'active-dropdown' : ''} ${header.column.getIsFiltered() ? 'is-filtered' : ''}`} 
+                    style={{ 
+                      position: 'sticky', 
+                      top: 0, 
+                      zIndex: activeFilterColumn === header.id ? 99999 : 10, 
+                      padding: '0.75rem 0.85rem', 
+                      fontSize: '0.85rem', 
+                      color: 'var(--text-secondary)', 
+                      fontWeight: 600, 
+                      borderBottom: '1px solid var(--border-light)',
+                      width: header.getSize(),
+                      minWidth: `${header.column.columnDef.minSize || 50}px`,
+                      maxWidth: header.column.columnDef.maxSize ? `${header.column.columnDef.maxSize}px` : undefined,
+                      boxSizing: 'border-box',
+                      userSelect: header.column.getIsResizing() ? 'none' : 'auto',
+                      position: 'relative'
+                    }}
+                  >
                     {header.isPlaceholder ? null : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                         <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
@@ -2508,6 +2602,43 @@ export default function LeadTable({
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Draggable Resizer between column names */}
+                    {header.column.getCanResize() && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={() => header.column.resetSize()}
+                        className={`column-resizer ${header.column.getIsResizing() ? 'is-resizing' : ''}`}
+                        title="Drag to resize column width | Double-click to reset"
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: 0,
+                          height: '100%',
+                          width: '10px',
+                          cursor: 'col-resize',
+                          userSelect: 'none',
+                          touchAction: 'none',
+                          zIndex: 20,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <div 
+                          className="resizer-bar"
+                          style={{
+                            width: header.column.getIsResizing() ? '3px' : '2px',
+                            height: '55%',
+                            backgroundColor: header.column.getIsResizing() ? 'var(--accent-color)' : 'transparent',
+                            borderRadius: '2px',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                        />
                       </div>
                     )}
                   </th>
@@ -2691,6 +2822,15 @@ export default function LeadTable({
             @keyframes scaleUp {
               from { opacity: 0; transform: scale(0.95); }
               to { opacity: 1; transform: scale(1); }
+            }
+            .column-resizer:hover .resizer-bar,
+            .column-resizer.is-resizing .resizer-bar {
+              background-color: var(--accent-color) !important;
+              width: 3px !important;
+            }
+            .column-resizer:hover,
+            .column-resizer.is-resizing {
+              background-color: rgba(37, 99, 235, 0.08);
             }
           `}</style>
         </div>
