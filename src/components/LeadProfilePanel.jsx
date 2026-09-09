@@ -47,6 +47,39 @@ const BUYING_TIMELINE_OPTIONS = [
   'Not Decided'
 ];
 
+const DEFAULT_BUSINESS_TYPES = [
+  'Dealer',
+  'Distributor',
+  'Retailer',
+  'Farmer',
+  'Trader',
+  'Manufacturer',
+  'Service Provider',
+  'Other'
+];
+
+export const formatStatusWithNumbers = (rawStatus, stagesList = DEFAULT_STAGES) => {
+  if (!rawStatus || rawStatus === 'None') return rawStatus || 'None';
+  if (/^\d+;\d+>/.test(rawStatus)) return rawStatus;
+  const clean = rawStatus.includes('>') ? rawStatus.split('>').pop().trim() : rawStatus.trim();
+  const list = (stagesList && stagesList.length > 0) ? stagesList : DEFAULT_STAGES;
+  for (let i = 0; i < list.length; i++) {
+    const stageObj = list[i];
+    const stageNum = i + 1;
+    const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+    const substages = stageObj.substages || [];
+    for (let j = 0; j < substages.length; j++) {
+      const sub = substages[j];
+      const subClean = sub.includes('>') ? sub.split('>').pop().trim() : sub.trim();
+      if (clean.toLowerCase() === subClean.toLowerCase() || rawStatus.toLowerCase().includes(subClean.toLowerCase())) {
+        const subNum = String(j + 1).padStart(2, '0');
+        return `${stageNum};${subNum}>${cleanStageName}>${subClean}`;
+      }
+    }
+  }
+  return rawStatus;
+};
+
 // Strict IST Timezone Formatter
 const formatIST = (isoString) => {
   if (!isoString) return '';
@@ -285,7 +318,7 @@ export default function LeadProfilePanel({
   const [editForm, setEditForm] = useState({});
 
   // Status management states
-  const [currentStatus, setCurrentStatus] = useState(lead?.status || '01 - New Stage');
+  const [currentStatus, setCurrentStatus] = useState(formatStatusWithNumbers(lead?.status, propStages || DEFAULT_STAGES));
   const [statusForNewNote, setStatusForNewNote] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
@@ -294,6 +327,7 @@ export default function LeadProfilePanel({
   // Client & Lead Attributes states
   const [currentClientStatus, setCurrentClientStatus] = useState(lead?.client_status || lead?.clientStatus || 'None');
   const [currentPriority, setCurrentPriority] = useState(lead?.priority || 'LP00: None');
+  const [currentBusinessType, setCurrentBusinessType] = useState(lead?.business_type || '');
   const [currentRequirement, setCurrentRequirement] = useState(lead?.requirement || '');
   const [currentInvestment, setCurrentInvestment] = useState(lead?.investment || '');
   const [currentBuyingTimeline, setCurrentBuyingTimeline] = useState(lead?.buying_timeline || '');
@@ -301,6 +335,7 @@ export default function LeadProfilePanel({
   const [savedFieldSuccess, setSavedFieldSuccess] = useState(null);
   const [clientStatuses, setClientStatuses] = useState(DEFAULT_CLIENT_STATUSES);
   const [priorities, setPriorities] = useState(DEFAULT_PRIORITIES);
+  const [businessTypes, setBusinessTypes] = useState(DEFAULT_BUSINESS_TYPES);
 
   // Voice-to-Text (Speech Recognition) states
   const [isListening, setIsListening] = useState(false);
@@ -318,16 +353,17 @@ export default function LeadProfilePanel({
 
   useEffect(() => {
     if (lead?.status) {
-      setCurrentStatus(lead.status);
+      setCurrentStatus(formatStatusWithNumbers(lead.status, stages));
     }
     if (lead) {
       setCurrentClientStatus(lead.client_status || lead.clientStatus || 'None');
       setCurrentPriority(lead.priority || 'LP00: None');
+      setCurrentBusinessType(lead.business_type || '');
       setCurrentRequirement(lead.requirement || '');
       setCurrentInvestment(lead.investment || '');
       setCurrentBuyingTimeline(lead.buying_timeline || '');
     }
-  }, [lead?.status, lead?.client_status, lead?.clientStatus, lead?.priority, lead?.requirement, lead?.investment, lead?.buying_timeline]);
+  }, [lead?.status, lead?.client_status, lead?.clientStatus, lead?.priority, lead?.business_type, lead?.requirement, lead?.investment, lead?.buying_timeline, stages]);
 
   useEffect(() => {
     if (propStages && propStages.length > 0) {
@@ -347,6 +383,9 @@ export default function LeadProfilePanel({
           }
           if (parsed.priorities && Array.isArray(parsed.priorities) && parsed.priorities.length > 0) {
             setPriorities(parsed.priorities);
+          }
+          if (parsed.businessTypes && Array.isArray(parsed.businessTypes) && parsed.businessTypes.length > 0) {
+            setBusinessTypes(parsed.businessTypes);
           }
         }
       } catch (e) {}
@@ -484,12 +523,15 @@ export default function LeadProfilePanel({
   };
 
   const handleStatusUpdate = async (newStatus) => {
-    if (!newStatus || newStatus === currentStatus || isUpdatingStatus) return;
+    if (!newStatus || isUpdatingStatus) return;
 
-    const oldStatus = currentStatus || lead.status || '01 - New Stage';
+    const formattedNewStatus = formatStatusWithNumbers(newStatus, stages);
+    if (formattedNewStatus === currentStatus) return;
+
+    const oldStatus = currentStatus || formatStatusWithNumbers(lead.status, stages) || '01 - New Stage';
     const nowIso = new Date().toISOString();
     const actor = normalizeEmployeeName(userName || 'Agent');
-    const noteText = `Status changed from ${oldStatus} to ${newStatus}`;
+    const noteText = `Status changed from ${oldStatus} to ${formattedNewStatus}`;
 
     const statusNote = {
       id: `local_note_${Date.now()}`,
@@ -499,13 +541,13 @@ export default function LeadProfilePanel({
       created_at: nowIso
     };
 
-    setCurrentStatus(newStatus);
+    setCurrentStatus(formattedNewStatus);
     setNotes(prev => [statusNote, ...prev]);
 
     const updatedLeadObj = {
       ...lead,
-      status: newStatus,
-      last_status: newStatus,
+      status: formattedNewStatus,
+      last_status: formattedNewStatus,
       updated_at: nowIso,
       last_timestamp: nowIso,
       latest_remark: noteText
@@ -521,7 +563,8 @@ export default function LeadProfilePanel({
       }
       await enqueueOfflineAction('update', 'lead', {
         id: lead.id,
-        status: newStatus,
+        status: formattedNewStatus,
+        last_status: formattedNewStatus,
         updated_at: nowIso,
         last_timestamp: nowIso,
         latest_remark: noteText
@@ -539,7 +582,8 @@ export default function LeadProfilePanel({
     setIsUpdatingStatus(true);
     try {
       const { error: updateError } = await supabase.from('leads').update({
-        status: newStatus,
+        status: formattedNewStatus,
+        last_status: formattedNewStatus,
         updated_at: nowIso,
         last_timestamp: nowIso,
         latest_remark: noteText
@@ -554,11 +598,11 @@ export default function LeadProfilePanel({
       }]);
 
       try {
-        await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newStatus}" via History Panel`);
+        await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${formattedNewStatus}" via History Panel`);
       } catch (e) {}
 
       try {
-        triggerWhatsappAutomationForStage(lead.id, newStatus);
+        triggerWhatsappAutomationForStage(lead.id, formattedNewStatus);
       } catch (e) {}
 
       setStatusUpdateSuccess(true);
@@ -569,7 +613,8 @@ export default function LeadProfilePanel({
       if (check.allowed) {
         await enqueueOfflineAction('update', 'lead', {
           id: lead.id,
-          status: newStatus,
+          status: formattedNewStatus,
+          last_status: formattedNewStatus,
           updated_at: nowIso,
           last_timestamp: nowIso,
           latest_remark: noteText
@@ -586,6 +631,7 @@ export default function LeadProfilePanel({
     const currentVal = (
       fieldKey === 'client_status' ? currentClientStatus :
       fieldKey === 'priority' ? currentPriority :
+      fieldKey === 'business_type' ? currentBusinessType :
       fieldKey === 'requirement' ? currentRequirement :
       fieldKey === 'investment' ? currentInvestment :
       fieldKey === 'buying_timeline' ? currentBuyingTimeline : null
@@ -595,6 +641,7 @@ export default function LeadProfilePanel({
 
     if (fieldKey === 'client_status') setCurrentClientStatus(newValue);
     else if (fieldKey === 'priority') setCurrentPriority(newValue);
+    else if (fieldKey === 'business_type') setCurrentBusinessType(newValue);
     else if (fieldKey === 'requirement') setCurrentRequirement(newValue);
     else if (fieldKey === 'investment') setCurrentInvestment(newValue);
     else if (fieldKey === 'buying_timeline') setCurrentBuyingTimeline(newValue);
@@ -735,9 +782,10 @@ export default function LeadProfilePanel({
   useEffect(() => {
     if (!lead || !isOpen) return;
 
-    if (lead.status) setCurrentStatus(lead.status);
+    if (lead.status) setCurrentStatus(formatStatusWithNumbers(lead.status, stages));
     setCurrentClientStatus(lead.client_status || lead.clientStatus || 'None');
     setCurrentPriority(lead.priority || 'LP00: None');
+    setCurrentBusinessType(lead.business_type || '');
     setCurrentRequirement(lead.requirement || '');
     setCurrentInvestment(lead.investment || '');
     setCurrentBuyingTimeline(lead.buying_timeline || '');
@@ -769,6 +817,7 @@ export default function LeadProfilePanel({
       company: lead.company || '',
       email: lead.email || '',
       phone: lead.phone || '',
+      business_type: lead.business_type || '',
       deal_value: lead.deal_value || 0,
       source: lead.source || 'Website'
     });
@@ -1200,10 +1249,10 @@ export default function LeadProfilePanel({
             )}
           </div>
 
-          {/* Structured Lead & Client Parameters */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.75rem' }}>
+          {/* Structured Lead & Client Parameters (2-column grid with 3 rows) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.65rem' }}>
             
-            {/* 1. Lead Status (CRM Stage) */}
+            {/* 1. Lead Status (CRM Stage with Stage & Sub-number) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
               <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
                 📊 Lead Status:
@@ -1232,7 +1281,7 @@ export default function LeadProfilePanel({
               >
                 {!stages.some(s => s.substages?.some(sub => sub === currentStatus || sub.includes(currentStatus) || currentStatus.includes(sub))) && (
                   <option value={currentStatus}>
-                    {currentStatus.includes('>') ? currentStatus.split('>').pop() : currentStatus}
+                    {formatStatusWithNumbers(currentStatus, stages)}
                   </option>
                 )}
                 {stages.map((stageObj, i) => {
@@ -1244,10 +1293,9 @@ export default function LeadProfilePanel({
                         const subNum = String(j + 1).padStart(2, '0');
                         const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
                         const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                        const displayName = sub.includes('>') ? sub.split('>').pop() : sub;
                         return (
                           <option key={`top-sub-${val}`} value={val}>
-                            {displayName}
+                            {val}
                           </option>
                         );
                       })}
@@ -1329,7 +1377,44 @@ export default function LeadProfilePanel({
               </select>
             </div>
 
-            {/* 4. Investment Size */}
+            {/* 4. Business Type */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                🏢 Business Type:
+                {savingField === 'business_type' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'business_type' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <select
+                value={currentBusinessType}
+                disabled={savingField === 'business_type'}
+                onChange={(e) => handleAttributeUpdate('business_type', e.target.value, 'Business Type')}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.76rem',
+                  fontWeight: 500,
+                  cursor: savingField === 'business_type' ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentBusinessType}
+              >
+                <option value="">Select Business Type...</option>
+                {!businessTypes.includes(currentBusinessType) && currentBusinessType && (
+                  <option value={currentBusinessType}>{currentBusinessType}</option>
+                )}
+                {businessTypes.map((bt) => (
+                  <option key={`bt-${bt}`} value={bt}>{bt}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 5. Investment Size */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
               <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
                 💰 Investment Size:
@@ -1366,7 +1451,7 @@ export default function LeadProfilePanel({
               </select>
             </div>
 
-            {/* 5. Buying Timeline */}
+            {/* 6. Buying Timeline */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
               <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
                 ⏳ Buying Timeline:
@@ -1402,29 +1487,29 @@ export default function LeadProfilePanel({
                 ))}
               </select>
             </div>
+          </div>
 
-            {/* 6. Next Follow-up Date */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
-                🗓️ Follow-up Date:
-              </span>
-              <input 
-                type="datetime-local" 
-                value={followUpDate} 
-                onChange={handleFollowUpChange}
-                style={{
-                  width: '100%',
-                  padding: '0.28rem 0.4rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light, #e2e8f0)',
-                  backgroundColor: 'var(--bg-surface, #ffffff)',
-                  color: 'var(--text-primary, #0f172a)',
-                  fontSize: '0.75rem',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              />
-            </div>
+          {/* 7. Next Follow-up Date */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.75rem', padding: '0.45rem 0.6rem', backgroundColor: 'var(--bg-surface, #ffffff)', borderRadius: '6px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+            <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+              🗓️ Next Follow-up Date:
+            </span>
+            <input 
+              type="datetime-local" 
+              value={followUpDate} 
+              onChange={handleFollowUpChange}
+              style={{
+                width: '100%',
+                padding: '0.28rem 0.4rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                backgroundColor: 'var(--bg-primary, #f8fafc)',
+                color: 'var(--text-primary, #0f172a)',
+                fontSize: '0.75rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            />
           </div>
 
           {/* 7. Detailed Requirement with Voice Dictation & Quick Save */}
@@ -1761,7 +1846,7 @@ export default function LeadProfilePanel({
                       cursor: 'pointer'
                     }}
                   >
-                    <option value="">Keep current ({currentStatus.includes('>') ? currentStatus.split('>').pop() : currentStatus})</option>
+                    <option value="">Keep current ({formatStatusWithNumbers(currentStatus, stages)})</option>
                     {stages.map((stageObj, i) => {
                       const stageNum = i + 1;
                       const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
@@ -1771,10 +1856,9 @@ export default function LeadProfilePanel({
                             const subNum = String(j + 1).padStart(2, '0');
                             const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
                             const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                            const displayName = sub.includes('>') ? sub.split('>').pop() : sub;
                             return (
                               <option key={`note-sub-${val}`} value={val}>
-                                {displayName}
+                                {val}
                               </option>
                             );
                           })}
