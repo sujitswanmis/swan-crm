@@ -20,6 +20,33 @@ const DEFAULT_STAGES = [
   { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] }
 ];
 
+const DEFAULT_CLIENT_STATUSES = ['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress'];
+
+const DEFAULT_PRIORITIES = [
+  'LP00: None', 'LP01: Immediate', 'LP02: High', 'LP03: Medium', 
+  'LP04: Low', 'LP05: Cold', 'LP06: Disqualified', 'LP07: Irrelevant', 
+  'LP08: Invalid', 'LP09: Spam', 'LP10: Archive', 'LP11: Competitor Dealer', 'LP12: Competitor Distributor'
+];
+
+const INVESTMENT_OPTIONS = [
+  'Below 1 Lakh',
+  '1 Lakh - 5 Lakh',
+  '5 Lakh - 10 Lakh',
+  '10 Lakh - 25 Lakh',
+  '25 Lakh - 50 Lakh',
+  'Above 50 Lakh'
+];
+
+const BUYING_TIMELINE_OPTIONS = [
+  'Immediate',
+  'Within 7 Days',
+  'Within 15 Days',
+  'Within 30 Days',
+  'Within 60 Days',
+  'After 60 Days',
+  'Not Decided'
+];
+
 // Strict IST Timezone Formatter
 const formatIST = (isoString) => {
   if (!isoString) return '';
@@ -264,11 +291,24 @@ export default function LeadProfilePanel({
   const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
   const [stages, setStages] = useState(propStages || DEFAULT_STAGES);
 
+  // Client & Lead Attributes states
+  const [currentClientStatus, setCurrentClientStatus] = useState(lead?.client_status || lead?.clientStatus || 'None');
+  const [currentPriority, setCurrentPriority] = useState(lead?.priority || 'LP00: None');
+  const [currentRequirement, setCurrentRequirement] = useState(lead?.requirement || '');
+  const [currentInvestment, setCurrentInvestment] = useState(lead?.investment || '');
+  const [currentBuyingTimeline, setCurrentBuyingTimeline] = useState(lead?.buying_timeline || '');
+  const [savingField, setSavingField] = useState(null);
+  const [savedFieldSuccess, setSavedFieldSuccess] = useState(null);
+  const [clientStatuses, setClientStatuses] = useState(DEFAULT_CLIENT_STATUSES);
+  const [priorities, setPriorities] = useState(DEFAULT_PRIORITIES);
+
   // Voice-to-Text (Speech Recognition) states
   const [isListening, setIsListening] = useState(false);
   const [speechLang, setSpeechLang] = useState('en-IN'); // 'en-IN' (English/Hinglish) or 'hi-IN' (Hindi)
   const [interimTranscript, setInterimTranscript] = useState('');
   const [speechError, setSpeechError] = useState(null);
+  const [listeningTarget, setListeningTarget] = useState('note'); // 'note' | 'requirement'
+  const listeningTargetRef = useRef('note');
   const recognitionRef = useRef(null);
 
   const notifyLeadUpdate = (updatedLeadObj) => {
@@ -280,7 +320,14 @@ export default function LeadProfilePanel({
     if (lead?.status) {
       setCurrentStatus(lead.status);
     }
-  }, [lead?.status]);
+    if (lead) {
+      setCurrentClientStatus(lead.client_status || lead.clientStatus || 'None');
+      setCurrentPriority(lead.priority || 'LP00: None');
+      setCurrentRequirement(lead.requirement || '');
+      setCurrentInvestment(lead.investment || '');
+      setCurrentBuyingTimeline(lead.buying_timeline || '');
+    }
+  }, [lead?.status, lead?.client_status, lead?.clientStatus, lead?.priority, lead?.requirement, lead?.investment, lead?.buying_timeline]);
 
   useEffect(() => {
     if (propStages && propStages.length > 0) {
@@ -294,6 +341,12 @@ export default function LeadProfilePanel({
           const parsed = JSON.parse(saved);
           if (parsed.stages && parsed.stages.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
             setStages(parsed.stages);
+          }
+          if (parsed.clientStatuses && Array.isArray(parsed.clientStatuses) && parsed.clientStatuses.length > 0) {
+            setClientStatuses(parsed.clientStatuses);
+          }
+          if (parsed.priorities && Array.isArray(parsed.priorities) && parsed.priorities.length > 0) {
+            setPriorities(parsed.priorities);
           }
         }
       } catch (e) {}
@@ -333,10 +386,17 @@ export default function LeadProfilePanel({
               }
             }
             if (finalChunk) {
-              setNewNote(prev => {
-                const trimmed = (prev || '').trim();
-                return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
-              });
+              if (listeningTargetRef.current === 'requirement') {
+                setCurrentRequirement(prev => {
+                  const trimmed = (prev || '').trim();
+                  return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
+                });
+              } else {
+                setNewNote(prev => {
+                  const trimmed = (prev || '').trim();
+                  return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
+                });
+              }
             }
             setInterimTranscript(interimChunk);
           };
@@ -373,7 +433,7 @@ export default function LeadProfilePanel({
     };
   }, [speechLang]);
 
-  const toggleSpeechRecognition = () => {
+  const toggleSpeechRecognition = (target = 'note') => {
     if (typeof window === 'undefined') return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -382,6 +442,7 @@ export default function LeadProfilePanel({
     }
 
     if (isListening) {
+      const wasSameTarget = listeningTargetRef.current === target;
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -389,8 +450,26 @@ export default function LeadProfilePanel({
       }
       setIsListening(false);
       setInterimTranscript('');
+
+      if (!wasSameTarget) {
+        listeningTargetRef.current = target;
+        setListeningTarget(target);
+        setTimeout(() => {
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.lang = speechLang;
+              recognitionRef.current.start();
+              setIsListening(true);
+            } catch (err) {
+              console.warn('Could not restart speech recognition for target:', err);
+            }
+          }
+        }, 200);
+      }
     } else {
       setSpeechError(null);
+      listeningTargetRef.current = target;
+      setListeningTarget(target);
       if (recognitionRef.current) {
         try {
           recognitionRef.current.lang = speechLang;
@@ -501,6 +580,116 @@ export default function LeadProfilePanel({
     }
   };
 
+  const handleAttributeUpdate = async (fieldKey, newValue, displayLabel) => {
+    if (!lead || !fieldKey) return;
+
+    const currentVal = (
+      fieldKey === 'client_status' ? currentClientStatus :
+      fieldKey === 'priority' ? currentPriority :
+      fieldKey === 'requirement' ? currentRequirement :
+      fieldKey === 'investment' ? currentInvestment :
+      fieldKey === 'buying_timeline' ? currentBuyingTimeline : null
+    );
+
+    if (currentVal === newValue && savingField !== fieldKey) return;
+
+    if (fieldKey === 'client_status') setCurrentClientStatus(newValue);
+    else if (fieldKey === 'priority') setCurrentPriority(newValue);
+    else if (fieldKey === 'requirement') setCurrentRequirement(newValue);
+    else if (fieldKey === 'investment') setCurrentInvestment(newValue);
+    else if (fieldKey === 'buying_timeline') setCurrentBuyingTimeline(newValue);
+
+    const nowIso = new Date().toISOString();
+    const actor = normalizeEmployeeName(userName || 'Agent');
+    const label = displayLabel || fieldKey;
+    const noteText = `${label} updated to: ${newValue || 'None'}`;
+
+    const newLocalNote = {
+      id: `local_attr_${Date.now()}`,
+      lead_id: lead.id,
+      note_text: noteText,
+      created_by: actor,
+      created_at: nowIso
+    };
+
+    setNotes(prev => [newLocalNote, ...prev]);
+
+    const updatedLeadObj = {
+      ...lead,
+      [fieldKey]: newValue,
+      updated_at: nowIso,
+      last_timestamp: nowIso
+    };
+
+    notifyLeadUpdate(updatedLeadObj);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const check = canPerformOfflineAction('leadAttributeUpdate');
+      if (!check.allowed) {
+        alert(check.reason);
+        return;
+      }
+      await enqueueOfflineAction('update', 'lead', {
+        id: lead.id,
+        [fieldKey]: newValue,
+        updated_at: nowIso,
+        last_timestamp: nowIso
+      });
+      await enqueueOfflineAction('create', 'lead_note', {
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor
+      });
+      setSavedFieldSuccess(fieldKey);
+      setTimeout(() => setSavedFieldSuccess(null), 2000);
+      return;
+    }
+
+    setSavingField(fieldKey);
+    try {
+      const updatePayload = {
+        [fieldKey]: newValue,
+        updated_at: nowIso,
+        last_timestamp: nowIso
+      };
+
+      const { error: updateError } = await supabase.from('leads').update(updatePayload).eq('id', lead.id);
+      if (updateError) {
+        if (updateError.code === 'PGRST204' && fieldKey === 'client_status') {
+          console.warn('client_status column does not exist on leads table yet. Please run migrations/24_add_client_status.sql in Supabase SQL editor.');
+        } else {
+          throw updateError;
+        }
+      }
+
+      await supabase.from('lead_notes').insert([{
+        lead_id: lead.id,
+        note_text: noteText,
+        created_by: actor
+      }]);
+
+      try {
+        await logAuditAction('Update Lead', `Updated ${label} of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newValue}" via History Panel`);
+      } catch (e) {}
+
+      setSavedFieldSuccess(fieldKey);
+      setTimeout(() => setSavedFieldSuccess(null), 2000);
+    } catch (err) {
+      console.error(`${fieldKey} update failed:`, err);
+      const check = canPerformOfflineAction('leadAttributeUpdate');
+      if (check.allowed) {
+        await enqueueOfflineAction('update', 'lead', {
+          id: lead.id,
+          [fieldKey]: newValue,
+          updated_at: nowIso,
+          last_timestamp: nowIso
+        });
+      }
+    } finally {
+      setSavingField(null);
+    }
+  };
+
   const fetchCalls = async () => {
     if (!lead) return;
     setIsLoadingCalls(true);
@@ -545,6 +734,15 @@ export default function LeadProfilePanel({
 
   useEffect(() => {
     if (!lead || !isOpen) return;
+
+    if (lead.status) setCurrentStatus(lead.status);
+    setCurrentClientStatus(lead.client_status || lead.clientStatus || 'None');
+    setCurrentPriority(lead.priority || 'LP00: None');
+    setCurrentRequirement(lead.requirement || '');
+    setCurrentInvestment(lead.investment || '');
+    setCurrentBuyingTimeline(lead.buying_timeline || '');
+    setSavingField(null);
+    setSavedFieldSuccess(null);
 
     // Immediately seed with existing notes
     if (Array.isArray(lead.lead_notes)) {
@@ -1002,12 +1200,15 @@ export default function LeadProfilePanel({
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '0.75rem', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}>
-                Status:
-                {isUpdatingStatus && <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />}
-                {statusUpdateSuccess && <Check size={13} color="#10b981" title="Status updated!" />}
+          {/* Structured Lead & Client Parameters */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.75rem' }}>
+            
+            {/* 1. Lead Status (CRM Stage) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                📊 Lead Status:
+                {isUpdatingStatus && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {statusUpdateSuccess && <Check size={12} color="#10b981" title="Status updated!" />}
               </span>
               <select
                 value={currentStatus}
@@ -1017,9 +1218,9 @@ export default function LeadProfilePanel({
                   width: '100%',
                   padding: '0.35rem 0.5rem',
                   borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
                   fontSize: '0.76rem',
                   fontWeight: 600,
                   cursor: isUpdatingStatus ? 'wait' : 'pointer',
@@ -1055,53 +1256,306 @@ export default function LeadProfilePanel({
                 })}
               </select>
             </div>
-            <div>
-              <span style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem', fontSize: '0.78rem' }}>Priority:</span>
-              <b style={{ fontSize: '0.82rem' }}>{lead.priority || 'None'}</b>
+
+            {/* 2. Client Status */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                🏷️ Client Status:
+                {savingField === 'client_status' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'client_status' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <select
+                value={currentClientStatus}
+                disabled={savingField === 'client_status'}
+                onChange={(e) => handleAttributeUpdate('client_status', e.target.value, 'Client Status')}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.76rem',
+                  fontWeight: 500,
+                  cursor: savingField === 'client_status' ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentClientStatus}
+              >
+                {!clientStatuses.includes(currentClientStatus) && currentClientStatus && (
+                  <option value={currentClientStatus}>{currentClientStatus}</option>
+                )}
+                {clientStatuses.map((st) => (
+                  <option key={`cstatus-${st}`} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 3. Lead Priority */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                ⚡ Lead Priority:
+                {savingField === 'priority' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'priority' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <select
+                value={currentPriority}
+                disabled={savingField === 'priority'}
+                onChange={(e) => handleAttributeUpdate('priority', e.target.value, 'Lead Priority')}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.76rem',
+                  fontWeight: 500,
+                  cursor: savingField === 'priority' ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentPriority}
+              >
+                {!priorities.includes(currentPriority) && currentPriority && (
+                  <option value={currentPriority}>{currentPriority}</option>
+                )}
+                {priorities.map((pr) => (
+                  <option key={`prio-${pr}`} value={pr}>{pr}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 4. Investment Size */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                💰 Investment Size:
+                {savingField === 'investment' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'investment' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <select
+                value={currentInvestment}
+                disabled={savingField === 'investment'}
+                onChange={(e) => handleAttributeUpdate('investment', e.target.value, 'Investment Size')}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.76rem',
+                  fontWeight: 500,
+                  cursor: savingField === 'investment' ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentInvestment}
+              >
+                <option value="">Select Investment...</option>
+                {!INVESTMENT_OPTIONS.includes(currentInvestment) && currentInvestment && (
+                  <option value={currentInvestment}>{currentInvestment}</option>
+                )}
+                {INVESTMENT_OPTIONS.map((inv) => (
+                  <option key={`inv-${inv}`} value={inv}>{inv}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 5. Buying Timeline */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                ⏳ Buying Timeline:
+                {savingField === 'buying_timeline' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'buying_timeline' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <select
+                value={currentBuyingTimeline}
+                disabled={savingField === 'buying_timeline'}
+                onChange={(e) => handleAttributeUpdate('buying_timeline', e.target.value, 'Buying Timeline')}
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.76rem',
+                  fontWeight: 500,
+                  cursor: savingField === 'buying_timeline' ? 'wait' : 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis'
+                }}
+                title={currentBuyingTimeline}
+              >
+                <option value="">Select Timeline...</option>
+                {!BUYING_TIMELINE_OPTIONS.includes(currentBuyingTimeline) && currentBuyingTimeline && (
+                  <option value={currentBuyingTimeline}>{currentBuyingTimeline}</option>
+                )}
+                {BUYING_TIMELINE_OPTIONS.map((tm) => (
+                  <option key={`tm-${tm}`} value={tm}>{tm}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 6. Next Follow-up Date */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                🗓️ Follow-up Date:
+              </span>
+              <input 
+                type="datetime-local" 
+                value={followUpDate} 
+                onChange={handleFollowUpChange}
+                style={{
+                  width: '100%',
+                  padding: '0.28rem 0.4rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.75rem',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* 7. Detailed Requirement with Voice Dictation & Quick Save */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem', padding: '0.6rem 0.75rem', backgroundColor: 'var(--bg-surface, #ffffff)', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.76rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                📝 Detailed Requirement:
+                {savingField === 'requirement' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                {savedFieldSuccess === 'requirement' && <Check size={12} color="#10b981" title="Saved!" />}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  onClick={() => toggleSpeechRecognition('requirement')}
+                  title={isListening && listeningTarget === 'requirement' ? "Stop voice dictation" : "Dictate requirement with voice"}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.7rem',
+                    border: isListening && listeningTarget === 'requirement' ? '1px solid #ef4444' : '1px solid var(--border-light, #e2e8f0)',
+                    backgroundColor: isListening && listeningTarget === 'requirement' ? '#fef2f2' : 'var(--bg-primary, #f8fafc)',
+                    color: isListening && listeningTarget === 'requirement' ? '#dc2626' : 'var(--text-secondary, #64748b)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {isListening && listeningTarget === 'requirement' ? (
+                    <>
+                      <MicOff size={11} color="#dc2626" />
+                      <span style={{ fontWeight: 600 }}>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic size={11} />
+                      <span>Voice</span>
+                    </>
+                  )}
+                </button>
+
+                {currentRequirement !== (lead.requirement || '') && (
+                  <button
+                    type="button"
+                    onClick={() => handleAttributeUpdate('requirement', currentRequirement, 'Detailed Requirement')}
+                    disabled={savingField === 'requirement'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      border: 'none',
+                      backgroundColor: 'var(--accent-color, #2563eb)',
+                      color: '#ffffff',
+                      cursor: savingField === 'requirement' ? 'wait' : 'pointer'
+                    }}
+                  >
+                    Save
+                  </button>
+                )}
+              </div>
             </div>
             
-            {isEditing ? (
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Value (₹):</span>
-                  <input type="number" name="deal_value" value={editForm.deal_value} onChange={handleEditChange} style={{ padding: '0.25rem' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Source:</span>
-                  <select name="source" value={editForm.source} onChange={handleEditChange} style={{ padding: '0.25rem' }}>
-                    <option value="Website">Website</option>
-                    <option value="Google Ads">Google Ads</option>
-                    <option value="Facebook">Facebook</option>
-                    <option value="Referral">Referral</option>
-                    <option value="Cold Call">Cold Call</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Our Company:</span>
-                  <select name="our_company" value={editForm.our_company || ''} onChange={handleEditChange} style={{ padding: '0.25rem' }}>
-                    <option value="">None</option>
-                    <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
-                  </select>
-                </div>
-              </>
-            ) : (
-              <>
-                <div><span style={{ color: 'var(--text-secondary)' }}>Value:</span> <b>₹{lead.deal_value || 0}</b></div>
-                <div><span style={{ color: 'var(--text-secondary)' }}>Source:</span> <b>{lead.source}</b></div>
-                <div><span style={{ color: 'var(--text-secondary)' }}>Our Company:</span> <b>{lead.our_company || 'Unassigned'}</b></div>
-              </>
+            <textarea
+              value={currentRequirement}
+              placeholder="Enter client requirements, product details, model, specifications..."
+              onChange={(e) => setCurrentRequirement(e.target.value)}
+              onBlur={() => {
+                if (currentRequirement !== (lead.requirement || '')) {
+                  handleAttributeUpdate('requirement', currentRequirement, 'Detailed Requirement');
+                }
+              }}
+              rows={2}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: '5px',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                backgroundColor: 'var(--bg-primary, #f8fafc)',
+                color: 'var(--text-primary, #0f172a)',
+                fontSize: '0.76rem',
+                lineHeight: 1.4,
+                resize: 'vertical',
+                outline: 'none',
+                fontFamily: 'inherit'
+              }}
+            />
+            {isListening && listeningTarget === 'requirement' && interimTranscript && (
+              <div style={{ fontSize: '0.72rem', color: '#dc2626', fontStyle: 'italic' }}>
+                🎙️ Dictating: {interimTranscript}...
+              </div>
             )}
           </div>
-          <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontWeight: 600, color: 'var(--accent-color)' }}>🗓️ Next Follow-up Date</label>
-            <input 
-              type="datetime-local" 
-              value={followUpDate} 
-              onChange={handleFollowUpChange}
-              style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
-            />
-          </div>
+
+          {/* Secondary Metadata Row (Deal Value, Source, Company) or Edit Inputs */}
+          {isEditing ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light, #e2e8f0)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>Value (₹):</span>
+                <input type="number" name="deal_value" value={editForm.deal_value} onChange={handleEditChange} style={{ padding: '0.25rem', fontSize: '0.76rem', borderRadius: '4px', border: '1px solid var(--border-light)' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>Source:</span>
+                <select name="source" value={editForm.source} onChange={handleEditChange} style={{ padding: '0.25rem', fontSize: '0.76rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                  <option value="Website">Website</option>
+                  <option value="Google Ads">Google Ads</option>
+                  <option value="Facebook">Facebook</option>
+                  <option value="Referral">Referral</option>
+                  <option value="Cold Call">Cold Call</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>Company:</span>
+                <select name="our_company" value={editForm.our_company || ''} onChange={handleEditChange} style={{ padding: '0.25rem', fontSize: '0.76rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                  <option value="">None</option>
+                  <option value="NSMLR">NSMLR</option>
+                  <option value="NSTLP">NSTLP</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light, #e2e8f0)' }}>
+              <div>Value: <b style={{ color: 'var(--text-primary)' }}>₹{lead.deal_value || 0}</b></div>
+              <div>Source: <b style={{ color: 'var(--text-primary)' }}>{lead.source || 'N/A'}</b></div>
+              <div>Company: <b style={{ color: 'var(--text-primary)' }}>{lead.our_company || 'Unassigned'}</b></div>
+            </div>
+          )}
         </div>
 
         {/* Show Notes Section only if mode is history or not editing */}
@@ -1332,7 +1786,7 @@ export default function LeadProfilePanel({
               </div>
 
               {/* Realtime Voice Dictation Status */}
-              {isListening && (
+              {isListening && listeningTarget === 'note' && (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1369,12 +1823,12 @@ export default function LeadProfilePanel({
                   type="text" 
                   value={newNote} 
                   onChange={e => setNewNote(e.target.value)} 
-                  placeholder={isListening ? "Listening... speak now..." : "Type or dictate remark..."} 
+                  placeholder={isListening && listeningTarget === 'note' ? "Listening... speak now..." : "Type or dictate remark..."} 
                   style={{ 
                     flex: 1, 
                     padding: '0.65rem 0.8rem', 
                     borderRadius: '8px', 
-                    border: isListening ? '2px solid #ef4444' : '1px solid var(--border-light)', 
+                    border: isListening && listeningTarget === 'note' ? '2px solid #ef4444' : '1px solid var(--border-light)', 
                     backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.84rem',
@@ -1409,25 +1863,25 @@ export default function LeadProfilePanel({
                 {/* Microphone Toggle Button */}
                 <button
                   type="button"
-                  onClick={toggleSpeechRecognition}
-                  title={isListening ? "Stop Voice Dictation" : "Dictate note with Voice"}
+                  onClick={() => toggleSpeechRecognition('note')}
+                  title={isListening && listeningTarget === 'note' ? "Stop Voice Dictation" : "Dictate note with Voice"}
                   style={{
                     width: '38px',
                     height: '38px',
                     borderRadius: '8px',
-                    border: isListening ? 'none' : '1px solid var(--border-light)',
-                    backgroundColor: isListening ? '#ef4444' : 'var(--bg-surface)',
-                    color: isListening ? '#ffffff' : 'var(--accent-color)',
+                    border: isListening && listeningTarget === 'note' ? 'none' : '1px solid var(--border-light)',
+                    backgroundColor: isListening && listeningTarget === 'note' ? '#ef4444' : 'var(--bg-surface)',
+                    color: isListening && listeningTarget === 'note' ? '#ffffff' : 'var(--accent-color)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
                     flexShrink: 0,
-                    boxShadow: isListening ? '0 0 10px rgba(239, 68, 68, 0.5)' : 'none',
+                    boxShadow: isListening && listeningTarget === 'note' ? '0 0 10px rgba(239, 68, 68, 0.5)' : 'none',
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                  {isListening && listeningTarget === 'note' ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
 
                 {/* Send Note Button */}
