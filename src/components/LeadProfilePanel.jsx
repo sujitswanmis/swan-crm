@@ -563,11 +563,7 @@ export default function LeadProfilePanel({
       }
       await enqueueOfflineAction('update', 'lead', {
         id: lead.id,
-        status: formattedNewStatus,
-        last_status: formattedNewStatus,
-        updated_at: nowIso,
-        last_timestamp: nowIso,
-        latest_remark: noteText
+        status: formattedNewStatus
       });
       await enqueueOfflineAction('create', 'lead_note', {
         lead_id: lead.id,
@@ -582,11 +578,7 @@ export default function LeadProfilePanel({
     setIsUpdatingStatus(true);
     try {
       const { error: updateError } = await supabase.from('leads').update({
-        status: formattedNewStatus,
-        last_status: formattedNewStatus,
-        updated_at: nowIso,
-        last_timestamp: nowIso,
-        latest_remark: noteText
+        status: formattedNewStatus
       }).eq('id', lead.id);
 
       if (updateError) throw updateError;
@@ -608,16 +600,12 @@ export default function LeadProfilePanel({
       setStatusUpdateSuccess(true);
       setTimeout(() => setStatusUpdateSuccess(false), 2000);
     } catch (err) {
-      console.error('Status update failed:', err);
+      console.error('Status update failed:', err?.message || err?.details || err);
       const check = canPerformOfflineAction('leadStatusUpdate');
       if (check.allowed) {
         await enqueueOfflineAction('update', 'lead', {
           id: lead.id,
-          status: formattedNewStatus,
-          last_status: formattedNewStatus,
-          updated_at: nowIso,
-          last_timestamp: nowIso,
-          latest_remark: noteText
+          status: formattedNewStatus
         });
       }
     } finally {
@@ -678,9 +666,7 @@ export default function LeadProfilePanel({
       }
       await enqueueOfflineAction('update', 'lead', {
         id: lead.id,
-        [fieldKey]: newValue,
-        updated_at: nowIso,
-        last_timestamp: nowIso
+        [fieldKey]: newValue
       });
       await enqueueOfflineAction('create', 'lead_note', {
         lead_id: lead.id,
@@ -695,9 +681,7 @@ export default function LeadProfilePanel({
     setSavingField(fieldKey);
     try {
       const updatePayload = {
-        [fieldKey]: newValue,
-        updated_at: nowIso,
-        last_timestamp: nowIso
+        [fieldKey]: newValue
       };
 
       const { error: updateError } = await supabase.from('leads').update(updatePayload).eq('id', lead.id);
@@ -722,14 +706,12 @@ export default function LeadProfilePanel({
       setSavedFieldSuccess(fieldKey);
       setTimeout(() => setSavedFieldSuccess(null), 2000);
     } catch (err) {
-      console.error(`${fieldKey} update failed:`, err);
+      console.error(`${fieldKey} update failed:`, err?.message || err?.details || err);
       const check = canPerformOfflineAction('leadAttributeUpdate');
       if (check.allowed) {
         await enqueueOfflineAction('update', 'lead', {
           id: lead.id,
-          [fieldKey]: newValue,
-          updated_at: nowIso,
-          last_timestamp: nowIso
+          [fieldKey]: newValue
         });
       }
     } finally {
@@ -994,7 +976,7 @@ export default function LeadProfilePanel({
         await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
       }
       if (statusToUpdate) {
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteContent || `Status changed to ${statusToUpdate}` });
+        await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
         await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: `Status changed from ${currentStatus} to ${statusToUpdate}`, created_by: actor });
       }
       return;
@@ -1020,10 +1002,7 @@ export default function LeadProfilePanel({
 
       if (statusToUpdate) {
         const { error: statusError } = await supabase.from('leads').update({
-          status: statusToUpdate,
-          updated_at: nowIso,
-          last_timestamp: nowIso,
-          latest_remark: noteContent || `Status changed to ${statusToUpdate}`
+          status: statusToUpdate
         }).eq('id', lead.id);
 
         if (statusError) throw statusError;
@@ -1053,7 +1032,7 @@ export default function LeadProfilePanel({
       if (statusToUpdate) {
         const check = canPerformOfflineAction('leadStatusUpdate');
         if (check.allowed) {
-          await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteContent || `Status changed to ${statusToUpdate}` });
+          await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
         }
       }
     }
