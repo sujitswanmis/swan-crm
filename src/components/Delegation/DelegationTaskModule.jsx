@@ -1611,12 +1611,12 @@ export default function DelegationTaskModule({
 
           {/* Critical Escalations & Urgent Watchlist */}
           {dashboardAnalytics.criticalTasks.length > 0 && (
-            <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ background: 'rgba(234, 88, 12, 0.08)', border: '1.5px solid rgba(234, 88, 12, 0.3)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#9a3412', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#ea580c', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertTriangle size={18} color="#ea580c" /> 🚨 Critical Attention & Overdue Escalations ({dashboardAnalytics.criticalTasks.length})
                 </h3>
-                <span style={{ fontSize: '0.75rem', color: '#c2410c', fontWeight: 600 }}>Action Required by Delegator / Assignee</span>
+                <span style={{ fontSize: '0.75rem', color: '#ea580c', fontWeight: 600 }}>Action Required by Delegator / Assignee</span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.75rem' }}>
@@ -1627,8 +1627,8 @@ export default function DelegationTaskModule({
                     <div
                       key={task.id}
                       style={{
-                        background: '#ffffff',
-                        border: deadlineBadge.isLate ? '1.5px solid #fca5a5' : '1px solid #fed7aa',
+                        background: 'var(--card-bg, #ffffff)',
+                        border: deadlineBadge.isLate ? '1.5px solid #fca5a5' : '1px solid var(--border-light, #fed7aa)',
                         borderRadius: '8px',
                         padding: '0.85rem',
                         display: 'flex',
@@ -1645,17 +1645,17 @@ export default function DelegationTaskModule({
                           {deadlineBadge.text}
                         </span>
                       </div>
-                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: '#1e293b' }}>
+                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>
                         {task.title}
                       </h4>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#64748b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
                         <span>👤 {task.assigned_to_name}</span>
                         <button
                           onClick={() => handleOpenDrawer(task)}
                           style={{
-                            background: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            color: '#1d4ed8',
+                            background: 'var(--bg-primary, #eff6ff)',
+                            border: '1px solid var(--border-light, #bfdbfe)',
+                            color: '#2563eb',
                             padding: '0.2rem 0.55rem',
                             borderRadius: '4px',
                             cursor: 'pointer',
@@ -1678,28 +1678,28 @@ export default function DelegationTaskModule({
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0f172a' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary, #0f172a)' }}>
                   <Award size={20} color="#f59e0b" /> Employee Delegation Accountability & Leaderboard
                 </h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
                   Live 360° task completion score, delegator velocity, on-time velocity, and quality rating (Click any count to drilldown)
                 </p>
               </div>
 
               {/* Leaderboard Filters */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.6rem' }}>
-                  <Search size={14} color="#94a3b8" style={{ marginRight: '0.4rem' }} />
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary, #f8fafc)', border: '1px solid var(--border-light, #cbd5e1)', borderRadius: '6px', padding: '0.35rem 0.6rem' }}>
+                  <Search size={14} color="var(--text-muted, #94a3b8)" style={{ marginRight: '0.4rem' }} />
                   <input
                     type="text"
                     placeholder="Search staff, email, dept..."
                     value={leaderboardSearch}
                     onChange={(e) => setLeaderboardSearch(e.target.value)}
-                    style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8rem', width: '160px' }}
+                    style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8rem', width: '160px', color: 'var(--text-primary)' }}
                   />
                 </div>
 
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.2rem', borderRadius: '6px', flexWrap: 'wrap', gap: '0.2rem' }}>
+                <div style={{ display: 'flex', background: 'var(--bg-primary, #f1f5f9)', padding: '0.2rem', borderRadius: '6px', flexWrap: 'wrap', gap: '0.2rem' }}>
                   {[
                     { id: 'ALL', label: 'All Staff' },
                     { id: 'ACTIVE', label: '⚡ Active' },
@@ -1719,8 +1719,8 @@ export default function DelegationTaskModule({
                         fontSize: '0.75rem',
                         fontWeight: 600,
                         cursor: 'pointer',
-                        background: leaderboardTier === tier.id ? '#ffffff' : 'transparent',
-                        color: leaderboardTier === tier.id ? '#1e293b' : '#64748b',
+                        background: leaderboardTier === tier.id ? 'var(--card-bg, #ffffff)' : 'transparent',
+                        color: leaderboardTier === tier.id ? 'var(--text-primary, #1e293b)' : 'var(--text-secondary, #64748b)',
                         boxShadow: leaderboardTier === tier.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
                       }}
                     >
@@ -1732,10 +1732,10 @@ export default function DelegationTaskModule({
             </div>
 
             {/* Leaderboard Table */}
-            <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <tr style={{ background: 'var(--th-bg, #f8fafc)', borderBottom: '1.5px solid var(--border-light, #e2e8f0)', color: 'var(--text-secondary, #475569)', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>Rank</th>
                     <th style={{ padding: '0.75rem 0.85rem' }}>Employee</th>
                     <th style={{ padding: '0.75rem 0.85rem' }}>Department</th>
@@ -2284,12 +2284,12 @@ export default function DelegationTaskModule({
                     }}>
                       {prio.icon} {prio.label}
                     </span>
-                    <span style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569', fontWeight: 600 }}>
+                    <span style={{ fontSize: '0.75rem', background: 'var(--bg-primary, #f1f5f9)', padding: '0.2rem 0.5rem', borderRadius: '4px', color: 'var(--text-secondary, #475569)', fontWeight: 600 }}>
                       {task.category}
                     </span>
                   </div>
 
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)', fontFamily: 'monospace', fontWeight: 600 }}>
                     {task.task_code}
                   </span>
                 </div>
@@ -2309,7 +2309,7 @@ export default function DelegationTaskModule({
                 {/* Subtasks summary (if any) */}
                 {task.subtasks && task.subtasks.length > 0 && (
                   <div style={{ background: 'var(--bg-secondary, #f8fafc)', padding: '0.6rem', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
                       Checkpoints ({task.subtasks.filter(s => s.completed).length}/{task.subtasks.length}):
                     </div>
                     {task.subtasks.slice(0, 3).map((st) => (
@@ -2324,7 +2324,7 @@ export default function DelegationTaskModule({
                           onChange={() => isAssignedToMe && handleToggleSubtaskInList(task, st.id)}
                           style={{ width: '14px', height: '14px' }}
                         />
-                        <span style={{ textDecoration: st.completed ? 'line-through' : 'none', color: st.completed ? '#94a3b8' : 'inherit' }}>
+                        <span style={{ textDecoration: st.completed ? 'line-through' : 'none', color: st.completed ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)' }}>
                           {st.title}
                         </span>
                       </label>

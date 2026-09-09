@@ -10,6 +10,9 @@
   --border-strong: #cbd5e1;
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
+  --card-bg: var(--bg-surface);
+  --bg-secondary: var(--bg-primary);
+  --border-color: var(--border-light);
   
   --status-new-bg: #dbeafe;
   --status-new-text: #1e40af;
@@ -665,6 +668,15 @@ button:not(.nav-item):not(.mobile-menu-toggle):active {
 /* Global Theme Contrast & Readability Rules for Dark/Stylish Themes */
 .theme-dark, .theme-m3-dark, .theme-stylish-1, .theme-stylish-2, .theme-stylish-3, .theme-stylish-4, .theme-premium-1, .theme-premium-3, .theme-premium-4, .theme-aurora, .theme-forest, .theme-carbon, .theme-sunset {
   color: var(--text-primary);
+  --card-bg: var(--bg-surface);
+  --bg-secondary: var(--bg-primary);
+  --border-color: var(--border-light);
+}
+
+.theme-light, .theme-m3-light, .theme-stylish-5, .theme-premium-2, .theme-premium-5, .theme-platina {
+  --card-bg: var(--bg-surface);
+  --bg-secondary: var(--bg-primary);
+  --border-color: var(--border-light);
 }
 
 .theme-dark table, .theme-m3-dark table, .theme-stylish-1 table, .theme-stylish-2 table, .theme-stylish-3 table, .theme-stylish-4 table, .theme-premium-1 table, .theme-premium-3 table, .theme-premium-4 table, .theme-aurora table, .theme-forest table, .theme-carbon table, .theme-sunset table {
@@ -678,7 +690,7 @@ button:not(.nav-item):not(.mobile-menu-toggle):active {
 }
 
 .theme-dark td, .theme-m3-dark td, .theme-stylish-1 td, .theme-stylish-2 td, .theme-stylish-3 td, .theme-stylish-4 td, .theme-premium-1 td, .theme-premium-3 td, .theme-premium-4 td, .theme-aurora td, .theme-forest td, .theme-carbon td, .theme-sunset td {
-  color: var(--text-primary) !important;
+  color: var(--text-primary);
   border-bottom-color: var(--border-light) !important;
 }
 
@@ -716,7 +728,7 @@ button:not(.nav-item):not(.mobile-menu-toggle):active {
 }
 
 .theme-light td, .theme-m3-light td, .theme-stylish-5 td, .theme-premium-2 td, .theme-premium-5 td, .theme-platina td {
-  color: var(--text-primary) !important;
+  color: var(--text-primary);
   border-bottom-color: var(--border-light) !important;
 }
 
@@ -735,10 +747,37 @@ button:not(.nav-item):not(.mobile-menu-toggle):active {
 }
 
 .theme-dark h1, .theme-dark h2, .theme-dark h3, .theme-dark h4, .theme-dark h5, .theme-dark h6,
+.theme-m3-dark h1, .theme-m3-dark h2, .theme-m3-dark h3, .theme-m3-dark h4, .theme-m3-dark h5, .theme-m3-dark h6,
 .theme-stylish-1 h1, .theme-stylish-1 h2, .theme-stylish-1 h3, .theme-stylish-1 h4, .theme-stylish-1 h5, .theme-stylish-1 h6,
+.theme-stylish-2 h1, .theme-stylish-2 h2, .theme-stylish-2 h3, .theme-stylish-2 h4, .theme-stylish-2 h5, .theme-stylish-2 h6,
+.theme-stylish-3 h1, .theme-stylish-3 h2, .theme-stylish-3 h3, .theme-stylish-3 h4, .theme-stylish-3 h5, .theme-stylish-3 h6,
+.theme-stylish-4 h1, .theme-stylish-4 h2, .theme-stylish-4 h3, .theme-stylish-4 h4, .theme-stylish-4 h5, .theme-stylish-4 h6,
+.theme-premium-1 h1, .theme-premium-1 h2, .theme-premium-1 h3, .theme-premium-1 h4, .theme-premium-1 h5, .theme-premium-1 h6,
+.theme-premium-3 h1, .theme-premium-3 h2, .theme-premium-3 h3, .theme-premium-3 h4, .theme-premium-3 h5, .theme-premium-3 h6,
+.theme-premium-4 h1, .theme-premium-4 h2, .theme-premium-4 h3, .theme-premium-4 h4, .theme-premium-4 h5, .theme-premium-4 h6,
 .theme-carbon h1, .theme-carbon h2, .theme-carbon h3, .theme-carbon h4, .theme-carbon h5, .theme-carbon h6,
-.theme-aurora h1, .theme-aurora h2, .theme-aurora h3, .theme-aurora h4, .theme-aurora h5, .theme-aurora h6 {
-  color: var(--text-primary) !important;
+.theme-aurora h1, .theme-aurora h2, .theme-aurora h3, .theme-aurora h4, .theme-aurora h5, .theme-aurora h6,
+.theme-forest h1, .theme-forest h2, .theme-forest h3, .theme-forest h4, .theme-forest h5, .theme-forest h6,
+.theme-sunset h1, .theme-sunset h2, .theme-sunset h3, .theme-sunset h4, .theme-sunset h5, .theme-sunset h6 {
+  color: var(--text-primary);
+}
+
+/* Ensure badges and light warning/alert containers retain dark, legible text across all themes */
+[style*="background: #fef3c7"], [style*="background:#fef3c7"],
+[style*="background: #fffbeb"], [style*="background:#fffbeb"],
+[style*="background: #fff7ed"], [style*="background:#fff7ed"],
+[style*="background: #dcfce7"], [style*="background:#dcfce7"],
+[style*="background: #f0fdf4"], [style*="background:#f0fdf4"],
+[style*="background: #fee2e2"], [style*="background:#fee2e2"],
+[style*="background: #fef2f2"], [style*="background:#fef2f2"],
+[style*="background: #e0f2fe"], [style*="background:#e0f2fe"],
+[style*="background: #f1f5f9"], [style*="background:#f1f5f9"] {
+  color: #0f172a;
+}
+[style*="background: #fef3c7"] h1, [style*="background: #fef3c7"] h2, [style*="background: #fef3c7"] h3, [style*="background: #fef3c7"] h4,
+[style*="background: #fffbeb"] h1, [style*="background: #fffbeb"] h2, [style*="background: #fffbeb"] h3, [style*="background: #fffbeb"] h4,
+[style*="background: #fff7ed"] h1, [style*="background: #fff7ed"] h2, [style*="background: #fff7ed"] h3, [style*="background: #fff7ed"] h4 {
+  color: #7c2d12 !important;
 }
 
 /* Style checkboxes and radio buttons to be more premium */

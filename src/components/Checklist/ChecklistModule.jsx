@@ -3865,7 +3865,7 @@ export default function ChecklistModule({
 
                         {/* Questions / Items */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
+                          <span style={{ background: 'var(--bg-primary, #f1f5f9)', color: 'var(--text-primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
                             {(tmpl.items || []).length} items
                           </span>
                         </td>
@@ -4736,7 +4736,7 @@ export default function ChecklistModule({
                             <strong>{d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong>
                           </div>
                           {h.description && (
-                            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.35rem', fontStyle: 'italic' }}>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.35rem', fontStyle: 'italic' }}>
                               "{h.description}"
                             </div>
                           )}
@@ -4744,8 +4744,8 @@ export default function ChecklistModule({
 
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
                           <span style={{
-                            background: isPast ? '#e2e8f0' : '#ffedd5',
-                            color: isPast ? '#64748b' : '#c2410c',
+                            background: isPast ? 'var(--bg-primary, #e2e8f0)' : 'rgba(234, 88, 12, 0.15)',
+                            color: isPast ? 'var(--text-muted, #64748b)' : '#ea580c',
                             fontSize: '0.72rem',
                             fontWeight: 700,
                             padding: '0.2rem 0.55rem',
