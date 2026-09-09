@@ -1451,7 +1451,18 @@ export default function CRMContainer({
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
-  const [leadsFilterStage, setLeadsFilterStage] = useState(null);
+  const [leadsFilterStage, setLeadsFilterStage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        let stage = params.get('stage');
+        if (stage === 'all') return null;
+        if (stage) return stage;
+        return localStorage.getItem('crmActiveStage') || null;
+      } catch (e) {}
+    }
+    return null;
+  });
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
 
   // Global Keyboard shortcut for Intelligent Spotlight Search (Cmd+K / Ctrl+K)
@@ -2526,7 +2537,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.541'}
+                    v{pkg.version || '1.0.542'}
                   </span>
                 </div>
               </div>

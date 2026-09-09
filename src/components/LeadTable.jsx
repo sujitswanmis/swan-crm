@@ -972,7 +972,17 @@ export default function LeadTable({
     return () => window.removeEventListener('crm_config_updated', loadConfig);
   }, []);
   // Phase 1: Filters & Search State
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState(() => {
+    if (searchQuery !== undefined && searchQuery !== null && searchQuery !== '') {
+      return searchQuery;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('crm_lead_table_global_filter') || '';
+      } catch (e) {}
+    }
+    return '';
+  });
   
   useEffect(() => {
     setData(processLeads(initialData || [], teamMembers));
@@ -983,6 +993,18 @@ export default function LeadTable({
       setGlobalFilter(searchQuery);
     }
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (globalFilter && globalFilter.trim() !== '') {
+          localStorage.setItem('crm_lead_table_global_filter', globalFilter);
+        } else {
+          localStorage.removeItem('crm_lead_table_global_filter');
+        }
+      } catch (e) {}
+    }
+  }, [globalFilter]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [profileMode, setProfileMode] = useState('history');
@@ -1025,8 +1047,34 @@ export default function LeadTable({
     return 'table';
   });
   const fileInputRef = React.useRef(null);
-  
-  const [columnFilters, setColumnFilters] = useState([]);
+  const [columnFilters, setColumnFilters] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_lead_table_column_filters');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (e) {
+        console.error('Error reading crm_lead_table_column_filters from localStorage', e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (columnFilters && columnFilters.length > 0) {
+          localStorage.setItem('crm_lead_table_column_filters', JSON.stringify(columnFilters));
+        } else {
+          localStorage.removeItem('crm_lead_table_column_filters');
+        }
+      } catch (e) {
+        console.error('Error saving crm_lead_table_column_filters', e);
+      }
+    }
+  }, [columnFilters]);
   const [columnVisibility, setColumnVisibility] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -1212,8 +1260,41 @@ export default function LeadTable({
   const [filterSearchText, setFilterSearchText] = useState('');
   const [showColumnModal, setShowColumnModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [filterRules, setFilterRules] = useState({});
-  const [filterConditionType, setFilterConditionType] = useState('AND');
+  const [filterRules, setFilterRules] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_lead_table_filter_rules');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const [filterConditionType, setFilterConditionType] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('crm_lead_table_filter_condition') || 'AND';
+      } catch (e) {}
+    }
+    return 'AND';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (filterRules && Object.keys(filterRules).length > 0) {
+          localStorage.setItem('crm_lead_table_filter_rules', JSON.stringify(filterRules));
+          localStorage.setItem('crm_lead_table_filter_condition', filterConditionType);
+        } else {
+          localStorage.removeItem('crm_lead_table_filter_rules');
+          localStorage.removeItem('crm_lead_table_filter_condition');
+        }
+      } catch (e) {}
+    }
+  }, [filterRules, filterConditionType]);
 
   const activeFilterCount = (columnFilters?.length || 0) + (globalFilter ? 1 : 0) + Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '').length;
 
@@ -1225,6 +1306,14 @@ export default function LeadTable({
     setFilterSearchText('');
     table.resetColumnFilters();
     table.resetGlobalFilter();
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('crm_lead_table_column_filters');
+        localStorage.removeItem('crm_lead_table_filter_rules');
+        localStorage.removeItem('crm_lead_table_filter_condition');
+        localStorage.removeItem('crm_lead_table_global_filter');
+      } catch (e) {}
+    }
   };
   
   const customGlobalFilterFn = (row, columnId, filterValue) => {
@@ -1452,9 +1541,28 @@ export default function LeadTable({
     return result;
   }, [data, stageFilter, filterRules, filterConditionType, teamMembers]);
 
-  // Cleanly reset any active column filters when navigating between stage tabs
+  // Cleanly reset any active column filters when navigating between stage tabs (skip initial mount/refresh)
+  const isInitialMount = useRef(true);
+  const prevStageRef = useRef(stageFilter);
+
   useEffect(() => {
-    setColumnFilters([]);
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      prevStageRef.current = stageFilter;
+      return;
+    }
+    if (prevStageRef.current !== stageFilter) {
+      prevStageRef.current = stageFilter;
+      setColumnFilters([]);
+      setFilterRules({});
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('crm_lead_table_column_filters');
+          localStorage.removeItem('crm_lead_table_filter_rules');
+          localStorage.removeItem('crm_lead_table_filter_condition');
+        } catch (e) {}
+      }
+    }
   }, [stageFilter]);
 
 
