@@ -280,24 +280,39 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     return <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : 'Open Lead'}</span>;
   }
 
+  const currentDisplayName = assignedMember ? `${assignedMember.emp_name}${assignedMember.emp_department ? ` (${assignedMember.emp_department})` : ''}` : 'Open Lead (Unassigned)';
+
   return (
     <select 
       value={assignedToId || ''} 
       onFocus={() => setIsInteracting(true)}
       onMouseEnter={() => setIsInteracting(true)}
       onChange={(e) => updateAssignee(e.target.value)}
-      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid var(--border-light)', outline: 'none', cursor: 'pointer', maxWidth: '150px' }}
+      title={currentDisplayName}
+      style={{ 
+        padding: '0.35rem 0.5rem', 
+        borderRadius: '4px', 
+        fontSize: '0.82rem', 
+        border: '1px solid var(--border-light)', 
+        outline: 'none', 
+        cursor: 'pointer', 
+        width: '100%',
+        minWidth: '165px',
+        maxWidth: '100%',
+        backgroundColor: 'var(--bg-surface)',
+        color: 'var(--text-primary)'
+      }}
     >
       {!isInteracting ? (
         <option value={assignedToId || ''}>
-          {assignedMember ? `${assignedMember.emp_name} ${assignedMember.emp_department ? `(${assignedMember.emp_department})` : ''}` : 'Open Lead (Unassigned)'}
+          {currentDisplayName}
         </option>
       ) : (
         <>
           <option value="">Open Lead (Unassigned)</option>
           {teamMembers.filter(m => m.emp_name).map(member => (
             <option key={member.user_id} value={member.user_id}>
-              {member.emp_name} {member.emp_department ? `(${member.emp_department})` : ''}
+              {member.emp_name}{member.emp_department ? ` (${member.emp_department})` : ''}
             </option>
           ))}
         </>
@@ -670,9 +685,9 @@ const columns = [
   {
     accessorKey: 'assigned_to',
     header: 'Assigned To',
-    size: 180,
-    minSize: 100,
-    maxSize: 400,
+    size: 220,
+    minSize: 180,
+    maxSize: 450,
     cell: info => <LeadAssigneeCell info={info} />
   },
   { accessorKey: 'business_type', header: 'Business Type', size: 140, minSize: 80, maxSize: 300 },
@@ -2516,10 +2531,10 @@ export default function LeadTable({
                       position: 'sticky', 
                       top: 0, 
                       zIndex: activeFilterColumn === header.id ? 99999 : 10, 
-                      padding: '0.75rem 0.85rem', 
-                      fontSize: '0.85rem', 
+                      padding: '0.65rem 0.65rem', 
+                      fontSize: '0.82rem', 
                       color: 'var(--text-secondary)', 
-                      fontWeight: 600, 
+                      fontWeight: 700, 
                       borderBottom: '1px solid var(--border-light)',
                       borderRight: '1px solid var(--border-light)',
                       width: header.getSize(),
@@ -2527,12 +2542,16 @@ export default function LeadTable({
                       maxWidth: header.column.columnDef.maxSize ? `${header.column.columnDef.maxSize}px` : undefined,
                       boxSizing: 'border-box',
                       userSelect: header.column.getIsResizing() ? 'none' : 'auto',
-                      position: 'relative'
+                      position: 'relative',
+                      whiteSpace: 'normal',
+                      verticalAlign: 'middle'
                     }}
                   >
                     {header.isPlaceholder ? null : (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', paddingRight: header.column.getCanResize() ? '8px' : '0' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25', flex: 1, minWidth: 0 }}>
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                        </span>
                         
                         {header.column.getCanFilter() && (
                           <div style={{ position: 'relative' }}>
@@ -2618,14 +2637,14 @@ export default function LeadTable({
                         title="Drag to resize column width | Double-click to reset"
                         style={{
                           position: 'absolute',
-                          right: 0,
+                          right: '-6px',
                           top: 0,
                           height: '100%',
-                          width: '10px',
+                          width: '14px',
                           cursor: 'col-resize',
                           userSelect: 'none',
                           touchAction: 'none',
-                          zIndex: 20,
+                          zIndex: 25,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center'
@@ -2634,11 +2653,12 @@ export default function LeadTable({
                         <div 
                           className="resizer-bar"
                           style={{
-                            width: header.column.getIsResizing() ? '3px' : '2px',
-                            height: '60%',
-                            backgroundColor: header.column.getIsResizing() ? 'var(--accent-color)' : 'var(--border-light, #cbd5e1)',
-                            borderRadius: '2px',
-                            transition: 'background-color 0.15s ease'
+                            width: header.column.getIsResizing() ? '4px' : '3px',
+                            height: '75%',
+                            backgroundColor: header.column.getIsResizing() ? 'var(--accent-color, #2563eb)' : '#64748b',
+                            borderRadius: '3px',
+                            boxShadow: header.column.getIsResizing() ? '0 0 6px var(--accent-color)' : '0 1px 2px rgba(0,0,0,0.15)',
+                            transition: 'all 0.15s ease'
                           }}
                         />
                       </div>

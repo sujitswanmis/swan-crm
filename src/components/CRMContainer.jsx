@@ -2489,7 +2489,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.532'}
+                    v{pkg.version || '1.0.533'}
                   </span>
                 </div>
               </div>

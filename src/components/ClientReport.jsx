@@ -980,8 +980,8 @@ export default function ClientReport({
       case 'source': return 140;
       case 'source_name': return 150;
       case 'created_by':
-      case 'entry_by':
-      case 'assigned_to_name': return 140;
+      case 'entry_by': return 140;
+      case 'assigned_to_name': return 200;
       case 'status': return 140;
       case 'priority': return 130;
       case 'company': return 180;
@@ -1774,22 +1774,22 @@ export default function ClientReport({
                       top: 0, 
                       zIndex: activeFilterColumn === col.key ? 99999 : 10, 
                       textAlign: 'left', 
-                      padding: '0.75rem 1rem', 
+                      padding: '0.65rem 0.65rem', 
                       borderBottom: '2px solid var(--border-light)', 
                       borderRight: '1px solid var(--border-light)',
                       color: 'var(--text-secondary)', 
-                      fontWeight: 600, 
-                      fontSize: '0.85rem', 
-                      whiteSpace: 'nowrap', 
-                      verticalAlign: 'top',
+                      fontWeight: 700, 
+                      fontSize: '0.82rem', 
+                      whiteSpace: 'normal', 
+                      verticalAlign: 'middle',
                       width: `${colWidth}px`,
                       minWidth: '60px',
                       maxWidth: `${colWidth}px`,
                       boxSizing: 'border-box'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', overflow: 'hidden' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={col.label}>{col.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', overflow: 'hidden', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25', flex: 1, minWidth: 0 }} title={col.label}>{col.label}</span>
                       <button 
                         onClick={() => {
                           setActiveFilterColumn(activeFilterColumn === col.key ? null : col.key);
@@ -1840,14 +1840,14 @@ export default function ClientReport({
                       title="Drag to resize column width | Double-click to reset"
                       style={{
                         position: 'absolute',
-                        right: 0,
+                        right: '-6px',
                         top: 0,
                         height: '100%',
-                        width: '10px',
+                        width: '14px',
                         cursor: 'col-resize',
                         userSelect: 'none',
                         touchAction: 'none',
-                        zIndex: 20,
+                        zIndex: 25,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
@@ -1856,11 +1856,12 @@ export default function ClientReport({
                       <div 
                         className="resizer-bar"
                         style={{
-                          width: resizingColKey === col.key ? '3px' : '2px',
-                          height: '60%',
-                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color)' : 'var(--border-light, #cbd5e1)',
-                          borderRadius: '2px',
-                          transition: 'background-color 0.15s ease'
+                          width: resizingColKey === col.key ? '4px' : '3px',
+                          height: '75%',
+                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color, #2563eb)' : '#64748b',
+                          borderRadius: '3px',
+                          boxShadow: resizingColKey === col.key ? '0 0 6px var(--accent-color)' : '0 1px 2px rgba(0,0,0,0.15)',
+                          transition: 'all 0.15s ease'
                         }}
                       />
                     </div>
