@@ -240,6 +240,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       const updatedRawLead = {
         ...lead,
         assigned_to: valToSet,
+        is_offline_pending: false,
         lead_notes: [newNote, ...(lead.lead_notes || [])]
       };
       setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
@@ -401,6 +402,7 @@ const LeadStatusCell = React.memo(({ info }) => {
         updated_at: nowIso,
         last_timestamp: nowIso,
         latest_remark: noteText,
+        is_offline_pending: false,
         lead_notes: [insertedNote || newNote, ...(lead.lead_notes || [])]
       };
       const processed = processLeads([updatedRawLead], teamMembers)[0];
@@ -1629,6 +1631,7 @@ export default function LeadTable({
         updated_at: nowIso,
         last_timestamp: nowIso,
         latest_remark: noteText,
+        is_offline_pending: false,
         lead_notes: [insertedNote || newNote, ...(lead.lead_notes || [])]
       };
       const processed = processLeads([updatedRawLead], teamMembers)[0];

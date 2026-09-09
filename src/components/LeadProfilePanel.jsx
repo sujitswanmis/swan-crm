@@ -555,7 +555,7 @@ export default function LeadProfilePanel({
   };
 
   const handleStatusUpdate = async (newStatus) => {
-    if (!newStatus || isUpdatingStatus) return;
+    if (!newStatus || isUpdatingStatus || !lead?.id) return;
 
     const formattedNewStatus = formatStatusWithNumbers(newStatus, stages);
     if (formattedNewStatus === currentStatus) return;
@@ -582,30 +582,11 @@ export default function LeadProfilePanel({
       last_status: formattedNewStatus,
       updated_at: nowIso,
       last_timestamp: nowIso,
-      latest_remark: noteText
+      latest_remark: noteText,
+      is_offline_pending: false
     };
 
     notifyLeadUpdate(updatedLeadObj);
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('leadStatusUpdate');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
-      }
-      await enqueueOfflineAction('update', 'lead', {
-        id: lead.id,
-        status: formattedNewStatus
-      });
-      await enqueueOfflineAction('create', 'lead_note', {
-        lead_id: lead.id,
-        note_text: noteText,
-        created_by: actor
-      });
-      setStatusUpdateSuccess(true);
-      setTimeout(() => setStatusUpdateSuccess(false), 2000);
-      return;
-    }
 
     setIsUpdatingStatus(true);
     try {
@@ -613,13 +594,22 @@ export default function LeadProfilePanel({
         status: formattedNewStatus
       }).eq('id', lead.id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Lead status update error from Supabase:', updateError);
+        throw updateError;
+      }
 
-      await supabase.from('lead_notes').insert([{
+      const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{
         lead_id: lead.id,
         note_text: noteText,
         created_by: actor
-      }]);
+      }]).select().single();
+
+      if (noteError) {
+        console.warn('Note insert warning in Supabase:', noteError.message || noteError);
+      } else if (insertedNote) {
+        setNotes(prev => prev.map(n => n.id === statusNote.id ? insertedNote : n));
+      }
 
       try {
         await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${formattedNewStatus}" via History Panel`);
@@ -632,13 +622,21 @@ export default function LeadProfilePanel({
       setStatusUpdateSuccess(true);
       setTimeout(() => setStatusUpdateSuccess(false), 2000);
     } catch (err) {
-      console.error('Status update failed:', err?.message || err?.details || err);
-      const check = canPerformOfflineAction('leadStatusUpdate');
-      if (check.allowed) {
-        await enqueueOfflineAction('update', 'lead', {
-          id: lead.id,
-          status: formattedNewStatus
-        });
+      console.error('Status update failed:', err?.message || err?.details || JSON.stringify(err));
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (isOffline) {
+        const check = canPerformOfflineAction('leadStatusUpdate');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', {
+            id: lead.id,
+            status: formattedNewStatus
+          });
+          await enqueueOfflineAction('create', 'lead_note', {
+            lead_id: lead.id,
+            note_text: noteText,
+            created_by: actor
+          });
+        }
       }
     } finally {
       setIsUpdatingStatus(false);
@@ -646,7 +644,7 @@ export default function LeadProfilePanel({
   };
 
   const handleAttributeUpdate = async (fieldKey, newValue, displayLabel) => {
-    if (!lead || !fieldKey) return;
+    if (!lead || !lead.id || !fieldKey) return;
 
     const currentVal = (
       fieldKey === 'client_status' ? currentClientStatus :
@@ -685,30 +683,11 @@ export default function LeadProfilePanel({
       ...lead,
       [fieldKey]: newValue,
       updated_at: nowIso,
-      last_timestamp: nowIso
+      last_timestamp: nowIso,
+      is_offline_pending: false
     };
 
     notifyLeadUpdate(updatedLeadObj);
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('leadAttributeUpdate');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
-      }
-      await enqueueOfflineAction('update', 'lead', {
-        id: lead.id,
-        [fieldKey]: newValue
-      });
-      await enqueueOfflineAction('create', 'lead_note', {
-        lead_id: lead.id,
-        note_text: noteText,
-        created_by: actor
-      });
-      setSavedFieldSuccess(fieldKey);
-      setTimeout(() => setSavedFieldSuccess(null), 2000);
-      return;
-    }
 
     setSavingField(fieldKey);
     try {
@@ -725,11 +704,15 @@ export default function LeadProfilePanel({
         }
       }
 
-      await supabase.from('lead_notes').insert([{
+      const { data: insertedNote, error: noteError } = await supabase.from('lead_notes').insert([{
         lead_id: lead.id,
         note_text: noteText,
         created_by: actor
-      }]);
+      }]).select().single();
+
+      if (!noteError && insertedNote) {
+        setNotes(prev => prev.map(n => n.id === newLocalNote.id ? insertedNote : n));
+      }
 
       try {
         await logAuditAction('Update Lead', `Updated ${label} of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${newValue}" via History Panel`);
@@ -738,13 +721,21 @@ export default function LeadProfilePanel({
       setSavedFieldSuccess(fieldKey);
       setTimeout(() => setSavedFieldSuccess(null), 2000);
     } catch (err) {
-      console.error(`${fieldKey} update failed:`, err?.message || err?.details || err);
-      const check = canPerformOfflineAction('leadAttributeUpdate');
-      if (check.allowed) {
-        await enqueueOfflineAction('update', 'lead', {
-          id: lead.id,
-          [fieldKey]: newValue
-        });
+      console.error(`${fieldKey} update failed:`, err?.message || err?.details || JSON.stringify(err));
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (isOffline) {
+        const check = canPerformOfflineAction('leadAttributeUpdate');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', {
+            id: lead.id,
+            [fieldKey]: newValue
+          });
+          await enqueueOfflineAction('create', 'lead_note', {
+            lead_id: lead.id,
+            note_text: noteText,
+            created_by: actor
+          });
+        }
       }
     } finally {
       setSavingField(null);
@@ -810,9 +801,17 @@ export default function LeadProfilePanel({
     setInterimTranscript('');
     setCallLogs([]);
 
-    // Immediately seed with existing notes
+    // Immediately seed with existing notes (deduplicated)
     if (Array.isArray(lead.lead_notes)) {
-      setNotes([...lead.lead_notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      const seen = new Set();
+      const deduped = lead.lead_notes.filter(n => {
+        if (!n) return false;
+        const idKey = n.id ? String(n.id) : `${n.created_at}_${n.note_text}`;
+        if (seen.has(idKey)) return false;
+        seen.add(idKey);
+        return true;
+      });
+      setNotes([...deduped].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
     } else {
       setNotes([]);
     }
@@ -842,7 +841,7 @@ export default function LeadProfilePanel({
       source: lead.source || 'Website'
     });
 
-    // Fetch ALL existing notes fresh from database
+    // Fetch ALL existing notes fresh from database (deduplicated)
     const fetchNotes = async () => {
       let allNotes = [];
       let from = 0;
@@ -863,7 +862,15 @@ export default function LeadProfilePanel({
       }
       
       if (allNotes.length > 0) {
-        setNotes(allNotes);
+        const seen = new Set();
+        const deduped = allNotes.filter(n => {
+          if (!n) return false;
+          const idKey = n.id ? String(n.id) : `${n.created_at}_${n.note_text}`;
+          if (seen.has(idKey)) return false;
+          seen.add(idKey);
+          return true;
+        });
+        setNotes(deduped);
       }
     };
     fetchNotes();
@@ -904,14 +911,19 @@ export default function LeadProfilePanel({
     };
   }, [lead, isOpen]);
 
-  // Unified chronological timeline of notes & calls
+  // Unified chronological timeline of notes & calls with strict key uniqueness
   const unifiedHistory = useMemo(() => {
     const list = [];
+    const seenIds = new Set();
 
     // Format notes
-    notes.forEach(n => {
+    (notes || []).forEach((n, idx) => {
+      const rawId = n.id ? String(n.id) : `idx_${idx}`;
+      const uniqueId = `note_${rawId}`;
+      if (seenIds.has(uniqueId)) return;
+      seenIds.add(uniqueId);
       list.push({
-        id: `note_${n.id}`,
+        id: uniqueId,
         type: 'note',
         createdAt: n.created_at,
         text: n.note_text,
@@ -921,9 +933,13 @@ export default function LeadProfilePanel({
     });
 
     // Format calls
-    callLogs.forEach(c => {
+    (callLogs || []).forEach((c, idx) => {
+      const rawId = c.id ? String(c.id) : `idx_${idx}`;
+      const uniqueId = `call_${rawId}`;
+      if (seenIds.has(uniqueId)) return;
+      seenIds.add(uniqueId);
       list.push({
-        id: `call_${c.id}`,
+        id: uniqueId,
         type: 'call',
         createdAt: c.created_at || c.start_time,
         customerNumber: c.customer_number,
@@ -1000,7 +1016,7 @@ export default function LeadProfilePanel({
       last_timestamp: nowIso,
       latest_remark: noteContent || `Status changed to ${statusToUpdate}`,
       lead_notes: updatedNotes,
-      is_offline_pending: typeof navigator !== 'undefined' && !navigator.onLine
+      is_offline_pending: false
     };
 
     notifyLeadUpdate(updatedLeadObj);
@@ -1008,17 +1024,6 @@ export default function LeadProfilePanel({
     setNewNote('');
     setStatusForNewNote('');
     setInterimTranscript('');
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      if (noteContent) {
-        await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
-      }
-      if (statusToUpdate) {
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
-        await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: `Status changed from ${currentStatus} to ${statusToUpdate}`, created_by: actor });
-      }
-      return;
-    }
 
     try {
       if (noteContent) {
@@ -1060,17 +1065,20 @@ export default function LeadProfilePanel({
         } catch (e) {}
       }
     } catch (netErr) {
-      console.warn('Network addNote/status update failed, fallback to offline queue:', netErr);
-      if (noteContent) {
-        const check = canPerformOfflineAction('leadNotes');
-        if (check.allowed) {
-          await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+      console.warn('Network addNote/status update failed, checking offline fallback:', netErr?.message || netErr);
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (isOffline) {
+        if (noteContent) {
+          const check = canPerformOfflineAction('leadNotes');
+          if (check.allowed) {
+            await enqueueOfflineAction('create', 'lead_note', { lead_id: lead.id, note_text: noteContent, created_by: actor });
+          }
         }
-      }
-      if (statusToUpdate) {
-        const check = canPerformOfflineAction('leadStatusUpdate');
-        if (check.allowed) {
-          await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
+        if (statusToUpdate) {
+          const check = canPerformOfflineAction('leadStatusUpdate');
+          if (check.allowed) {
+            await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
+          }
         }
       }
     }
@@ -1079,14 +1087,6 @@ export default function LeadProfilePanel({
   const handleFollowUpChange = async (e) => {
     const newDate = e.target.value;
     const actor = userName || 'System';
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('leadFollowUp');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
-      }
-    }
 
     if (!newDate) {
       setFollowUpDate('');
@@ -1100,12 +1100,7 @@ export default function LeadProfilePanel({
       };
 
       if (onLeadUpdate) {
-        onLeadUpdate({ ...lead, follow_up_date: null, is_offline_pending: true });
-      }
-
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
-        return;
+        onLeadUpdate({ ...lead, follow_up_date: null, is_offline_pending: false });
       }
 
       try {
@@ -1118,13 +1113,14 @@ export default function LeadProfilePanel({
           created_by: actor
         }]);
       } catch (netErr) {
-        console.warn('Network update failed, fallback to offline:', netErr);
-        const check = canPerformOfflineAction('leadFollowUp');
-        if (!check.allowed) {
-          alert(check.reason);
-          return;
+        console.warn('Network follow-up update failed, fallback to offline:', netErr);
+        const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+        if (isOffline) {
+          const check = canPerformOfflineAction('leadFollowUp');
+          if (check.allowed) {
+            await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
+          }
         }
-        await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
       }
       return;
     }
@@ -1137,12 +1133,7 @@ export default function LeadProfilePanel({
     const noteText = `Follow-up scheduled for: ${formattedDate}`;
 
     if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, follow_up_date: isoDateStr, is_offline_pending: true });
-    }
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
-      return;
+      onLeadUpdate({ ...lead, follow_up_date: isoDateStr, is_offline_pending: false });
     }
 
     try {
@@ -1158,13 +1149,14 @@ export default function LeadProfilePanel({
         logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
       } catch(e) {}
     } catch (netErr) {
-      console.warn('Network update failed, fallback to offline:', netErr);
-      const check = canPerformOfflineAction('leadFollowUp');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
+      console.warn('Network follow-up update failed, fallback to offline:', netErr);
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (isOffline) {
+        const check = canPerformOfflineAction('leadFollowUp');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+        }
       }
-      await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
     }
   };
 
@@ -1173,27 +1165,13 @@ export default function LeadProfilePanel({
   };
 
   const handleSaveEdit = async () => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('profileEdit');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
-      }
-    }
-
     const cleanForm = normalizeLeadRecord({ ...editForm });
     const actor = normalizeEmployeeName(userName || 'System');
 
     if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, ...cleanForm, is_offline_pending: true });
+      onLeadUpdate({ ...lead, ...cleanForm, is_offline_pending: false });
     }
     setIsEditing(false);
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
-      alert('⚡ Offline Mode: Profile changes saved to device! They will sync to cloud when connected.');
-      return;
-    }
 
     try {
       const { error: updateError } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
@@ -1209,14 +1187,15 @@ export default function LeadProfilePanel({
       } catch(e) {}
       alert('Lead profile updated successfully!');
     } catch (netErr) {
-      console.warn('Network update failed, fallback to offline:', netErr);
-      const check = canPerformOfflineAction('profileEdit');
-      if (!check.allowed) {
-        alert(check.reason);
-        return;
+      console.warn('Network profile update failed, fallback to offline:', netErr);
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (isOffline) {
+        const check = canPerformOfflineAction('profileEdit');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
+          alert('⚡ Network issue: Profile changes saved to device! They will sync to cloud automatically.');
+        }
       }
-      await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
-      alert('⚡ Network issue: Profile changes saved to device! They will sync to cloud automatically.');
     }
   };
 
