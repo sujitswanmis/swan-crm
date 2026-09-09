@@ -1226,59 +1226,34 @@ export default function LeadTable({
     table.resetGlobalFilter();
   };
   
-  const getUniqueValues = (columnId) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    const formatDateTime = (val) => {
-      if (!val) return '';
-      const d = new Date(val);
-      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
+  const customGlobalFilterFn = (row, columnId, filterValue) => {
+    if (!filterValue || String(filterValue).trim() === '') return true;
+    const q = String(filterValue).toLowerCase().trim();
+    const cleanDigits = q.replace(/[^0-9]/g, '');
+    const lead = row.original || {};
 
-    const rows = table.getCoreRowModel().rows;
-    const vals = rows.map(row => {
-      if (columnId === 'assigned_to') {
-        const teamMembers = table.options.meta?.teamMembers || [];
-        const val = row.original[columnId];
-        const member = teamMembers.find(m => m.user_id === val);
-        return member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
+    const allValues = [
+      lead.lead_ref_id, lead.lead_id, lead['Lead ID'],
+      lead.name, lead.business_name, lead['Business Name'],
+      lead.company, lead['Company'],
+      lead.phone, lead.business_contact_1, lead.business_contact_2, lead.business_contact_in_aio, lead['Business Contact in AIO'],
+      lead.cp1_name, lead.cp2_name, lead.cp3_name, lead.cp_name_in_aio, lead['CP Name in AIO'],
+      lead.cp1_mobile_2, lead.cp2_mobile_1, lead.cp3_mobile_1, lead.cp_mobile_in_aio, lead['CP Mobile in AIO'],
+      lead.city_name, lead.district_name, lead.state_name,
+      lead.source_name, lead.source, lead.requirement, lead.our_company, lead.status
+    ];
+
+    for (const val of allValues) {
+      if (val !== null && val !== undefined && val !== '') {
+        const strVal = String(val).toLowerCase();
+        if (strVal.includes(q)) return true;
+        if (cleanDigits.length >= 4) {
+          const valDigits = strVal.replace(/[^0-9]/g, '');
+          if (valDigits && valDigits.includes(cleanDigits)) return true;
+        }
       }
-      if (columnId === 'state_name') {
-        const val = row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state;
-        return normalizeStateName(val);
-      }
-      if (columnId === 'district_name') {
-        const val = row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district;
-        return normalizeDistrictName(val);
-      }
-      if (columnId === 'city_name') {
-        const val = row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city;
-        return normalizeCityName(val);
-      }
-      if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
-        const teamMembers = table.options.meta?.teamMembers || [];
-        const val = row.getValue(columnId) || row.original[columnId];
-        return normalizeEmployeeName(val, teamMembers);
-      }
-      if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
-        return formatDateTime(row.original[columnId]);
-      }
-      if (columnId === 'lead_date') {
-        const val = row.original[columnId];
-        if (!val) return '';
-        try {
-          const parts = val.split('-');
-          if (parts.length === 3) {
-            return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`; // YYYY-MM-DD
-          }
-        } catch (e) {}
-        return val;
-      }
-      
-      const val = row.getValue(columnId);
-      return val !== null && val !== undefined && val !== '' ? String(val) : '';
-    });
-    
-    return [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+    return false;
   };
 
   const multiSelectFilter = (row, columnId, filterValue) => {
@@ -1346,6 +1321,81 @@ export default function LeadTable({
     }
     return filters.includes(val);
   };
+
+  const getUniqueValues = (columnId) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    const formatDateTime = (val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
+    let candidateRows = table.getCoreRowModel().rows;
+
+    // Apply global filter to candidate rows if present
+    const currentGlobalFilter = table.getState().globalFilter;
+    if (currentGlobalFilter && String(currentGlobalFilter).trim() !== '') {
+      candidateRows = candidateRows.filter(row => customGlobalFilterFn(row, null, currentGlobalFilter));
+    }
+
+    // Apply all OTHER active column filters except this columnId
+    const activeColumnFilters = table.getState().columnFilters || [];
+    const otherFilters = activeColumnFilters.filter(f => 
+      f.id !== columnId && f.value !== undefined && f.value !== null && 
+      (Array.isArray(f.value) ? f.value.length > 0 : f.value !== '')
+    );
+
+    if (otherFilters.length > 0) {
+      candidateRows = candidateRows.filter(row => 
+        otherFilters.every(f => multiSelectFilter(row, f.id, f.value))
+      );
+    }
+
+    const vals = candidateRows.map(row => {
+      if (columnId === 'assigned_to') {
+        const teamMembers = table.options.meta?.teamMembers || [];
+        const val = row.original[columnId];
+        const member = teamMembers.find(m => m.user_id === val);
+        return member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
+      }
+      if (columnId === 'state_name') {
+        const val = row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state;
+        return normalizeStateName(val);
+      }
+      if (columnId === 'district_name') {
+        const val = row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district;
+        return normalizeDistrictName(val);
+      }
+      if (columnId === 'city_name') {
+        const val = row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city;
+        return normalizeCityName(val);
+      }
+      if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+        const teamMembers = table.options.meta?.teamMembers || [];
+        const val = row.getValue(columnId) || row.original[columnId];
+        return normalizeEmployeeName(val, teamMembers);
+      }
+      if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
+        return formatDateTime(row.original[columnId]);
+      }
+      if (columnId === 'lead_date') {
+        const val = row.original[columnId];
+        if (!val) return '';
+        try {
+          const parts = val.split('-');
+          if (parts.length === 3) {
+            return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`; // YYYY-MM-DD
+          }
+        } catch (e) {}
+        return val;
+      }
+      
+      const val = row.getValue(columnId);
+      return val !== null && val !== undefined && val !== '' ? String(val) : '';
+    });
+    
+    return [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  };
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
@@ -1406,35 +1456,6 @@ export default function LeadTable({
     setColumnFilters([]);
   }, [stageFilter]);
 
-  const customGlobalFilterFn = (row, columnId, filterValue) => {
-    if (!filterValue || String(filterValue).trim() === '') return true;
-    const q = String(filterValue).toLowerCase().trim();
-    const cleanDigits = q.replace(/[^0-9]/g, '');
-    const lead = row.original || {};
-
-    const allValues = [
-      lead.lead_ref_id, lead.lead_id, lead['Lead ID'],
-      lead.name, lead.business_name, lead['Business Name'],
-      lead.company, lead['Company'],
-      lead.phone, lead.business_contact_1, lead.business_contact_2, lead.business_contact_in_aio, lead['Business Contact in AIO'],
-      lead.cp1_name, lead.cp2_name, lead.cp3_name, lead.cp_name_in_aio, lead['CP Name in AIO'],
-      lead.cp1_mobile_2, lead.cp2_mobile_1, lead.cp3_mobile_1, lead.cp_mobile_in_aio, lead['CP Mobile in AIO'],
-      lead.city_name, lead.district_name, lead.state_name,
-      lead.source_name, lead.source, lead.requirement, lead.our_company, lead.status
-    ];
-
-    for (const val of allValues) {
-      if (val !== null && val !== undefined && val !== '') {
-        const strVal = String(val).toLowerCase();
-        if (strVal.includes(q)) return true;
-        if (cleanDigits.length >= 4) {
-          const valDigits = strVal.replace(/[^0-9]/g, '');
-          if (valDigits && valDigits.includes(cleanDigits)) return true;
-        }
-      }
-    }
-    return false;
-  };
 
   const table = useReactTable({
     data: stageFilteredData,

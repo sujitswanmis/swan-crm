@@ -869,7 +869,74 @@ export default function ClientReport({
   }, []);
 
   const getUniqueValues = (key) => {
-    const vals = leads.map(l => {
+    let candidateLeads = leads;
+
+    // Determine if other filters are active
+    const otherColumnFilterKeys = Object.keys(columnFilters).filter(k => k !== key && columnFilters[k]?.length > 0);
+    const otherRuleKeys = Object.keys(filterRules).filter(k => k !== key && filterRules[k]?.value && filterRules[k].value.trim() !== '');
+    const hasGlobal = Boolean(globalSearch && globalSearch.trim() !== '');
+
+    if (hasGlobal || otherColumnFilterKeys.length > 0 || otherRuleKeys.length > 0) {
+      candidateLeads = leads.filter(lead => {
+        // 1. Global Search
+        if (hasGlobal) {
+          const searchLower = globalSearch.toLowerCase();
+          const matchGlobal = Object.values(lead).some(val => 
+            String(val || '').toLowerCase().includes(searchLower)
+          );
+          if (!matchGlobal) return false;
+        }
+
+        // 2. Other Column Header Filters (excluding current key)
+        for (const colKey of otherColumnFilterKeys) {
+          const activeValues = columnFilters[colKey];
+          if (activeValues && activeValues.length > 0) {
+            let cellVal = lead[colKey];
+            if (colKey === 'created_at' && cellVal) cellVal = new Date(cellVal).toLocaleString();
+            const strVal = String(cellVal !== undefined && cellVal !== null ? cellVal : '').trim();
+            if (!activeValues.includes(strVal)) {
+              return false;
+            }
+          }
+        }
+
+        // 3. Other Advanced Multi-Column Rules (excluding current key)
+        if (otherRuleKeys.length > 0) {
+          const ruleMatches = otherRuleKeys.map(rKey => {
+            const rule = filterRules[rKey];
+            let cellVal = String(lead[rKey] !== undefined && lead[rKey] !== null ? lead[rKey] : '').toLowerCase().trim();
+            if (rKey === 'created_at' && lead[rKey]) {
+              cellVal = String(new Date(lead[rKey]).toLocaleString()).toLowerCase().trim();
+            }
+            const targetVal = String(rule.value || '').toLowerCase().trim();
+            
+            switch (rule.condition) {
+              case 'start_with':
+                return cellVal.startsWith(targetVal);
+              case 'equal':
+                return cellVal === targetVal;
+              case 'not_equal':
+                return cellVal !== targetVal;
+              case 'contains':
+              default:
+                return cellVal.includes(targetVal);
+            }
+          });
+
+          if (filterConditionType === 'OR') {
+            const passOr = ruleMatches.some(Boolean);
+            if (!passOr) return false;
+          } else {
+            const passAnd = ruleMatches.every(Boolean);
+            if (!passAnd) return false;
+          }
+        }
+
+        return true;
+      });
+    }
+
+    const vals = candidateLeads.map(l => {
       let v = l[key];
       if (key === 'created_at' && v) v = new Date(v).toLocaleString();
       return String(v !== undefined && v !== null ? v : '').trim();
