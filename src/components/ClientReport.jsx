@@ -1746,7 +1746,7 @@ export default function ClientReport({
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               {(canDelete || canAssign) && (
-                <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box' }}>
+                <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 0.5rem', borderBottom: '2px solid var(--border-light)', borderRight: '1px solid var(--border-light)', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box' }}>
                   <input 
                     type="checkbox" 
                     checked={isAllPageSelected || isAllFilteredSelected}
@@ -1760,7 +1760,7 @@ export default function ClientReport({
                   />
                 </th>
               )}
-              <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box' }}>
+              <th className="table-header-cell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border-light)', borderRight: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box' }}>
                 Actions
               </th>
               {visibleReportCols.map(col => {
@@ -1776,6 +1776,7 @@ export default function ClientReport({
                       textAlign: 'left', 
                       padding: '0.75rem 1rem', 
                       borderBottom: '2px solid var(--border-light)', 
+                      borderRight: '1px solid var(--border-light)',
                       color: 'var(--text-secondary)', 
                       fontWeight: 600, 
                       fontSize: '0.85rem', 
@@ -1856,8 +1857,8 @@ export default function ClientReport({
                         className="resizer-bar"
                         style={{
                           width: resizingColKey === col.key ? '3px' : '2px',
-                          height: '55%',
-                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color)' : 'transparent',
+                          height: '60%',
+                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color)' : 'var(--border-light, #cbd5e1)',
                           borderRadius: '2px',
                           transition: 'background-color 0.15s ease'
                         }}
@@ -1887,7 +1888,7 @@ export default function ClientReport({
                 }}
               >
                 {(canDelete || canAssign) && (
-                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box' }}>
+                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', width: '44px', minWidth: '44px', maxWidth: '44px', boxSizing: 'border-box', borderRight: '1px solid var(--border-light)' }}>
                     <input 
                       type="checkbox" 
                       checked={selectedRows.includes(lead.id)}
@@ -1896,7 +1897,7 @@ export default function ClientReport({
                     />
                   </td>
                 )}
-                <td style={{ padding: '0.75rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box' }}>
+                <td style={{ padding: '0.75rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', width: '70px', minWidth: '70px', maxWidth: '70px', boxSizing: 'border-box', borderRight: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                     {canEdit && (
                       <button onClick={() => { setSelectedLead(lead); setProfileMode('edit'); setIsProfileOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Lead">
@@ -1925,6 +1926,7 @@ export default function ClientReport({
                         maxWidth: `${colWidth}px`, 
                         overflow: 'hidden', 
                         textOverflow: 'ellipsis',
+                        borderRight: '1px solid var(--border-light)',
                         boxSizing: 'border-box'
                       }}
                       title={typeof val === 'string' || typeof val === 'number' ? String(val) : undefined}

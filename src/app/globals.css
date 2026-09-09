@@ -1278,11 +1278,17 @@ table th, .table-header-cell {
   letter-spacing: 0.04em !important;
   text-transform: uppercase !important;
   border-bottom: 2px solid var(--border-strong, var(--border-light)) !important;
+  border-right: 1px solid var(--border-light) !important;
   padding: 0.75rem 1rem;
   transition: background-color 0.2s ease, color 0.2s ease;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
   white-space: nowrap;
   vertical-align: middle;
+}
+
+table th:last-child,
+.table-header-cell:last-child {
+  border-right: none !important;
 }
 
 table th:hover, .table-header-cell:hover {
@@ -1317,9 +1323,14 @@ table tbody tr:nth-child(even) {
 /* Cell Borders & Numerical Formatting */
 table tbody td {
   border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
   color: var(--text-primary);
   vertical-align: middle;
   transition: background-color 0.15s ease;
+}
+
+table tbody tr td:last-child {
+  border-right: none;
 }
 
 /* High-Performance Interactive Row Hover Illumination */

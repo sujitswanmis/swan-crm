@@ -900,7 +900,8 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
             maxWidth: cell.column.columnDef.maxSize ? `${cell.column.columnDef.maxSize}px` : undefined,
             boxSizing: 'border-box',
             overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            textOverflow: 'ellipsis',
+            borderRight: '1px solid var(--border-light)'
           }}
         >
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -2520,6 +2521,7 @@ export default function LeadTable({
                       color: 'var(--text-secondary)', 
                       fontWeight: 600, 
                       borderBottom: '1px solid var(--border-light)',
+                      borderRight: '1px solid var(--border-light)',
                       width: header.getSize(),
                       minWidth: `${header.column.columnDef.minSize || 50}px`,
                       maxWidth: header.column.columnDef.maxSize ? `${header.column.columnDef.maxSize}px` : undefined,
@@ -2633,8 +2635,8 @@ export default function LeadTable({
                           className="resizer-bar"
                           style={{
                             width: header.column.getIsResizing() ? '3px' : '2px',
-                            height: '55%',
-                            backgroundColor: header.column.getIsResizing() ? 'var(--accent-color)' : 'transparent',
+                            height: '60%',
+                            backgroundColor: header.column.getIsResizing() ? 'var(--accent-color)' : 'var(--border-light, #cbd5e1)',
                             borderRadius: '2px',
                             transition: 'background-color 0.15s ease'
                           }}
