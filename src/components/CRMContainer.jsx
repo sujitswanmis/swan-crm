@@ -2489,7 +2489,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.535'}
+                    v{pkg.version || '1.0.536'}
                   </span>
                 </div>
               </div>
@@ -3520,22 +3520,6 @@ export default function CRMContainer({
                   {activeTab === 'admin_message_config' && 'Admin Messaging Config'}
                   {activeTab === 'settings' && 'Enterprise Settings'}
                 </h1>
-                
-                <span className="desktop-only" style={{ 
-                  fontSize: '0.66rem', 
-                  padding: '0.15rem 0.5rem', 
-                  borderRadius: '9999px', 
-                  background: (userRole === 'admin' || userRole === 'Admin') ? 'rgba(245, 158, 11, 0.12)' : 'rgba(37, 99, 235, 0.12)', 
-                  color: (userRole === 'admin' || userRole === 'Admin') ? '#d97706' : 'var(--accent-color)', 
-                  border: (userRole === 'admin' || userRole === 'Admin') ? '1px solid rgba(245, 158, 11, 0.28)' : '1px solid rgba(37, 99, 235, 0.28)',
-                  textTransform: 'uppercase', 
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  flexShrink: 0,
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-                }}>
-                  {userRole}
-                </span>
               </div>
             )}
 
@@ -3641,12 +3625,12 @@ export default function CRMContainer({
 
             {/* Admin Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin') && (
-              <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.25rem' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Company:</span>
+              <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', marginRight: '0.25rem' }}>
                 <select 
                   value={adminCompanyFilter} 
                   onChange={(e) => setAdminCompanyFilter(e.target.value)}
-                  style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' }}
+                  title="Filter by Company"
+                  style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none', cursor: 'pointer' }}
                 >
                   <option value="All">All Companies</option>
                   <option value="NSMLR">NSMLR</option>
