@@ -535,12 +535,35 @@ export default function CRMContainer({
     const saved = localStorage.getItem('crm_config');
     let config = saved ? JSON.parse(saved) : {};
     
-    // If stages are missing or outdated (e.g. conversion stage doesn't have 20+ substages), force update
-    if (!config.stages || config.stages.length === 0 || (config.stages[5]?.substages?.length || 0) < 20) {
+    // If stages are completely missing, initialize with defaultStages
+    if (!config.stages || !Array.isArray(config.stages) || config.stages.length === 0) {
       config.stages = defaultStages;
       localStorage.setItem('crm_config', JSON.stringify(config));
       window.dispatchEvent(new Event('crm_config_updated'));
     }
+
+    // Sync CRM & Lead Configurations from Supabase Database
+    fetch('/api/settings/crm-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.config) {
+          const currentLocal = localStorage.getItem('crm_config');
+          let merged = { ...data.config };
+          if (currentLocal) {
+            try {
+              const localParsed = JSON.parse(currentLocal);
+              if (localParsed.alertSound && !merged.alertSound) merged.alertSound = localParsed.alertSound;
+              if (localParsed.alertDuration && !merged.alertDuration) merged.alertDuration = localParsed.alertDuration;
+              if (localParsed.browserPushEnabled !== undefined && merged.browserPushEnabled === undefined) {
+                merged.browserPushEnabled = localParsed.browserPushEnabled;
+              }
+            } catch (err) {}
+          }
+          localStorage.setItem('crm_config', JSON.stringify(merged));
+          window.dispatchEvent(new CustomEvent('crm_config_updated', { detail: merged }));
+        }
+      })
+      .catch(err => console.warn('Failed to sync CRM config from Supabase:', err));
 
     // Sync Page Navigation Settings from Database
     fetch('/api/settings/page-navigation')
@@ -2537,7 +2560,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.542'}
+                    v{pkg.version || '1.0.543'}
                   </span>
                 </div>
               </div>

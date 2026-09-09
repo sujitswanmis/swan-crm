@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Settings2, Plus, Trash2, Save, ChevronUp, ChevronDown, PlayCircle } from 'lucide-react';
+import { Settings2, Plus, Trash2, Save, ChevronUp, ChevronDown, PlayCircle, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { logAuditAction } from '@/app/actions/audit';
 
 export default function CRMConfig() {
   const [loading, setLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
+  const [saveStatus, setSaveStatus] = useState(null); // 'success' | 'error' | null
+  const [saveMessage, setSaveMessage] = useState('');
   const [activeSubTab, setActiveSubTab] = useState('stages');
   
   const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
@@ -33,59 +36,126 @@ export default function CRMConfig() {
   const [assignmentRule, setAssignmentRule] = useState('round_robin');
   const [leadSyncChunkSize, setLeadSyncChunkSize] = useState('500');
 
-  // Load from LocalStorage on mount
+  // Load from LocalStorage immediately for instant render, then fetch source of truth from Supabase
   useEffect(() => {
-    const saved = localStorage.getItem('crm_config');
-    let needsForceUpdate = false;
-    
-    if (saved) {
-      try {
+    let isMounted = true;
+
+    // 1. Initial immediate load from localStorage
+    try {
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.stages) {
-          // Force update if the old stages are still present (Conversion stage < 20 substages)
-          if (parsed.stages[5] && parsed.stages[5].substages && parsed.stages[5].substages.length < 20) {
-            needsForceUpdate = true;
-          } else {
-            setStages(parsed.stages);
-          }
+        if (parsed.stages && Array.isArray(parsed.stages) && parsed.stages.length > 0) {
+          setStages(parsed.stages);
         }
-        if (parsed.sources) setSources(parsed.sources);
-        if (parsed.clientStatuses) setClientStatuses(parsed.clientStatuses);
-        if (parsed.priorities) setPriorities(parsed.priorities);
+        if (parsed.sources && Array.isArray(parsed.sources) && parsed.sources.length > 0) setSources(parsed.sources);
+        if (parsed.clientStatuses && Array.isArray(parsed.clientStatuses) && parsed.clientStatuses.length > 0) setClientStatuses(parsed.clientStatuses);
+        if (parsed.priorities && Array.isArray(parsed.priorities) && parsed.priorities.length > 0) setPriorities(parsed.priorities);
         if (parsed.assignmentRule) setAssignmentRule(parsed.assignmentRule);
         if (parsed.leadSyncChunkSize) setLeadSyncChunkSize(parsed.leadSyncChunkSize);
-      } catch (e) { console.error(e); }
+      }
+    } catch (e) {
+      console.error('Error reading crm_config from localStorage:', e);
     }
-    
-    if (needsForceUpdate || !saved) {
-      handleSave(stages);
-    }
+
+    // 2. Fetch latest source-of-truth from Supabase
+    fetch('/api/settings/crm-config')
+      .then(res => res.json())
+      .then(data => {
+        if (!isMounted || !data?.config) return;
+        const cfg = data.config;
+        if (cfg.stages && Array.isArray(cfg.stages) && cfg.stages.length > 0) setStages(cfg.stages);
+        if (cfg.sources && Array.isArray(cfg.sources) && cfg.sources.length > 0) setSources(cfg.sources);
+        if (cfg.clientStatuses && Array.isArray(cfg.clientStatuses) && cfg.clientStatuses.length > 0) setClientStatuses(cfg.clientStatuses);
+        if (cfg.priorities && Array.isArray(cfg.priorities) && cfg.priorities.length > 0) setPriorities(cfg.priorities);
+        if (cfg.assignmentRule) setAssignmentRule(cfg.assignmentRule);
+        if (cfg.leadSyncChunkSize) setLeadSyncChunkSize(cfg.leadSyncChunkSize);
+
+        // Sync back to localStorage so other tabs / components have latest Supabase data
+        try {
+          const currentSaved = localStorage.getItem('crm_config');
+          const localParsed = currentSaved ? JSON.parse(currentSaved) : {};
+          const merged = { ...localParsed, ...cfg };
+          localStorage.setItem('crm_config', JSON.stringify(merged));
+          window.dispatchEvent(new CustomEvent('crm_config_updated', { detail: merged }));
+        } catch (err) {}
+      })
+      .catch(err => {
+        console.warn('Failed to fetch CRM config from Supabase:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsFetching(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    const config = { sources, stages, clientStatuses, priorities, assignmentRule, leadSyncChunkSize };
-    
-    // Preserve existing alertSound/Duration if present
-    const saved = localStorage.getItem('crm_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.alertSound) config.alertSound = parsed.alertSound;
-      if (parsed.alertDuration) config.alertDuration = parsed.alertDuration;
-    }
-    
-    localStorage.setItem('crm_config', JSON.stringify(config));
-    
-    // Dispatch event so other components know to update immediately
-    window.dispatchEvent(new Event('crm_config_updated'));
+    setSaveStatus(null);
+    setSaveMessage('');
 
+    const config = {
+      sources,
+      stages,
+      clientStatuses,
+      priorities,
+      assignmentRule,
+      leadSyncChunkSize,
+      is_customized: true,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Preserve existing client preferences if present
     try {
-      logAuditAction('Update CRM Config', 'Updated CRM pipeline stages, sources, and priorities configuration');
-    } catch (e) {
-      console.error('Audit Log failed', e);
-    }
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.alertSound) config.alertSound = parsed.alertSound;
+        if (parsed.alertDuration) config.alertDuration = parsed.alertDuration;
+        if (parsed.browserPushEnabled !== undefined) config.browserPushEnabled = parsed.browserPushEnabled;
+        if (parsed.confirmStageChange !== undefined) config.confirmStageChange = parsed.confirmStageChange;
+      }
+    } catch (e) {}
+    
+    // Optimistically update localStorage and notify all active modules
+    localStorage.setItem('crm_config', JSON.stringify(config));
+    window.dispatchEvent(new CustomEvent('crm_config_updated', { detail: config }));
 
-    setTimeout(() => setLoading(false), 500);
+    // Persist permanently to Supabase via API
+    try {
+      const res = await fetch('/api/settings/crm-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || 'Failed to save configuration to Supabase database');
+      }
+
+      setSaveStatus('success');
+      setSaveMessage('Saved permanently to Supabase!');
+
+      try {
+        logAuditAction('Update CRM Config', 'Updated CRM pipeline stages, sources, client statuses, priorities, assignment rules, and sync settings in Supabase');
+      } catch (e) {
+        console.error('Audit Log failed', e);
+      }
+    } catch (err) {
+      console.error('Error saving CRM config to Supabase:', err);
+      setSaveStatus('error');
+      setSaveMessage(err.message || 'Error saving to Supabase');
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        setSaveStatus(null);
+      }, 4000);
+    }
   };
 
   const moveItem = (array, setArray, index, direction) => {
@@ -150,12 +220,25 @@ export default function CRMConfig() {
           </h2>
           <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Customize how leads flow into and move through your CRM.</p>
         </div>
-        <button 
-          onClick={handleSave} disabled={loading}
-          style={{ padding: '0.75rem 2rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
-        >
-          <Save size={18} /> {loading ? 'Saving...' : 'Save & Update'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {saveStatus === 'success' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#16a34a', fontSize: '0.9rem', fontWeight: 600, background: 'rgba(22, 163, 74, 0.1)', padding: '0.5rem 0.85rem', borderRadius: '6px' }}>
+              <CheckCircle2 size={16} /> {saveMessage}
+            </div>
+          )}
+          {saveStatus === 'error' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#dc2626', fontSize: '0.9rem', fontWeight: 600, background: 'rgba(220, 38, 38, 0.1)', padding: '0.5rem 0.85rem', borderRadius: '6px' }}>
+              <AlertCircle size={16} /> {saveMessage}
+            </div>
+          )}
+          <button 
+            onClick={handleSave} disabled={loading}
+            style={{ padding: '0.75rem 2rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
+          >
+            {loading ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={18} />}
+            {loading ? 'Saving to Supabase...' : 'Save & Update'}
+          </button>
+        </div>
       </div>
 
       {/* Submenu Tabs */}
