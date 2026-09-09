@@ -6,7 +6,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2 } from 'lucide-react';
+import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 
 // Standard 7 CRM Stages Fallback Definition
@@ -305,7 +305,13 @@ export default function LeadProfilePanel({
   userRole,
   userId,
   teamMembers = [],
-  stages: propStages
+  stages: propStages,
+  onNextLead,
+  onPrevLead,
+  hasNextLead = false,
+  hasPrevLead = false,
+  currentLeadIndex,
+  totalLeadsCount
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
@@ -350,6 +356,32 @@ export default function LeadProfilePanel({
     if (onLeadUpdate) onLeadUpdate(updatedLeadObj);
     if (onUpdateLead) onUpdateLead(updatedLeadObj);
   };
+
+  // Keyboard navigation: Alt+Left / Alt+Right for Prev/Next lead, Esc to close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e) => {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (hasPrevLead && onPrevLead) onPrevLead();
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (hasNextLead && onNextLead) onNextLead();
+      } else if (!isInput && e.key === 'ArrowLeft') {
+        if (hasPrevLead && onPrevLead) onPrevLead();
+      } else if (!isInput && e.key === 'ArrowRight') {
+        if (hasNextLead && onNextLead) onNextLead();
+      } else if (e.key === 'Escape') {
+        if (onClose) onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, hasNextLead, hasPrevLead, onNextLead, onPrevLead, onClose]);
 
   useEffect(() => {
     if (lead?.status) {
@@ -773,10 +805,16 @@ export default function LeadProfilePanel({
     setCurrentBuyingTimeline(lead.buying_timeline || '');
     setSavingField(null);
     setSavedFieldSuccess(null);
+    setNewNote('');
+    setStatusForNewNote('');
+    setInterimTranscript('');
+    setCallLogs([]);
 
     // Immediately seed with existing notes
     if (Array.isArray(lead.lead_notes)) {
       setNotes([...lead.lead_notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+    } else {
+      setNotes([]);
     }
 
     // Set initial mode
@@ -1185,35 +1223,199 @@ export default function LeadProfilePanel({
   if (!isOpen || !lead) return null;
 
   return (
-    <>
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 999 }} onClick={onClose} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '420px', maxWidth: '96vw', backgroundColor: 'var(--bg-surface)', zIndex: 1000, boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
-        
-        {/* Header */}
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          {isEditing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, marginRight: '1rem' }}>
-              <input name="name" value={editForm.name} onChange={handleEditChange} style={{ fontSize: '1.25rem', fontWeight: 600, padding: '0.25rem' }} />
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input name="company" value={editForm.company} onChange={handleEditChange} placeholder="Company" style={{ padding: '0.25rem', width: '50%' }} />
-                <input name="phone" value={editForm.phone} onChange={handleEditChange} placeholder="Phone" style={{ padding: '0.25rem', width: '50%' }} />
+    <div 
+      style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+          backdropFilter: 'blur(4px)', 
+          zIndex: 9999, 
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          animation: 'fadeInLeadModal 0.2s ease-out'
+        }} 
+        onClick={onClose}
+      >
+        {/* Centered Modal Card */}
+        <div 
+          style={{ 
+            width: 'min(980px, 96vw)', 
+            height: 'min(860px, 92vh)', 
+            backgroundColor: 'var(--bg-surface)', 
+            zIndex: 10000, 
+            borderRadius: '16px',
+            boxShadow: '0 25px 60px -15px rgba(0,0,0,0.35)', 
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: 'hidden',
+            border: '1px solid var(--border-light)',
+            animation: 'scaleInLeadModal 0.2s ease-out'
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header with Navigation Bar */}
+          <div style={{ 
+            padding: '0.85rem 1.25rem', 
+            borderBottom: '1px solid var(--border-light)', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            backgroundColor: 'var(--bg-surface)',
+            gap: '0.75rem',
+            flexWrap: 'wrap'
+          }}>
+            {isEditing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, marginRight: '0.5rem' }}>
+                <input name="name" value={editForm.name} onChange={handleEditChange} style={{ fontSize: '1.1rem', fontWeight: 600, padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input name="company" value={editForm.company} onChange={handleEditChange} placeholder="Company" style={{ padding: '0.25rem 0.5rem', width: '50%', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }} />
+                  <input name="phone" value={editForm.phone} onChange={handleEditChange} placeholder="Phone" style={{ padding: '0.25rem 0.5rem', width: '50%', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }} />
+                </div>
+                <input name="email" value={editForm.email} onChange={handleEditChange} placeholder="Email" style={{ padding: '0.25rem 0.5rem', width: '100%', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }} />
               </div>
-              <input name="email" value={editForm.email} onChange={handleEditChange} placeholder="Email" style={{ padding: '0.25rem', width: '100%' }} />
-            </div>
-          ) : (
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {lead.name}
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>{lead.company} | {lead.phone}</p>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{lead.email}</p>
-            </div>
-          )}
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem' }}><X size={20} color="var(--text-secondary)" /></button>
-        </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: '220px', flex: '1 1 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    {lead.name || 'Unnamed Lead'}
+                  </h2>
+                  {lead.lead_ref_id && (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '1px 7px', borderRadius: '9999px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
+                      REF: #{lead.lead_ref_id}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  {lead.company && <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.company}</span>}
+                  {lead.company && (lead.phone || lead.email) && <span>•</span>}
+                  {lead.phone && <span>📞 {lead.phone}</span>}
+                  {lead.email && (
+                    <>
+                      <span>•</span>
+                      <span>✉️ {lead.email}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
-        {/* Lead Info Details */}
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem' }}>
+            {/* Center: Next / Prev Navigation Controls */}
+            {(onNextLead || onPrevLead || totalLeadsCount > 0) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-primary)', padding: '3px 6px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <button
+                  type="button"
+                  onClick={onPrevLead}
+                  disabled={!hasPrevLead}
+                  title="Previous Lead (Alt + Left Arrow)"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '0.3rem 0.6rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: hasPrevLead ? 'var(--bg-surface)' : 'transparent',
+                    color: hasPrevLead ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    opacity: hasPrevLead ? 1 : 0.4,
+                    cursor: hasPrevLead ? 'pointer' : 'not-allowed',
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
+                    boxShadow: hasPrevLead ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <ChevronLeft size={14} />
+                  <span>Prev</span>
+                </button>
+
+                {totalLeadsCount > 0 && (
+                  <span style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    padding: '0 0.4rem',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    <b style={{ color: 'var(--accent-color)' }}>{currentLeadIndex || 1}</b> / {totalLeadsCount}
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onNextLead}
+                  disabled={!hasNextLead}
+                  title="Next Lead (Alt + Right Arrow)"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '0.3rem 0.6rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: hasNextLead ? 'var(--bg-surface)' : 'transparent',
+                    color: hasNextLead ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    opacity: hasNextLead ? 1 : 0.4,
+                    cursor: hasNextLead ? 'pointer' : 'not-allowed',
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
+                    boxShadow: hasNextLead ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span>Next</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Right Action Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {mode !== 'history' && !isEditing && (
+                <button 
+                  onClick={() => setIsEditing(true)} 
+                  style={{ padding: '0.3rem 0.65rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                >
+                  ✏️ Edit
+                </button>
+              )}
+              {isEditing && (
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button onClick={() => { setIsEditing(false); if(mode==='edit') onClose(); }} style={{ padding: '0.3rem 0.65rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.76rem' }}>Cancel</button>
+                  <button onClick={handleSaveEdit} style={{ padding: '0.3rem 0.65rem', border: 'none', background: 'var(--accent-color)', color: 'white', borderRadius: '6px', cursor: 'pointer', fontSize: '0.76rem' }}>Save</button>
+                </div>
+              )}
+              <button 
+                onClick={onClose} 
+                title="Close (Esc)" 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.35rem', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}
+              >
+                <X size={19} />
+              </button>
+            </div>
+          </div>
+
+          {/* Modal 2-Column Responsive Body */}
+          <div className="lead-modal-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            
+            {/* LEFT COLUMN: Parameters & Requirements */}
+            <div className="lead-modal-left" style={{ 
+              width: '45%', 
+              maxWidth: '440px', 
+              minWidth: '320px', 
+              borderRight: '1px solid var(--border-light)', 
+              overflowY: 'auto', 
+              padding: '1.25rem', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '0.75rem', 
+              backgroundColor: 'var(--bg-primary)',
+              fontSize: '0.85rem'
+            }}>
           
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
             {isEditing ? (
@@ -1617,16 +1819,23 @@ export default function LeadProfilePanel({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light, #e2e8f0)' }}>
               <div>Value: <b style={{ color: 'var(--text-primary)' }}>₹{lead.deal_value || 0}</b></div>
               <div>Source: <b style={{ color: 'var(--text-primary)' }}>{lead.source || 'N/A'}</b></div>
-              <div>Company: <b style={{ color: 'var(--text-primary)' }}>{lead.our_company || 'Unassigned'}</b></div>
             </div>
           )}
         </div>
 
-        {/* Show Notes Section only if mode is history or not editing */}
-        {(!isEditing || mode === 'history') && (
-          <>
-            {/* Notes & Call History Section */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* RIGHT COLUMN: Interaction History & Notes Composer */}
+          <div className="lead-modal-right" style={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            overflow: 'hidden', 
+            backgroundColor: 'var(--bg-surface)' 
+          }}>
+            {/* Show Notes Section only if mode is history or not editing */}
+            {(!isEditing || mode === 'history') && (
+              <>
+                {/* Notes & Call History Section */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                   Interaction & Call History
@@ -1980,6 +2189,35 @@ export default function LeadProfilePanel({
           </>
         )}
       </div>
-    </>
+    </div>
+
+    <style>{`
+      @keyframes fadeInLeadModal {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes scaleInLeadModal {
+        from { opacity: 0; transform: scale(0.96); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      @media (max-width: 768px) {
+        .lead-modal-body {
+          flex-direction: column !important;
+          overflow-y: auto !important;
+        }
+        .lead-modal-left {
+          width: 100% !important;
+          max-width: 100% !important;
+          border-right: none !important;
+          border-bottom: 1px solid var(--border-light) !important;
+        }
+        .lead-modal-right {
+          width: 100% !important;
+          overflow: visible !important;
+        }
+      }
+    `}</style>
+  </div>
+</div>
   );
 }

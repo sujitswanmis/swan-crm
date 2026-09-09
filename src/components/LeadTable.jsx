@@ -1672,6 +1672,39 @@ export default function LeadTable({
     };
   }, [table, columnVisibility, columnOrder]);
 
+  const filteredLeadRows = useMemo(() => {
+    try {
+      const rows = table.getFilteredRowModel().rows;
+      return rows && rows.length > 0 ? rows.map(r => r.original) : (data || []);
+    } catch (e) {
+      return data || [];
+    }
+  }, [table, data]);
+
+  const selectedLeadIndex = useMemo(() => {
+    if (!selectedLead || !filteredLeadRows || filteredLeadRows.length === 0) return -1;
+    return filteredLeadRows.findIndex(l => l.id === selectedLead.id);
+  }, [selectedLead, filteredLeadRows]);
+
+  const hasPrevLead = selectedLeadIndex > 0;
+  const hasNextLead = selectedLeadIndex >= 0 && selectedLeadIndex < filteredLeadRows.length - 1;
+
+  const handlePrevLead = () => {
+    if (selectedLeadIndex > 0) {
+      const prevRaw = filteredLeadRows[selectedLeadIndex - 1];
+      const processed = processLeads([prevRaw], teamMembers)[0] || prevRaw;
+      setSelectedLead(processed);
+    }
+  };
+
+  const handleNextLead = () => {
+    if (selectedLeadIndex >= 0 && selectedLeadIndex < filteredLeadRows.length - 1) {
+      const nextRaw = filteredLeadRows[selectedLeadIndex + 1];
+      const processed = processLeads([nextRaw], teamMembers)[0] || nextRaw;
+      setSelectedLead(processed);
+    }
+  };
+
   if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
     return (
       <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
@@ -1707,6 +1740,12 @@ export default function LeadTable({
               setData(curr => curr.map(item => item.id === updatedLead.id ? { ...item, ...updatedLead } : item));
               if (onLeadsChange) onLeadsChange(updatedLead);
             }}
+            onNextLead={handleNextLead}
+            onPrevLead={handlePrevLead}
+            hasNextLead={hasNextLead}
+            hasPrevLead={hasPrevLead}
+            currentLeadIndex={selectedLeadIndex >= 0 ? selectedLeadIndex + 1 : 1}
+            totalLeadsCount={filteredLeadRows.length}
           />
         )}
       </div>
@@ -2674,6 +2713,12 @@ export default function LeadTable({
                onLeadsChange(processed);
              }
           }}
+          onNextLead={handleNextLead}
+          onPrevLead={handlePrevLead}
+          hasNextLead={hasNextLead}
+          hasPrevLead={hasPrevLead}
+          currentLeadIndex={selectedLeadIndex >= 0 ? selectedLeadIndex + 1 : 1}
+          totalLeadsCount={filteredLeadRows.length}
         />
       )}
     </div>
