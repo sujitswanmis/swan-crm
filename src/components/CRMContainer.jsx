@@ -627,7 +627,34 @@ export default function CRMContainer({
     }));
   };
   
-  const [currentTheme, setCurrentTheme] = useState('default');
+  const [currentTheme, setCurrentTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm-theme');
+        if (saved) return saved;
+        const match = document.cookie.match(/(^|;\s*)crm-theme=([^;]+)/);
+        if (match) return decodeURIComponent(match[2]);
+      } catch (e) {}
+    }
+    return 'default';
+  });
+
+  const applyTheme = (themeId) => {
+    setCurrentTheme(themeId);
+    if (typeof window !== 'undefined') {
+      try {
+        const classList = document.documentElement.classList;
+        const themeClasses = Array.from(classList).filter(c => c.startsWith('theme-'));
+        themeClasses.forEach(c => classList.remove(c));
+        if (themeId && themeId !== 'default') {
+          classList.add(themeId);
+        }
+        localStorage.setItem('crm-theme', themeId);
+        document.cookie = `crm-theme=${themeId}; path=/; max-age=31536000; SameSite=Lax`;
+      } catch (e) {}
+    }
+  };
+
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const themeMenuRef = useRef(null);
   const notificationMenuRef = useRef(null);
@@ -638,8 +665,12 @@ export default function CRMContainer({
 
   // Load and apply theme & avatar
   useEffect(() => {
-    const savedTheme = localStorage.getItem('crm-theme') || 'default';
-    setCurrentTheme(savedTheme);
+    try {
+      const savedTheme = localStorage.getItem('crm-theme') || 'default';
+      if (savedTheme !== currentTheme) {
+        setCurrentTheme(savedTheme);
+      }
+    } catch (e) {}
     
     if (initialAvatar) {
       setUserAvatar(initialAvatar);
@@ -671,11 +702,17 @@ export default function CRMContainer({
   }, [initialAvatar, userId]);
 
   useEffect(() => {
-    document.documentElement.className = '';
-    if (currentTheme !== 'default') {
-      document.documentElement.classList.add(currentTheme);
-    }
-    localStorage.setItem('crm-theme', currentTheme);
+    if (typeof window === 'undefined') return;
+    try {
+      const classList = document.documentElement.classList;
+      const themeClasses = Array.from(classList).filter(c => c.startsWith('theme-'));
+      themeClasses.forEach(c => classList.remove(c));
+      if (currentTheme && currentTheme !== 'default') {
+        classList.add(currentTheme);
+      }
+      localStorage.setItem('crm-theme', currentTheme);
+      document.cookie = `crm-theme=${currentTheme}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch (e) {}
   }, [currentTheme]);
 
   // Click outside for all top header dropdowns (desktop + mobile touch)
@@ -2489,7 +2526,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.540'}
+                    v{pkg.version || '1.0.541'}
                   </span>
                 </div>
               </div>
@@ -4603,7 +4640,7 @@ export default function CRMContainer({
                       <button
                         key={theme.id}
                         onClick={() => {
-                          setCurrentTheme(theme.id);
+                          applyTheme(theme.id);
                           setShowThemeMenu(false);
                         }}
                         style={{
@@ -4874,7 +4911,7 @@ export default function CRMContainer({
                         <span style={{ color: 'var(--text-secondary)' }}>Theme</span>
                         <select
                           value={currentTheme}
-                          onChange={(e) => setCurrentTheme(e.target.value)}
+                          onChange={(e) => applyTheme(e.target.value)}
                           style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none' }}
                         >
                           {THEMES.map(t => (

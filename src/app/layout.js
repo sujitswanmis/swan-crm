@@ -43,6 +43,25 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="SuPuja Creations" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <script
+          id="theme-initializer"
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('crm-theme');
+                  if (!theme) {
+                    var m = document.cookie.match(/(^|;\\s*)crm-theme=([^;]+)/);
+                    if (m) theme = decodeURIComponent(m[2]);
+                  }
+                  if (theme && theme !== 'default') {
+                    document.documentElement.classList.add(theme);
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
         {children}
