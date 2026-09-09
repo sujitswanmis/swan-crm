@@ -345,11 +345,12 @@ export default function LeadProfilePanel({
 
   // Voice-to-Text (Speech Recognition) states
   const [isListening, setIsListening] = useState(false);
-  const [speechLang, setSpeechLang] = useState('en-IN'); // 'en-IN' (English/Hinglish) or 'hi-IN' (Hindi)
+  const [speechLang, setSpeechLang] = useState('en-US'); // 'en-US' (English) or 'hi-IN' (Hindi)
   const [interimTranscript, setInterimTranscript] = useState('');
   const [speechError, setSpeechError] = useState(null);
   const [listeningTarget, setListeningTarget] = useState('note'); // 'note' | 'requirement'
   const listeningTargetRef = useRef('note');
+  const latestInterimRef = useRef('');
   const recognitionRef = useRef(null);
 
   const notifyLeadUpdate = (updatedLeadObj) => {
@@ -429,130 +430,151 @@ export default function LeadProfilePanel({
     }
   }, [propStages]);
 
-  // Speech Recognition Initializer & Listener
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = speechLang;
-
-          recognition.onstart = () => {
-            setIsListening(true);
-            setSpeechError(null);
-          };
-
-          recognition.onresult = (event) => {
-            let finalChunk = '';
-            let interimChunk = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript;
-              if (event.results[i].isFinal) {
-                finalChunk += transcript;
-              } else {
-                interimChunk += transcript;
-              }
-            }
-            if (finalChunk) {
-              if (listeningTargetRef.current === 'requirement') {
-                setCurrentRequirement(prev => {
-                  const trimmed = (prev || '').trim();
-                  return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
-                });
-              } else {
-                setNewNote(prev => {
-                  const trimmed = (prev || '').trim();
-                  return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
-                });
-              }
-            }
-            setInterimTranscript(interimChunk);
-          };
-
-          recognition.onerror = (e) => {
-            console.warn('SpeechRecognition error:', e.error);
-            if (e.error === 'not-allowed') {
-              setSpeechError('Microphone permission denied. Allow mic in browser.');
-            } else if (e.error !== 'no-speech') {
-              setSpeechError(`Voice error: ${e.error}`);
-            }
-            setIsListening(false);
-            setInterimTranscript('');
-          };
-
-          recognition.onend = () => {
-            setIsListening(false);
-            setInterimTranscript('');
-          };
-
-          recognitionRef.current = recognition;
-        } catch (err) {
-          console.warn('SpeechRecognition initialization error:', err);
-        }
-      }
+  // Robust Speech Recognition Controller
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
     }
 
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+    // Immediately commit any pending interim transcript so nothing is lost
+    if (latestInterimRef.current) {
+      const pending = latestInterimRef.current.trim();
+      if (pending) {
+        if (listeningTargetRef.current === 'requirement') {
+          setCurrentRequirement(prev => {
+            const t = (prev || '').trim();
+            return t ? `${t} ${pending}` : pending;
+          });
+        } else {
+          setNewNote(prev => {
+            const t = (prev || '').trim();
+            return t ? `${t} ${pending}` : pending;
+          });
+        }
       }
-    };
-  }, [speechLang]);
+      latestInterimRef.current = '';
+    }
 
-  const toggleSpeechRecognition = (target = 'note') => {
+    setIsListening(false);
+    setInterimTranscript('');
+  };
+
+  const startListening = (target = 'note', langToUse = speechLang) => {
     if (typeof window === 'undefined') return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Voice dictation is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Safari.');
+      alert('Voice dictation is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
       return;
     }
 
-    if (isListening) {
-      const wasSameTarget = listeningTargetRef.current === target;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
-      }
-      setIsListening(false);
-      setInterimTranscript('');
+    // Stop previous instance before initializing fresh one
+    stopListening();
 
-      if (!wasSameTarget) {
-        listeningTargetRef.current = target;
-        setListeningTarget(target);
-        setTimeout(() => {
-          if (recognitionRef.current) {
-            try {
-              recognitionRef.current.lang = speechLang;
-              recognitionRef.current.start();
-              setIsListening(true);
-            } catch (err) {
-              console.warn('Could not restart speech recognition for target:', err);
-            }
-          }
-        }, 200);
-      }
-    } else {
-      setSpeechError(null);
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = langToUse || 'en-US';
+
       listeningTargetRef.current = target;
       setListeningTarget(target);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.lang = speechLang;
-          recognitionRef.current.start();
-          setIsListening(true);
-        } catch (err) {
-          console.warn('Could not start speech recognition:', err);
-          setIsListening(false);
+      setSpeechError(null);
+      latestInterimRef.current = '';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event) => {
+        let finalChunk = '';
+        let interimChunk = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalChunk += transcript;
+          } else {
+            interimChunk += transcript;
+          }
         }
-      }
+
+        if (finalChunk) {
+          latestInterimRef.current = '';
+          if (listeningTargetRef.current === 'requirement') {
+            setCurrentRequirement(prev => {
+              const trimmed = (prev || '').trim();
+              return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
+            });
+          } else {
+            setNewNote(prev => {
+              const trimmed = (prev || '').trim();
+              return trimmed ? `${trimmed} ${finalChunk.trim()}` : finalChunk.trim();
+            });
+          }
+        } else {
+          latestInterimRef.current = interimChunk;
+        }
+
+        setInterimTranscript(interimChunk);
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('SpeechRecognition error:', e.error);
+        if (e.error === 'not-allowed') {
+          setSpeechError('Microphone permission denied. Please allow microphone in your browser settings.');
+        } else if (e.error !== 'no-speech') {
+          setSpeechError(`Voice error: ${e.error}`);
+        }
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn('Could not start speech recognition:', err);
+      setSpeechError('Failed to initialize microphone.');
+      setIsListening(false);
     }
   };
+
+  const toggleSpeechRecognition = (target = 'note') => {
+    if (isListening && listeningTargetRef.current === target) {
+      stopListening();
+    } else {
+      startListening(target, speechLang);
+    }
+  };
+
+  const toggleSpeechLanguage = () => {
+    const nextLang = speechLang.startsWith('en') ? 'hi-IN' : 'en-US';
+    setSpeechLang(nextLang);
+    if (isListening) {
+      startListening(listeningTargetRef.current, nextLang);
+    }
+  };
+
+  // Stop listening when modal closes or unmounts
+  useEffect(() => {
+    return () => {
+      stopListening();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopListening();
+    }
+  }, [isOpen]);
 
   const handleStatusUpdate = async (newStatus) => {
     if (!newStatus || isUpdatingStatus || !lead?.id) return;
@@ -646,16 +668,10 @@ export default function LeadProfilePanel({
   const handleAttributeUpdate = async (fieldKey, newValue, displayLabel) => {
     if (!lead || !lead.id || !fieldKey) return;
 
-    const currentVal = (
-      fieldKey === 'client_status' ? currentClientStatus :
-      fieldKey === 'priority' ? currentPriority :
-      fieldKey === 'business_type' ? currentBusinessType :
-      fieldKey === 'requirement' ? currentRequirement :
-      fieldKey === 'investment' ? currentInvestment :
-      fieldKey === 'buying_timeline' ? currentBuyingTimeline : null
-    );
+    const storedVal = (lead[fieldKey] !== undefined && lead[fieldKey] !== null) ? String(lead[fieldKey]).trim() : '';
+    const cleanNewVal = (newValue !== undefined && newValue !== null) ? String(newValue).trim() : '';
 
-    if (currentVal === newValue && savingField !== fieldKey) return;
+    if (storedVal === cleanNewVal && savingField !== fieldKey) return;
 
     if (fieldKey === 'client_status') setCurrentClientStatus(newValue);
     else if (fieldKey === 'priority') setCurrentPriority(newValue);
@@ -1218,7 +1234,6 @@ export default function LeadProfilePanel({
           padding: '1rem',
           animation: 'fadeInLeadModal 0.2s ease-out'
         }} 
-        onClick={onClose}
       >
         {/* Centered Modal Card */}
         <div 
@@ -1681,6 +1696,26 @@ export default function LeadProfilePanel({
                 {savedFieldSuccess === 'requirement' && <Check size={12} color="#10b981" title="Saved!" />}
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {/* Voice Language Toggle (EN / HI) */}
+                <button
+                  type="button"
+                  onClick={toggleSpeechLanguage}
+                  title={`Click to switch speech language (Current: ${speechLang.startsWith('en') ? 'English' : 'Hindi'})`}
+                  style={{
+                    fontSize: '0.66rem',
+                    fontWeight: 700,
+                    padding: '2px 5px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light, #e2e8f0)',
+                    backgroundColor: speechLang === 'hi-IN' ? '#fef3c7' : 'var(--bg-primary, #f8fafc)',
+                    color: speechLang === 'hi-IN' ? '#b45309' : 'var(--accent-color, #2563eb)',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  {speechLang.startsWith('en') ? 'EN' : 'HI'}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => toggleSpeechRecognition('requirement')}
@@ -2090,16 +2125,16 @@ export default function LeadProfilePanel({
                 {/* Voice Language Toggle (EN / HI) */}
                 <button
                   type="button"
-                  onClick={() => setSpeechLang(prev => prev === 'en-IN' ? 'hi-IN' : 'en-IN')}
-                  title={`Click to switch speech language (Current: ${speechLang === 'en-IN' ? 'English / Hinglish' : 'Hindi'})`}
+                  onClick={toggleSpeechLanguage}
+                  title={`Click to switch speech language (Current: ${speechLang.startsWith('en') ? 'English' : 'Hindi'})`}
                   style={{
                     fontSize: '0.68rem',
                     fontWeight: 700,
                     padding: '0 0.45rem',
                     borderRadius: '6px',
                     border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: 'var(--accent-color)',
+                    backgroundColor: speechLang === 'hi-IN' ? '#fef3c7' : 'var(--bg-surface)',
+                    color: speechLang === 'hi-IN' ? '#b45309' : 'var(--accent-color)',
                     cursor: 'pointer',
                     height: '38px',
                     display: 'inline-flex',
@@ -2108,7 +2143,7 @@ export default function LeadProfilePanel({
                     userSelect: 'none'
                   }}
                 >
-                  {speechLang === 'en-IN' ? 'EN' : 'HI'}
+                  {speechLang.startsWith('en') ? 'EN' : 'HI'}
                 </button>
 
                 {/* Microphone Toggle Button */}
