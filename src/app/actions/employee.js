@@ -33,13 +33,14 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
         const status = u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active';
         if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return;
 
-        employeeMap.set(email, {
+        const empObj = {
           id: u.user_id || u.id || email,
           user_id: u.user_id || u.id,
           emp_code: u.emp_id || u.emp_code || '',
           emp_name: name,
           name: name,
           email: email,
+          emp_official_mail_id: u.emp_official_mail_id || '',
           department: u.emp_department || u.department || 'General',
           emp_department: u.emp_department || u.department || 'General',
           designation: u.emp_designation || u.designation || u.role || 'Staff',
@@ -49,7 +50,17 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
           primary_reporting_person: u.primary_reporting_person || '',
           secondary_reporting_person: u.secondary_reporting_person || '',
           hod_person: u.hod_person || ''
-        });
+        };
+
+        employeeMap.set(email, empObj);
+
+        const officialEmail = (u.emp_official_mail_id || '').trim().toLowerCase();
+        if (officialEmail && officialEmail !== email && !employeeMap.has(officialEmail)) {
+          employeeMap.set(officialEmail, {
+            ...empObj,
+            email: officialEmail
+          });
+        }
       });
     }
   } catch (e) {

@@ -384,17 +384,54 @@ export default function ChecklistModule({
 
     const companyCompleted = companyScopeLogs.filter(l => l.status === 'COMPLETED').length;
 
+    // Helper to resolve clean display name from employee object
+    const getCleanEmpName = (emp) => {
+      if (!emp) return '';
+      const n = (emp.emp_name || emp.name || '').trim();
+      if (n && !n.includes('@')) return n;
+      const fl = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+      if (fl && !fl.includes('@')) return fl;
+      return n || '';
+    };
+
+    // Helper to find employee by any email alias
+    const findEmployeeRecord = (emailStr) => {
+      if (!emailStr || !Array.isArray(employeesList) || employeesList.length === 0) return null;
+      const target = emailStr.toLowerCase().trim();
+      return employeesList.find(p => {
+        const pEmail = (p.email || '').toLowerCase().trim();
+        const pOffEmail = (p.emp_official_mail_id || '').toLowerCase().trim();
+        const pWorkEmail = (p.work_email || '').toLowerCase().trim();
+        return pEmail === target || pOffEmail === target || pWorkEmail === target;
+      });
+    };
+
     // Build comprehensive map of all assigned employees from templates & master list
     const empMap = new Map();
 
     // First, populate all active employees from employeesList
     (employeesList || []).forEach(emp => {
       const eEmail = (emp.email || '').toLowerCase().trim();
+      const offEmail = (emp.emp_official_mail_id || '').toLowerCase().trim();
+      const cleanName = getCleanEmpName(emp) || eEmail;
+      const dept = emp.emp_department || emp.department || 'General';
+
       if (eEmail) {
         empMap.set(eEmail, {
           email: eEmail,
-          name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || eEmail,
-          department: emp.department || 'General',
+          name: cleanName,
+          department: dept,
+          assigned: 0,
+          completedOnTime: 0,
+          completedLate: 0,
+          completed: 0
+        });
+      }
+      if (offEmail && offEmail !== eEmail && !empMap.has(offEmail)) {
+        empMap.set(offEmail, {
+          email: offEmail,
+          name: cleanName,
+          department: dept,
           assigned: 0,
           completedOnTime: 0,
           completedLate: 0,
@@ -406,6 +443,7 @@ export default function ChecklistModule({
     // Calculate assigned slots per employee from active templates
     (templates || []).filter(t => t.is_active !== false).forEach(t => {
       const rawEmails = (t.assigned_employee_email || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      const rawNames = (t.assigned_employee_name || '').split(',').map(n => n.trim()).filter(Boolean);
       const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0) ? t.daily_slots.length : (t.daily_repetition_count || 1);
 
       if (t.assigned_type === 'ALL') {
@@ -413,19 +451,30 @@ export default function ChecklistModule({
           val.assigned += slotsCount;
         });
       } else {
-        rawEmails.forEach(e => {
+        rawEmails.forEach((e, idx) => {
+          const matchedP = findEmployeeRecord(e);
+          const fallbackName = (rawNames[idx] && !rawNames[idx].includes('@')) ? rawNames[idx] : '';
+          const name = (matchedP ? getCleanEmpName(matchedP) : '') || fallbackName || e;
+          const dept = matchedP?.emp_department || matchedP?.department || t.department || 'General';
+
           if (!empMap.has(e)) {
-            const matchedP = (employeesList || []).find(p => (p.email || '').toLowerCase().trim() === e);
-            const name = matchedP ? `${matchedP.first_name || ''} ${matchedP.last_name || ''}`.trim() : e;
             empMap.set(e, {
               email: e,
-              name: name || e,
-              department: matchedP?.department || t.department || 'General',
+              name: name,
+              department: dept,
               assigned: 0,
               completedOnTime: 0,
               completedLate: 0,
               completed: 0
             });
+          } else {
+            const existing = empMap.get(e);
+            if ((!existing.name || existing.name === e || existing.name.includes('@')) && name && !name.includes('@')) {
+              existing.name = name;
+            }
+            if ((!existing.department || existing.department === 'General') && dept && dept !== 'General') {
+              existing.department = dept;
+            }
           }
           empMap.get(e).assigned += slotsCount;
         });
@@ -436,16 +485,33 @@ export default function ChecklistModule({
     companyScopeLogs.forEach(l => {
       const eEmail = (l.employee_email || '').toLowerCase().trim();
       if (!eEmail) return;
+
+      const matchedP = findEmployeeRecord(eEmail);
+      const resolvedName = (l.employee_name && !l.employee_name.includes('@'))
+        ? l.employee_name
+        : ((matchedP ? getCleanEmpName(matchedP) : '') || l.employee_name || eEmail);
+      const resolvedDept = (l.department && l.department !== 'General')
+        ? l.department
+        : ((matchedP ? (matchedP.emp_department || matchedP.department) : '') || l.department || 'General');
+
       if (!empMap.has(eEmail)) {
         empMap.set(eEmail, {
           email: eEmail,
-          name: l.employee_name || eEmail,
-          department: l.department || 'General',
+          name: resolvedName,
+          department: resolvedDept,
           assigned: 0,
           completedOnTime: 0,
           completedLate: 0,
           completed: 0
         });
+      } else {
+        const existing = empMap.get(eEmail);
+        if ((!existing.name || existing.name === eEmail || existing.name.includes('@')) && resolvedName && !resolvedName.includes('@')) {
+          existing.name = resolvedName;
+        }
+        if ((!existing.department || existing.department === 'General') && resolvedDept && resolvedDept !== 'General') {
+          existing.department = resolvedDept;
+        }
       }
       if (l.status === 'COMPLETED') {
         const isLate = Boolean(l.delayInfo?.isDelayed);
@@ -618,13 +684,15 @@ export default function ChecklistModule({
   const [verifyingSubmission, setVerifyingSubmission] = useState(null);
   const [verifyRemarks, setVerifyRemarks] = useState('');
 
-  // Initial load: 0ms instant hydration from IndexedDB
+  // Initial load: 0ms instant hydration from IndexedDB + preload employee & department masters
   useEffect(() => {
     getLocalChecklists().then((cached) => {
       if (Array.isArray(cached) && cached.length > 0) {
         setDashboardChecklists(cached);
       }
     }).catch(() => {});
+    loadEmployees();
+    loadDepartments();
   }, []);
 
   useEffect(() => {
@@ -632,6 +700,8 @@ export default function ChecklistModule({
       loadEmployeeDashboard(dashboardDate, true);
       loadTemplates(templates.length > 0);
       loadCompliance(complianceLogs.length > 0);
+      if (employeesList.length === 0) loadEmployees();
+      if (managedDepartments.length === 0) loadDepartments();
     } else if (activeTab === 'my_checklists') {
       loadEmployeeDashboard(dashboardDate, dashboardChecklists.length > 0);
     } else if (activeTab === 'templates') {
