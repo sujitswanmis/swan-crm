@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.0.545",
+  "version": "1.0.546",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "nodemailer": "^9.0.5",

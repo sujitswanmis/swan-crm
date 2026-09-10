@@ -7,7 +7,7 @@ import {
   Play, Pause,
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
-  Calendar, Search, ToggleLeft, ToggleRight, Save, Bell
+  Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -59,25 +59,99 @@ const callStatusBadge = (s) => {
   return <span style={{padding:'0.15rem 0.55rem',borderRadius:'999px',fontSize:'0.73rem',fontWeight:600,background:bg,color}}>{s}</span>;
 };
 
+// Strict IST Date Formatter
 const fmtDate = (d) => {
   if (!d) return '—';
-  const date = new Date(d);
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mmm = date.toLocaleString('en-US', { month: 'short' });
-  const yyyy = date.getFullYear();
-  let hh = date.getHours();
-  const min = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  const ampm = hh >= 12 ? 'PM' : 'AM';
-  hh = hh % 12;
-  hh = hh ? hh : 12; // hour '0' should be '12'
-  const hhStr = String(hh).padStart(2, '0');
-  return `${dd}-${mmm}-${yyyy} ${hhStr}:${min}:${ss} ${ampm}`;
+  try {
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return '—';
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(date).replace(',', '');
+  } catch (e) {
+    return '—';
+  }
 };
+
 const fmtDur  = (s) => {
   if (!s && s !== 0) return '—';
   const m = Math.floor(s/60), sec = s%60;
   return `${m}:${String(sec).padStart(2,'0')}`;
+};
+
+// Strict IST Date Boundaries Calculator for API Filters
+const getISTDateRange = (preset, customStart, customEnd) => {
+  if (preset === 'all') return { startDate: '', endDate: '' };
+
+  const now = new Date();
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + istOffsetMs);
+  const istYear = istNow.getUTCFullYear();
+  const istMonth = istNow.getUTCMonth();
+  const istDay = istNow.getUTCDate();
+
+  const formatIST = (y, m, d, hh = 0, mm = 0, ss = 0) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${y}-${pad(m + 1)}-${pad(d)}T${pad(hh)}:${pad(mm)}:${pad(ss)}+05:30`;
+  };
+
+  if (preset === 'today') {
+    return {
+      startDate: formatIST(istYear, istMonth, istDay, 0, 0, 0),
+      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
+    };
+  }
+
+  if (preset === 'yesterday') {
+    const yest = new Date(Date.UTC(istYear, istMonth, istDay - 1));
+    const yY = yest.getUTCFullYear();
+    const yM = yest.getUTCMonth();
+    const yD = yest.getUTCDate();
+    return {
+      startDate: formatIST(yY, yM, yD, 0, 0, 0),
+      endDate: formatIST(yY, yM, yD, 23, 59, 59)
+    };
+  }
+
+  if (preset === 'last_7_days') {
+    const start7 = new Date(Date.UTC(istYear, istMonth, istDay - 6));
+    return {
+      startDate: formatIST(start7.getUTCFullYear(), start7.getUTCMonth(), start7.getUTCDate(), 0, 0, 0),
+      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
+    };
+  }
+
+  if (preset === 'this_month') {
+    return {
+      startDate: formatIST(istYear, istMonth, 1, 0, 0, 0),
+      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
+    };
+  }
+
+  if (preset === 'last_month') {
+    const firstOfLastMonth = new Date(Date.UTC(istYear, istMonth - 1, 1));
+    const lastOfLastMonth = new Date(Date.UTC(istYear, istMonth, 0));
+    return {
+      startDate: formatIST(firstOfLastMonth.getUTCFullYear(), firstOfLastMonth.getUTCMonth(), 1, 0, 0, 0),
+      endDate: formatIST(lastOfLastMonth.getUTCFullYear(), lastOfLastMonth.getUTCMonth(), lastOfLastMonth.getUTCDate(), 23, 59, 59)
+    };
+  }
+
+  if (preset === 'custom') {
+    let s = '', e = '';
+    if (customStart) s = `${customStart}T00:00:00+05:30`;
+    if (customEnd) e = `${customEnd}T23:59:59+05:30`;
+    return { startDate: s, endDate: e };
+  }
+
+  return { startDate: '', endDate: '' };
 };
 
 // ─── Sub-components ─────────────────────────────────────────
@@ -339,11 +413,78 @@ function TabCallLogs() {
   const [source, setSource] = useState('db');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
-  const PAGE = 20;
 
+  // Lead Data Page Size settings (from crmPageNavSettings)
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 10000;
+          return parseInt(settings.defaultPageSize, 10) || 20;
+        }
+      } catch (e) {}
+    }
+    return 20;
+  });
+
+  const [availablePageSizes, setAvailablePageSizes] = useState(() => {
+    let sizes = [10, 20, 50, 100];
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.availablePageSizes) {
+          const parsed = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+          if (parsed.length > 0) sizes = parsed;
+        }
+      } catch (e) {}
+    }
+    return sizes;
+  });
+
+  useEffect(() => {
+    const handleNavUpdate = () => {
+      try {
+        const cached = localStorage.getItem('crmPageNavSettings');
+        if (cached) {
+          const settings = JSON.parse(cached);
+          if (settings.defaultPageSize !== undefined) {
+            let size = 20;
+            if (settings.defaultPageSize === 'All') size = 10000;
+            else size = parseInt(settings.defaultPageSize, 10) || 20;
+            setPageSize(size);
+          }
+          if (settings.availablePageSizes) {
+            const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            if (sizes.length > 0) setAvailablePageSizes(sizes);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('crm_page_nav_updated', handleNavUpdate);
+    window.addEventListener('crm_config_updated', handleNavUpdate);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', handleNavUpdate);
+      window.removeEventListener('crm_config_updated', handleNavUpdate);
+    };
+  }, []);
+
+  // Quick Date Presets (Strict IST)
+  const [datePreset, setDatePreset] = useState('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+
+  // Audio Playback
   const [playingCallId, setPlayingCallId] = useState(null);
   const [audio] = useState(() => typeof window !== 'undefined' ? new Audio() : null);
-  const [selectedCallIds, setSelectedCallIds] = useState(new Set());
+
+  // Multi-Page Persistent Row Selection (Map of rowSelectId -> call object)
+  const [selectedCallsMap, setSelectedCallsMap] = useState(new Map());
+
+  // Zipping & Excel Export states
+  const [zippingProgress, setZippingProgress] = useState(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   useEffect(() => {
     if (!audio) return;
@@ -363,120 +504,449 @@ function TabCallLogs() {
     }
   };
 
-  const toggleSelectAll = () => {
-    if (selectedCallIds.size === filtered.length) {
-      setSelectedCallIds(new Set());
-    } else {
-      setSelectedCallIds(new Set(filtered.map((c, i) => c.id || c.call_uuid || `row-${i}`)));
-    }
-  };
-
-  const toggleSelectRow = (id) => {
-    const next = new Set(selectedCallIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setSelectedCallIds(next);
-  };
-
-  const downloadBulkRecordings = () => {
-    const callsToDownload = filtered.filter((c, i) => selectedCallIds.has(c.id || c.call_uuid || `row-${i}`) && c.recording_url);
-    if (callsToDownload.length === 0) {
-      alert("No call recordings selected for download.");
-      return;
-    }
-    
-    callsToDownload.forEach((c, index) => {
-      setTimeout(() => {
-        const link = document.createElement('a');
-        link.href = c.recording_url;
-        link.download = `recording_${c.id || index}.mp3`;
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }, index * 300);
-    });
-  };
-
-  // Clear selections and pause audio when switching source or page
+  // Only clear selection when switching source (DB <-> Plivo), NEVER on page change!
   useEffect(() => {
-    setSelectedCallIds(new Set());
+    setSelectedCallsMap(new Map());
     if (audio) {
       audio.pause();
       setPlayingCallId(null);
     }
-  }, [source, page, audio]);
+  }, [source]);
 
-  const fetchLogs = useCallback(async (src, pg) => {
+  const fetchLogs = useCallback(async (src, pg, pSize, preset, cStart, cEnd) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/plivo/admin/call-logs?source=${src}&limit=${PAGE}&offset=${pg * PAGE}`);
+      const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
+      let queryUrl = `/api/plivo/admin/call-logs?source=${src}&limit=${pSize}&offset=${pg * pSize}`;
+      if (startDate) queryUrl += `&start_date=${encodeURIComponent(startDate)}`;
+      if (endDate) queryUrl += `&end_date=${encodeURIComponent(endDate)}`;
+
+      const res = await fetch(queryUrl);
       const data = await res.json();
       setCalls(data.calls || []);
       setTotal(data.total || 0);
-    } catch (e) { console.error(e); }
-    setLoading(false);
+    } catch (e) {
+      console.error('fetchLogs error:', e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchLogs(source, page); }, [source, page, fetchLogs]);
+  useEffect(() => {
+    fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate);
+  }, [source, page, pageSize, datePreset, customStartDate, customEndDate, fetchLogs]);
 
   const filtered = search
     ? calls.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()))
     : calls;
 
+  // Multi-page persistent selection handlers
+  const isAllCurrentPageSelected = filtered.length > 0 && filtered.every((c, i) => {
+    const id = c.id || c.call_uuid || `row-${i}`;
+    return selectedCallsMap.has(id);
+  });
+
+  const toggleSelectAllCurrentPage = () => {
+    setSelectedCallsMap(prev => {
+      const next = new Map(prev);
+      if (isAllCurrentPageSelected) {
+        filtered.forEach((c, i) => {
+          const id = c.id || c.call_uuid || `row-${i}`;
+          next.delete(id);
+        });
+      } else {
+        filtered.forEach((c, i) => {
+          const id = c.id || c.call_uuid || `row-${i}`;
+          next.set(id, c);
+        });
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectRow = (call, id) => {
+    setSelectedCallsMap(prev => {
+      const next = new Map(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.set(id, call);
+      }
+      return next;
+    });
+  };
+
+  // Bulk ZIP Download
+  const downloadBulkRecordingsZip = async () => {
+    const selectedList = Array.from(selectedCallsMap.values()).filter(c => c.recording_url);
+    if (selectedList.length === 0) {
+      alert("No call recordings selected for download. Please select calls that have a recording URL.");
+      return;
+    }
+
+    setZippingProgress({ current: 0, total: selectedList.length });
+    try {
+      const JSZip = (await import('jszip')).default;
+      const { saveAs } = await import('file-saver');
+      const zip = new JSZip();
+      const folder = zip.folder("call_recordings");
+
+      let downloadedCount = 0;
+      for (let i = 0; i < selectedList.length; i++) {
+        const c = selectedList[i];
+        setZippingProgress({ current: i + 1, total: selectedList.length });
+        try {
+          const resp = await fetch(c.recording_url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const blob = await resp.blob();
+
+          const timeStr = c.created_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(c.created_at)) : 'rec';
+          const agentName = (c.call_agents?.display_name || 'agent').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const customerNum = (c.customer_number || 'customer').replace(/[^0-9+]/g, '');
+          const filename = `${timeStr}_${agentName}_${customerNum}_${c.id || i + 1}.mp3`;
+
+          folder.file(filename, blob);
+          downloadedCount++;
+        } catch (err) {
+          console.warn(`Failed to download recording for call ${c.id}:`, err);
+        }
+      }
+
+      if (downloadedCount === 0) {
+        alert("Failed to download selected recordings. They may be blocked by network or CORS.");
+        return;
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const nowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      saveAs(zipBlob, `Call_Recordings_${nowStr}.zip`);
+    } catch (err) {
+      console.error("ZIP creation failed:", err);
+      alert("Failed to create ZIP file: " + err.message);
+    } finally {
+      setZippingProgress(null);
+    }
+  };
+
+  // Excel Export for DB Records & Plivo CDR
+  const exportToExcel = async () => {
+    setExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const recordsToExport = selectedCallsMap.size > 0 
+        ? Array.from(selectedCallsMap.values()) 
+        : filtered;
+
+      if (recordsToExport.length === 0) {
+        alert("No call records found to export.");
+        return;
+      }
+
+      const nowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+      if (source === 'db') {
+        const worksheet = workbook.addWorksheet('DB Call Records');
+        worksheet.columns = [
+          { header: 'Call Date/Time (IST)', key: 'time', width: 22 },
+          { header: 'Call UUID', key: 'call_uuid', width: 36 },
+          { header: 'Agent Name', key: 'agent', width: 24 },
+          { header: 'Customer Number', key: 'customer', width: 18 },
+          { header: 'Direction', key: 'direction', width: 14 },
+          { header: 'Status', key: 'status', width: 14 },
+          { header: 'Start Time (IST)', key: 'start_time', width: 22 },
+          { header: 'Answer Time (IST)', key: 'answer_time', width: 22 },
+          { header: 'End Time (IST)', key: 'end_time', width: 22 },
+          { header: 'Ringing Duration (s)', key: 'ringing', width: 18 },
+          { header: 'Talk Duration (s)', key: 'talk', width: 16 },
+          { header: 'Recording URL', key: 'recording', width: 45 },
+          { header: 'Room Name', key: 'room', width: 20 }
+        ];
+
+        recordsToExport.forEach(c => {
+          worksheet.addRow({
+            time: fmtDate(c.created_at),
+            call_uuid: c.agent_call_uuid || c.customer_call_uuid || c.id || '—',
+            agent: c.call_agents?.display_name || '—',
+            customer: c.customer_number || '—',
+            direction: (c.direction || 'outbound').toUpperCase(),
+            status: (c.status || '—').toUpperCase(),
+            start_time: fmtDate(c.start_time),
+            answer_time: fmtDate(c.agent_answer_time || c.customer_answer_time),
+            end_time: fmtDate(c.end_time),
+            ringing: c.ringing_duration_sec != null ? c.ringing_duration_sec : '—',
+            talk: c.talk_duration_sec != null ? c.talk_duration_sec : '—',
+            recording: c.recording_url || '—',
+            room: c.room_name || '—'
+          });
+        });
+
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E3A8A' }
+        };
+        headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow.height = 24;
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `Call_Logs_DB_Records_${nowStr}.xlsx`);
+      } else {
+        const worksheet = workbook.addWorksheet('Plivo CDR Records');
+        worksheet.columns = [
+          { header: 'Call Time (IST)', key: 'time', width: 22 },
+          { header: 'Call UUID', key: 'call_uuid', width: 36 },
+          { header: 'From Number', key: 'from', width: 20 },
+          { header: 'To Number', key: 'to', width: 24 },
+          { header: 'Direction', key: 'direction', width: 14 },
+          { header: 'Duration', key: 'duration', width: 14 },
+          { header: 'Hangup Cause', key: 'hangup', width: 24 },
+          { header: 'Total Cost', key: 'cost', width: 14 }
+        ];
+
+        recordsToExport.forEach(c => {
+          worksheet.addRow({
+            time: fmtDate(c.initiation_time),
+            call_uuid: c.call_uuid || '—',
+            from: c.from_number || '—',
+            to: c.to_number || '—',
+            direction: (c.call_direction || '—').toUpperCase(),
+            duration: fmtDur(c.call_duration),
+            hangup: c.hangup_cause_name || '—',
+            cost: c.total_amount ? `₹${c.total_amount}` : '₹0.00'
+          });
+        });
+
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF0D9488' }
+        };
+        headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow.height = 24;
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `Call_Logs_Plivo_CDR_${nowStr}.xlsx`);
+      }
+    } catch (err) {
+      console.error("Export Excel failed:", err);
+      alert("Failed to export Excel: " + err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   return (
     <div>
       {/* Controls */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
+      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.25rem', marginBottom:'1.25rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
+        {/* Source Switcher */}
         <div style={{ display:'flex', background:'#f1f5f9', borderRadius:'8px', padding:'0.25rem' }}>
           {[{v:'db',l:'📂 DB Records'},{v:'plivo',l:'☁️ Plivo CDR'}].map(opt => (
             <button key={opt.v} onClick={() => { setSource(opt.v); setPage(0); setCalls([]); }}
-              style={{ padding:'0.5rem 1rem', borderRadius:'6px', border:'none', cursor:'pointer', fontWeight:600, fontSize:'0.85rem', background: source===opt.v?'white':'transparent', color: source===opt.v?'#1e293b':'#64748b', boxShadow: source===opt.v?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
+              style={{ padding:'0.45rem 0.9rem', borderRadius:'6px', border:'none', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background: source===opt.v?'white':'transparent', color: source===opt.v?'#1e293b':'#64748b', boxShadow: source===opt.v?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
               {opt.l}
             </button>
           ))}
         </div>
-        <div style={{ position:'relative', flex:1, minWidth:'200px' }}>
+
+        {/* Search Input */}
+        <div style={{ position:'relative', flex:1, minWidth:'180px' }}>
           <Search size={15} style={{ position:'absolute', left:'0.75rem', top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
           <input
             placeholder="Search calls…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ width:'100%', padding:'0.6rem 1rem 0.6rem 2.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.9rem', background:'white', boxSizing:'border-box' }}
+            style={{ width:'100%', padding:'0.55rem 1rem 0.55rem 2.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', boxSizing:'border-box' }}
           />
         </div>
-        {source === 'db' && selectedCallIds.size > 0 && (
-          <button onClick={downloadBulkRecordings} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'#10b981', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:600, fontSize:'0.85rem' }}>
-            <Download size={14} /> Download Selected ({selectedCallIds.size})
-          </button>
-        )}
-        <button onClick={() => fetchLogs(source, page)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:600, fontSize:'0.85rem' }}>
+
+        {/* Quick Date Presets (Strict IST) */}
+        <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'#f8fafc', padding:'0.35rem 0.6rem', borderRadius:'8px', border:'1px solid #cbd5e1' }}>
+            <Calendar size={14} color="#64748b" />
+            <select
+              value={datePreset}
+              onChange={(e) => {
+                setDatePreset(e.target.value);
+                setPage(0);
+              }}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: '#1e293b',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="all">📅 All Time</option>
+              <option value="today">⚡ Today (IST)</option>
+              <option value="yesterday">⏪ Yesterday (IST)</option>
+              <option value="last_7_days">📆 Last 7 Days (IST)</option>
+              <option value="this_month">🗓️ This Month (IST)</option>
+              <option value="last_month">⏮️ Last Month (IST)</option>
+              <option value="custom">🛠️ Custom Range</option>
+            </select>
+          </div>
+
+          {datePreset === 'custom' && (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => { setCustomStartDate(e.target.value); setPage(0); }}
+                style={{ padding:'0.35rem 0.5rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.8rem', background:'white' }}
+              />
+              <span style={{ fontSize:'0.8rem', color:'#94a3b8' }}>to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => { setCustomEndDate(e.target.value); setPage(0); }}
+                style={{ padding:'0.35rem 0.5rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.8rem', background:'white' }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Excel Export Button */}
+        <button 
+          onClick={exportToExcel} 
+          disabled={exportingExcel}
+          style={{ 
+            display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 0.9rem', 
+            background:'#0284c7', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', 
+            fontWeight:600, fontSize:'0.82rem', boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
+          }}
+          title={selectedCallsMap.size > 0 ? `Export ${selectedCallsMap.size} selected records to Excel` : "Export current records to Excel"}
+        >
+          <FileSpreadsheet size={14} /> {exportingExcel ? 'Exporting...' : 'Export Excel'}
+        </button>
+
+        {/* Refresh Button */}
+        <button 
+          onClick={() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate)} 
+          style={{ 
+            display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 0.9rem', 
+            background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', 
+            fontWeight:600, fontSize:'0.82rem', boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
+          }}
+        >
           <RefreshCw size={14} className={loading?'spin':''} /> Refresh
         </button>
-        <span style={{ color:'#64748b', fontSize:'0.85rem' }}>Total: <strong>{total}</strong></span>
+
+        {/* Total Records Badge */}
+        <span style={{ color:'#64748b', fontSize:'0.82rem', background:'#f1f5f9', padding:'0.4rem 0.75rem', borderRadius:'6px' }}>
+          Total: <strong style={{ color:'#0f172a' }}>{total}</strong>
+        </span>
       </div>
 
+      {/* Multi-Page Persistent Selection Banner */}
+      {source === 'db' && selectedCallsMap.size > 0 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.65rem 1.25rem',
+          background: '#ecfdf5',
+          border: '1px solid #a7f3d0',
+          borderRadius: '10px',
+          marginBottom: '1.25rem',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#065f46', fontWeight: 700 }}>
+            <CheckCircle size={17} color="#059669" />
+            <span>{selectedCallsMap.size} call record{selectedCallsMap.size > 1 ? 's' : ''} selected across pages</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={downloadBulkRecordingsZip}
+              disabled={zippingProgress !== null}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.85rem',
+                background: '#059669',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              }}
+            >
+              <Download size={13} /> {zippingProgress ? `Zipping (${zippingProgress.current}/${zippingProgress.total})...` : `Download Recordings ZIP (${Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length})`}
+            </button>
+            <button
+              onClick={exportToExcel}
+              disabled={exportingExcel}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.85rem',
+                background: '#1e3a8a',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              }}
+            >
+              <FileSpreadsheet size={13} /> Export Selected ({selectedCallsMap.size}) to Excel
+            </button>
+            <button
+              onClick={() => setSelectedCallsMap(new Map())}
+              style={{
+                padding: '0.4rem 0.75rem',
+                background: 'white',
+                color: '#ef4444',
+                border: '1px solid #fca5a5',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.82rem'
+              }}
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Table */}
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
-              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
+            <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
+              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
                 {source === 'db' && (
                   <th style={{ padding:'0.75rem 1rem', width:'40px', textAlign:'center' }}>
                     <input 
                       type="checkbox" 
-                      checked={filtered.length > 0 && selectedCallIds.size === filtered.length} 
-                      onChange={toggleSelectAll} 
+                      checked={isAllCurrentPageSelected} 
+                      onChange={toggleSelectAllCurrentPage} 
                       style={{ cursor:'pointer' }}
+                      title="Select / Deselect all records on this page"
                     />
                   </th>
                 )}
                 {source === 'db'
-                  ? ['Time','CallUUID','Agent','Customer','Direction','Status','StartTime','AnswerTime','EndTime','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)
-                  : ['Time','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>)}
+                  ? ['Time (IST)','CallUUID','Agent','Customer','Direction','Status','StartTime (IST)','AnswerTime (IST)','EndTime (IST)','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap' }}>{h}</th>)
+                  : ['Time (IST)','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -492,14 +962,14 @@ function TabCallLogs() {
                     <td style={{ padding:'0.85rem 1rem', textAlign:'center' }}>
                       <input 
                         type="checkbox" 
-                        checked={selectedCallIds.has(rowSelectId)} 
-                        onChange={() => toggleSelectRow(rowSelectId)} 
+                        checked={selectedCallsMap.has(rowSelectId)} 
+                        onChange={() => toggleSelectRow(c, rowSelectId)} 
                         style={{ cursor:'pointer' }}
                       />
                     </td>
                     <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
                     <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:600, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
                     <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.customer_number || '—'}</td>
                     <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.direction || 'outbound')}</td>
                     <td style={{ padding:'0.85rem 1rem' }}>{callStatusBadge(c.status)}</td>
@@ -578,14 +1048,63 @@ function TabCallLogs() {
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
-        <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontSize:'0.82rem', color:'#64748b' }}>
-            Showing {page*PAGE+1}–{Math.min((page+1)*PAGE, total)} of {total}
-          </span>
-          <div style={{ display:'flex', gap:'0.5rem' }}>
-            <button onClick={() => setPage(p => Math.max(0, p-1))} disabled={page===0} style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: page===0?0.4:1 }}>← Prev</button>
-            <button onClick={() => setPage(p => p+1)} disabled={(page+1)*PAGE >= total} style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: (page+1)*PAGE>=total?0.4:1 }}>Next →</button>
+
+        {/* Pagination & Lead Data Page Size Controls */}
+        <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'0.82rem', color:'#64748b' }}>
+              Showing {total === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total} records
+            </span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = Number(e.target.value);
+                setPageSize(newSize);
+                setPage(0);
+              }}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                fontSize: '0.82rem',
+                background: 'white',
+                color: '#1e293b',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {(() => {
+                const optionsSet = new Set(availablePageSizes);
+                if (pageSize !== 10000 && !isNaN(pageSize)) optionsSet.add(pageSize);
+                const list = Array.from(optionsSet).sort((a, b) => a - b);
+                list.push(10000);
+                return list.map(sz => (
+                  <option key={sz} value={sz}>
+                    {sz === 10000 ? 'All' : `Show ${sz}`}
+                  </option>
+                ));
+              })()}
+            </select>
+          </div>
+
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <button 
+              onClick={() => setPage(p => Math.max(0, p - 1))} 
+              disabled={page === 0} 
+              style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: page === 0 ? 0.4 : 1 }}
+            >
+              ← Prev
+            </button>
+            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>
+              Page {total === 0 ? 1 : page + 1} of {Math.max(1, Math.ceil(total / pageSize))}
+            </span>
+            <button 
+              onClick={() => setPage(p => p + 1)} 
+              disabled={(page + 1) * pageSize >= total} 
+              style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: (page + 1) * pageSize >= total ? 0.4 : 1 }}
+            >
+              Next →
+            </button>
           </div>
         </div>
       </div>
@@ -1176,18 +1695,39 @@ function TabSettings({ agents = [] }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────
-export default function CallAdminModule({ moduleAccess = {}, userRole = '' }) {
+export default function CallAdminModule({ 
+  moduleAccess = {}, 
+  userRole = '', 
+  activeSubTab = null, 
+  onSubTabChange = null 
+}) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'calladmin', TABS);
 
   const [activeTab, setActiveTab] = useState(() => {
+    if (activeSubTab && visibleTabs.some(t => t.id === activeSubTab)) return activeSubTab;
     return visibleTabs[0]?.id || 'agents';
   });
+
+  useEffect(() => {
+    if (activeSubTab && visibleTabs.some(t => t.id === activeSubTab)) {
+      setActiveTab(activeSubTab);
+    }
+  }, [activeSubTab, visibleTabs]);
 
   useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
       setActiveTab(visibleTabs[0].id);
     }
   }, [visibleTabs, activeTab]);
+
+  const handleTabClick = (tabId) => {
+    setActiveTab(tabId);
+    if (onSubTabChange) {
+      onSubTabChange(tabId);
+    } else if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', `/calladmin?tab=${tabId}`);
+    }
+  };
 
   const [agents, setAgents] = useState([]);
   const [endpoints, setEndpoints] = useState([]);
@@ -1243,7 +1783,7 @@ export default function CallAdminModule({ moduleAccess = {}, userRole = '' }) {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabClick(tab.id)}
                 style={{
                   display:'flex', alignItems:'center', gap:'0.5rem',
                   padding:'0.75rem 1.25rem',

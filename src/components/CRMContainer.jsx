@@ -324,6 +324,9 @@ export default function CRMContainer({
     if (path === 'location-master' || path === 'location_territory') {
       return 'location_master';
     }
+    if (path === 'calladmin' || path === 'call-admin' || (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/')))) {
+      return 'calladmin';
+    }
 
     if (!path) {
       const isAdmin = userRole === 'admin' || userRole === 'Admin';
@@ -358,6 +361,20 @@ export default function CRMContainer({
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
   const [delegationSubTab, setDelegationSubTab] = useState('dashboard');
+  const [callAdminMenuExpanded, setCallAdminMenuExpanded] = useState(false);
+  const [callAdminSubTab, setCallAdminSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('calladmin/') || cleanPath.startsWith('call-admin/'))) {
+      const sub = cleanPath.split('/')[1];
+      if (sub) return sub;
+    }
+    if (queryTab && ['agents', 'endpoints', 'calllogs', 'monitor', 'settings'].includes(queryTab)) {
+      return queryTab;
+    }
+    return 'agents';
+  });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
 
@@ -378,6 +395,13 @@ export default function CRMContainer({
       }
       if (attTab && (path === 'delegation' || (path && path.startsWith('delegation/')))) {
         setDelegationSubTab(attTab);
+      }
+      if (attTab && (path === 'calladmin' || path === 'call-admin' || (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/'))))) {
+        setCallAdminSubTab(attTab);
+      }
+      if (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/'))) {
+        const sub = path.split('/')[1];
+        if (sub) setCallAdminSubTab(sub);
       }
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
         setDashboardSubTab(path === 'pipeline' || path === 'leads-data' ? 'lead-data' : path);
@@ -627,6 +651,7 @@ export default function CRMContainer({
     setDelegationMenuExpanded(activeTab === 'delegation');
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
+    setCallAdminMenuExpanded(activeTab === 'calladmin');
     setSettingsMenuExpanded(activeTab === 'settings');
   }, [activeTab]);
 
@@ -1737,6 +1762,18 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'calladmin') {
+      React.startTransition(() => {
+        setActiveTab('calladmin');
+      });
+      const targetSub = callAdminSubTab || 'agents';
+      window.history.pushState(null, '', `/calladmin?tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     React.startTransition(() => {
       setActiveTab(tabId);
     });
@@ -1805,6 +1842,21 @@ export default function CRMContainer({
       });
     }
     const newPath = `/delegation?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleCallAdminSubTabChange = (subTabId) => {
+    setCallAdminSubTab(subTabId);
+    if (activeTab !== 'calladmin') {
+      React.startTransition(() => {
+        setActiveTab('calladmin');
+      });
+    }
+    const newPath = `/calladmin?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -2560,7 +2612,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.545'}
+                    v{pkg.version || '1.0.546'}
                   </span>
                 </div>
               </div>
@@ -3196,16 +3248,69 @@ export default function CRMContainer({
 
                     {/* Call Admin */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
-                      <button 
-                        onClick={() => handleTabChange('calladmin')}
-                        className="nav-item" 
-                        data-active={activeTab === 'calladmin'}
-                        title={isSidebarCollapsed ? "Call Admin" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <Phone size={20} style={{ flexShrink: 0 }} />
-                        <span>Call Admin</span>
-                      </button>
+                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setCallAdminMenuExpanded(true);
+                            } else {
+                              setCallAdminMenuExpanded(!callAdminMenuExpanded);
+                            }
+                            handleTabChange('calladmin');
+                          }}
+                          className="nav-item" 
+                          data-active={activeTab === 'calladmin'}
+                          title={isSidebarCollapsed ? "Call Admin" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                        >
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                            {callAdminMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
+                          <Phone size={20} style={{ flexShrink: 0 }} />
+                          <span>Call Admin</span>
+                        </button>
+                        
+                        <div className={`submenu-list ${callAdminMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            <button
+                              onClick={() => handleCallAdminSubTabChange('agents')}
+                              className="submenu-item"
+                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'agents'}
+                            >
+                              👥 Agents & Endpoints
+                            </button>
+                            <button
+                              onClick={() => handleCallAdminSubTabChange('endpoints')}
+                              className="submenu-item"
+                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'endpoints'}
+                            >
+                              🖥️ SIP Endpoints
+                            </button>
+                            <button
+                              onClick={() => handleCallAdminSubTabChange('calllogs')}
+                              className="submenu-item"
+                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'calllogs'}
+                            >
+                              📞 Call Logs
+                            </button>
+                            <button
+                              onClick={() => handleCallAdminSubTabChange('monitor')}
+                              className="submenu-item"
+                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'monitor'}
+                            >
+                              📡 Live Monitor
+                            </button>
+                            <button
+                              onClick={() => handleCallAdminSubTabChange('settings')}
+                              className="submenu-item"
+                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'settings'}
+                            >
+                              ⚙️ Settings
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
                     
                     {/* AI Call Center */}
@@ -5261,7 +5366,12 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('calladmin', moduleAccess, userRole) && visitedTabs.has('calladmin')}
               >
                 <ErrorBoundary>
-                  <CallAdminModule moduleAccess={moduleAccess} userRole={userRole} />
+                  <CallAdminModule 
+                    moduleAccess={moduleAccess} 
+                    userRole={userRole} 
+                    activeSubTab={callAdminSubTab}
+                    onSubTabChange={handleCallAdminSubTabChange}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
