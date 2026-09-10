@@ -177,7 +177,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             </thead>
             <tbody>
               {agents.map((agent, i) => (
-                <tr key={agent.id} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', whiteSpace:'nowrap' }}>
                     <div>{agent.display_name}</div>
                     {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8' }}>{agent.mobile_number}</div>}
@@ -200,8 +200,8 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', minWidth:'200px', cursor:'pointer' }}
                     >
                       <option value="">— No Endpoint —</option>
-                      {endpoints.map(ep => {
-                        const epKey = ep.endpoint_id || ep.endpoint_key;
+                      {endpoints.map((ep, epIdx) => {
+                        const epKey = ep.endpoint_id || ep.endpoint_key || `ep-${epIdx}`;
                         return <option key={epKey} value={epKey}>{ep.alias}</option>;
                       })}
                     </select>
@@ -311,7 +311,7 @@ function TabEndpoints() {
               {loading ? (
                 <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : endpoints.map((ep, i) => (
-                <tr key={ep.endpoint_id} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ padding:'1rem', fontWeight:600, color:'#1e293b' }}>{ep.alias}</td>
                   <td style={{ padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', maxWidth:'220px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ep.username}</td>
                   <td style={{ padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', maxWidth:'260px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ep.sip_uri}</td>
@@ -367,7 +367,7 @@ function TabCallLogs() {
     if (selectedCallIds.size === filtered.length) {
       setSelectedCallIds(new Set());
     } else {
-      setSelectedCallIds(new Set(filtered.map(c => c.id)));
+      setSelectedCallIds(new Set(filtered.map((c, i) => c.id || c.call_uuid || `row-${i}`)));
     }
   };
 
@@ -382,7 +382,7 @@ function TabCallLogs() {
   };
 
   const downloadBulkRecordings = () => {
-    const callsToDownload = filtered.filter(c => selectedCallIds.has(c.id) && c.recording_url);
+    const callsToDownload = filtered.filter((c, i) => selectedCallIds.has(c.id || c.call_uuid || `row-${i}`) && c.recording_url);
     if (callsToDownload.length === 0) {
       alert("No call recordings selected for download.");
       return;
@@ -392,7 +392,7 @@ function TabCallLogs() {
       setTimeout(() => {
         const link = document.createElement('a');
         link.href = c.recording_url;
-        link.download = `recording_${c.id}.mp3`;
+        link.download = `recording_${c.id || index}.mp3`;
         link.target = '_blank';
         document.body.appendChild(link);
         link.click();
@@ -433,7 +433,7 @@ function TabCallLogs() {
       <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
         <div style={{ display:'flex', background:'#f1f5f9', borderRadius:'8px', padding:'0.25rem' }}>
           {[{v:'db',l:'📂 DB Records'},{v:'plivo',l:'☁️ Plivo CDR'}].map(opt => (
-            <button key={opt.v} onClick={() => { setSource(opt.v); setPage(0); }}
+            <button key={opt.v} onClick={() => { setSource(opt.v); setPage(0); setCalls([]); }}
               style={{ padding:'0.5rem 1rem', borderRadius:'6px', border:'none', cursor:'pointer', fontWeight:600, fontSize:'0.85rem', background: source===opt.v?'white':'transparent', color: source===opt.v?'#1e293b':'#64748b', boxShadow: source===opt.v?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
               {opt.l}
             </button>
@@ -484,90 +484,97 @@ function TabCallLogs() {
                 <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
-              ) : source === 'db' ? filtered.map((c, i) => (
-                <tr key={c.id} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ padding:'0.85rem 1rem', textAlign:'center' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={selectedCallIds.has(c.id)} 
-                      onChange={() => toggleSelectRow(c.id)} 
-                      style={{ cursor:'pointer' }}
-                    />
-                  </td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.customer_number || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.direction || 'outbound')}</td>
-                  <td style={{ padding:'0.85rem 1rem' }}>{callStatusBadge(c.status)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.start_time)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.end_time)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap' }}>
-                    {c.recording_url ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <button 
-                          onClick={() => togglePlay(c.id, c.recording_url)}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            border: 'none',
-                            background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
-                            color: 'white',
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                            transition: 'all 0.2s'
-                          }}
-                          title={playingCallId === c.id ? "Pause Recording" : "Play Recording"}
-                        >
-                          {playingCallId === c.id ? <Pause size={12} /> : <Play size={12} />}
-                        </button>
-                        
-                        <a 
-                          href={c.recording_url} 
-                          download={`recording_${c.id}.mp3`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            border: '1px solid #cbd5e1',
-                            background: 'white',
-                            color: '#475569',
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                            transition: 'all 0.2s'
-                          }}
-                          title="Download Recording"
-                        >
-                          <Download size={12} />
-                        </a>
-                      </div>
-                    ) : '—'}
-                  </td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'120px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
-                </tr>
-              )) : filtered.map((c, i) => (
-                <tr key={c.call_uuid} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.initiation_time)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.from_number || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.to_number || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.call_direction)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem' }}>{fmtDur(c.call_duration)}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#dc2626' }}>{c.hangup_cause_name || '—'}</td>
-                  <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#475569' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
-                </tr>
-              ))}
+              ) : source === 'db' ? filtered.map((c, i) => {
+                const rowSelectId = c.id || c.call_uuid || `row-${i}`;
+                const rowKey = `db-${c.id || c.agent_call_uuid || c.customer_call_uuid || i}`;
+                return (
+                  <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                    <td style={{ padding:'0.85rem 1rem', textAlign:'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedCallIds.has(rowSelectId)} 
+                        onChange={() => toggleSelectRow(rowSelectId)} 
+                        style={{ cursor:'pointer' }}
+                      />
+                    </td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:500, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.customer_number || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.direction || 'outbound')}</td>
+                    <td style={{ padding:'0.85rem 1rem' }}>{callStatusBadge(c.status)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.start_time)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.end_time)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap' }}>
+                      {c.recording_url ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <button 
+                            onClick={() => togglePlay(c.id, c.recording_url)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              border: 'none',
+                              background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
+                              color: 'white',
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                              transition: 'all 0.2s'
+                            }}
+                            title={playingCallId === c.id ? "Pause Recording" : "Play Recording"}
+                          >
+                            {playingCallId === c.id ? <Pause size={12} /> : <Play size={12} />}
+                          </button>
+                          
+                          <a 
+                            href={c.recording_url} 
+                            download={`recording_${c.id || i}.mp3`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              border: '1px solid #cbd5e1',
+                              background: 'white',
+                              color: '#475569',
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Download Recording"
+                          >
+                            <Download size={12} />
+                          </a>
+                        </div>
+                      ) : '—'}
+                    </td>
+                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'120px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
+                  </tr>
+                );
+              }) : filtered.map((c, i) => {
+                const rowKey = `plivo-${c.call_uuid || c.id || i}`;
+                return (
+                  <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.initiation_time)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.from_number || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.to_number || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.call_direction)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem' }}>{fmtDur(c.call_duration)}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#dc2626' }}>{c.hangup_cause_name || '—'}</td>
+                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#475569' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -646,10 +653,10 @@ function TabMonitor({ agents, onRefresh }) {
 
       {/* Agent cards */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:'1rem' }}>
-        {agents.map(agent => {
+        {agents.map((agent, aIdx) => {
           const statusColor = agent.status === 'available' ? '#16a34a' : agent.status === 'on_call' || agent.status === 'busy' ? '#7c3aed' : '#94a3b8';
           return (
-            <div key={agent.id} style={{ background:'white', borderRadius:'12px', padding:'1.25rem', border:`1px solid ${statusColor}30`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', borderLeft:`4px solid ${statusColor}` }}>
+            <div key={agent.id || `agent-card-${aIdx}`} style={{ background:'white', borderRadius:'12px', padding:'1.25rem', border:`1px solid ${statusColor}30`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', borderLeft:`4px solid ${statusColor}` }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.75rem' }}>
                 <div>
                   <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.95rem' }}>{agent.display_name}</div>
@@ -980,12 +987,12 @@ function TabSettings({ agents = [] }) {
 
           {/* Agent Checkbox List */}
           <div style={{ maxHeight:'280px', overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'0.5rem', display:'flex', flexDirection:'column', gap:'0.4rem', background:'#fafafa' }}>
-            {filteredAgents.map(agent => {
+            {filteredAgents.map((agent, aIdx) => {
               const isChecked = inboundAgentIds.includes(agent.id);
               const isOnline = agent.status === 'available' || agent.status === 'on_call';
               return (
                 <label
-                  key={agent.id}
+                  key={agent.id || `filter-agent-${aIdx}`}
                   style={{
                     display:'flex', alignItems:'center', justifyContent:'space-between',
                     padding:'0.5rem 0.75rem', borderRadius:'6px',
