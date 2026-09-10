@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings, Phone } from 'lucide-react';
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import {
   useReactTable,
   getCoreRowModel,
@@ -2103,39 +2104,41 @@ export default function LeadTable({
               <Settings size={17} />
             </button>
 
-            <ColumnSelectorModal
-              isOpen={showColumnModal}
-              onClose={() => setShowColumnModal(false)}
-              columns={leadTableColumns}
-              visibleColumns={leadTableVisibleKeys}
-              onApply={(newVisKeys, newOrderedCols) => {
-                const newVis = {};
-                table.getAllLeafColumns().forEach(col => {
-                  newVis[col.id] = newVisKeys.includes(col.id) || col.id === 'actions' || col.id === 'select';
-                });
-                setColumnVisibility(newVis);
-                
-                const newOrderIds = ['select', ...newOrderedCols.map(c => c.key), 'actions'];
-                setColumnOrder(newOrderIds);
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem('leadTableColumnVisibility', JSON.stringify(newVis));
-                  localStorage.setItem('leadTableColumnOrder', JSON.stringify(newOrderIds));
-                }
-              }}
-              onReset={() => {
-                const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
-                setColumnOrder(allColIds);
-                const allVisible = {};
-                table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
-                setColumnVisibility(allVisible);
-                setColumnSizing({});
-                if (typeof window !== 'undefined') {
-                  localStorage.removeItem('leadTableColumnVisibility');
-                  localStorage.removeItem('leadTableColumnOrder');
-                  localStorage.removeItem('crm_lead_table_column_sizing');
-                }
-              }}
-            />
+            <ErrorBoundary fallback={null}>
+              <ColumnSelectorModal
+                isOpen={showColumnModal}
+                onClose={() => setShowColumnModal(false)}
+                columns={leadTableColumns}
+                visibleColumns={leadTableVisibleKeys}
+                onApply={(newVisKeys, newOrderedCols) => {
+                  const newVis = {};
+                  table.getAllLeafColumns().forEach(col => {
+                    newVis[col.id] = newVisKeys.includes(col.id) || col.id === 'actions' || col.id === 'select';
+                  });
+                  setColumnVisibility(newVis);
+                  
+                  const newOrderIds = ['select', ...newOrderedCols.map(c => c.key), 'actions'];
+                  setColumnOrder(newOrderIds);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('leadTableColumnVisibility', JSON.stringify(newVis));
+                    localStorage.setItem('leadTableColumnOrder', JSON.stringify(newOrderIds));
+                  }
+                }}
+                onReset={() => {
+                  const allColIds = columns.map(c => c.id || c.accessorKey).filter(Boolean);
+                  setColumnOrder(allColIds);
+                  const allVisible = {};
+                  table.getAllLeafColumns().forEach(col => { allVisible[col.id] = true; });
+                  setColumnVisibility(allVisible);
+                  setColumnSizing({});
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('leadTableColumnVisibility');
+                    localStorage.removeItem('leadTableColumnOrder');
+                    localStorage.removeItem('crm_lead_table_column_sizing');
+                  }
+                }}
+              />
+            </ErrorBoundary>
           </div>
 
           {/* Filter 🌪️ Icon Button with MultiColumnFilterModal (Image 2) */}
@@ -2187,21 +2190,23 @@ export default function LeadTable({
                     )}
                   </button>
 
-                  <MultiColumnFilterModal
-                    isOpen={showFilterModal}
-                    onClose={() => setShowFilterModal(false)}
-                    columns={leadTableColumns}
-                    filterRules={filterRules}
-                    conditionType={filterConditionType}
-                    onApply={(newRules, newCond) => {
-                      setFilterRules(newRules);
-                      setFilterConditionType(newCond);
-                    }}
-                    onResetAll={() => {
-                      setFilterRules({});
-                    }}
-                    getUniqueValues={getUniqueValues}
-                  />
+                  <ErrorBoundary fallback={null}>
+                    <MultiColumnFilterModal
+                      isOpen={showFilterModal}
+                      onClose={() => setShowFilterModal(false)}
+                      columns={leadTableColumns}
+                      filterRules={filterRules}
+                      conditionType={filterConditionType}
+                      onApply={(newRules, newCond) => {
+                        setFilterRules(newRules);
+                        setFilterConditionType(newCond);
+                      }}
+                      onResetAll={() => {
+                        setFilterRules({});
+                      }}
+                      getUniqueValues={getUniqueValues}
+                    />
+                  </ErrorBoundary>
                 </>
               );
             })()}

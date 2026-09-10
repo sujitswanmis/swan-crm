@@ -10,6 +10,7 @@ import { PremiumProgressLoader } from './PremiumProgressLoader';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 export const EDITABLE_COLUMNS = [
   { key: 'state_name', label: 'State' },
@@ -1600,30 +1601,32 @@ export default function ClientReport({
               <Settings size={18} />
             </button>
 
-            <ColumnSelectorModal
-              isOpen={showColumnModal}
-              onClose={() => setShowColumnModal(false)}
-              columns={reportColumns}
-              visibleColumns={visibleColumns}
-              onApply={(newVis, newCols) => {
-                setVisibleColumns(newVis);
-                setReportColumns(newCols);
-                try {
-                  localStorage.setItem('clientReportVisibleColumns', JSON.stringify(newVis));
-                  localStorage.setItem('clientReportColumnsOrder', JSON.stringify(newCols.map(c => c.key)));
-                } catch (e) {}
-              }}
-              onReset={() => {
-                setVisibleColumns(ALL_COLUMNS.slice(0, 14).map(c => c.key));
-                setReportColumns(ALL_COLUMNS);
-                setColumnWidths({});
-                try {
-                  localStorage.removeItem('clientReportVisibleColumns');
-                  localStorage.removeItem('clientReportColumnsOrder');
-                  localStorage.removeItem('crm_client_report_column_sizing');
-                } catch (e) {}
-              }}
-            />
+            <ErrorBoundary fallback={null}>
+              <ColumnSelectorModal
+                isOpen={showColumnModal}
+                onClose={() => setShowColumnModal(false)}
+                columns={reportColumns}
+                visibleColumns={visibleColumns}
+                onApply={(newVis, newCols) => {
+                  setVisibleColumns(newVis);
+                  setReportColumns(newCols);
+                  try {
+                    localStorage.setItem('clientReportVisibleColumns', JSON.stringify(newVis));
+                    localStorage.setItem('clientReportColumnsOrder', JSON.stringify(newCols.map(c => c.key)));
+                  } catch (e) {}
+                }}
+                onReset={() => {
+                  setVisibleColumns(ALL_COLUMNS.slice(0, 14).map(c => c.key));
+                  setReportColumns(ALL_COLUMNS);
+                  setColumnWidths({});
+                  try {
+                    localStorage.removeItem('clientReportVisibleColumns');
+                    localStorage.removeItem('clientReportColumnsOrder');
+                    localStorage.removeItem('crm_client_report_column_sizing');
+                  } catch (e) {}
+                }}
+              />
+            </ErrorBoundary>
           </div>
 
           {/* Filter 🌪️ Icon button with MultiColumnFilterModal (Image 2) */}
@@ -1675,23 +1678,25 @@ export default function ClientReport({
                     )}
                   </button>
 
-                  <MultiColumnFilterModal
-                    isOpen={showFilterModal}
-                    onClose={() => setShowFilterModal(false)}
-                    columns={reportColumns}
-                    filterRules={filterRules}
-                    conditionType={filterConditionType}
-                    onApply={(newRules, newCond) => {
-                      setFilterRules(newRules);
-                      setFilterConditionType(newCond);
-                      setCurrentPage(1);
-                    }}
-                    onResetAll={() => {
-                      setFilterRules({});
-                      setCurrentPage(1);
-                    }}
-                    getUniqueValues={getUniqueValues}
-                  />
+                  <ErrorBoundary fallback={null}>
+                    <MultiColumnFilterModal
+                      isOpen={showFilterModal}
+                      onClose={() => setShowFilterModal(false)}
+                      columns={reportColumns}
+                      filterRules={filterRules}
+                      conditionType={filterConditionType}
+                      onApply={(newRules, newCond) => {
+                        setFilterRules(newRules);
+                        setFilterConditionType(newCond);
+                        setCurrentPage(1);
+                      }}
+                      onResetAll={() => {
+                        setFilterRules({});
+                        setCurrentPage(1);
+                      }}
+                      getUniqueValues={getUniqueValues}
+                    />
+                  </ErrorBoundary>
                 </>
               );
             })()}
@@ -1940,8 +1945,8 @@ export default function ClientReport({
           <tbody>
             {paginatedLeads.map((lead, idx) => (
               <tr 
-                key={lead.id} 
-                onClick={() => setActiveRowId(lead.id)}
+                key={lead?.id || `lead-row-${idx}`} 
+                onClick={() => setActiveRowId(lead?.id)}
                 className={`report-table-row ${activeRowId === lead.id || selectedRows.includes(lead.id) ? 'active-row' : ''}`}
                 style={{ 
                   borderBottom: '1px solid var(--border-light)', 

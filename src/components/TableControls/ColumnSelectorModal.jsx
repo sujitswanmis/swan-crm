@@ -93,32 +93,41 @@ export default function ColumnSelectorModal({
 
   const handleDragOver = (e, index) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
+    try {
+      e.dataTransfer.dropEffect = 'move';
+      if (typeof dragOverIndex !== 'undefined' && dragOverIndex !== index) {
+        if (typeof setDragOverIndex === 'function') setDragOverIndex(index);
+      }
+    } catch (err) {
+      // Defensive fallback
     }
   };
 
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === targetIndex) {
+    try {
+      if (draggedIndex === null || draggedIndex === targetIndex) {
+        setDraggedIndex(null);
+        if (typeof setDragOverIndex === 'function') setDragOverIndex(null);
+        return;
+      }
+
+      const updated = [...draftOrder];
+      const [movedItem] = updated.splice(draggedIndex, 1);
+      updated.splice(targetIndex, 0, movedItem);
+
+      setDraftOrder(updated);
       setDraggedIndex(null);
-      setDragOverIndex(null);
-      return;
+      if (typeof setDragOverIndex === 'function') setDragOverIndex(null);
+    } catch (err) {
+      setDraggedIndex(null);
+      if (typeof setDragOverIndex === 'function') setDragOverIndex(null);
     }
-
-    const updated = [...draftOrder];
-    const [movedItem] = updated.splice(draggedIndex, 1);
-    updated.splice(targetIndex, 0, movedItem);
-
-    setDraftOrder(updated);
-    setDraggedIndex(null);
-    setDragOverIndex(null);
   };
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
-    setDragOverIndex(null);
+    if (typeof setDragOverIndex === 'function') setDragOverIndex(null);
   };
 
   // Move Up / Down
@@ -282,7 +291,7 @@ export default function ColumnSelectorModal({
           const originalIndex = draftOrder.findIndex(c => c.key === col.key);
           const isChecked = draftVisible.includes(col.key);
           const isBeingDragged = draggedIndex === originalIndex;
-          const isDragOver = dragOverIndex === originalIndex;
+          const isDragOver = typeof dragOverIndex !== 'undefined' && dragOverIndex === originalIndex;
 
           return (
             <div
