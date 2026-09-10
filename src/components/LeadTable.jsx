@@ -1317,24 +1317,26 @@ export default function LeadTable({
     }
   };
   
+  // ⚡ PERF FIX: Zero-allocation global search — check fields directly without allocating a new array per row.
   const customGlobalFilterFn = (row, columnId, filterValue) => {
     if (!filterValue || String(filterValue).trim() === '') return true;
     const q = String(filterValue).toLowerCase().trim();
     const cleanDigits = q.replace(/[^0-9]/g, '');
     const lead = row.original || {};
 
-    const allValues = [
-      lead.lead_ref_id, lead.lead_id, lead['Lead ID'],
-      lead.name, lead.business_name, lead['Business Name'],
-      lead.company, lead['Company'],
-      lead.phone, lead.business_contact_1, lead.business_contact_2, lead.business_contact_in_aio, lead['Business Contact in AIO'],
-      lead.cp1_name, lead.cp2_name, lead.cp3_name, lead.cp_name_in_aio, lead['CP Name in AIO'],
-      lead.cp1_mobile_2, lead.cp2_mobile_1, lead.cp3_mobile_1, lead.cp_mobile_in_aio, lead['CP Mobile in AIO'],
-      lead.city_name, lead.district_name, lead.state_name,
-      lead.source_name, lead.source, lead.requirement, lead.our_company, lead.status
+    const SEARCH_FIELDS = [
+      'lead_ref_id', 'lead_id', 'Lead ID',
+      'name', 'business_name', 'Business Name',
+      'company', 'Company',
+      'phone', 'business_contact_1', 'business_contact_2', 'business_contact_in_aio', 'Business Contact in AIO',
+      'cp1_name', 'cp2_name', 'cp3_name', 'cp_name_in_aio', 'CP Name in AIO',
+      'cp1_mobile_2', 'cp2_mobile_1', 'cp3_mobile_1', 'cp_mobile_in_aio', 'CP Mobile in AIO',
+      'city_name', 'district_name', 'state_name',
+      'source_name', 'source', 'requirement', 'our_company', 'status'
     ];
 
-    for (const val of allValues) {
+    for (let i = 0; i < SEARCH_FIELDS.length; i++) {
+      const val = lead[SEARCH_FIELDS[i]];
       if (val !== null && val !== undefined && val !== '') {
         const strVal = String(val).toLowerCase();
         if (strVal.includes(q)) return true;
@@ -1346,6 +1348,7 @@ export default function LeadTable({
     }
     return false;
   };
+
 
   const multiSelectFilter = (row, columnId, filterValue) => {
     if (!filterValue || filterValue.length === 0) return true;
@@ -1490,11 +1493,20 @@ export default function LeadTable({
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
-  // Filter raw data by stageFilter and Multi-Column Filter Rules (AND / OR)
+  // ⚡ PERF FIX: O(1) team member map — build once per teamMembers change instead of linear .find() per row per rule
+  const teamMemberMap = useMemo(() => {
+    const m = new Map();
+    for (const tm of teamMembers) {
+      if (tm.user_id) m.set(tm.user_id, tm.emp_name);
+    }
+    return m;
+  }, [teamMembers]);
+
+  // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
   const stageFilteredData = useMemo(() => {
     let result = data;
     if (stageFilter && stageFilter !== 'all' && stageFilter !== 'lead_dashboard' && stageFilter !== 'dashboard' && stageFilter !== 'hourly_work') {
-      const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';'; // '01' -> '1;', '03' -> '3;'
+      const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';';
       result = result.filter(lead => {
         const st = lead.status || '';
         if (prefix === '1;' && (!st || !/^[1-7];/.test(st))) return true;
@@ -1502,45 +1514,54 @@ export default function LeadTable({
       });
     }
 
-    // Apply Advanced Multi-Column Rules (with AND / OR Logic matching Image 2)
+    // Apply Advanced Multi-Column Rules (with AND / OR short-circuit logic)
     const ruleKeys = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '');
     if (ruleKeys.length > 0) {
-      result = result.filter(lead => {
-        const ruleMatches = ruleKeys.map(key => {
-          const rule = filterRules[key];
-          let cellVal = String(lead[key] !== undefined && lead[key] !== null ? lead[key] : '').toLowerCase().trim();
-          if (key === 'created_at' && lead[key]) {
-            cellVal = String(new Date(lead[key]).toLocaleString()).toLowerCase().trim();
-          }
-          if (key === 'assigned_to') {
-            const member = teamMembers.find(m => m.user_id === lead.assigned_to);
-            cellVal = member ? member.emp_name.toLowerCase().trim() : (lead.assigned_to ? 'unknown' : 'open lead (unassigned)');
-          }
-          const targetVal = String(rule.value || '').toLowerCase().trim();
-          
-          switch (rule.condition) {
-            case 'start_with':
-              return cellVal.startsWith(targetVal);
-            case 'equal':
-              return cellVal === targetVal;
-            case 'not_equal':
-              return cellVal !== targetVal;
-            case 'contains':
-            default:
-              return cellVal.includes(targetVal);
-          }
-        });
+      // Pre-compile rules once: { key, condition, targetVal }
+      const compiledRules = ruleKeys.map(key => ({
+        key,
+        condition: filterRules[key].condition || 'contains',
+        targetVal: String(filterRules[key].value || '').toLowerCase().trim()
+      }));
+      const isOR = filterConditionType === 'OR';
 
-        if (filterConditionType === 'OR') {
-          return ruleMatches.some(Boolean);
-        } else {
-          return ruleMatches.every(Boolean);
+      result = result.filter(lead => {
+        for (let i = 0; i < compiledRules.length; i++) {
+          const { key, condition, targetVal } = compiledRules[i];
+
+          let cellVal;
+          if (key === 'assigned_to') {
+            const name = teamMemberMap.get(lead.assigned_to);
+            cellVal = name ? name.toLowerCase().trim() : (lead.assigned_to ? 'unknown' : 'open lead (unassigned)');
+          } else if (key === 'created_at' && lead[key]) {
+            // ⚡ Use toLocaleDateString + toLocaleTimeString instead of heavy toLocaleString
+            cellVal = new Date(lead[key]).toLocaleString('en-IN').toLowerCase().trim();
+          } else {
+            cellVal = lead[key] !== undefined && lead[key] !== null ? String(lead[key]).toLowerCase().trim() : '';
+          }
+
+          let matches;
+          switch (condition) {
+            case 'start_with': matches = cellVal.startsWith(targetVal); break;
+            case 'equal':      matches = cellVal === targetVal; break;
+            case 'not_equal':  matches = cellVal !== targetVal; break;
+            case 'contains':
+            default:           matches = cellVal.includes(targetVal); break;
+          }
+
+          // ⚡ Short-circuit: AND fails on first mismatch; OR passes on first match
+          if (isOR) {
+            if (matches) return true;
+          } else {
+            if (!matches) return false;
+          }
         }
+        return !isOR; // AND: all passed → true; OR: none passed → false
       });
     }
 
     return result;
-  }, [data, stageFilter, filterRules, filterConditionType, teamMembers]);
+  }, [data, stageFilter, filterRules, filterConditionType, teamMemberMap]);
 
   // Cleanly reset any active column filters when navigating between stage tabs (skip initial mount/refresh)
   const isInitialMount = useRef(true);

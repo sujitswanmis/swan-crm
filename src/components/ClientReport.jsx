@@ -869,68 +869,119 @@ export default function ClientReport({
     };
   }, []);
 
-  const getUniqueValues = (key) => {
-    let candidateLeads = leads;
+  // ⚡ PERF FIX: Memoize filteredLeads — prevents re-filtering 12,430+ leads on every render (paginator click, selection, etc.)
+  const filteredLeads = useMemo(() => {
+    // Pre-compile rule keys once
+    const ruleKeys = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '');
+    const compiledRules = ruleKeys.map(key => ({
+      key,
+      condition: filterRules[key].condition || 'contains',
+      targetVal: String(filterRules[key].value || '').toLowerCase().trim()
+    }));
+    const isOR = filterConditionType === 'OR';
+    const searchLower = globalSearch ? globalSearch.toLowerCase().trim() : '';
+    const colFilterKeys = Object.keys(columnFilters).filter(k => columnFilters[k]?.length > 0);
 
+    return leads.filter(lead => {
+      // 1. Global Search — scan fields directly for speed
+      if (searchLower) {
+        let found = false;
+        const vals = Object.values(lead);
+        for (let i = 0; i < vals.length; i++) {
+          if (String(vals[i] || '').toLowerCase().includes(searchLower)) { found = true; break; }
+        }
+        if (!found) return false;
+      }
+
+      // 2. Legacy Column Header Filters (short-circuit on mismatch)
+      for (let i = 0; i < colFilterKeys.length; i++) {
+        const key = colFilterKeys[i];
+        const activeValues = columnFilters[key];
+        let cellVal = lead[key];
+        if (key === 'created_at' && cellVal) cellVal = new Date(cellVal).toLocaleString();
+        const strVal = String(cellVal !== undefined && cellVal !== null ? cellVal : '').trim();
+        if (!activeValues.includes(strVal)) return false;
+      }
+
+      // 3. Advanced Multi-Column Rules (short-circuit AND/OR)
+      if (compiledRules.length > 0) {
+        for (let i = 0; i < compiledRules.length; i++) {
+          const { key, condition, targetVal } = compiledRules[i];
+          let cellVal = lead[key] !== undefined && lead[key] !== null ? String(lead[key]).toLowerCase().trim() : '';
+          if (key === 'created_at' && lead[key]) cellVal = new Date(lead[key]).toLocaleString('en-IN').toLowerCase().trim();
+
+          let matches;
+          switch (condition) {
+            case 'start_with': matches = cellVal.startsWith(targetVal); break;
+            case 'equal':      matches = cellVal === targetVal; break;
+            case 'not_equal':  matches = cellVal !== targetVal; break;
+            default:           matches = cellVal.includes(targetVal); break;
+          }
+          if (isOR) { if (matches) return true; }
+          else { if (!matches) return false; }
+        }
+        if (isOR) return false;
+      }
+
+      return true;
+    });
+  }, [leads, globalSearch, columnFilters, filterRules, filterConditionType]);
+
+  const getUniqueValues = (key) => {
     // Determine if other filters are active
     const otherColumnFilterKeys = Object.keys(columnFilters).filter(k => k !== key && columnFilters[k]?.length > 0);
     const otherRuleKeys = Object.keys(filterRules).filter(k => k !== key && filterRules[k]?.value && filterRules[k].value.trim() !== '');
     const hasGlobal = Boolean(globalSearch && globalSearch.trim() !== '');
 
+    let candidateLeads = leads;
     if (hasGlobal || otherColumnFilterKeys.length > 0 || otherRuleKeys.length > 0) {
+      const searchLower = hasGlobal ? globalSearch.toLowerCase() : '';
+      const compiledRules = otherRuleKeys.map(rKey => ({
+        key: rKey,
+        condition: filterRules[rKey].condition || 'contains',
+        targetVal: String(filterRules[rKey].value || '').toLowerCase().trim()
+      }));
+      const isOR = filterConditionType === 'OR';
+
       candidateLeads = leads.filter(lead => {
         // 1. Global Search
         if (hasGlobal) {
-          const searchLower = globalSearch.toLowerCase();
-          const matchGlobal = Object.values(lead).some(val => 
-            String(val || '').toLowerCase().includes(searchLower)
-          );
-          if (!matchGlobal) return false;
+          let found = false;
+          const vals = Object.values(lead);
+          for (let i = 0; i < vals.length; i++) {
+            if (String(vals[i] || '').toLowerCase().includes(searchLower)) { found = true; break; }
+          }
+          if (!found) return false;
         }
 
-        // 2. Other Column Header Filters (excluding current key)
+        // 2. Other Column Header Filters
         for (const colKey of otherColumnFilterKeys) {
           const activeValues = columnFilters[colKey];
           if (activeValues && activeValues.length > 0) {
             let cellVal = lead[colKey];
             if (colKey === 'created_at' && cellVal) cellVal = new Date(cellVal).toLocaleString();
             const strVal = String(cellVal !== undefined && cellVal !== null ? cellVal : '').trim();
-            if (!activeValues.includes(strVal)) {
-              return false;
-            }
+            if (!activeValues.includes(strVal)) return false;
           }
         }
 
-        // 3. Other Advanced Multi-Column Rules (excluding current key)
-        if (otherRuleKeys.length > 0) {
-          const ruleMatches = otherRuleKeys.map(rKey => {
-            const rule = filterRules[rKey];
-            let cellVal = String(lead[rKey] !== undefined && lead[rKey] !== null ? lead[rKey] : '').toLowerCase().trim();
-            if (rKey === 'created_at' && lead[rKey]) {
-              cellVal = String(new Date(lead[rKey]).toLocaleString()).toLowerCase().trim();
+        // 3. Other Advanced Rules (short-circuit)
+        if (compiledRules.length > 0) {
+          for (let i = 0; i < compiledRules.length; i++) {
+            const { key: rKey, condition, targetVal } = compiledRules[i];
+            let cellVal = lead[rKey] !== undefined && lead[rKey] !== null ? String(lead[rKey]).toLowerCase().trim() : '';
+            if (rKey === 'created_at' && lead[rKey]) cellVal = new Date(lead[rKey]).toLocaleString('en-IN').toLowerCase().trim();
+            let matches;
+            switch (condition) {
+              case 'start_with': matches = cellVal.startsWith(targetVal); break;
+              case 'equal':      matches = cellVal === targetVal; break;
+              case 'not_equal':  matches = cellVal !== targetVal; break;
+              default:           matches = cellVal.includes(targetVal); break;
             }
-            const targetVal = String(rule.value || '').toLowerCase().trim();
-            
-            switch (rule.condition) {
-              case 'start_with':
-                return cellVal.startsWith(targetVal);
-              case 'equal':
-                return cellVal === targetVal;
-              case 'not_equal':
-                return cellVal !== targetVal;
-              case 'contains':
-              default:
-                return cellVal.includes(targetVal);
-            }
-          });
-
-          if (filterConditionType === 'OR') {
-            const passOr = ruleMatches.some(Boolean);
-            if (!passOr) return false;
-          } else {
-            const passAnd = ruleMatches.every(Boolean);
-            if (!passAnd) return false;
+            if (isOR) { if (matches) return true; }
+            else { if (!matches) return false; }
           }
+          if (isOR) return false;
         }
 
         return true;
@@ -1447,66 +1498,7 @@ export default function ClientReport({
     return <PremiumProgressLoader message="Loading Client Report" active={loading} />;
   }
 
-  // Apply Search & Filters
-  const filteredLeads = leads.filter(lead => {
-    // 1. Global Search
-    if (globalSearch) {
-      const searchLower = globalSearch.toLowerCase();
-      const matchGlobal = Object.values(lead).some(val => 
-        String(val || '').toLowerCase().includes(searchLower)
-      );
-      if (!matchGlobal) return false;
-    }
-
-    // 2. Legacy Column Header Filters
-    for (const key of Object.keys(columnFilters)) {
-      const activeValues = columnFilters[key];
-      if (activeValues && activeValues.length > 0) {
-        let cellVal = lead[key];
-        if (key === 'created_at' && cellVal) cellVal = new Date(cellVal).toLocaleString();
-        const strVal = String(cellVal !== undefined && cellVal !== null ? cellVal : '').trim();
-        if (!activeValues.includes(strVal)) {
-          return false;
-        }
-      }
-    }
-
-    // 3. Advanced Multi-Column Rules (with AND / OR Logic matching Image 2)
-    const ruleKeys = Object.keys(filterRules).filter(k => filterRules[k]?.value && filterRules[k].value.trim() !== '');
-    if (ruleKeys.length > 0) {
-      const ruleMatches = ruleKeys.map(key => {
-        const rule = filterRules[key];
-        let cellVal = String(lead[key] !== undefined && lead[key] !== null ? lead[key] : '').toLowerCase().trim();
-        if (key === 'created_at' && lead[key]) {
-          cellVal = String(new Date(lead[key]).toLocaleString()).toLowerCase().trim();
-        }
-        const targetVal = String(rule.value || '').toLowerCase().trim();
-        
-        switch (rule.condition) {
-          case 'start_with':
-            return cellVal.startsWith(targetVal);
-          case 'equal':
-            return cellVal === targetVal;
-          case 'not_equal':
-            return cellVal !== targetVal;
-          case 'contains':
-          default:
-            return cellVal.includes(targetVal);
-        }
-      });
-
-      if (filterConditionType === 'OR') {
-        const passOr = ruleMatches.some(Boolean);
-        if (!passOr) return false;
-      } else {
-        const passAnd = ruleMatches.every(Boolean);
-        if (!passAnd) return false;
-      }
-    }
-
-    return true;
-  });
-
+  // filteredLeads is now a useMemo (above the loading guard) for performance
   // Apply Pagination
   const numericItemsPerPage = (itemsPerPage === 'All' || itemsPerPage === '100000') ? Math.max(1, filteredLeads.length) : parseInt(itemsPerPage, 10);
   const totalPages = Math.ceil(filteredLeads.length / numericItemsPerPage) || 1;

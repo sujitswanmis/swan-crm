@@ -332,7 +332,12 @@ export default function MultiColumnFilterModal({
           const hasActiveFilter = Boolean(currentRule.value && String(currentRule.value).trim() !== '');
           const isCategorical = CATEGORICAL_COLUMNS.has(col.key);
           const isSelectMode = isCategorical && (currentRule.condition === 'equal' || currentRule.condition === 'not_equal');
-          const uniqueOptions = isCategorical && getUniqueValues ? getUniqueValues(col.key).filter(Boolean) : [];
+          // ⚡ PERF FIX: Only compute unique values when this column's accordion is open AND in select mode.
+          // Previously this ran getUniqueValues() on ALL 13 categorical columns × 12,430 rows on every render = 161,590 iterations/render.
+          const uniqueOptions = (isOpenCol && isSelectMode && typeof getUniqueValues === 'function')
+            ? getUniqueValues(col.key).filter(Boolean)
+            : [];
+
 
           return (
             <div
