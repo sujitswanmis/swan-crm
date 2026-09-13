@@ -229,7 +229,7 @@ export const MODULES_CONFIG = [
     id: 'settings', 
     path: 'settings', 
     label: 'Settings', 
-    category: 'System', 
+    category: 'Settings', 
     icon: <Settings2 size={20} />,
     subItemsType: 'tabs',
     subItems: [

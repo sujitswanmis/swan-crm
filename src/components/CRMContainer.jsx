@@ -17,7 +17,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -70,6 +70,22 @@ const THEMES = [
   { id: 'theme-carbon', name: 'Carbon Gold', icon: '🖤' },
   { id: 'theme-sunset', name: 'Sunset Crimson', icon: '🌅' },
   { id: 'theme-platina', name: 'Platina Clean', icon: '🥈' },
+];
+
+const SETTINGS_MODULE_ITEMS = [
+  { id: 'business', label: 'Business Profile', icon: Building2 },
+  { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
+  { id: 'fields', label: 'Custom Fields', icon: FormInput },
+  { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
+  { id: 'roles', label: 'Roles & Permissions', icon: Shield },
+  { id: 'automation', label: 'Automation & API', icon: Workflow },
+  { id: 'sessions', label: 'Monitor Sessions', icon: Monitor },
+  { id: 'audit', label: 'Activity Audit Logs', icon: Clock },
+  { id: 'data', label: 'Data Management', icon: Database },
+  { id: 'targets', label: 'Targets & Performance', icon: Target },
+  { id: 'media', label: 'File & Media Settings', icon: FileType },
+  { id: 'navigation', label: 'Page Navigation', icon: Compass },
+  { id: 'departments', label: 'Manage Departments', icon: Layers }
 ];
 
 // Helper to map DB status to Team Management Stage format
@@ -609,7 +625,8 @@ export default function CRMContainer({
     'Sales': false,
     'Purchase': false,
     'Human Resource': false,
-    'System': false
+    'System': false,
+    'Settings': false
   });
 
   useEffect(() => {
@@ -622,7 +639,8 @@ export default function CRMContainer({
     const salesTabs = ['registration', 'report', 'leads', 'orders'];
     const purchaseTabs = ['mrp', 'mrp_against'];
     const hrTabs = ['recruiter', 'joining'];
-    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'settings'];
+    const systemTabs = ['team', 'workplace', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'offline_rule'];
+    const settingsTabs = ['settings'];
 
     if (salesTabs.includes(activeTab)) {
       categoryToExpand = 'Sales';
@@ -632,6 +650,8 @@ export default function CRMContainer({
       categoryToExpand = 'Human Resource';
     } else if (systemTabs.includes(activeTab)) {
       categoryToExpand = 'System';
+    } else if (settingsTabs.includes(activeTab)) {
+      categoryToExpand = 'Settings';
     }
 
     if (categoryToExpand) {
@@ -639,7 +659,8 @@ export default function CRMContainer({
         'Sales': categoryToExpand === 'Sales',
         'Purchase': categoryToExpand === 'Purchase',
         'Human Resource': categoryToExpand === 'Human Resource',
-        'System': categoryToExpand === 'System'
+        'System': categoryToExpand === 'System',
+        'Settings': categoryToExpand === 'Settings'
       });
     }
 
@@ -2636,7 +2657,7 @@ export default function CRMContainer({
                     border: '1px solid rgba(37, 99, 235, 0.2)',
                     letterSpacing: '0.02em'
                   }}>
-                    v{pkg.version || '1.0.548'}
+                    v{pkg.version || '1.0.552'}
                   </span>
                 </div>
               </div>
@@ -3166,8 +3187,8 @@ export default function CRMContainer({
             moduleAccess['sms_config']?.view || 
             moduleAccess['rcs_config']?.view || 
             moduleAccess['email_config']?.view ||
-            moduleAccess['settings']?.view || 
-            globalRolePermissions?.editSettings) && (
+            moduleAccess['admin_message_config']?.view ||
+            moduleAccess['offline_rule']?.view) && (
               <div>
                 <button
                   onClick={() => toggleCategory('System')}
@@ -3454,134 +3475,47 @@ export default function CRMContainer({
                         <span>Offline Rule</span>
                       </button>
                     )}
-
-                    {/* Settings Accordion with Sub-Menu */}
-                    {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
-                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
-                        <button 
-                          onClick={() => {
-                            if (isSidebarCollapsed) {
-                              setIsSidebarCollapsed(false);
-                              setSettingsMenuExpanded(true);
-                            } else {
-                              setSettingsMenuExpanded(!settingsMenuExpanded);
-                            }
-                            if (activeTab !== 'settings') {
-                              handleTabChange('settings');
-                            }
-                          }}
-                          className="nav-item" 
-                          data-active={activeTab === 'settings'}
-                          title={isSidebarCollapsed ? "Settings" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                        >
-                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
-                            {settingsMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </span>
-                          <Settings size={20} style={{ flexShrink: 0 }} />
-                          <span>Settings</span>
-                        </button>
-                        
-                        <div className={`submenu-list ${settingsMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
-                          <div className="submenu-inner">
-                            <button
-                              onClick={() => handleSettingSubTabChange('business')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'business'}
-                            >
-                              Business Profile
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('crm')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'crm'}
-                            >
-                              CRM & Lead Config
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('fields')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'fields'}
-                            >
-                              Custom Fields
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('notifications')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'notifications'}
-                            >
-                              Notifications & Alerts
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('roles')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'roles'}
-                            >
-                              Roles & Permissions
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('automation')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'automation'}
-                            >
-                              Automation & API
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('sessions')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'sessions'}
-                            >
-                              Monitor Sessions
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('audit')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'audit'}
-                            >
-                              Activity Audit Logs
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('data')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'data'}
-                            >
-                              Data Management
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('targets')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'targets'}
-                            >
-                              Targets & Performance
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('media')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'media'}
-                            >
-                              File & Media Settings
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('navigation')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'navigation'}
-                            >
-                              Page Navigation
-                            </button>
-                            <button
-                              onClick={() => handleSettingSubTabChange('departments')}
-                              className="submenu-item"
-                              data-active={activeTab === 'settings' && currentSettingSubTab === 'departments'}
-                            >
-                              Manage Departments
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
+          )}
+
+          {/* Settings Category (Exact same structure & styling as System category) */}
+          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
+            <div>
+              <button
+                onClick={() => toggleCategory('Settings')}
+                className="category-header"
+              >
+                {expandedCategories['Settings'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span>Settings</span>
+              </button>
+
+              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Settings']) ? 'expanded' : ''}`}>
+                <div className="category-modules-inner">
+                  {SETTINGS_MODULE_ITEMS.filter(item => {
+                    if (userRole === 'admin' || userRole === 'Admin') return true;
+                    return getSubItemPermissions(moduleAccess, userRole, 'settings', item.id)?.view !== false;
+                  }).map(item => {
+                    const IconComponent = item.icon;
+                    const isItemActive = activeTab === 'settings' && currentSettingSubTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleSettingSubTabChange(item.id)}
+                        className="nav-item"
+                        data-active={isItemActive}
+                        title={isSidebarCollapsed ? item.label : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <IconComponent size={20} style={{ flexShrink: 0 }} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           )}
         </nav>
       </aside>
@@ -5059,7 +4993,9 @@ export default function CRMContainer({
                   <div style={{ padding: '0.5rem 0' }}>
                     <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Role</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{userRole}</span>
+                      <span style={{ fontWeight: 700, color: (userEmail?.toLowerCase() === 'supujacreations@gmail.com') ? '#854d0e' : 'var(--text-primary)', textTransform: 'capitalize' }}>
+                        {(userEmail?.toLowerCase() === 'supujacreations@gmail.com') ? '👑 Master Admin' : userRole}
+                      </span>
                     </div>
                     {userCompany && (
                       <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>

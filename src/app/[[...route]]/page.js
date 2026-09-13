@@ -33,8 +33,9 @@ export default async function Home({ params, searchParams }) {
     .eq('user_id', user.id)
     .single();
 
-  const callerRole = roleData?.role || 'agent';
-  const isAdmin = callerRole === 'admin' || callerRole === 'Admin';
+  const isMasterAdminEmail = (user.email || '').toLowerCase() === 'supujacreations@gmail.com';
+  const callerRole = isMasterAdminEmail ? 'Admin' : (roleData?.role || 'agent');
+  const isAdmin = isMasterAdminEmail || callerRole === 'admin' || callerRole === 'Admin';
 
   if (callerRole === 'customer') {
     redirect('/chat');
@@ -59,12 +60,13 @@ export default async function Home({ params, searchParams }) {
     }
   }
 
-  const userRole = effectiveRoleData?.role || 'agent';
-  const canImportExport = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
-  const canRead = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
-  const canWrite = userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
+  const isMasterAdminUser = isMasterAdminEmail && !isImpersonating;
+  const userRole = isMasterAdminUser ? 'Admin' : (effectiveRoleData?.role || 'agent');
+  const canImportExport = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
+  const canRead = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
+  const canWrite = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
   const moduleAccess = effectiveRoleData?.module_access || {};
-  const isApproved = effectiveRoleData?.is_approved;
+  const isApproved = isMasterAdminUser || effectiveRoleData?.is_approved;
   const userCompany = effectiveRoleData?.company || '';
   const userName = effectiveRoleData?.emp_name || effectiveRoleData?.email?.split('@')[0] || 'User';
   const effectiveUserId = effectiveRoleData?.user_id || user.id;

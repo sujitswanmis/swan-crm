@@ -37,6 +37,12 @@ const DESIGNATIONS = [
 
 const EMP_STATUS_OPTIONS = ['Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'];
 
+const isMasterAdmin = (u) => {
+  if (!u) return false;
+  const email = (u.email || '').toLowerCase().trim();
+  return email === 'supujacreations@gmail.com' || u.emp_id === 'MasterAdmin' || u.emp_designation === 'Master Admin' || u.module_access?.is_master_admin === true;
+};
+
 function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hoverBg, onClick }) {
   const [hovered, setHovered] = useState(false);
 
@@ -1474,7 +1480,26 @@ export default function TeamManagement({ initialUsers = [] }) {
                 })()}
               </td>
               <td style={{ padding: '1rem' }}>
-                <div style={{ fontWeight: 600 }}>{user.emp_name || '-'}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 600 }}>{user.emp_name || '-'}</div>
+                  {isMasterAdmin(user) && (
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      padding: '0.12rem 0.45rem',
+                      borderRadius: '4px',
+                      background: 'linear-gradient(135deg, #fef08a 0%, #fde047 100%)',
+                      color: '#854d0e',
+                      border: '1px solid #facc15',
+                      boxShadow: '0 1px 3px rgba(234, 179, 8, 0.25)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.2rem'
+                    }}>
+                      👑 Master Admin
+                    </span>
+                  )}
+                </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{user.email}</div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{user.emp_mobile || '-'}</div>
                 {user.emp_alt_mobile && (
@@ -1541,14 +1566,14 @@ export default function TeamManagement({ initialUsers = [] }) {
               <td style={{ padding: '1rem' }}>
                 <button 
                   onClick={() => toggleApproval(user.user_id, user.is_approved, user.emp_name || user.email)}
-                  disabled={user.role === 'admin'}
+                  disabled={isMasterAdmin(user)}
                   style={{ 
                     padding: '0.3rem 0.6rem', 
                     borderRadius: '99px', 
                     fontSize: '0.75rem', 
                     fontWeight: 600, 
                     border: 'none', 
-                    cursor: user.role === 'admin' ? 'not-allowed' : 'pointer',
+                    cursor: isMasterAdmin(user) ? 'not-allowed' : 'pointer',
                     backgroundColor: user.is_approved ? '#dcfce7' : '#fee2e2',
                     color: user.is_approved ? '#166534' : '#991b1b'
                   }}
@@ -1557,31 +1582,63 @@ export default function TeamManagement({ initialUsers = [] }) {
                 </button>
               </td>
               <td style={{ padding: '1rem' }}>
-                <select 
-                  value={user.role} 
-                  onChange={(e) => handleRequestRoleChange(user.user_id, user.emp_name || user.email, user.role, e.target.value)}
-                  disabled={user.role === 'admin' || user.role === 'Admin'}
-                  style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.85rem', cursor: (user.role === 'admin' || user.role === 'Admin') ? 'not-allowed' : 'pointer' }}
-                >
-                  <option value="Admin">Admin</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Recruiter">Recruiter</option>
-                  <option value="Purchase">Purchase</option>
-                  <option value="agent">Agent (Legacy)</option>
-                </select>
+                {isMasterAdmin(user) ? (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    background: '#fef9c3',
+                    color: '#854d0e',
+                    border: '1px solid #fde047'
+                  }}>
+                    👑 Master Admin
+                  </span>
+                ) : (
+                  <select 
+                    value={user.role} 
+                    onChange={(e) => handleRequestRoleChange(user.user_id, user.emp_name || user.email, user.role, e.target.value)}
+                    style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.85rem', cursor: 'pointer' }}
+                  >
+                    <option value="Admin">Admin</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Supervisor">Supervisor</option>
+                    <option value="Sales">Sales</option>
+                    <option value="Recruiter">Recruiter</option>
+                    <option value="Purchase">Purchase</option>
+                    <option value="agent">Agent (Legacy)</option>
+                  </select>
+                )}
               </td>
               <td style={{ padding: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <button 
-                    onClick={() => handleAccessClick(user)}
-                    disabled={user.role === 'admin' || user.role === 'Admin'}
-                    className="btn-action-primary"
-                    style={{ cursor: (user.role === 'admin' || user.role === 'Admin') ? 'not-allowed' : 'pointer' }}
-                  >
-                    Manage Access
-                  </button>
+                  {isMasterAdmin(user) ? (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      color: '#15803d',
+                      backgroundColor: '#dcfce7',
+                      border: '1px solid #bbf7d0',
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px'
+                    }}>
+                      ✓ Full Master Access
+                    </span>
+                  ) : (
+                    <button 
+                      onClick={() => handleAccessClick(user)}
+                      className="btn-action-primary"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      Manage Access
+                    </button>
+                  )}
                 </div>
               </td>
               <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
@@ -1597,15 +1654,17 @@ export default function TeamManagement({ initialUsers = [] }) {
                         borderColor="#bbf7d0"
                         onClick={() => handleRestoreUser(user.user_id)}
                       />
-                      <HoverIconButton
-                        icon={Trash2}
-                        label="Delete Permanently"
-                        bg="#fee2e2"
-                        hoverBg="#fecaca"
-                        color="#991b1b"
-                        borderColor="#fecaca"
-                        onClick={() => setDeleteModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
-                      />
+                      {!isMasterAdmin(user) && (
+                        <HoverIconButton
+                          icon={Trash2}
+                          label="Delete Permanently"
+                          bg="#fee2e2"
+                          hoverBg="#fecaca"
+                          color="#991b1b"
+                          borderColor="#fecaca"
+                          onClick={() => setDeleteModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
+                        />
+                      )}
                     </>
                   ) : (
                     <>
@@ -1654,15 +1713,17 @@ export default function TeamManagement({ initialUsers = [] }) {
                         borderColor="#c7d2fe"
                         onClick={() => handleOpenSendResetModal(user)}
                       />
-                      <HoverIconButton
-                        icon={Trash2}
-                        label="Move to Trash"
-                        bg="#fff7ed"
-                        hoverBg="#ffedd5"
-                        color="#c2410c"
-                        borderColor="#fed7aa"
-                        onClick={() => setTrashConfirmModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
-                      />
+                      {!isMasterAdmin(user) && (
+                        <HoverIconButton
+                          icon={Trash2}
+                          label="Move to Trash"
+                          bg="#fff7ed"
+                          hoverBg="#ffedd5"
+                          color="#c2410c"
+                          borderColor="#fed7aa"
+                          onClick={() => setTrashConfirmModal({ show: true, userId: user.user_id, userName: user.emp_name || user.email })}
+                        />
+                      )}
                     </>
                   )}
                 </div>
