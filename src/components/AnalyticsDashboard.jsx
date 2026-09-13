@@ -689,50 +689,49 @@ export default function AnalyticsDashboard({
       const roleBadgeColor = roleCategory === 'SALES' ? '#1d4ed8' : roleCategory === 'RECRUITER' ? '#6d28d9' : '#475569';
 
       // ------------------------------------------------------------------
-      // PROCESS 1: PRIMARY OUTREACH / PIPELINE (Max 30 pts)
+      // PROCESS 1A: CALLING & OUTREACH (Max 30 pts)
       // ------------------------------------------------------------------
-      let primaryProcess = {
-        name: roleCategory === 'SALES' ? 'Calling & Outreach' : roleCategory === 'RECRUITER' ? 'Candidate Pipeline' : 'SOP Execution',
-        type: roleCategory,
-        score: 0,
+      const callingScore = Math.min(30, Math.round((act.uniqueLeads / 15) * 20 + (act.actions / 30) * 10));
+      const isCallerApplicable = empLeads.length > 0 || act.uniqueLeads > 0 || act.actions > 0 || roleCategory === 'SALES';
+      const callingProcess = {
+        name: 'Calling & Outreach',
+        score: isCallerApplicable ? callingScore : 0,
         max: 30,
-        metricText: '',
-        applicable: true
+        metricText: isCallerApplicable ? `${act.uniqueLeads} touched · ${act.actions} updates` : 'Exempt (No leads)',
+        applicable: isCallerApplicable
       };
 
-      let recruiterWorkCount = 0;
-      if (roleCategory === 'SALES') {
-        const callingScore = Math.min(30, Math.round((act.uniqueLeads / 15) * 20 + (act.actions / 30) * 10));
-        primaryProcess.score = callingScore;
-        primaryProcess.metricText = `${act.uniqueLeads} touched · ${act.actions} updates`;
-        primaryProcess.applicable = empLeads.length > 0 || act.uniqueLeads > 0 || act.actions > 0;
-      } else if (roleCategory === 'RECRUITER') {
-        const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => 
-          isRecruiterMatch(p.recruiter_assigned, emp) || 
-          isRecruiterMatch(p.created_by, emp) ||
-          (p.department && emp.department && p.department.toLowerCase() === emp.department.toLowerCase())
-        );
-        const myPositionIds = new Set(myPositions.map(p => p.id));
-        const myCandidates = (dashboardSummaries.recruitmentSummary?.candidates || []).filter(c => 
-          isRecruiterMatch(c.created_by, emp) || 
-          myPositionIds.has(c.position_id)
-        );
-        const inInterview = myCandidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview')).length;
-        const shortlisted = myCandidates.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist')).length;
-        const hired = myCandidates.filter(c => c.current_stage === 'S09' || (c.candidate_status || '').toLowerCase().includes('joined') || c.current_stage === 'S08').length;
-        recruiterWorkCount = myCandidates.length;
+      // ------------------------------------------------------------------
+      // PROCESS 1B: RECRUITER & CANDIDATE PIPELINE (Max 30 pts)
+      // ------------------------------------------------------------------
+      const myPositions = (dashboardSummaries.recruitmentSummary?.positions || []).filter(p => 
+        isRecruiterMatch(p.recruiter_assigned, emp) || 
+        isRecruiterMatch(p.created_by, emp) ||
+        (p.department && emp.department && p.department.toLowerCase() === emp.department.toLowerCase())
+      );
+      const myPositionIds = new Set(myPositions.map(p => p.id));
+      const myCandidates = (dashboardSummaries.recruitmentSummary?.candidates || []).filter(c => 
+        isRecruiterMatch(c.created_by, emp) || 
+        myPositionIds.has(c.position_id)
+      );
+      const inInterview = myCandidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview')).length;
+      const shortlisted = myCandidates.filter(c => c.current_stage === 'S07' || (c.candidate_status || '').toLowerCase().includes('shortlist')).length;
+      const hired = myCandidates.filter(c => c.current_stage === 'S09' || (c.candidate_status || '').toLowerCase().includes('joined') || c.current_stage === 'S08').length;
+      const recruiterWorkCount = myCandidates.length;
 
-        // Benchmark: 5 candidates handled, or interviews/hires
-        const recScore = Math.min(30, Math.round((recruiterWorkCount / 5) * 15 + (inInterview * 5) + (shortlisted * 5) + (hired * 10)));
-        primaryProcess.score = recScore;
-        primaryProcess.metricText = `${recruiterWorkCount} candidates · ${inInterview} in-interview · ${hired} hired`;
-        primaryProcess.applicable = true;
-      } else {
-        const checkRate = checkTotal > 0 ? (checkDone / checkTotal) : 0;
-        primaryProcess.score = Math.round(checkRate * 30);
-        primaryProcess.metricText = checkTotal > 0 ? `${checkDone}/${checkTotal} checklists done` : 'Operations execution';
-        primaryProcess.applicable = checkTotal > 0;
-      }
+      const isRecruiterApplicable = roleCategory === 'RECRUITER' || recruiterWorkCount > 0 || myPositions.length > 0;
+      const recScore = Math.min(30, Math.round((recruiterWorkCount / 5) * 15 + (inInterview * 5) + (shortlisted * 5) + (hired * 10)));
+      const recruiterProcess = {
+        name: 'Recruiter Pipeline',
+        score: isRecruiterApplicable ? recScore : 0,
+        max: 30,
+        metricText: isRecruiterApplicable 
+          ? (recruiterWorkCount > 0 ? `${recruiterWorkCount} candidates · ${inInterview} in-interview · ${hired} hired` : '0 active candidates')
+          : 'Exempt (Not a Recruiter)',
+        applicable: isRecruiterApplicable
+      };
+
+      const primaryProcess = roleCategory === 'RECRUITER' ? recruiterProcess : callingProcess;
 
       // ------------------------------------------------------------------
       // PROCESS 2: FOLLOW-UP DISCIPLINE / REQUISITIONS (Max 25 pts)
@@ -823,14 +822,14 @@ export default function AnalyticsDashboard({
       else attendanceProcess.score = 0;
 
       // Ensure backward/forward compatible properties on each process object
-      [primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].forEach(p => {
+      [callingProcess, recruiterProcess, primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].forEach(p => {
         p.earned = p.score;
         p.weight = p.max;
         p.metric = p.metricText;
       });
 
       // Dynamic normalization across applicable processes
-      const applicableList = [primaryProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
+      const applicableList = [callingProcess, recruiterProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
       const earnedPoints = applicableList.reduce((acc, p) => acc + p.score, 0);
       const maxPoints = applicableList.reduce((acc, p) => acc + p.max, 0);
 
@@ -890,6 +889,8 @@ export default function AnalyticsDashboard({
         tasksOverdue,
         attRecord,
         hasActiveWork,
+        callingProcess,
+        recruiterProcess,
         primaryProcess,
         followupProcess,
         checklistProcess,
@@ -1704,7 +1705,7 @@ export default function AnalyticsDashboard({
                   Process-Wise Performance Leaderboard ({filteredScorecard.length})
                 </h4>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                  Transparent scoring breakdown: Calling/Hiring (30p) + Follow-up/Requisitions (25p) + Checklists (20p) + Delegation (15p) + Attendance (10p)
+                  Transparent scoring breakdown: Calling/Leads (30p) + Recruiter (30p) + Follow-up/Requisitions (25p) + Checklists (20p) + Delegation (15p) + Attendance (10p)
                 </div>
               </div>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Click any executive row to filter dashboard</span>
@@ -1718,7 +1719,7 @@ export default function AnalyticsDashboard({
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '115px' }}>🎯 Leads Touched</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>📞 Outreach / 🧑‍💼 Hiring (30p)</th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>🧑‍💼 Recruiter (30p)</th>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>📋 Tasks (15p)</th>
@@ -1799,7 +1800,7 @@ export default function AnalyticsDashboard({
                           </span>
                         </td>
 
-                        {/* Leads Touched */}
+                        {/* Leads Touched & Calling Score */}
                         <td style={{ textAlign: 'center', padding: '0.65rem 0.65rem' }}>
                           <div style={{
                             fontSize: '0.95rem',
@@ -1809,17 +1810,19 @@ export default function AnalyticsDashboard({
                             {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
                           </div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                            {row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : 'No leads')}
+                            {row.callingProcess?.applicable
+                              ? `${row.callingProcess.score} / 30 pts · ${row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : '0 assigned')}`
+                              : 'Exempt (No leads)'}
                           </div>
                         </td>
 
-                        {/* Primary Process (Calling / Hiring) */}
+                        {/* Recruiter & Hiring Pipeline (30p) */}
                         <td style={{ padding: '0.65rem 0.65rem' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.primaryProcess.metricText || row.primaryProcess.metric || 'No Activity'}
+                            {row.recruiterProcess?.applicable ? (row.recruiterProcess.metricText || 'No Candidates') : 'Exempt (Not a Recruiter)'}
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: row.primaryProcess.score > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.primaryProcess.score} / {row.primaryProcess.max} pts
+                          <div style={{ fontSize: '0.68rem', color: row.recruiterProcess?.applicable && row.recruiterProcess.score > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {row.recruiterProcess?.applicable ? `${row.recruiterProcess.score} / ${row.recruiterProcess.max || 30} pts` : 'Exempt (Not scored)'}
                           </div>
                         </td>
 
@@ -2777,10 +2780,10 @@ export default function AnalyticsDashboard({
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
                             <span style={{
                               padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
-                              backgroundColor: (row.primaryProcess?.score ?? 0) >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                              color: (row.primaryProcess?.score ?? 0) >= 15 ? '#10b981' : '#ef4444'
+                              backgroundColor: (row.callingProcess?.score ?? row.primaryProcess?.score ?? 0) >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: (row.callingProcess?.score ?? row.primaryProcess?.score ?? 0) >= 15 ? '#10b981' : '#ef4444'
                             }}>
-                              {row.primaryProcess?.score ?? 0} / {row.primaryProcess?.max ?? 30} pts
+                              {row.callingProcess?.score ?? row.primaryProcess?.score ?? 0} / 30 pts
                             </span>
                           </td>
                         </tr>
