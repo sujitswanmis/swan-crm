@@ -280,37 +280,40 @@ export default function LeadDashboard({
     if (defaultTab === 'overview' && canViewOverview) {
       return 'overview';
     }
-    if (typeof window !== 'undefined') {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const stageParam = urlParams.get('stage');
-        const subtabParam = urlParams.get('subtab') || urlParams.get('tab');
-        if ((stageParam === 'hourly_work' || subtabParam === 'hourly') && canViewHourlyWork) {
-          return 'hourly';
-        }
-        if (subtabParam === 'overview' && canViewOverview) {
-          return 'overview';
-        }
-        const saved = localStorage.getItem('crm_lead_dashboard_subtab');
-        if (saved === 'hourly' && canViewHourlyWork) {
-          return 'hourly';
-        }
-        if (saved === 'overview' && canViewOverview) {
-          return 'overview';
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
     return canViewOverview ? 'overview' : (canViewHourlyWork ? 'hourly' : 'overview');
   });
 
-  // Sync when defaultTab prop changes from parent
+  // Sync when defaultTab prop changes from parent, or restore from URL / localStorage on mount
   useEffect(() => {
     if (defaultTab === 'hourly' && canViewHourlyWork) {
       setActiveDashboardTab('hourly');
     } else if (defaultTab === 'overview' && canViewOverview) {
       setActiveDashboardTab('overview');
+    } else if (!defaultTab && typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const stageParam = urlParams.get('stage');
+        const subtabParam = urlParams.get('subtab') || urlParams.get('tab');
+        if ((stageParam === 'hourly_work' || subtabParam === 'hourly') && canViewHourlyWork) {
+          setActiveDashboardTab('hourly');
+          return;
+        }
+        if (subtabParam === 'overview' && canViewOverview) {
+          setActiveDashboardTab('overview');
+          return;
+        }
+        const saved = localStorage.getItem('crm_lead_dashboard_subtab');
+        if (saved === 'hourly' && canViewHourlyWork) {
+          setActiveDashboardTab('hourly');
+          return;
+        }
+        if (saved === 'overview' && canViewOverview) {
+          setActiveDashboardTab('overview');
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   }, [defaultTab, canViewHourlyWork, canViewOverview]);
 

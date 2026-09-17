@@ -243,7 +243,8 @@ export default function CRMContainer({
   impersonatorAdmin = null,
   impersonatedUser = null,
   initialRoute = '',
-  initialSearchParams = null
+  initialSearchParams = null,
+  initialTheme = 'default'
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -696,17 +697,7 @@ export default function CRMContainer({
     }));
   };
   
-  const [currentTheme, setCurrentTheme] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm-theme');
-        if (saved) return saved;
-        const match = document.cookie.match(/(^|;\s*)crm-theme=([^;]+)/);
-        if (match) return decodeURIComponent(match[2]);
-      } catch (e) {}
-    }
-    return 'default';
-  });
+  const [currentTheme, setCurrentTheme] = useState(initialTheme || 'default');
 
   const applyTheme = (themeId) => {
     setCurrentTheme(themeId);
@@ -735,7 +726,7 @@ export default function CRMContainer({
   // Load and apply theme & avatar
   useEffect(() => {
     try {
-      const savedTheme = localStorage.getItem('crm-theme') || 'default';
+      const savedTheme = localStorage.getItem('crm-theme') || initialTheme || 'default';
       if (savedTheme !== currentTheme) {
         setCurrentTheme(savedTheme);
       }
@@ -1534,27 +1525,15 @@ export default function CRMContainer({
   const [activeCornerToast, setActiveCornerToast] = useState(null);
   const [activeCenterModal, setActiveCenterModal] = useState(null);
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState(false);
-  const [isDesktopPromptDismissed, setIsDesktopPromptDismissed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('crm_desktop_notif_dismissed') === 'true';
-    }
-    return false;
-  });
+  const [isDesktopPromptDismissed, setIsDesktopPromptDismissed] = useState(false);
   const [browserPermission, setBrowserPermission] = useState('default');
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
   const [leadsFilterStage, setLeadsFilterStage] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        let stage = params.get('stage');
-        if (stage === 'all') return null;
-        if (stage) return stage;
-        return localStorage.getItem('crmActiveStage') || null;
-      } catch (e) {}
-    }
-    return null;
+    const stage = initialSearchParams?.stage;
+    if (stage === 'all') return null;
+    return stage || null;
   });
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
 
@@ -1572,8 +1551,11 @@ export default function CRMContainer({
 
   // Check browser notification permission status on mount and listen for test alert preview
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setBrowserPermission(Notification.permission);
+    if (typeof window !== 'undefined') {
+      if ('Notification' in window) {
+        setBrowserPermission(Notification.permission);
+      }
+      setIsDesktopPromptDismissed(localStorage.getItem('crm_desktop_notif_dismissed') === 'true');
     }
 
     const handleTestEvent = (e) => {
@@ -1673,11 +1655,11 @@ export default function CRMContainer({
       if (stage === 'all') stage = null;
       if (stage) {
         setLeadsFilterStage(stage);
-      } else {
+      } else if (!params.has('stage')) {
         const savedStage = localStorage.getItem('crmActiveStage');
         if (savedStage) setLeadsFilterStage(savedStage);
       }
-    } else {
+    } else if (!params.has('stage')) {
       const savedStage = localStorage.getItem('crmActiveStage');
       if (savedStage) setLeadsFilterStage(savedStage);
     }
@@ -3612,7 +3594,7 @@ export default function CRMContainer({
             
             {activeTab !== 'ai' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
-                <h1 style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1, letterSpacing: '-0.015em' }}>
+                <h1 suppressHydrationWarning style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1, letterSpacing: '-0.015em' }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 

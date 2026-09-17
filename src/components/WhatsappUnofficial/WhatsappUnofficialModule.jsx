@@ -22,16 +22,17 @@ const MODULE_TABS = [
 export default function WhatsappUnofficialModule({ userRole, userId, moduleAccess = {} }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_unofficial', MODULE_TABS);
 
-  const [activeTab, setActiveTab] = useState(() => {
+  const [activeTab, setActiveTab] = useState(() => visibleTabs[0]?.id || 'dashboard');
+
+  // Ensure active tab stays valid and sync URL param on mount
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param && visibleTabs.some(t => t.id === param)) return param;
+      if (param && visibleTabs.some(t => t.id === param)) {
+        setActiveTab(param);
+        return;
+      }
     }
-    return visibleTabs[0]?.id || 'dashboard';
-  });
-
-  // Ensure active tab stays valid
-  useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
       setActiveTab(visibleTabs[0].id);
     }

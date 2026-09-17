@@ -93,22 +93,8 @@ export default function AttendanceModule({
     if (onSubTabChange) onSubTabChange(tab);
   };
 
-  // Today's punch state (with 0ms instant localStorage cache)
-  const [todayRecord, setTodayRecord] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const todayStr = getTodayDateString();
-        const cached = localStorage.getItem(`att_today_record_${userEmail || 'active'}`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed && parsed.attendance_date === todayStr) {
-            return parsed;
-          }
-        }
-      } catch {}
-    }
-    return null;
-  });
+  // Today's punch state (with 0ms instant localStorage cache synced on mount)
+  const [todayRecord, setTodayRecord] = useState(null);
   const [loadingToday, setLoadingToday] = useState(true);
   const [punchingIn, setPunchingIn] = useState(false);
   const [punchingOut, setPunchingOut] = useState(false);
@@ -132,12 +118,12 @@ export default function AttendanceModule({
     }
   };
 
-  // Sync cache if userEmail changes
+  // Sync cache if userEmail changes or on mount
   useEffect(() => {
-    if (!userEmail || typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
     try {
       const todayStr = getTodayDateString();
-      const cached = localStorage.getItem(`att_today_record_${userEmail}`);
+      const cached = localStorage.getItem(`att_today_record_${userEmail || 'active'}`);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed && parsed.attendance_date === todayStr) {
@@ -1681,11 +1667,11 @@ export default function AttendanceModule({
                 LIVE ATTENDANCE TERMINAL
               </div>
               
-              <div style={{ fontSize: '2.4rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+              <div suppressHydrationWarning style={{ fontSize: '2.4rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
                 {formatTimeIST(currentTime, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
               </div>
 
-              <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div suppressHydrationWarning style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Calendar size={15} />
                 {formatDateIST(currentTime, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </div>

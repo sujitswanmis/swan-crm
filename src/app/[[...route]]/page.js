@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import CRMContainer from '@/components/CRMContainer';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 
 // Next.js config to ensure this page stays dynamic (always fetches latest data)
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,12 @@ export default async function Home({ params, searchParams }) {
   const resolvedSearchParams = await searchParams;
   const route = resolvedParams?.route;
   const viewAsUserId = resolvedSearchParams?.view_as || resolvedSearchParams?.impersonate;
+
+  let initialTheme = 'default';
+  try {
+    const cookieStore = await cookies();
+    initialTheme = cookieStore.get('crm-theme')?.value || 'default';
+  } catch (_e) {}
 
   const supabase = await createClient();
   
@@ -112,6 +119,7 @@ export default async function Home({ params, searchParams }) {
         impersonatedUser={isImpersonating ? effectiveRoleData : null}
         initialRoute={Array.isArray(route) ? route.join('/') : (route || '')}
         initialSearchParams={resolvedSearchParams}
+        initialTheme={initialTheme}
       />
     </main>
   );
