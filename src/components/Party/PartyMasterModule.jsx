@@ -663,7 +663,7 @@ export default function PartyMasterModule({
       setS05TerritoryForm(prev => ({
         ...prev,
         state: party.state_name,
-        district: party.district_name || (dists.length > 0 ? dists[0] : ''),
+        district: party.district_name || '',
         tehsil_area: party.tehsil || prev.tehsil_area
       }));
     }
