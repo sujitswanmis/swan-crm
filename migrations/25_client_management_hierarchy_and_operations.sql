@@ -52,6 +52,8 @@ ALTER TABLE party_master
   ADD COLUMN IF NOT EXISTS address text,
   ADD COLUMN IF NOT EXISTS state_name text,
   ADD COLUMN IF NOT EXISTS district_name text,
+  ADD COLUMN IF NOT EXISTS tehsil text,
+  ADD COLUMN IF NOT EXISTS block_name text,
   ADD COLUMN IF NOT EXISTS city_village text,
   ADD COLUMN IF NOT EXISTS pincode text,
   ADD COLUMN IF NOT EXISTS order_category text,

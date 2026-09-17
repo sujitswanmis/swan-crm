@@ -30,13 +30,8 @@ import {
 } from '@/app/actions/partyMaster';
 import { getEmployeesMaster } from '@/app/actions/employee';
 
-// Pre-defined Indian States for smooth fallback
-const INDIAN_STATES = [
-  'Punjab', 'Haryana', 'Uttar Pradesh', 'Rajasthan', 'Madhya Pradesh',
-  'Maharashtra', 'Gujarat', 'Bihar', 'West Bengal', 'Uttarakhand',
-  'Himachal Pradesh', 'Chhattisgarh', 'Jharkhand', 'Odisha', 'Andhra Pradesh',
-  'Telangana', 'Karnataka', 'Tamil Nadu'
-];
+import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
+const INDIAN_STATES = ALL_INDIAN_STATES;
 
 const PRODUCT_GROUPS = [
   { id: 'ROTAVATOR', name: 'Rotavator (Champion & Regular Series)' },
@@ -220,7 +215,9 @@ export default function PartyMasterModule() {
     pan: '',
     address: '',
     state_name: 'Punjab',
-    district_name: '',
+    district_name: 'Amritsar',
+    tehsil: '',
+    block_name: '',
     city_village: '',
     pincode: '',
     order_category: 'Rotavator',
@@ -254,25 +251,19 @@ export default function PartyMasterModule() {
     contact_alt_email_2_1: ''
   });
 
-  // Step Data States
+  // Step Data States (Territory Coverage exclusively moved to S05)
   const [s01DistForm, setS01DistForm] = useState({
-    zone: 'North Zone',
-    territory_coverage: ['Punjab Central', 'Malwa Region'],
-    warehouse_address: '',
-    storage_capacity_sqft: 10000,
-    has_unloading_crane: true
+    zone: 'North Zone'
   });
 
   const [s02DealerForm, setS02DealerForm] = useState({
     parent_distributor_id: '',
-    territory_coverage: ['Khanna Mandi'],
     showroom_area_sqft: 2500,
     dealership_type: 'EXCLUSIVE_SWAN'
   });
 
   const [s03SubDealerForm, setS03SubDealerForm] = useState({
-    parent_dealer_id: '',
-    territory_coverage: ['Samrala Block', 'Village Counters']
+    parent_dealer_id: ''
   });
 
   const [s04CommForm, setS04CommForm] = useState({
@@ -442,7 +433,9 @@ export default function PartyMasterModule() {
       pan: '',
       address: '',
       state_name: 'Punjab',
-      district_name: '',
+      district_name: 'Amritsar',
+      tehsil: '',
+      block_name: '',
       city_village: '',
       pincode: '',
       order_category: 'Rotavator',
@@ -477,6 +470,67 @@ export default function PartyMasterModule() {
     setWizardParty(party);
     const step = party.next_step?.split('_')[0] || 'S00';
     setWizardStep(step === 'S05' || step === 'S05_1' ? 'S05' : step);
+    
+    // Auto-populate S00 and other step states from party data
+    const st = party.state_name || 'Punjab';
+    const dists = INDIAN_STATE_DISTRICTS[st] || [];
+    setS00Form(prev => ({
+      ...prev,
+      party_type: party.party_type || 'Dealer',
+      firm_name: party.firm_name || '',
+      legal_name: party.legal_name || '',
+      constitution_type: party.constitution_type || 'PROPRIETORSHIP',
+      gstin: party.gstin || party.gst_no || '',
+      pan: party.pan || party.pan_no || '',
+      address: party.address || '',
+      state_name: st,
+      district_name: party.district_name || (dists.length > 0 ? dists[0] : ''),
+      tehsil: party.tehsil || '',
+      block_name: party.block_name || '',
+      city_village: party.city_village || '',
+      pincode: party.pincode || '',
+      biz_contact_no_1: party.biz_contact_no_1 || party.primary_mobile || '',
+      biz_contact_no_2: party.biz_contact_no_2 || '',
+      biz_alt_no_1: party.biz_alt_no_1 || '',
+      biz_alt_no_2: party.biz_alt_no_2 || '',
+      biz_email_1: party.biz_email_1 || party.official_email || '',
+      biz_email_2: party.biz_email_2 || '',
+      biz_alt_email_1: party.biz_alt_email_1 || '',
+      biz_alt_email_2: party.biz_alt_email_2 || '',
+      contact_person_name_1: party.contact_person_name_1 || party.owner_name || '',
+      contact_mobile_1_1: party.contact_mobile_1_1 || party.primary_mobile || '',
+      contact_mobile_1_2: party.contact_mobile_1_2 || '',
+      contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || '',
+      contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || '',
+      contact_email_1_2: party.contact_email_1_2 || '',
+      contact_alt_email_1_1: party.contact_alt_email_1_1 || '',
+      contact_person_name_2: party.contact_person_name_2 || '',
+      contact_mobile_2_1: party.contact_mobile_2_1 || '',
+      contact_mobile_2_2: party.contact_mobile_2_2 || '',
+      contact_alt_mobile_2_1: party.contact_alt_mobile_2_1 || '',
+      contact_alt_mobile_2_2: party.contact_alt_mobile_2_2 || '',
+      contact_email_2_2: party.contact_email_2_2 || '',
+      contact_alt_email_2_1: party.contact_alt_email_2_1 || ''
+    }));
+
+    if (party.parent_distributor_id) {
+      setS02DealerForm(prev => ({ ...prev, parent_distributor_id: party.parent_distributor_id }));
+    }
+    if (party.parent_dealer_id) {
+      setS03SubDealerForm(prev => ({ ...prev, parent_dealer_id: party.parent_dealer_id }));
+    }
+    if (party.billing_route_type) {
+      setS04CommForm(prev => ({ ...prev, billing_route_type: party.billing_route_type }));
+    }
+    if (party.state_name) {
+      setS05TerritoryForm(prev => ({
+        ...prev,
+        state: party.state_name,
+        district: party.district_name || (dists.length > 0 ? dists[0] : ''),
+        tehsil_area: party.tehsil || prev.tehsil_area
+      }));
+    }
+
     setShowWizard(true);
   };
 
@@ -517,8 +571,6 @@ export default function PartyMasterModule() {
     try {
       await updatePartyStep(activePartyId, 'S01_Distributor_Registration', {
         zone: s01DistForm.zone,
-        territory: s01DistForm.territory_coverage.join(', '),
-        warehouse_address: s01DistForm.warehouse_address,
         workflow_status: 'S01_Completed',
         next_step: 'S04_Commercial'
       });
@@ -538,8 +590,8 @@ export default function PartyMasterModule() {
     try {
       await updatePartyStep(activePartyId, 'S02_Dealer_Registration', {
         parent_distributor_id: s02DealerForm.parent_distributor_id,
-        territory: s02DealerForm.territory_coverage.join(', '),
         dealership_type: s02DealerForm.dealership_type,
+        showroom_area_sqft: s02DealerForm.showroom_area_sqft,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
       });
@@ -563,7 +615,6 @@ export default function PartyMasterModule() {
       await updatePartyStep(activePartyId, 'S03_Sub_Dealer_Registration', {
         parent_dealer_id: s03SubDealerForm.parent_dealer_id,
         parent_distributor_id: derivedDistId,
-        territory: s03SubDealerForm.territory_coverage.join(', '),
         workflow_status: 'S03_Completed',
         next_step: 'S04_Commercial'
       });
@@ -1482,20 +1533,51 @@ export default function PartyMasterModule() {
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
                       <select
                         value={s00Form.state_name}
-                        onChange={e => setS00Form({ ...s00Form, state_name: e.target.value })}
+                        onChange={e => {
+                          const newState = e.target.value;
+                          const dists = INDIAN_STATE_DISTRICTS[newState] || [];
+                          setS00Form({
+                            ...s00Form,
+                            state_name: newState,
+                            district_name: dists.length > 0 ? dists[0] : ''
+                          });
+                        }}
                         style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
                       >
-                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {ALL_INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
-                      <input
-                        type="text"
+                      <select
                         required
                         value={s00Form.district_name}
                         onChange={e => setS00Form({ ...s00Form, district_name: e.target.value })}
-                        placeholder="e.g. Ludhiana"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        <option value="">-- Select District --</option>
+                        {(INDIAN_STATE_DISTRICTS[s00Form.state_name] || []).map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil</label>
+                      <input
+                        type="text"
+                        value={s00Form.tehsil || ''}
+                        onChange={e => setS00Form({ ...s00Form, tehsil: e.target.value })}
+                        placeholder="e.g. Khanna"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Block</label>
+                      <input
+                        type="text"
+                        value={s00Form.block_name || ''}
+                        onChange={e => setS00Form({ ...s00Form, block_name: e.target.value })}
+                        placeholder="e.g. Samrala"
                         style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
                       />
                     </div>
@@ -1506,6 +1588,17 @@ export default function PartyMasterModule() {
                         value={s00Form.city_village}
                         onChange={e => setS00Form({ ...s00Form, city_village: e.target.value })}
                         placeholder="e.g. Khanna"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Pin Code</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={s00Form.pincode || ''}
+                        onChange={e => setS00Form({ ...s00Form, pincode: e.target.value })}
+                        placeholder="e.g. 141401"
                         style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
                       />
                     </div>
@@ -1728,23 +1821,6 @@ export default function PartyMasterModule() {
                     <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Zone *</label>
                     <input type="text" required value={s01DistForm.zone} onChange={e => setS01DistForm({ ...s01DistForm, zone: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
-
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
-                      Territory Coverage (Type area & press Enter to create chips)
-                    </label>
-                    <ChipInput
-                      chips={s01DistForm.territory_coverage}
-                      onChange={newChips => setS01DistForm({ ...s01DistForm, territory_coverage: newChips })}
-                      placeholder="Type district/zone and press Enter..."
-                      suggestions={['Punjab Central', 'Malwa Region', 'Majha Region', 'Doaba Zone', 'Haryana North', 'West UP']}
-                    />
-                  </div>
-
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Warehouse Address</label>
-                    <input type="text" value={s01DistForm.warehouse_address} onChange={e => setS01DistForm({ ...s01DistForm, warehouse_address: e.target.value })} placeholder="Main stocking depot address..." style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
@@ -1781,18 +1857,6 @@ export default function PartyMasterModule() {
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#34d399', fontWeight: 700 }}>
-                      Territory Coverage (Type Mandi / Tehsils & press Enter)
-                    </label>
-                    <ChipInput
-                      chips={s02DealerForm.territory_coverage}
-                      onChange={newChips => setS02DealerForm({ ...s02DealerForm, territory_coverage: newChips })}
-                      placeholder="Type mandi/tehsil and press Enter..."
-                      suggestions={['Khanna Mandi', 'Samrala Area', 'Doraha', 'Sahnewal', 'Payal', 'Jagraon']}
-                    />
                   </div>
 
                   <div>
@@ -1858,18 +1922,6 @@ export default function PartyMasterModule() {
                       </div>
                     )}
                   </div>
-
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#fbbf24', fontWeight: 700 }}>
-                      Territory Coverage (Type Village / Block & press Enter)
-                    </label>
-                    <ChipInput
-                      chips={s03SubDealerForm.territory_coverage}
-                      onChange={newChips => setS03SubDealerForm({ ...s03SubDealerForm, territory_coverage: newChips })}
-                      placeholder="Type village/block and press Enter..."
-                      suggestions={['Samrala Block', 'Village Counters', 'Machhiwara Area', 'Khanna Rural']}
-                    />
-                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
@@ -1923,14 +1975,6 @@ export default function PartyMasterModule() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Sanctioned Credit Limit (₹) *</label>
-                    <input type="number" required value={s04CommForm.credit_limit} onChange={e => setS04CommForm({ ...s04CommForm, credit_limit: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Credit Days (e.g. 30/45 Days) *</label>
-                    <input type="number" required value={s04CommForm.credit_days} onChange={e => setS04CommForm({ ...s04CommForm, credit_days: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.3rem', color: '#fbbf24', fontWeight: 700 }}>Security Deposit (₹)</label>
                     <input type="number" value={s04CommForm.security_deposit_amount} onChange={e => setS04CommForm({ ...s04CommForm, security_deposit_amount: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
@@ -2021,13 +2065,35 @@ export default function PartyMasterModule() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.86rem' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
-                      <select value={s05TerritoryForm.state} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, state: e.target.value })} style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}>
-                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                      <select
+                        value={s05TerritoryForm.state}
+                        onChange={e => {
+                          const newState = e.target.value;
+                          const dists = INDIAN_STATE_DISTRICTS[newState] || [];
+                          setS05TerritoryForm({
+                            ...s05TerritoryForm,
+                            state: newState,
+                            district: dists.length > 0 ? dists[0] : ''
+                          });
+                        }}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        {ALL_INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
-                      <input type="text" required value={s05TerritoryForm.district} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, district: e.target.value })} placeholder="e.g. Ludhiana" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      <select
+                        required
+                        value={s05TerritoryForm.district}
+                        onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, district: e.target.value })}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        <option value="">-- Select District --</option>
+                        {(INDIAN_STATE_DISTRICTS[s05TerritoryForm.state] || []).map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil / Area</label>
