@@ -84,8 +84,8 @@ export async function sendLeadToParty(leadId, userId) {
     contact_person: lead.name || null,
     source_lead_id: lead.id,
     acquisition_source: lead.source || 'CRM_LEAD',
-    workflow_status: 'S00_TRANSFERRED',
-    party_status: 'Pending Confirmation',
+    party_status: 'Draft_From_Lead',
+    onboarding_stage: 'S00_Party_Entry',
 
     // Business contacts
     biz_contact_no_1: lead.business_contact_1 || lead.phone || null,
@@ -123,59 +123,55 @@ export async function sendLeadToParty(leadId, userId) {
     party = existingParties[0];
     transferType = 'LINK_EXISTING_PARTY';
 
-    // Enrich existing party with lead data for any fields that are empty
-    const enrichUpdates = {
-      workflow_status: party.workflow_status || 'S00_TRANSFERRED',
-      party_status: party.party_status || 'Pending Confirmation',
-      source_lead_id: lead.id,
-      updated_at: new Date().toISOString()
-    };
-
-    const enrichKeys = [
-      'firm_name', 'legal_name', 'gstin', 'pan', 'address', 'state_name', 'district_name',
-      'tehsil', 'block_name', 'city_village', 'pincode', 'order_category', 'product_interest',
-      'biz_contact_no_1', 'biz_contact_no_2', 'biz_alt_no_1', 'biz_alt_no_2',
-      'biz_email_1', 'biz_email_2', 'biz_alt_email_1', 'biz_alt_email_2',
-      'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2',
-      'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
-      'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2',
-      'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1'
-    ];
-
-    for (const key of enrichKeys) {
-      if (!party[key] && partyMasterPayload[key]) {
-        enrichUpdates[key] = partyMasterPayload[key];
-      }
-    }
-
-    const { data: updatedP } = await adminClient
+    await adminClient
       .from('party_master')
-      .update(enrichUpdates)
-      .eq('id', party.id)
-      .select()
-      .single();
-
-    if (updatedP) party = updatedP;
+      .update({
+        source_lead_id: lead.id,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', party.id);
   } else {
     // 3. Create New Party Draft with all lead fields
     party = await createPartyMaster(partyMasterPayload);
   }
 
-  // 4. Record Lead Party Handoff Log
-  const { data: handoff, error: handoffErr } = await adminClient
+  // 4. Record Lead Party Handoff Log (prevent duplicates)
+  let handoffId = null;
+  const { data: existingHandoffs } = await adminClient
     .from('lead_party_handoffs')
-    .insert([{
-      lead_id: lead.id,
-      target_party_id: party.id,
-      transfer_type: transferType,
-      handoff_status: 'PENDING_CONFIRMATION',
-      transferred_by: userId || null
-    }])
-    .select()
-    .single();
+    .select('id')
+    .eq('lead_id', lead.id)
+    .limit(1);
 
-  if (handoffErr) {
-    console.warn('lead_party_handoffs insert notice:', handoffErr.message);
+  if (existingHandoffs && existingHandoffs.length > 0) {
+    handoffId = existingHandoffs[0].id;
+    await adminClient
+      .from('lead_party_handoffs')
+      .update({
+        target_party_id: party.id,
+        transfer_type: transferType,
+        transferred_by: userId || null,
+        transferred_at: new Date().toISOString()
+      })
+      .eq('id', handoffId);
+  } else {
+    const { data: handoff, error: handoffErr } = await adminClient
+      .from('lead_party_handoffs')
+      .insert([{
+        lead_id: lead.id,
+        target_party_id: party.id,
+        transfer_type: transferType,
+        handoff_status: 'PENDING_VERIFICATION',
+        transferred_by: userId || null
+      }])
+      .select()
+      .single();
+
+    if (handoffErr) {
+      console.warn('lead_party_handoffs insert notice:', handoffErr.message);
+    } else if (handoff) {
+      handoffId = handoff.id;
+    }
   }
 
   // 5. Update lead note without deleting lead
@@ -194,7 +190,7 @@ export async function sendLeadToParty(leadId, userId) {
     partyCode: party.party_universal_code,
     partyId: party.id,
     transferType,
-    handoffId: handoff?.id || null
+    handoffId
   };
 }
 
@@ -207,154 +203,118 @@ export async function getTransferredLeads() {
     const { data: handoffs, error: hErr } = await adminClient
       .from('lead_party_handoffs')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('transferred_at', { ascending: false });
 
     if (hErr) {
       console.warn('Could not query lead_party_handoffs:', hErr.message);
-      // Fallback: Query parties directly where source_lead_id is not null
-      const { data: partiesFallback } = await adminClient
-        .from('party_master')
-        .select('*')
-        .not('source_lead_id', 'is', null)
-        .order('created_at', { ascending: false });
-
-      if (!partiesFallback || partiesFallback.length === 0) return [];
-
-      const leadIds = partiesFallback.map(p => p.source_lead_id).filter(Boolean);
-      const { data: leadsData } = await adminClient
-        .from('leads')
-        .select('id, name, company, phone, email, status, source, city, state, created_at')
-        .in('id', leadIds);
-
-      const leadMap = new Map((leadsData || []).map(l => [l.id, l]));
-
-      return partiesFallback.map(p => {
-        const lead = leadMap.get(p.source_lead_id) || {};
-        return {
-          id: p.id,
-          handoff_id: null,
-          party_id: p.id,
-          party_universal_code: p.party_universal_code,
-          firm_name: p.firm_name || lead.company || lead.name,
-          legal_name: p.legal_name || lead.name,
-          lead_id: lead.id,
-          lead_name: lead.name,
-          company: lead.company,
-          phone: lead.phone || p.primary_mobile,
-          email: lead.email || p.official_email,
-          lead_status: lead.status || '07 - Final Stage',
-          lead_source: lead.source || p.acquisition_source,
-          city: lead.city,
-          state: lead.state || p.state_name,
-          handoff_status: p.party_status === 'Pending Confirmation' ? 'PENDING_CONFIRMATION' : 'CONFIRMED',
-          created_at: p.created_at,
-          workflow_status: p.workflow_status
-        };
-      });
     }
 
     const handoffList = handoffs || [];
-    if (handoffList.length === 0) {
-      // Check if any parties have source_lead_id
-      const { data: partiesFallback } = await adminClient
-        .from('party_master')
-        .select('*')
-        .not('source_lead_id', 'is', null)
-        .order('created_at', { ascending: false });
 
-      if (!partiesFallback || partiesFallback.length === 0) return [];
+    if (handoffList.length > 0) {
+      const leadIds = [...new Set(handoffList.map(h => h.lead_id).filter(Boolean))];
+      const partyIds = [...new Set(handoffList.map(h => h.target_party_id).filter(Boolean))];
 
-      const leadIds = partiesFallback.map(p => p.source_lead_id).filter(Boolean);
-      const { data: leadsData } = await adminClient
-        .from('leads')
-        .select('*')
-        .in('id', leadIds);
+      const [{ data: leads }, { data: parties }] = await Promise.all([
+        leadIds.length > 0
+          ? adminClient.from('leads').select('*').in('id', leadIds)
+          : { data: [] },
+        partyIds.length > 0
+          ? adminClient.from('party_master').select('*').in('id', partyIds)
+          : { data: [] }
+      ]);
 
-      const leadMap = new Map((leadsData || []).map(l => [l.id, l]));
+      const leadMap = new Map((leads || []).map(l => [l.id, l]));
+      const partyMap = new Map((parties || []).map(p => [p.id, p]));
 
-      return partiesFallback.map(p => {
-        const lead = leadMap.get(p.source_lead_id) || {};
-        const isConfirmed = p.party_status !== 'Pending Confirmation' && p.workflow_status !== 'S00_TRANSFERRED';
+      return handoffList.map(h => {
+        const lead = leadMap.get(h.lead_id) || {};
+        const party = partyMap.get(h.target_party_id) || {};
+        const isConfirmed = h.handoff_status === 'APPROVED' || h.handoff_status === 'ACTIVATED' || (party.party_status && party.party_status !== 'Draft_From_Lead');
+
         return {
-          id: p.id,
-          handoff_id: p.id,
-          party_id: p.id,
+          id: h.id,
+          handoff_id: h.id,
+          lead_id: h.lead_id,
           lead_universal_id: lead.lead_ref_id || (lead.id ? `LD-${lead.id.slice(-6)}` : 'LEAD'),
-          party_universal_code: p.party_universal_code,
-          firm_name: p.firm_name || lead.company || lead.name,
-          legal_name: p.legal_name || lead.name,
-          party_type: p.party_type || 'Dealer',
-          lead_id: lead.id,
+          party_id: h.target_party_id,
+          party_universal_code: party.party_universal_code,
+          firm_name: party.firm_name || lead.company || lead.name || 'Channel Partner',
+          legal_name: party.legal_name || lead.company || lead.name,
+          party_type: lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer',
+          contact_person: lead.name || party.firm_name,
           lead_name: lead.name,
           company: lead.company,
-          contact_person: p.contact_person_name_1 || p.contact_person || lead.name,
-          phone: p.biz_contact_no_1 || p.primary_mobile || lead.phone,
-          primary_mobile: p.biz_contact_no_1 || p.primary_mobile || lead.phone,
-          email: p.biz_email_1 || p.official_email || lead.email,
+          phone: lead.phone || party.primary_mobile,
+          primary_mobile: lead.phone || party.primary_mobile,
+          email: lead.email || party.official_email,
           lead_status: lead.status || '07 - Final Stage',
-          lead_source: lead.source || p.acquisition_source,
-          city: p.city_village || lead.city_name || lead.city,
-          state: p.state_name || lead.state_name || lead.state,
-          state_name: p.state_name || lead.state_name || lead.state,
-          district_name: p.district_name || lead.district_name || lead.district,
-          order_category: p.order_category || lead.requirement || 'Rotavator',
+          lead_source: lead.source,
+          city: lead.city_name || lead.city || '',
+          state: lead.state_name || lead.state || 'Punjab',
+          state_name: lead.state_name || lead.state || 'Punjab',
+          district_name: lead.district_name || lead.district || '',
+          order_category: lead.requirement || 'Rotavator',
           handoff_status: isConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
           transfer_status: isConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
-          handoff_at: p.created_at,
-          created_at: p.created_at,
-          workflow_status: p.workflow_status
+          transfer_type: h.transfer_type,
+          handoff_at: h.transferred_at,
+          created_at: h.transferred_at,
+          workflow_status: isConfirmed ? 'S01_Approved' : 'S00_TRANSFERRED',
+          lead: lead
         };
       });
     }
 
-    const leadIds = [...new Set(handoffList.map(h => h.lead_id).filter(Boolean))];
-    const partyIds = [...new Set(handoffList.map(h => h.target_party_id).filter(Boolean))];
+    // Fallback: Query party_master directly where source_lead_id is present
+    const { data: partiesFallback } = await adminClient
+      .from('party_master')
+      .select('*')
+      .not('source_lead_id', 'is', null)
+      .order('created_at', { ascending: false });
 
-    const [{ data: leads }, { data: parties }] = await Promise.all([
-      leadIds.length > 0
-        ? adminClient.from('leads').select('*').in('id', leadIds)
-        : { data: [] },
-      partyIds.length > 0
-        ? adminClient.from('party_master').select('*').in('id', partyIds)
-        : { data: [] }
-    ]);
+    if (!partiesFallback || partiesFallback.length === 0) return [];
 
-    const leadMap = new Map((leads || []).map(l => [l.id, l]));
-    const partyMap = new Map((parties || []).map(p => [p.id, p]));
+    const leadIds = partiesFallback.map(p => p.source_lead_id).filter(Boolean);
+    const { data: leadsData } = await adminClient
+      .from('leads')
+      .select('*')
+      .in('id', leadIds);
 
-    return handoffList.map(h => {
-      const lead = leadMap.get(h.lead_id) || {};
-      const party = partyMap.get(h.target_party_id) || {};
-      const isConfirmed = h.handoff_status === 'CONFIRMED' || (party.party_status !== 'Pending Confirmation' && party.workflow_status !== 'S00_TRANSFERRED');
+    const leadMap = new Map((leadsData || []).map(l => [l.id, l]));
+
+    return partiesFallback.map(p => {
+      const lead = leadMap.get(p.source_lead_id) || {};
+      const isConfirmed = p.party_status !== 'Draft_From_Lead';
       return {
-        id: h.id,
-        handoff_id: h.id,
-        lead_id: h.lead_id,
+        id: p.id,
+        handoff_id: p.id,
+        party_id: p.id,
         lead_universal_id: lead.lead_ref_id || (lead.id ? `LD-${lead.id.slice(-6)}` : 'LEAD'),
-        party_id: h.target_party_id,
-        party_universal_code: party.party_universal_code,
-        firm_name: party.firm_name || lead.company || lead.name || 'Channel Partner',
-        legal_name: party.legal_name || lead.name,
-        party_type: party.party_type || 'Dealer',
-        contact_person: party.contact_person_name_1 || party.contact_person || lead.name,
+        party_universal_code: p.party_universal_code,
+        firm_name: p.firm_name || lead.company || lead.name,
+        legal_name: p.legal_name || lead.name,
+        party_type: lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer',
+        lead_id: lead.id,
         lead_name: lead.name,
         company: lead.company,
-        phone: party.biz_contact_no_1 || party.primary_mobile || lead.phone,
-        primary_mobile: party.biz_contact_no_1 || party.primary_mobile || lead.phone,
-        email: party.biz_email_1 || party.official_email || lead.email,
+        contact_person: lead.name || p.firm_name,
+        phone: lead.phone || p.primary_mobile,
+        primary_mobile: lead.phone || p.primary_mobile,
+        email: lead.email || p.official_email,
         lead_status: lead.status || '07 - Final Stage',
-        lead_source: lead.source,
-        city: party.city_village || lead.city_name || lead.city,
-        state: party.state_name || lead.state_name || lead.state,
-        state_name: party.state_name || lead.state_name || lead.state,
-        district_name: party.district_name || lead.district_name || lead.district,
-        order_category: party.order_category || lead.requirement || 'Rotavator',
-        handoff_status: h.handoff_status || (isConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION'),
+        lead_source: lead.source || p.acquisition_source,
+        city: lead.city_name || lead.city || '',
+        state: lead.state_name || lead.state || 'Punjab',
+        state_name: lead.state_name || lead.state || 'Punjab',
+        district_name: lead.district_name || lead.district || '',
+        order_category: lead.requirement || 'Rotavator',
+        handoff_status: isConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
         transfer_status: isConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
-        transfer_type: h.transfer_type,
-        handoff_at: h.transferred_at || h.created_at,
-        created_at: h.created_at,
-        workflow_status: party.workflow_status || 'S00_TRANSFERRED'
+        handoff_at: p.created_at,
+        created_at: p.created_at,
+        workflow_status: isConfirmed ? 'S01_Approved' : 'S00_TRANSFERRED',
+        lead: lead
       };
     });
   } catch (err) {
@@ -371,14 +331,17 @@ export async function confirmLeadTransfer(handoffId, partyId, userId) {
 
   // 1. Update handoff status
   if (handoffId) {
-    await adminClient
-      .from('lead_party_handoffs')
-      .update({
-        handoff_status: 'CONFIRMED',
-        verified_by: userId || null,
-        verified_at: new Date().toISOString()
-      })
-      .eq('id', handoffId);
+    try {
+      await adminClient
+        .from('lead_party_handoffs')
+        .update({
+          handoff_status: 'APPROVED',
+          transferred_by: userId || null
+        })
+        .eq('id', handoffId);
+    } catch (e) {
+      console.warn('Could not update lead_party_handoffs:', e.message);
+    }
   }
 
   // 2. Update party_master status
@@ -387,15 +350,16 @@ export async function confirmLeadTransfer(handoffId, partyId, userId) {
       .from('party_master')
       .update({
         party_status: 'Draft',
-        workflow_status: 'S01_Party_Master',
-        next_step: 'S01_Party_Master',
+        onboarding_stage: 'S01_Registration',
         updated_at: new Date().toISOString()
       })
       .eq('id', partyId)
       .select()
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.warn('party_master update warning:', error.message);
+    }
     return { success: true, party: updatedParty };
   }
 

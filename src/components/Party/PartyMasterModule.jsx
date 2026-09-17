@@ -587,47 +587,48 @@ export default function PartyMasterModule({
       }));
     }
 
-    const st = party.state_name || party.state;
-    const dist = party.district_name || party.district;
+    const lead = party.lead || {};
+    const st = party.state_name || party.state || lead.state_name || lead.state;
+    const dist = party.district_name || party.district || lead.district_name || lead.district;
 
     setS00Form(prev => ({
       ...prev,
-      party_type: party.party_type || 'Dealer',
-      firm_name: party.firm_name || '',
-      legal_name: party.legal_name || '',
+      party_type: party.party_type || (lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer'),
+      firm_name: party.firm_name || lead.company || lead.name || '',
+      legal_name: party.legal_name || lead.company || lead.name || '',
       constitution_type: party.constitution_type || 'PROPRIETORSHIP',
-      gstin: party.gstin || '',
-      pan: party.pan || '',
-      address: party.address || '',
+      gstin: party.gstin || lead.business_gst || lead.gstin || '',
+      pan: party.pan || lead.pan || '',
+      address: party.address || lead.address || '',
       state_name: st || 'Punjab',
       district_name: dist || 'Amritsar',
-      tehsil: party.tehsil || '',
-      block_name: party.block_name || '',
-      city_village: party.city_village || '',
-      pincode: party.pincode || '',
-      order_category: party.order_category || 'Rotavator',
-      biz_contact_no_1: party.biz_contact_no_1 || party.primary_mobile || '',
-      biz_contact_no_2: party.biz_contact_no_2 || '',
-      biz_alt_no_1: party.biz_alt_no_1 || '',
-      biz_alt_no_2: party.biz_alt_no_2 || '',
-      biz_email_1: party.biz_email_1 || party.official_email || '',
-      biz_email_2: party.biz_email_2 || '',
-      biz_alt_email_1: party.biz_alt_email_1 || '',
-      biz_alt_email_2: party.biz_alt_email_2 || '',
-      contact_person_name_1: party.contact_person_name_1 || party.contact_person || '',
-      contact_mobile_1_1: party.contact_mobile_1_1 || '',
-      contact_mobile_1_2: party.contact_mobile_1_2 || '',
-      contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || '',
-      contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || '',
-      contact_email_1_2: party.contact_email_1_2 || '',
-      contact_alt_email_1_1: party.contact_alt_email_1_1 || '',
-      contact_person_name_2: party.contact_person_name_2 || '',
-      contact_mobile_2_1: party.contact_mobile_2_1 || '',
-      contact_mobile_2_2: party.contact_mobile_2_2 || '',
-      contact_alt_mobile_2_1: party.contact_alt_mobile_2_1 || '',
-      contact_alt_mobile_2_2: party.contact_alt_mobile_2_2 || '',
-      contact_email_2_2: party.contact_email_2_2 || '',
-      contact_alt_email_2_1: party.contact_alt_email_2_1 || ''
+      tehsil: party.tehsil || lead.tehsil_name || lead.tehsil || '',
+      block_name: party.block_name || lead.block_name || '',
+      city_village: party.city_village || lead.city_name || lead.city || '',
+      pincode: party.pincode || lead.pin_code || lead.pincode || '',
+      order_category: party.order_category || lead.requirement || 'Rotavator',
+      biz_contact_no_1: party.biz_contact_no_1 || party.primary_mobile || lead.business_contact_1 || lead.phone || '',
+      biz_contact_no_2: party.biz_contact_no_2 || lead.business_contact_2 || '',
+      biz_alt_no_1: party.biz_alt_no_1 || lead.business_alt_1 || '',
+      biz_alt_no_2: party.biz_alt_no_2 || lead.business_alt_2 || '',
+      biz_email_1: party.biz_email_1 || party.official_email || lead.business_email_1 || lead.email || '',
+      biz_email_2: party.biz_email_2 || lead.business_email_2 || '',
+      biz_alt_email_1: party.biz_alt_email_1 || lead.business_alt_email_1 || '',
+      biz_alt_email_2: party.biz_alt_email_2 || lead.business_alt_email_2 || '',
+      contact_person_name_1: party.contact_person_name_1 || party.contact_person || party.owner_name || lead.name || lead.cp1_name || '',
+      contact_mobile_1_1: party.contact_mobile_1_1 || party.primary_mobile || lead.phone || lead.cp1_mobile_1 || '',
+      contact_mobile_1_2: party.contact_mobile_1_2 || lead.cp1_mobile_2 || '',
+      contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || lead.cp1_alt_1 || '',
+      contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || lead.cp1_alt_2 || '',
+      contact_email_1_2: party.contact_email_1_2 || party.official_email || lead.email || lead.cp1_email_2 || '',
+      contact_alt_email_1_1: party.contact_alt_email_1_1 || lead.cp1_alt_1 || '',
+      contact_person_name_2: party.contact_person_name_2 || lead.cp2_name || '',
+      contact_mobile_2_1: party.contact_mobile_2_1 || lead.cp2_mobile_1 || '',
+      contact_mobile_2_2: party.contact_mobile_2_2 || lead.cp2_mobile_2 || '',
+      contact_alt_mobile_2_1: party.contact_alt_mobile_2_1 || lead.cp2_alt_1 || '',
+      contact_alt_mobile_2_2: party.contact_alt_mobile_2_2 || lead.cp2_alt_2 || '',
+      contact_email_2_2: party.contact_email_2_2 || lead.cp2_email_2 || '',
+      contact_alt_email_2_1: party.contact_alt_email_2_1 || lead.cp2_email_1 || ''
     }));
 
     if (party.billing_route_type) {
@@ -992,7 +993,7 @@ export default function PartyMasterModule({
     const isDealer = party.party_type === 'Dealer';
     const isSubDealer = party.party_type === 'Sub-Dealer';
 
-    const s00Approved = Boolean(local.s00 || (party.source_lead_id ? (party.workflow_status !== 'S00_TRANSFERRED' && party.party_status !== 'Pending Confirmation') : true));
+    const s00Approved = Boolean(local.s00 || (party.source_lead_id ? (party.workflow_status !== 'S00_TRANSFERRED' && party.party_status !== 'Pending Confirmation' && party.party_status !== 'Draft_From_Lead' && party.onboarding_stage !== 'S00_Party_Entry') : true));
     const s01Approved = Boolean(local.s01 || (party.firm_name && (party.primary_mobile || party.biz_contact_no_1)));
     const s02Approved = isDist ? Boolean(local.s02 || party.zone || party.workflow_status?.includes('S01_Completed') || party.workflow_status?.includes('S04') || party.workflow_status?.includes('S05')) : true;
     const s03Approved = isDealer ? Boolean(local.s03 || party.parent_distributor_id) : true;
