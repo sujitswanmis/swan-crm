@@ -29,7 +29,7 @@ import {
   verifyAndCloseComplaint
 } from '@/app/actions/partyMaster';
 import { getEmployeesMaster } from '@/app/actions/employee';
-
+import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 const INDIAN_STATES = ALL_INDIAN_STATES;
 
@@ -339,6 +339,11 @@ export default function PartyMasterModule() {
     assigned_department: 'QUALITY_ASSURANCE'
   });
 
+  // Location Master States & Districts
+  const [locationStates, setLocationStates] = useState([]);
+  const [s00Districts, setS00Districts] = useState(INDIAN_STATE_DISTRICTS['Punjab'] || []);
+  const [s05Districts, setS05Districts] = useState(INDIAN_STATE_DISTRICTS['Punjab'] || []);
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -346,16 +351,78 @@ export default function PartyMasterModule() {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [partyRes, empRes] = await Promise.all([
+      const [partyRes, empRes, dbStates] = await Promise.all([
         getPartyList(),
-        getEmployeesMaster()
+        getEmployeesMaster(),
+        getStatesCentral().catch(() => [])
       ]);
       setParties(partyRes || []);
       setEmployees(empRes || []);
+
+      if (dbStates && dbStates.length > 0) {
+        setLocationStates(dbStates);
+        const punjabState = dbStates.find(s => (s.state_name || s.name || '').toLowerCase() === 'punjab');
+        const punjabDists = await getDistrictsCentral(punjabState?.id || null, 'Punjab').catch(() => []);
+        if (punjabDists && punjabDists.length > 0) {
+          const names = punjabDists.map(d => d.district_name || d.name);
+          setS00Districts(names);
+          setS05Districts(names);
+        }
+      }
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
+  };
+
+  const handleS00StateChange = async (newState) => {
+    const fallbackDists = INDIAN_STATE_DISTRICTS[newState] || [];
+    setS00Form(prev => ({
+      ...prev,
+      state_name: newState,
+      district_name: fallbackDists.length > 0 ? fallbackDists[0] : ''
+    }));
+    setS00Districts(fallbackDists);
+
+    try {
+      const stObj = locationStates.find(s => (s.state_name || s.name || '').toLowerCase() === newState.toLowerCase());
+      const dbDists = await getDistrictsCentral(stObj?.id || null, newState);
+      if (dbDists && dbDists.length > 0) {
+        const names = dbDists.map(d => d.district_name || d.name);
+        setS00Districts(names);
+        setS00Form(prev => ({
+          ...prev,
+          district_name: names.includes(prev.district_name) ? prev.district_name : (names[0] || '')
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not fetch districts from Location Master for S00:', err);
+    }
+  };
+
+  const handleS05StateChange = async (newState) => {
+    const fallbackDists = INDIAN_STATE_DISTRICTS[newState] || [];
+    setS05TerritoryForm(prev => ({
+      ...prev,
+      state: newState,
+      district: fallbackDists.length > 0 ? fallbackDists[0] : ''
+    }));
+    setS05Districts(fallbackDists);
+
+    try {
+      const stObj = locationStates.find(s => (s.state_name || s.name || '').toLowerCase() === newState.toLowerCase());
+      const dbDists = await getDistrictsCentral(stObj?.id || null, newState);
+      if (dbDists && dbDists.length > 0) {
+        const names = dbDists.map(d => d.district_name || d.name);
+        setS05Districts(names);
+        setS05TerritoryForm(prev => ({
+          ...prev,
+          district: names.includes(prev.district) ? prev.district : (names[0] || '')
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not fetch districts from Location Master for S05:', err);
+    }
   };
 
   const loadOperationsData = async (tab) => {
@@ -529,6 +596,20 @@ export default function PartyMasterModule() {
         district: party.district_name || (dists.length > 0 ? dists[0] : ''),
         tehsil_area: party.tehsil || prev.tehsil_area
       }));
+    }
+
+    if (st) {
+      (async () => {
+        try {
+          const stObj = locationStates.find(s => (s.state_name || s.name || '').toLowerCase() === st.toLowerCase());
+          const dbDists = await getDistrictsCentral(stObj?.id || null, st);
+          if (dbDists && dbDists.length > 0) {
+            const names = dbDists.map(d => d.district_name || d.name);
+            setS00Districts(names);
+            setS05Districts(names);
+          }
+        } catch (_) {}
+      })();
     }
 
     setShowWizard(true);
@@ -1530,79 +1611,6 @@ export default function PartyMasterModule() {
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
-                      <select
-                        value={s00Form.state_name}
-                        onChange={e => {
-                          const newState = e.target.value;
-                          const dists = INDIAN_STATE_DISTRICTS[newState] || [];
-                          setS00Form({
-                            ...s00Form,
-                            state_name: newState,
-                            district_name: dists.length > 0 ? dists[0] : ''
-                          });
-                        }}
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      >
-                        {ALL_INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
-                      <select
-                        required
-                        value={s00Form.district_name}
-                        onChange={e => setS00Form({ ...s00Form, district_name: e.target.value })}
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      >
-                        <option value="">-- Select District --</option>
-                        {(INDIAN_STATE_DISTRICTS[s00Form.state_name] || []).map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil</label>
-                      <input
-                        type="text"
-                        value={s00Form.tehsil || ''}
-                        onChange={e => setS00Form({ ...s00Form, tehsil: e.target.value })}
-                        placeholder="e.g. Khanna"
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Block</label>
-                      <input
-                        type="text"
-                        value={s00Form.block_name || ''}
-                        onChange={e => setS00Form({ ...s00Form, block_name: e.target.value })}
-                        placeholder="e.g. Samrala"
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>City / Village</label>
-                      <input
-                        type="text"
-                        value={s00Form.city_village}
-                        onChange={e => setS00Form({ ...s00Form, city_village: e.target.value })}
-                        placeholder="e.g. Khanna"
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Pin Code</label>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={s00Form.pincode || ''}
-                        onChange={e => setS00Form({ ...s00Form, pincode: e.target.value })}
-                        placeholder="e.g. 141401"
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
-                      />
-                    </div>
-                    <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>GSTIN</label>
                       <input
                         type="text"
@@ -1619,6 +1627,101 @@ export default function PartyMasterModule() {
                         value={s00Form.pan}
                         onChange={e => setS00Form({ ...s00Form, pan: e.target.value })}
                         placeholder="10-digit PAN"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+
+                    {/* 1. State Name (Location Master) */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#38bdf8', fontWeight: 700 }}>
+                        State Name * <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>(Location Master)</span>
+                      </label>
+                      <select
+                        value={s00Form.state_name}
+                        onChange={e => handleS00StateChange(e.target.value)}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1.5px solid rgba(56,189,248,0.4)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        {(locationStates.length > 0 ? locationStates.map(s => s.state_name || s.name) : ALL_INDIAN_STATES).map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. District Name (Location Master) */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#38bdf8', fontWeight: 700 }}>
+                        District Name * <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>(Location Master)</span>
+                      </label>
+                      <select
+                        required
+                        value={s00Form.district_name}
+                        onChange={e => setS00Form({ ...s00Form, district_name: e.target.value })}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1.5px solid rgba(56,189,248,0.4)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        <option value="">-- Select District --</option>
+                        {s00Districts.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 3. PIN Code */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>PIN Code</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={s00Form.pincode || ''}
+                        onChange={e => setS00Form({ ...s00Form, pincode: e.target.value })}
+                        placeholder="e.g. 141401"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+
+                    {/* 4. City/Village Name */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>City/Village Name</label>
+                      <input
+                        type="text"
+                        value={s00Form.city_village || ''}
+                        onChange={e => setS00Form({ ...s00Form, city_village: e.target.value })}
+                        placeholder="e.g. Khanna"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+
+                    {/* 5. Tehsil Name */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil Name</label>
+                      <input
+                        type="text"
+                        value={s00Form.tehsil || ''}
+                        onChange={e => setS00Form({ ...s00Form, tehsil: e.target.value })}
+                        placeholder="e.g. Khanna"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+
+                    {/* 6. Block Name */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Block Name</label>
+                      <input
+                        type="text"
+                        value={s00Form.block_name || ''}
+                        onChange={e => setS00Form({ ...s00Form, block_name: e.target.value })}
+                        placeholder="e.g. Samrala"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+
+                    {/* 7. Full Address */}
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Full Address</label>
+                      <input
+                        type="text"
+                        value={s00Form.address || ''}
+                        onChange={e => setS00Form({ ...s00Form, address: e.target.value })}
+                        placeholder="Shop / Plot No., Industrial Area / Mandi, Full Postal Address..."
                         style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
                       />
                     </div>
@@ -2064,33 +2167,31 @@ export default function PartyMasterModule() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.86rem' }}>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#38bdf8', fontWeight: 700 }}>
+                        State * <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>(Location Master)</span>
+                      </label>
                       <select
                         value={s05TerritoryForm.state}
-                        onChange={e => {
-                          const newState = e.target.value;
-                          const dists = INDIAN_STATE_DISTRICTS[newState] || [];
-                          setS05TerritoryForm({
-                            ...s05TerritoryForm,
-                            state: newState,
-                            district: dists.length > 0 ? dists[0] : ''
-                          });
-                        }}
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                        onChange={e => handleS05StateChange(e.target.value)}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1.5px solid rgba(56,189,248,0.4)', borderRadius: '6px', color: '#fff' }}
                       >
-                        {ALL_INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {(locationStates.length > 0 ? locationStates.map(s => s.state_name || s.name) : ALL_INDIAN_STATES).map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#38bdf8', fontWeight: 700 }}>
+                        District * <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>(Location Master)</span>
+                      </label>
                       <select
                         required
                         value={s05TerritoryForm.district}
                         onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, district: e.target.value })}
-                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1.5px solid rgba(56,189,248,0.4)', borderRadius: '6px', color: '#fff' }}
                       >
                         <option value="">-- Select District --</option>
-                        {(INDIAN_STATE_DISTRICTS[s05TerritoryForm.state] || []).map(d => (
+                        {s05Districts.map(d => (
                           <option key={d} value={d}>{d}</option>
                         ))}
                       </select>
