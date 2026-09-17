@@ -1,4 +1,5 @@
 import './globals.css';
+import Script from 'next/script';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export const metadata = {
@@ -43,8 +44,9 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="SuPuja Creations" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        <script
+        <Script
           id="theme-initializer"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
