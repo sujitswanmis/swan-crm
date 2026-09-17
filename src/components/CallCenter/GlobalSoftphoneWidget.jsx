@@ -281,7 +281,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [stopRingingAudio]);
 
   const hangupCall = useCallback(async () => {
-    const currentRoom = activeSessionRef.current?.room_name;
+    const currentRoom = activeSessionRef.current?.room_name || optimisticCall?.roomName;
+    const currentAgentId = agentDataRef.current?.id;
 
     // Stop ringback audio immediately
     stopRingingAudio();
@@ -311,12 +312,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
 
     // 3. Inform backend to terminate conference and cancel any ringing customer leg immediately
-    if (currentRoom) {
+    if (currentRoom || currentAgentId) {
       try {
         fetch('/api/plivo/controls/hangup-conference', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomName: currentRoom })
+          body: JSON.stringify({ roomName: currentRoom, agentId: currentAgentId })
         }).catch(err => console.error("Error ending conference:", err));
       } catch (e) {
         console.error(e);
@@ -328,7 +329,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         window.dispatchEvent(new CustomEvent('crm:call-ended', { detail: { roomName: currentRoom } }));
       }, 700);
     }
-  }, [stopRingingAudio]);
+  }, [stopRingingAudio, optimisticCall?.roomName]);
 
   const updateActiveSession = useCallback((newSession) => {
     if (newSession && (newSession.status === 'connected' || newSession.customer_answer_time)) {
@@ -622,7 +623,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
               const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
               const ageInMs = Date.now() - new Date(c.created_at).getTime();
               if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 45000) return false;
-              const isRecent = ageInMs < 1000 * 60 * 60;
+              const isRecent = ageInMs < 1000 * 60 * 10;
               return isStatusActive && isRecent;
             });
 

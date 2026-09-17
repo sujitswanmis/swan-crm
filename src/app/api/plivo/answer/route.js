@@ -15,75 +15,44 @@ export async function POST(req) {
     const appBaseUrl = getPlivoWebhookBaseUrl(req);
     const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
 
-    // 1. DIRECT CARRIER-BRIDGED CALLING VIA <Dial>:
-    // When the agent answers, directly dial the customer. This bridges the audio stream immediately,
-    // allowing the agent to hear real telecom early media:
-    // - Operator voice announcements ("Number is switched off", "Out of coverage", "User busy")
-    // - Customer's actual caller tune or telecom network ringing tone
-    // - Immediate termination if customer cuts or rejects the call
-    if (role === 'agent' && customerNumber && roomName) {
+    // If customer or guest answers, mark call_sessions as connected with answer timestamp
+    if ((role === 'customer' || role === 'guest') && roomName) {
       try {
         const adminClient = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL,
           process.env.SUPABASE_SERVICE_ROLE_KEY
         );
-        await adminClient
-          .from('call_sessions')
-          .update({
-            status: 'customer_ringing',
-            agent_answer_time: new Date().toISOString()
-          })
-          .eq('room_name', roomName);
-      } catch (dbErr) {
-        console.error('Error updating call session in answer:', dbErr);
-      }
-
-      const actionUrl = `${appBaseUrl}/api/plivo/dial-action?room=${roomName}`;
-      const callbackUrl = `${appBaseUrl}/api/plivo/dial-callback?room=${roomName}`;
-      const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
-
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Record recordSession="true" startOnDialAnswer="true" redirect="false" callbackUrl="${recordCallbackUrl}" callbackMethod="POST" />
-    <Dial callerId="${fromNumber}" action="${actionUrl}" method="POST" callbackUrl="${callbackUrl}" callbackMethod="POST" timeout="35">
-        <Number>${customerNumber}</Number>
-    </Dial>
-</Response>`;
-
-      return new NextResponse(xml, {
-        status: 200,
-        headers: { 'Content-Type': 'application/xml' },
-      });
-    }
-
-    // 2. Fallback Conference Mode (for multi-party merge/guest legs)
-    if (role === 'customer' && roomName) {
-      try {
-        const adminClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
-        await adminClient
-          .from('call_sessions')
-          .update({
-            status: 'connected',
-            customer_answer_time: new Date().toISOString()
-          })
-          .eq('room_name', roomName);
+        if (role === 'customer') {
+          await adminClient
+            .from('call_sessions')
+            .update({
+              status: 'connected',
+              customer_answer_time: new Date().toISOString()
+            })
+            .eq('room_name', roomName);
+        }
       } catch (dbErr) {
         console.error('Error marking customer answered in answer route:', dbErr);
       }
     }
 
+    // Agent: endConferenceOnExit=true, startConferenceOnEnter=false
+    // Customer / Guest: endConferenceOnExit=false, startConferenceOnEnter=true
     const endOnExit = (role === 'agent') ? 'true' : 'false';
     const startOnEnter = (role === 'agent') ? 'false' : 'true';
 
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${roomName}&amp;customer_number=${encodeURIComponent(customerNumber)}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${roomName}`;
 
+    // waitSound loops ringback.wav for the AGENT while waiting for customer.
+    // Audio stops automatically with zero latency when startConferenceOnEnter fires (customer joins).
+    const waitSoundAttr = (role === 'agent')
+      ? ` waitSound="${appBaseUrl}/ringback.wav"`
+      : '';
+
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">
+    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}"${waitSoundAttr}>
         ${roomName}
     </Conference>
 </Response>`;
