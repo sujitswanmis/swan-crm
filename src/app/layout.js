@@ -1,5 +1,5 @@
 import './globals.css';
-import Script from 'next/script';
+import { cookies } from 'next/headers';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export const metadata = {
@@ -35,35 +35,24 @@ export const viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  let themeClass = '';
+  try {
+    const cookieStore = await cookies();
+    const theme = cookieStore.get('crm-theme')?.value;
+    if (theme && theme !== 'default') {
+      themeClass = theme;
+    }
+  } catch (_e) {}
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={themeClass} suppressHydrationWarning>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="SuPuja Creations" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        <Script
-          id="theme-initializer"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var theme = localStorage.getItem('crm-theme');
-                  if (!theme) {
-                    var m = document.cookie.match(/(^|;\\s*)crm-theme=([^;]+)/);
-                    if (m) theme = decodeURIComponent(m[2]);
-                  }
-                  if (theme && theme !== 'default') {
-                    document.documentElement.classList.add(theme);
-                  }
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
       </head>
       <body suppressHydrationWarning>
         {children}
