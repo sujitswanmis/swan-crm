@@ -1110,115 +1110,26 @@ export default function PartyMasterModule({
         </div>
       </div>
 
-      {/* TWO-TIER NAVIGATION BAR */}
-      {/* Tier 1: Channel Partner Onboarding Pipeline Submenus (S00 - S08) */}
-      <div style={{ background: 'var(--bg-surface)', padding: '0.85rem 1rem', borderRadius: '12px', marginBottom: '0.85rem', border: '1px solid var(--border-light)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Layers size={14} /> Pipeline Submenus (S00 - S08) • Strict Sequential Gatekeeping
+      {/* Active Partner Context Info (When a partner is being configured) */}
+      {activePartyId && (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.65rem 1rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ fontSize: '0.82rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span>Configuring Channel Partner:</span>
+            <strong style={{ color: '#fff', fontSize: '0.95rem' }}>{wizardParty?.firm_name || 'Selected Partner'}</strong>
+            <span style={{ padding: '0.12rem 0.45rem', borderRadius: '4px', background: 'rgba(59,130,246,0.2)', color: '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
+              {wizardParty?.party_type || 'Party'}
+            </span>
           </div>
-          {activePartyId && (
-            <div style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span>Configuring:</span>
-              <strong style={{ color: '#fff' }}>{wizardParty?.firm_name || 'Selected Partner'}</strong>
-              <span style={{ padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(59,130,246,0.2)', color: '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
-                {wizardParty?.party_type || 'Party'}
-              </span>
-            </div>
-          )}
+          <button 
+            type="button"
+            onClick={() => { setActivePartyId(null); setWizardParty(null); }} 
+            className="btn-action-secondary" 
+            style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', fontWeight: 600 }}
+          >
+            Clear Selection
+          </button>
         </div>
-
-        <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '0.2rem' }}>
-          {[
-            { id: 's00', label: 'S00 Transfered to Party Master', badge: transferredLeads.filter(l => l.transfer_status === 'PENDING_CONFIRMATION').length },
-            { id: 's01', label: 'S01 Party Master Creation' },
-            { id: 's02', label: 'S02 Distributor Registration' },
-            { id: 's03', label: 'S03 Dealer Registration' },
-            { id: 's04', label: 'S04 Sub-Dealer Registration' },
-            { id: 's05', label: 'S05 Commercial Security Details' },
-            { id: 's06', label: 'S06 Product Auth & Territory' },
-            { id: 's07', label: 'S07 Sales Team Assignment' },
-            { id: 's08', label: 'S08 Partner Activation' }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            const party = wizardParty || parties.find(p => p.id === activePartyId);
-            const approval = getStageApprovalStatus(party);
-            const isApproved = tab.id === 's00' ? (transferredLeads.some(l => l.transfer_status === 'CONFIRMED' && l.party_id === party?.id)) : approval[tab.id];
-
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                style={{
-                  padding: '0.55rem 0.85rem',
-                  borderRadius: '7px',
-                  border: isActive ? '1.5px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  background: isActive ? '#1d4ed8' : 'rgba(255,255,255,0.03)',
-                  color: isActive ? '#ffffff' : '#cbd5e1',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s'
-                }}
-              >
-                <span>{tab.label}</span>
-                {tab.badge > 0 && (
-                  <span style={{ padding: '0.1rem 0.45rem', borderRadius: '10px', background: '#ef4444', color: '#fff', fontSize: '0.72rem', fontWeight: 800 }}>
-                    {tab.badge}
-                  </span>
-                )}
-                {isApproved && (
-                  <Check size={13} style={{ color: '#34d399' }} />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Tier 2: Management Reports & Operations Engines */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '1.25rem', overflowX: 'auto' }}>
-        {[
-          { id: 'r03', label: '📊 R03: Party Directory & Hierarchy Report', icon: FileText },
-          { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree (Who Under Whom)', icon: GitFork },
-          { id: 'order_followup', label: '📞 Engine 1: Daily Order Followups', icon: Phone },
-          { id: 'order_feedback', label: '⭐ Engine 2: Post-Order Feedback', icon: Star },
-          { id: 'monthly_feedback', label: '📅 Engine 3: Monthly Health Checks', icon: Calendar },
-          { id: 'complaints', label: '🚨 Engine 4: Complaint Management', icon: AlertTriangle }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              style={{
-                padding: '0.55rem 1rem',
-                borderRadius: '8px',
-                border: 'none',
-                fontSize: '0.84rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                background: isActive ? '#2563eb' : 'var(--bg-surface)',
-                color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                boxShadow: isActive ? '0 3px 10px rgba(37,99,235,0.3)' : 'none',
-                transition: 'all 0.2s',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S00: TRANSFERED TO PARTY MASTER (FROM STAGE 07) */}
