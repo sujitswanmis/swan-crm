@@ -461,6 +461,9 @@ export default function LeadProfilePanel({
       const res = await sendLeadToParty(lead.id, userId);
       if (res && res.success) {
         setTransferredPartyCode(res.partyCode);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+        }
         alert(`Lead successfully transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now available in S00 for confirmation.`);
       }
     } catch (err) {

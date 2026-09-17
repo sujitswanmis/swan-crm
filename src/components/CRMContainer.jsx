@@ -45,6 +45,7 @@ import OfflineBlockScreen from './Offline/OfflineBlockScreen';
 import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
+import { getTransferredLeads } from '@/app/actions/partyHandoff';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
@@ -175,7 +176,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
   if (tabId === 'delegation') return moduleAccess['delegation']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
-  if (tabId === 'party') return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
+  if (tabId === 'party' || (typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_')))) return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'location_master' || tabId === 'location_territory' || tabId === 'location-master') {
     return moduleAccess['location_master']?.view === true || moduleAccess['location_territory']?.view === true;
   }
@@ -194,6 +195,24 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
 
   return moduleAccess[tabId]?.view === true;
 }
+
+export const PARTY_SUBTAB_TITLES = {
+  s00: 'S00 Transfered to Party Master',
+  s01: 'S01 Party Master Creation',
+  s02: 'S02 Distributor Registration',
+  s03: 'S03 Dealer Registration',
+  s04: 'S04 Sub-Dealer Registration',
+  s05: 'S05 Commercial Security Details',
+  s06: 'S06 Product Auth & Territory',
+  s07: 'S07 Sales Team Assignment',
+  s08: 'S08 Partner Activation',
+  r03: 'R03 Party Directory & Hierarchy Report',
+  hierarchy_tree: 'Channel Hierarchy Tree',
+  order_followup: 'Engine 1: Daily Order Followups',
+  order_feedback: 'Engine 2: Post-Order Feedback',
+  monthly_feedback: 'Engine 3: Monthly Health Checks',
+  complaints: 'Engine 4: Complaint Management'
+};
 
 export const MODULE_DISPLAY_NAMES = {
   dashboard: 'Analytics Dashboard',
@@ -344,6 +363,9 @@ export default function CRMContainer({
     if (path === 'calladmin' || path === 'call-admin' || (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/')))) {
       return 'calladmin';
     }
+    if (path === 'party' || (path && path.startsWith('party/'))) {
+      return 'party';
+    }
 
     if (!path) {
       const isAdmin = userRole === 'admin' || userRole === 'Admin';
@@ -392,8 +414,41 @@ export default function CRMContainer({
     }
     return 'agents';
   });
+  const [partyMenuExpanded, setPartyMenuExpanded] = useState(false);
+  const [partyPendingCount, setPartyPendingCount] = useState(0);
+  const [partySubTab, setPartySubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || searchParams?.get('step') || initialSearchParams?.tab || initialSearchParams?.subtab || initialSearchParams?.step || '').toLowerCase();
+    if (cleanPath && cleanPath.startsWith('party/')) {
+      const sub = cleanPath.split('/')[1];
+      if (sub) return sub;
+    }
+    if (queryTab) return queryTab;
+    return 's00';
+  });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
+
+  // Load and listen for pending Stage 07 transferred leads count
+  useEffect(() => {
+    let active = true;
+    const fetchPendingTransfers = async () => {
+      try {
+        const list = await getTransferredLeads();
+        if (active && Array.isArray(list)) {
+          const pending = list.filter(l => l.transfer_status === 'PENDING_CONFIRMATION' || l.handoff_status === 'PENDING_CONFIRMATION').length;
+          setPartyPendingCount(pending);
+        }
+      } catch (_) {}
+    };
+    fetchPendingTransfers();
+    window.addEventListener('party_transferred_updated', fetchPendingTransfers);
+    return () => {
+      active = false;
+      window.removeEventListener('party_transferred_updated', fetchPendingTransfers);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -419,6 +474,16 @@ export default function CRMContainer({
       if (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/'))) {
         const sub = path.split('/')[1];
         if (sub) setCallAdminSubTab(sub);
+      }
+      const partyTab = search.get('tab') || search.get('subtab') || search.get('step');
+      if (path === 'party' || (path && path.startsWith('party/'))) {
+        let sub = '';
+        if (path.startsWith('party/')) {
+          sub = path.split('/')[1];
+        } else if (partyTab) {
+          sub = partyTab;
+        }
+        if (sub) setPartySubTab(sub.toLowerCase());
       }
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
         setDashboardSubTab(path === 'pipeline' || path === 'leads-data' ? 'lead-data' : path);
@@ -637,7 +702,7 @@ export default function CRMContainer({
   // Auto-expand categories and submenus when activeTab changes
   useEffect(() => {
     let categoryToExpand = null;
-    const salesTabs = ['registration', 'report', 'leads', 'orders'];
+    const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
     const purchaseTabs = ['mrp', 'mrp_against'];
     const hrTabs = ['recruiter', 'joining'];
     const systemTabs = ['team', 'workplace', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'offline_rule'];
@@ -671,6 +736,7 @@ export default function CRMContainer({
     setAttendanceMenuExpanded(activeTab === 'attendance');
     setChecklistMenuExpanded(activeTab === 'checklist');
     setDelegationMenuExpanded(activeTab === 'delegation');
+    setPartyMenuExpanded(activeTab === 'party');
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
     setCallAdminMenuExpanded(activeTab === 'calladmin');
@@ -1700,6 +1766,17 @@ export default function CRMContainer({
         }
       } else if (tab === 'location-master' || tab === 'location_territory') {
         tab = 'location_master';
+      } else if (tab === 'party' || (tab && tab.startsWith('party/'))) {
+        let sub = '';
+        if (tab.startsWith('party/')) {
+          sub = tab.split('/')[1];
+        } else {
+          sub = params.get('tab') || params.get('subtab') || params.get('step');
+        }
+        if (sub) {
+          setPartySubTab(sub.toLowerCase());
+        }
+        tab = 'party';
       }
       
       if (!tab) {
@@ -1801,6 +1878,18 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'party') {
+      React.startTransition(() => {
+        setActiveTab('party');
+      });
+      const targetSub = partySubTab || 's00';
+      window.history.pushState(null, '', `/party/${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     React.startTransition(() => {
       setActiveTab(tabId);
     });
@@ -1884,6 +1973,22 @@ export default function CRMContainer({
       });
     }
     const newPath = `/calladmin?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handlePartySubTabChange = (subTabId) => {
+    const cleanSub = (subTabId || 's00').toLowerCase();
+    setPartySubTab(cleanSub);
+    if (activeTab !== 'party') {
+      React.startTransition(() => {
+        setActiveTab('party');
+      });
+    }
+    const newPath = `/party/${cleanSub}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -2971,6 +3076,14 @@ export default function CRMContainer({
                                 setAttendanceMenuExpanded(!attendanceMenuExpanded);
                               }
                               handleTabChange('attendance');
+                            } else if (module.id === 'party') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setPartyMenuExpanded(true);
+                              } else {
+                                setPartyMenuExpanded(!partyMenuExpanded);
+                              }
+                              handleTabChange('party');
                             } else {
                               handleTabChange(module.path || module.id); 
                             }
@@ -2995,8 +3108,18 @@ export default function CRMContainer({
                               {attendanceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </span>
                           )}
+                          {module.id === 'party' && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {partyMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
                           {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
                           <span>{module.label}</span>
+                          {module.id === 'party' && partyPendingCount > 0 && (
+                            <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '10px', lineHeight: '1' }}>
+                              {partyPendingCount}
+                            </span>
+                          )}
                         </button>
                         
                         {module.id === 'recruiter' && (
@@ -3146,6 +3269,148 @@ export default function CRMContainer({
                                   </button>
                                 );
                               })}
+                            </div>
+                          </div>
+                        )}
+
+                        {module.id === 'party' && (
+                          <div className={`submenu-list ${partyMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
+                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Channel Partner Pipeline
+                              </div>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s00')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's00'}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                              >
+                                <span>S00 Transfered to Party</span>
+                                {partyPendingCount > 0 && (
+                                  <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                                    {partyPendingCount}
+                                  </span>
+                                )}
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s01')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's01'}
+                              >
+                                S01 Party Master Creation
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s02')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's02'}
+                              >
+                                S02 Distributor Registration
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s03')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's03'}
+                              >
+                                S03 Dealer Registration
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s04')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's04'}
+                              >
+                                S04 Sub-Dealer Registration
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s05')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's05'}
+                              >
+                                S05 Commercial Security Details
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s06')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's06'}
+                              >
+                                S06 Product Auth & Territory
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s07')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's07'}
+                              >
+                                S07 Sales Team Assignment
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('s08')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 's08'}
+                              >
+                                S08 Partner Activation
+                              </button>
+
+                              <div style={{ height: '1px', backgroundColor: 'var(--border-light, rgba(255,255,255,0.08))', margin: '0.4rem 0.75rem' }} />
+
+                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.2rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Directory & Operations
+                              </div>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('r03')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'r03'}
+                              >
+                                📊 R03 Directory & Report
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('hierarchy_tree')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'hierarchy_tree'}
+                              >
+                                🌳 Channel Hierarchy Tree
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('order_followup')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'order_followup'}
+                              >
+                                📞 Daily Order Followups
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('order_feedback')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'order_feedback'}
+                              >
+                                ⭐ Post-Order Feedback
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('monthly_feedback')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'monthly_feedback'}
+                              >
+                                📅 Monthly Health Checks
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('complaints')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'complaints'}
+                              >
+                                🚨 Complaint Management
+                              </button>
                             </div>
                           </div>
                         )}
@@ -3625,7 +3890,7 @@ export default function CRMContainer({
                   {activeTab === 'team' && 'Team Management'}
                   {activeTab === 'workplace' && 'Universal Workplace (WMS)'}
                   {activeTab === 'public_users' && 'Public Applicants'}
-                  {activeTab === 'party' && 'Fully Managed Party Master'}
+                  {activeTab === 'party' && (PARTY_SUBTAB_TITLES[partySubTab] ? `Party Master • ${PARTY_SUBTAB_TITLES[partySubTab]}` : 'Fully Managed Party Master')}
                   {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
                   {activeTab === 'location_master' && 'Central Location Master'}
                   {activeTab === 'whatsapp_official' && 'WhatsApp Official'}
@@ -5353,7 +5618,13 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('party', moduleAccess, userRole) && visitedTabs.has('party')}
               >
                 <ErrorBoundary>
-                  <PartyMasterModule />
+                  <PartyMasterModule 
+                    initialSubTab={partySubTab}
+                    activeSubTab={partySubTab}
+                    onSubTabChange={(tab) => handlePartySubTabChange(tab)}
+                    userRole={userRole}
+                    moduleAccess={moduleAccess}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 

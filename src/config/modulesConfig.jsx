@@ -71,7 +71,31 @@ export const MODULES_CONFIG = [
       { id: '07 - Final Stage', label: '07 - Final Stage' }
     ]
   },
-  { id: 'party', path: 'party', label: 'Party Master', category: 'Sales', icon: <Building2 size={20} /> },
+  { 
+    id: 'party', 
+    path: 'party', 
+    label: 'Party Master', 
+    category: 'Sales', 
+    icon: <Building2 size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 's00', label: 'S00 Transfered to Party Master' },
+      { id: 's01', label: 'S01 Party Master Creation' },
+      { id: 's02', label: 'S02 Distributor Registration' },
+      { id: 's03', label: 'S03 Dealer Registration' },
+      { id: 's04', label: 'S04 Sub-Dealer Registration' },
+      { id: 's05', label: 'S05 Commercial Security Details' },
+      { id: 's06', label: 'S06 Product Auth & Territory' },
+      { id: 's07', label: 'S07 Sales Team Assignment' },
+      { id: 's08', label: 'S08 Partner Activation' },
+      { id: 'r03', label: '📊 R03 Directory & Reports' },
+      { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' },
+      { id: 'order_followup', label: '📞 Daily Order Followups' },
+      { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
+      { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
+      { id: 'complaints', label: '🚨 Complaint Management' }
+    ]
+  },
   { id: 'orders', path: 'orders', label: 'Order Management', category: 'Sales', icon: <CheckCircle size={20} /> },
   { 
     id: 'location_master', 

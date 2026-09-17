@@ -187,8 +187,23 @@ function ChipInput({ chips = [], onChange, placeholder = 'Type and press Enter..
   );
 }
 
-export default function PartyMasterModule() {
-  const [activeTab, setActiveTab] = useState('r03'); // 'r03' | 'hierarchy_tree' | 'order_followup' | 'order_feedback' | 'monthly_feedback' | 'complaints'
+export default function PartyMasterModule({
+  initialSubTab = 's00',
+  activeSubTab = null,
+  onSubTabChange = null,
+  userRole = '',
+  moduleAccess = {}
+}) {
+  const [activeTab, setActiveTab] = useState(activeSubTab || initialSubTab || 's00');
+
+  useEffect(() => {
+    if (activeSubTab && activeSubTab !== activeTab) {
+      setActiveTab(activeSubTab);
+      if (['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(activeSubTab)) {
+        loadOperationsData(activeSubTab);
+      }
+    }
+  }, [activeSubTab]);
   const [parties, setParties] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -451,11 +466,18 @@ export default function PartyMasterModule() {
     }
   };
 
-  const handleTabChange = (newTab) => {
+  const switchTab = (newTab) => {
     setActiveTab(newTab);
+    if (onSubTabChange) {
+      onSubTabChange(newTab);
+    }
     if (newTab !== 'r03' && newTab !== 'hierarchy_tree') {
       loadOperationsData(newTab);
     }
+  };
+
+  const handleTabChange = (newTab) => {
+    switchTab(newTab);
   };
 
   // Filtered Distributors & Dealers for Dropdowns
@@ -539,7 +561,7 @@ export default function PartyMasterModule() {
       contact_email_2_2: '',
       contact_alt_email_2_1: ''
     });
-    setActiveTab('s01');
+    switchTab('s01');
     setShowWizard(false);
   };
 
@@ -548,26 +570,42 @@ export default function PartyMasterModule() {
     setActivePartyId(party.id);
     setWizardParty(party);
     const step = party.next_step?.split('_')[0] || 'S00';
-    setWizardStep(step === 'S05' || step === 'S05_1' ? 'S05' : step);
-    
-    // Auto-populate S00 and other step states from party data
-    const st = party.state_name || 'Punjab';
-    const dists = INDIAN_STATE_DISTRICTS[st] || [];
+
+    if (party.party_type === 'Dealer' && party.parent_distributor_id) {
+      setS02DealerForm(prev => ({
+        ...prev,
+        parent_distributor_id: party.parent_distributor_id,
+        showroom_area_sqft: party.showroom_area_sqft || 2500,
+        dealership_type: party.dealership_type || 'EXCLUSIVE_SWAN'
+      }));
+    }
+
+    if (party.party_type === 'Sub-Dealer' && party.parent_dealer_id) {
+      setS03SubDealerForm(prev => ({
+        ...prev,
+        parent_dealer_id: party.parent_dealer_id
+      }));
+    }
+
+    const st = party.state_name || party.state;
+    const dist = party.district_name || party.district;
+
     setS00Form(prev => ({
       ...prev,
       party_type: party.party_type || 'Dealer',
       firm_name: party.firm_name || '',
       legal_name: party.legal_name || '',
       constitution_type: party.constitution_type || 'PROPRIETORSHIP',
-      gstin: party.gstin || party.gst_no || '',
-      pan: party.pan || party.pan_no || '',
+      gstin: party.gstin || '',
+      pan: party.pan || '',
       address: party.address || '',
-      state_name: st,
-      district_name: party.district_name || (dists.length > 0 ? dists[0] : ''),
+      state_name: st || 'Punjab',
+      district_name: dist || 'Amritsar',
       tehsil: party.tehsil || '',
       block_name: party.block_name || '',
       city_village: party.city_village || '',
       pincode: party.pincode || '',
+      order_category: party.order_category || 'Rotavator',
       biz_contact_no_1: party.biz_contact_no_1 || party.primary_mobile || '',
       biz_contact_no_2: party.biz_contact_no_2 || '',
       biz_alt_no_1: party.biz_alt_no_1 || '',
@@ -576,8 +614,8 @@ export default function PartyMasterModule() {
       biz_email_2: party.biz_email_2 || '',
       biz_alt_email_1: party.biz_alt_email_1 || '',
       biz_alt_email_2: party.biz_alt_email_2 || '',
-      contact_person_name_1: party.contact_person_name_1 || party.owner_name || '',
-      contact_mobile_1_1: party.contact_mobile_1_1 || party.primary_mobile || '',
+      contact_person_name_1: party.contact_person_name_1 || party.contact_person || '',
+      contact_mobile_1_1: party.contact_mobile_1_1 || '',
       contact_mobile_1_2: party.contact_mobile_1_2 || '',
       contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || '',
       contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || '',
@@ -592,12 +630,6 @@ export default function PartyMasterModule() {
       contact_alt_email_2_1: party.contact_alt_email_2_1 || ''
     }));
 
-    if (party.parent_distributor_id) {
-      setS02DealerForm(prev => ({ ...prev, parent_distributor_id: party.parent_distributor_id }));
-    }
-    if (party.parent_dealer_id) {
-      setS03SubDealerForm(prev => ({ ...prev, parent_dealer_id: party.parent_dealer_id }));
-    }
     if (party.billing_route_type) {
       setS04CommForm(prev => ({ ...prev, billing_route_type: party.billing_route_type }));
     }
@@ -663,7 +695,7 @@ export default function PartyMasterModule() {
       'R03': 'r03'
     }[step] || 's01';
 
-    setActiveTab(targetTab || targetSubmenu);
+    switchTab(targetTab || targetSubmenu);
     setShowWizard(false);
   };
 
@@ -703,13 +735,13 @@ export default function PartyMasterModule() {
       // Route to appropriate Tier Step
       if (s00Form.party_type === 'Distributor') {
         setWizardStep('S01');
-        setActiveTab('s02');
+        switchTab('s02');
       } else if (s00Form.party_type === 'Dealer') {
         setWizardStep('S02');
-        setActiveTab('s03');
+        switchTab('s03');
       } else {
         setWizardStep('S03');
-        setActiveTab('s04');
+        switchTab('s04');
       }
     } catch (err) {
       alert('Error saving S01 Party Master: ' + err.message);
@@ -730,7 +762,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s02: true }
       }));
       setWizardStep('S04');
-      setActiveTab('s05');
+      switchTab('s05');
     } catch (err) {
       alert('Error in S02 Distributor: ' + err.message);
     }
@@ -756,7 +788,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s03: true }
       }));
       setWizardStep('S04');
-      setActiveTab('s05');
+      switchTab('s05');
     } catch (err) {
       alert('Error in S03 Dealer: ' + err.message);
     }
@@ -784,7 +816,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s04: true }
       }));
       setWizardStep('S04');
-      setActiveTab('s05');
+      switchTab('s05');
     } catch (err) {
       alert('Error in S04 Sub-Dealer: ' + err.message);
     }
@@ -805,7 +837,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s05: true }
       }));
       setWizardStep('S05');
-      setActiveTab('s06');
+      switchTab('s06');
     } catch (err) {
       alert('Error in S05 Commercial: ' + err.message);
     }
@@ -846,7 +878,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s06: true }
       }));
       setWizardStep('S06');
-      setActiveTab('s07');
+      switchTab('s07');
     } catch (err) {
       alert('Error in S06 Product & Territory: ' + err.message);
     }
@@ -879,7 +911,7 @@ export default function PartyMasterModule() {
         [activePartyId]: { ...(prev[activePartyId] || {}), s07: true }
       }));
       setWizardStep('S07');
-      setActiveTab('s08');
+      switchTab('s08');
     } catch (err) {
       alert('Error in S07 Sales Team: ' + err.message);
     }
@@ -900,7 +932,7 @@ export default function PartyMasterModule() {
           [activePartyId]: { ...(prev[activePartyId] || {}), s08: true }
         }));
         await loadInitialData();
-        setActiveTab('r03');
+        switchTab('r03');
       }
     } catch (err) {
       alert('Activation Error: ' + err.message);
@@ -929,6 +961,9 @@ export default function PartyMasterModule() {
         ]);
         setParties(freshParties);
         setTransferredLeads(freshTrans);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+        }
         const targetParty = freshParties.find(p => p.id === leadItem.party_id) || res.party;
         if (targetParty) {
           resumeWizard(targetParty);
@@ -939,7 +974,7 @@ export default function PartyMasterModule() {
           ...prev,
           [leadItem.party_id]: { ...(prev[leadItem.party_id] || {}), s00: true }
         }));
-        setActiveTab('s01');
+        switchTab('s01');
       }
     } catch (err) {
       alert('Error confirming transfer: ' + err.message);
@@ -1053,7 +1088,7 @@ export default function PartyMasterModule() {
           </div>
         </div>
         <div
-          onClick={() => setActiveTab('s00')}
+          onClick={() => switchTab('s00')}
           style={{
             background: 'var(--bg-surface)',
             border: '1.5px solid rgba(239,68,68,0.35)',
@@ -1510,7 +1545,7 @@ export default function PartyMasterModule() {
               </p>
               <button
                 type="button"
-                onClick={() => setActiveTab(targetUnlockTab)}
+                onClick={() => switchTab(targetUnlockTab)}
                 style={{
                   padding: '0.6rem 1.4rem',
                   background: '#ef4444',
@@ -1938,7 +1973,7 @@ export default function PartyMasterModule() {
             {wizardParty?.party_type && wizardParty.party_type !== 'Distributor' && (
               <div style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid #f59e0b', borderRadius: '8px', padding: '0.85rem', marginBottom: '1rem', fontSize: '0.85rem', color: '#fbbf24' }}>
                 ℹ️ Notice: Current partner is registered as a <strong>{wizardParty.party_type}</strong>. S02 is reserved for Distributors.
-                <button type="button" onClick={() => setActiveTab(wizardParty.party_type === 'Dealer' ? 's03' : 's04')} style={{ marginLeft: '0.75rem', padding: '0.25rem 0.6rem', background: '#f59e0b', border: 'none', borderRadius: '4px', color: '#000', fontWeight: 700, cursor: 'pointer' }}>
+                <button type="button" onClick={() => switchTab(wizardParty.party_type === 'Dealer' ? 's03' : 's04')} style={{ marginLeft: '0.75rem', padding: '0.25rem 0.6rem', background: '#f59e0b', border: 'none', borderRadius: '4px', color: '#000', fontWeight: 700, cursor: 'pointer' }}>
                   Go to {wizardParty.party_type === 'Dealer' ? 'S03 Dealer Registration' : 'S04 Sub-Dealer Registration'} ➔
                 </button>
               </div>

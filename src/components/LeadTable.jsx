@@ -2679,6 +2679,9 @@ export default function LeadTable({
                         try {
                           const res = await sendLeadToParty(lead.id, userId);
                           if (res && res.success) {
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+                            }
                             alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now waiting in S00 for confirmation.`);
                           }
                         } catch (err) {
