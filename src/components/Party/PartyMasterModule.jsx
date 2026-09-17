@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2, Users, Plus, Eye, RefreshCw, X, MapPin, Phone, Mail,
   CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowRightLeft,
@@ -32,6 +32,7 @@ import { getEmployeesMaster } from '@/app/actions/employee';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { getTransferredLeads, confirmLeadTransfer } from '@/app/actions/partyHandoff';
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
+import StageDataTable from './StageDataTable';
 const INDIAN_STATES = ALL_INDIAN_STATES;
 
 const PRODUCT_GROUPS = [
@@ -698,6 +699,17 @@ export default function PartyMasterModule({
 
     switchTab(targetTab || targetSubmenu);
     setShowWizard(false);
+  };
+
+  const stageFormRef = useRef(null);
+
+  const handleSelectStageParty = (party) => {
+    resumeWizard(party, activeTab);
+    setTimeout(() => {
+      if (stageFormRef.current) {
+        stageFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 120);
   };
 
   // Wizard & Submenu Save Handlers
@@ -1378,6 +1390,7 @@ export default function PartyMasterModule({
       {(() => {
         if (!['s01', 's02', 's03', 's04', 's05', 's06', 's07', 's08'].includes(activeTab)) return null;
         const currentParty = wizardParty || parties.find(p => p.id === activePartyId);
+        if (!currentParty) return null;
         const approvals = getStageApprovalStatus(currentParty);
 
         let isLocked = false;
@@ -1484,8 +1497,17 @@ export default function PartyMasterModule({
       {/* SUBMENU TAB S01: PARTY MASTER CREATION */}
       {/* ========================================================= */}
       {activeTab === 's01' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS00Submit}>
+        <div>
+          <StageDataTable
+            stageId="s01"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+            onNewParty={startNewPartyWizard}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS00Submit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.05em' }}>STEP S01</span>
@@ -1862,14 +1884,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S02: DISTRIBUTOR REGISTRATION */}
       {/* ========================================================= */}
       {activeTab === 's02' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS01DistSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s02"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS01DistSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#60a5fa', letterSpacing: '0.05em' }}>STEP S02</span>
@@ -1930,14 +1961,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S03: DEALER REGISTRATION */}
       {/* ========================================================= */}
       {activeTab === 's03' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS02DealerSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s03"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS02DealerSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#34d399', letterSpacing: '0.05em' }}>STEP S03</span>
@@ -2016,14 +2056,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S04: SUB-DEALER REGISTRATION */}
       {/* ========================================================= */}
       {activeTab === 's04' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS03SubDealerSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s04"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS03SubDealerSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.05em' }}>STEP S04</span>
@@ -2101,14 +2150,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S05: COMMERCIAL SECURITY DETAILS */}
       {/* ========================================================= */}
       {activeTab === 's05' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS04CommercialSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s05"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS04CommercialSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.05em' }}>STEP S05</span>
@@ -2202,14 +2260,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S06: PRODUCT AUTH & TERRITORY ALLOCATION */}
       {/* ========================================================= */}
       {activeTab === 's06' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS05CombinedSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s06"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS05CombinedSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.05em' }}>STEP S06</span>
@@ -2346,14 +2413,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S07: SALES TEAM ASSIGNMENT */}
       {/* ========================================================= */}
       {activeTab === 's07' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <form onSubmit={handleS06TeamSubmit}>
+        <div>
+          <StageDataTable
+            stageId="s07"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <form onSubmit={handleS06TeamSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.05em' }}>STEP S07</span>
@@ -2408,14 +2484,23 @@ export default function PartyMasterModule({
             </div>
           </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S08: PARTNER ACTIVATION DESK */}
       {/* ========================================================= */}
       {activeTab === 's08' && (
-        <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+        <div>
+          <StageDataTable
+            stageId="s08"
+            parties={parties}
+            activePartyId={activePartyId}
+            onSelectParty={handleSelectStageParty}
+            getStageApprovalStatus={getStageApprovalStatus}
+          />
+          <div ref={stageFormRef} style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
             <div>
               <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#10b981', letterSpacing: '0.05em' }}>FINAL STEP S08</span>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0.2rem 0 0 0', color: 'var(--text-primary)' }}>
@@ -2542,7 +2627,8 @@ export default function PartyMasterModule({
             </button>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================= */}
       {/* TAB 1: R03 PARTY MANAGEMENT REPORT & HIERARCHY TABLE */}
