@@ -6,8 +6,9 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
+import { sendLeadToParty } from '@/app/actions/partyHandoff';
 
 // Standard 7 CRM Stages Fallback Definition
 const DEFAULT_STAGES = [
@@ -450,6 +451,24 @@ export default function LeadProfilePanel({
   const [clientStatuses, setClientStatuses] = useState(DEFAULT_CLIENT_STATUSES);
   const [priorities, setPriorities] = useState(DEFAULT_PRIORITIES);
   const [businessTypes, setBusinessTypes] = useState(DEFAULT_BUSINESS_TYPES);
+  const [isTransferringParty, setIsTransferringParty] = useState(false);
+  const [transferredPartyCode, setTransferredPartyCode] = useState(null);
+
+  const handleTransferToPartyMaster = async () => {
+    if (!lead || isTransferringParty) return;
+    setIsTransferringParty(true);
+    try {
+      const res = await sendLeadToParty(lead.id, userId);
+      if (res && res.success) {
+        setTransferredPartyCode(res.partyCode);
+        alert(`Lead successfully transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now available in S00 for confirmation.`);
+      }
+    } catch (err) {
+      alert(err?.message || 'Failed to transfer lead to Party Master');
+    } finally {
+      setIsTransferringParty(false);
+    }
+  };
 
   // Voice-to-Text (Speech Recognition) states
   const [isListening, setIsListening] = useState(false);
@@ -1799,6 +1818,58 @@ export default function LeadProfilePanel({
               </select>
             </div>
           </div>
+
+          {/* Stage 07 Action: Transfer to Party Master */}
+          {Boolean(currentStatus && (currentStatus.startsWith('07') || currentStatus.startsWith('7;') || currentStatus.toLowerCase().includes('final stage'))) && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(16,185,129,0.12))',
+              border: '1.5px solid rgba(59,130,246,0.35)',
+              borderRadius: '8px',
+              padding: '0.65rem 0.85rem',
+              marginBottom: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building2 size={15} color="#38bdf8" /> Stage 07 Final Lead: Channel Partner Onboarding
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Transfer this won / final stage lead into S00 Party Master Queue for confirmation.
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isTransferringParty}
+                onClick={handleTransferToPartyMaster}
+                style={{
+                  padding: '0.45rem 0.9rem',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: isTransferringParty ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
+                }}
+              >
+                {isTransferringParty ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Transferring...
+                  </>
+                ) : (
+                  <>Transfer to Party Master (S00) ➔</>
+                )}
+              </button>
+            </div>
+          )}
 
           {/* 7. Next Follow-up Date */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.75rem', padding: '0.45rem 0.6rem', backgroundColor: 'var(--bg-surface, #ffffff)', borderRadius: '6px', border: '1px solid var(--border-light, #e2e8f0)' }}>

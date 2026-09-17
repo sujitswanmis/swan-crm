@@ -388,68 +388,41 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
 }
 
 /**
- * S07 Partner Activation with strict pre-flight validation
+ * S08 Partner Activation with status options: Active, Inactive, Hold, Payment Issues
  */
-export async function activatePartner(partyId, tenantId = DEFAULT_TENANT_ID) {
+export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
 
   const details = await getParty360Details(partyId);
   const party = details.party;
   if (!party) throw new Error('Party not found');
 
-  const errors = [];
+  const validStatuses = ['Active', 'Inactive', 'Hold', 'Payment Issues'];
+  const finalStatus = validStatuses.includes(activationStatus) ? activationStatus : 'Active';
 
-  // Validation 1: Hierarchy check
-  if (party.party_type === 'Dealer') {
-    if (!party.parent_distributor_id) {
+  // If activating to 'Active', validate hierarchy
+  if (finalStatus === 'Active') {
+    const errors = [];
+    if (party.party_type === 'Dealer' && !party.parent_distributor_id) {
       errors.push('Dealer must have an active Parent Distributor before activation.');
+    } else if (party.party_type === 'Sub-Dealer') {
+      if (!party.parent_dealer_id) errors.push('Sub-Dealer must have an active Parent Dealer before activation.');
+      if (!party.parent_distributor_id) errors.push('Sub-Dealer chain incomplete: Parent Dealer does not have an active Distributor.');
     }
-  } else if (party.party_type === 'Sub-Dealer') {
-    if (!party.parent_dealer_id) {
-      errors.push('Sub-Dealer must have an active Parent Dealer before activation.');
-    }
-    if (!party.parent_distributor_id) {
-      errors.push('Sub-Dealer chain incomplete: Parent Dealer does not have an active Distributor.');
+
+    if (errors.length > 0) {
+      return { success: false, errors };
     }
   }
 
-  // Validation 2: Commercial Completed
-  const commStatus = details.commercial?.commercial_status || party.commercial_status;
-  if (commStatus !== 'Completed') {
-    errors.push('S04 Commercial & Security Details must be marked "Completed".');
-  }
-
-  // Validation 3: Min 1 active product authorization
-  const auths = details.product_authorizations || [];
-  if (auths.length === 0) {
-    errors.push('S05 requires at least one Active Product Authorization.');
-  }
-
-  // Validation 4: Min 1 active territory
-  const territories = details.territory_allocations || [];
-  if (territories.length === 0 && !party.state_name) {
-    errors.push('S05.1 requires at least one Active Territory Allocation.');
-  }
-
-  // Validation 5: Min 1 Primary Sales Coordinator in S06
-  const teams = details.team_assignments || [];
-  const hasCoordinator = teams.some(t => t.role_in_party === 'Sales Coordinator' || t.role_in_party === 'Telecaller' || t.role_in_party === 'Sales Executive');
-  if (teams.length === 0 && !hasCoordinator) {
-    errors.push('S06 requires at least one Active Client Team Assignment (Sales Coordinator / Telecaller).');
-  }
-
-  if (errors.length > 0) {
-    return { success: false, errors };
-  }
-
-  // Activate Party
+  // Update Party Status
   const { data: activated, error: actErr } = await adminClient
     .from('party_master')
     .update({
-      party_status: 'Active',
-      final_status: 'Active',
-      workflow_status: 'S07_Activated',
-      registration_status: 'Completed',
+      party_status: finalStatus,
+      final_status: finalStatus,
+      workflow_status: 'S08_Activated',
+      registration_status: finalStatus === 'Active' ? 'Completed' : finalStatus,
       next_step: 'R03_Report',
       updated_at: new Date().toISOString()
     })
@@ -459,7 +432,7 @@ export async function activatePartner(partyId, tenantId = DEFAULT_TENANT_ID) {
 
   if (actErr) throw new Error(actErr.message);
 
-  return { success: true, party: activated };
+  return { success: true, party: activated, status: finalStatus };
 }
 
 /**

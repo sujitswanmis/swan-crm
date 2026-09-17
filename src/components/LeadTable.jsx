@@ -23,6 +23,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import Papa from 'papaparse';
+import { sendLeadToParty } from '@/app/actions/partyHandoff';
 
 const extractStatusFromNoteText = (noteText) => {
   if (!noteText || typeof noteText !== 'string') return null;
@@ -2668,6 +2669,42 @@ export default function LeadTable({
                       📜 History
                     </button>
                   </div>
+
+                  {/* Stage 07 Quick Transfer to Party Master */}
+                  {Boolean(lead.status && (lead.status.startsWith('07') || lead.status.startsWith('7;') || lead.status.toLowerCase().includes('final stage'))) && (
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          const res = await sendLeadToParty(lead.id, userId);
+                          if (res && res.success) {
+                            alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now waiting in S00 for confirmation.`);
+                          }
+                        } catch (err) {
+                          alert(err?.message || 'Failed to transfer lead to Party Master');
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        marginTop: '0.35rem',
+                        padding: '0.4rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(37,99,235,0.15)',
+                        color: '#38bdf8',
+                        border: '1px solid rgba(56,189,248,0.4)',
+                        cursor: 'pointer',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      🚀 Transfer to Party Master (S00)
+                    </button>
+                  )}
                 </div>
               );
             })
