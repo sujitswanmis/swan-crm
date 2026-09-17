@@ -303,6 +303,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
         credit_limit: stepData.credit_limit,
         credit_days: stepData.credit_days,
         security_deposit_amount: stepData.security_deposit_amount,
+        security_deposit_date: stepData.security_deposit_date,
         security_mode: stepData.security_mode,
         receipt_no: stepData.receipt_no,
         commercial_status: stepData.commercial_status || 'Completed'
@@ -351,8 +352,8 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
     zone: territoryData.zone || 'North Zone',
     state: territoryData.state,
     district: territoryData.district,
-    tehsil_area: territoryData.tehsil_area,
-    market_coverage_area: territoryData.market_coverage_area,
+    tehsil_area: Array.isArray(territoryData.tehsil_area) ? territoryData.tehsil_area.join(', ') : (territoryData.tehsil_area || ''),
+    market_coverage_area: Array.isArray(territoryData.market_coverage_area) ? territoryData.market_coverage_area.join(', ') : (territoryData.market_coverage_area || ''),
     territory_type: territoryData.territory_type || 'Exclusive',
     territory_status: 'Active',
     effective_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())

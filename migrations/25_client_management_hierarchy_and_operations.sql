@@ -70,7 +70,30 @@ ALTER TABLE party_master
   ADD COLUMN IF NOT EXISTS distributor_commission_percent numeric(5,2) DEFAULT 0.00,
   ADD COLUMN IF NOT EXISTS monthly_business_potential numeric(14,2) DEFAULT 0.00,
   ADD COLUMN IF NOT EXISTS annual_business_potential numeric(14,2) DEFAULT 0.00,
-  ADD COLUMN IF NOT EXISTS registration_status text DEFAULT 'In_Progress';
+  ADD COLUMN IF NOT EXISTS registration_status text DEFAULT 'In_Progress',
+  ADD COLUMN IF NOT EXISTS biz_contact_no_1 text,
+  ADD COLUMN IF NOT EXISTS biz_contact_no_2 text,
+  ADD COLUMN IF NOT EXISTS biz_alt_no_1 text,
+  ADD COLUMN IF NOT EXISTS biz_alt_no_2 text,
+  ADD COLUMN IF NOT EXISTS biz_email_1 text,
+  ADD COLUMN IF NOT EXISTS biz_email_2 text,
+  ADD COLUMN IF NOT EXISTS biz_alt_email_1 text,
+  ADD COLUMN IF NOT EXISTS biz_alt_email_2 text,
+  ADD COLUMN IF NOT EXISTS contact_person_name_1 text,
+  ADD COLUMN IF NOT EXISTS contact_mobile_1_1 text,
+  ADD COLUMN IF NOT EXISTS contact_mobile_1_2 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_mobile_1_1 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_mobile_1_2 text,
+  ADD COLUMN IF NOT EXISTS contact_email_1_2 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_email_1_1 text,
+  ADD COLUMN IF NOT EXISTS contact_person_name_2 text,
+  ADD COLUMN IF NOT EXISTS contact_mobile_2_1 text,
+  ADD COLUMN IF NOT EXISTS contact_mobile_2_2 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_mobile_2_1 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_mobile_2_2 text,
+  ADD COLUMN IF NOT EXISTS contact_email_2_2 text,
+  ADD COLUMN IF NOT EXISTS contact_alt_email_2_1 text,
+  ADD COLUMN IF NOT EXISTS territory_coverage text[] DEFAULT ARRAY[]::text[];
 
 -- 3. PARTY RELATIONSHIPS (FOR PRESERVING RELATIONSHIP HISTORY)
 CREATE TABLE IF NOT EXISTS party_relationship_history (

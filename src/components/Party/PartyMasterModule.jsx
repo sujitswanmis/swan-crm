@@ -6,7 +6,8 @@ import {
   CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowRightLeft,
   DollarSign, Calendar, ChevronRight, Search, Filter, Clock, Star,
   MessageSquare, Truck, Package, Shield, ExternalLink, ThumbsUp,
-  AlertCircle, FileText, Check, Lock, ChevronDown, CheckSquare, Sparkles
+  AlertCircle, FileText, Check, Lock, ChevronDown, CheckSquare, Sparkles,
+  UserCheck, Layers, GitFork, UserPlus, Tag
 } from 'lucide-react';
 import {
   getPartyList,
@@ -47,8 +48,151 @@ const PRODUCT_GROUPS = [
   { id: 'SPARE_PARTS', name: 'Genuine Swan Blades, Gearbox & Spares' }
 ];
 
+const ALL_CLIENT_TEAM_ROLES = [
+  { id: 'NSM', label: 'NSM (National Sales Manager)' },
+  { id: 'RSM', label: 'RSM (Regional Sales Manager)' },
+  { id: 'ASM', label: 'ASM (Area Sales Manager)' },
+  { id: 'Sales Executive', label: 'Sales Executive (TSE / Field Rep)' },
+  { id: 'Telecaller', label: 'Telecaller (Order Taking & Followup)' },
+  { id: 'Sales Coordinator', label: 'Sales Coordinator (Backend Desk)' },
+  { id: 'CRM', label: 'CRM (Relationship Manager)' }
+];
+
+/**
+ * Reusable Chip / Tag Input Component
+ * Type and press Enter to create chip, or select from filtered suggestions
+ */
+function ChipInput({ chips = [], onChange, placeholder = 'Type and press Enter...', suggestions = [] }) {
+  const [inputVal, setInputVal] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = inputVal.trim();
+      if (val && !chips.includes(val)) {
+        onChange([...chips, val]);
+        setInputVal('');
+        setShowDropdown(false);
+      }
+    }
+  };
+
+  const addChip = (item) => {
+    if (!chips.includes(item)) {
+      onChange([...chips, item]);
+      setInputVal('');
+      setShowDropdown(false);
+    }
+  };
+
+  const removeChip = (idxToRemove) => {
+    onChange(chips.filter((_, i) => i !== idxToRemove));
+  };
+
+  const filtered = suggestions.filter(s =>
+    typeof s === 'string' && s.toLowerCase().includes(inputVal.toLowerCase()) && !chips.includes(s)
+  );
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.4rem',
+        padding: '0.45rem 0.6rem',
+        background: '#1e293b',
+        border: '1px solid rgba(255,255,255,0.15)',
+        borderRadius: '8px',
+        minHeight: '42px',
+        alignItems: 'center'
+      }}>
+        {chips.map((chip, idx) => (
+          <span
+            key={idx}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.22rem 0.6rem',
+              background: 'rgba(59,130,246,0.25)',
+              color: '#93c5fd',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              border: '1px solid rgba(59,130,246,0.35)'
+            }}
+          >
+            {chip}
+            <button
+              type="button"
+              onClick={() => removeChip(idx)}
+              style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+            >
+              <X size={13} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputVal}
+          onChange={e => { setInputVal(e.target.value); setShowDropdown(true); }}
+          onFocus={() => setShowDropdown(true)}
+          onBlur={() => setTimeout(() => setShowDropdown(false), 220)}
+          onKeyDown={handleKeyDown}
+          placeholder={chips.length === 0 ? placeholder : 'Type more + Enter...'}
+          style={{
+            flex: 1,
+            minWidth: '130px',
+            background: 'transparent',
+            border: 'none',
+            color: '#fff',
+            outline: 'none',
+            fontSize: '0.84rem'
+          }}
+        />
+      </div>
+
+      {showDropdown && inputVal.trim() && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          background: '#0f172a',
+          border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: '8px',
+          marginTop: '0.25rem',
+          maxHeight: '180px',
+          overflowY: 'auto',
+          zIndex: 60,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
+        }}>
+          {filtered.map((s, i) => (
+            <div
+              key={i}
+              onMouseDown={() => addChip(s)}
+              style={{
+                padding: '0.5rem 0.75rem',
+                cursor: 'pointer',
+                fontSize: '0.83rem',
+                color: '#e2e8f0',
+                borderBottom: '1px solid rgba(255,255,255,0.05)'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#1e293b'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              + {s}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PartyMasterModule() {
-  const [activeTab, setActiveTab] = useState('r03'); // 'r03' | 'order_followup' | 'order_feedback' | 'monthly_feedback' | 'complaints'
+  const [activeTab, setActiveTab] = useState('r03'); // 'r03' | 'hierarchy_tree' | 'order_followup' | 'order_feedback' | 'monthly_feedback' | 'complaints'
   const [parties, setParties] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -61,20 +205,17 @@ export default function PartyMasterModule() {
 
   // Wizard States (S00 to S07)
   const [showWizard, setShowWizard] = useState(false);
-  const [wizardStep, setWizardStep] = useState('S00'); // 'S00' | 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S05_1' | 'S06' | 'S07'
+  const [wizardStep, setWizardStep] = useState('S00'); // 'S00' | 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07'
   const [activePartyId, setActivePartyId] = useState(null);
   const [wizardParty, setWizardParty] = useState(null);
+  const [s00ContactTab, setS00ContactTab] = useState('biz'); // 'biz' | 'person1' | 'person2'
 
-  // S00 Form State
+  // S00 Form State (With All 22 Specific Contact Fields)
   const [s00Form, setS00Form] = useState({
     party_type: 'Dealer',
     firm_name: '',
     legal_name: '',
-    owner_name: '',
-    contact_person: '',
-    primary_mobile: '',
-    whatsapp_no: '',
-    official_email: '',
+    constitution_type: 'PROPRIETORSHIP',
     gstin: '',
     pan: '',
     address: '',
@@ -83,21 +224,90 @@ export default function PartyMasterModule() {
     city_village: '',
     pincode: '',
     order_category: 'Rotavator',
-    constitution_type: 'PROPRIETORSHIP'
+    
+    // Business Contacts
+    biz_contact_no_1: '',
+    biz_contact_no_2: '',
+    biz_alt_no_1: '',
+    biz_alt_no_2: '',
+    biz_email_1: '',
+    biz_email_2: '',
+    biz_alt_email_1: '',
+    biz_alt_email_2: '',
+
+    // Contact Person 1
+    contact_person_name_1: '',
+    contact_mobile_1_1: '',
+    contact_mobile_1_2: '',
+    contact_alt_mobile_1_1: '',
+    contact_alt_mobile_1_2: '',
+    contact_email_1_2: '',
+    contact_alt_email_1_1: '',
+
+    // Contact Person 2
+    contact_person_name_2: '',
+    contact_mobile_2_1: '',
+    contact_mobile_2_2: '',
+    contact_alt_mobile_2_1: '',
+    contact_alt_mobile_2_2: '',
+    contact_email_2_2: '',
+    contact_alt_email_2_1: ''
   });
 
   // Step Data States
-  const [s01DistForm, setS01DistForm] = useState({ zone: 'North Zone', territory: 'Punjab Central', monthly_business_potential: 2500000, annual_business_potential: 30000000 });
-  const [s02DealerForm, setS02DealerForm] = useState({ parent_distributor_id: '', territory: '', monthly_business_potential: 500000, annual_business_potential: 6000000 });
-  const [s03SubDealerForm, setS03SubDealerForm] = useState({ parent_dealer_id: '', territory: '', monthly_business_potential: 200000 });
-  const [s04CommForm, setS04CommForm] = useState({ credit_limit: 500000, credit_days: 30, security_deposit_amount: 100000, security_mode: 'Cheque', receipt_no: '', billing_route_type: 'DIRECT_COMPANY_BILLING', distributor_commission_percent: 2.5 });
+  const [s01DistForm, setS01DistForm] = useState({
+    zone: 'North Zone',
+    territory_coverage: ['Punjab Central', 'Malwa Region'],
+    warehouse_address: '',
+    storage_capacity_sqft: 10000,
+    has_unloading_crane: true
+  });
+
+  const [s02DealerForm, setS02DealerForm] = useState({
+    parent_distributor_id: '',
+    territory_coverage: ['Khanna Mandi'],
+    showroom_area_sqft: 2500,
+    dealership_type: 'EXCLUSIVE_SWAN'
+  });
+
+  const [s03SubDealerForm, setS03SubDealerForm] = useState({
+    parent_dealer_id: '',
+    territory_coverage: ['Samrala Block', 'Village Counters']
+  });
+
+  const [s04CommForm, setS04CommForm] = useState({
+    credit_limit: 500000,
+    credit_days: 30,
+    security_deposit_amount: 100000,
+    security_deposit_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
+    security_mode: 'Cheque',
+    receipt_no: '',
+    billing_route_type: 'DIRECT_COMPANY_BILLING',
+    distributor_commission_percent: 2.5
+  });
+
+  // Combined S05 Product Authorization & Territory Allocation
   const [s05SelectedProducts, setS05SelectedProducts] = useState(['ROTAVATOR', 'SPARE_PARTS']);
-  const [s051TerritoryForm, setS051TerritoryForm] = useState({ zone: 'North Zone', state: 'Punjab', district: '', tehsil_area: '', market_coverage_area: '', territory_type: 'Exclusive' });
-  const [s06TeamAssignments, setS06TeamAssignments] = useState([
-    { role_in_party: 'Sales Coordinator', employee_id: '', employee_name: '' },
-    { role_in_party: 'Telecaller', employee_id: '', employee_name: '' },
-    { role_in_party: 'Sales Executive', employee_id: '', employee_name: '' }
-  ]);
+  const [s05TerritoryForm, setS05TerritoryForm] = useState({
+    zone: 'North Zone',
+    state: 'Punjab',
+    district: 'Ludhiana',
+    tehsil_area: 'Khanna',
+    market_coverage_chips: ['Khanna Mandi', 'Samrala Road', 'Doraha Bypass'],
+    territory_type: 'Exclusive'
+  });
+
+  // S06 Team Assignments (All 7 Roles Supported with Multi-Employee Chips)
+  const [s06TeamMap, setS06TeamMap] = useState({
+    NSM: [],
+    RSM: [],
+    ASM: [],
+    'Sales Executive': [],
+    Telecaller: [],
+    'Sales Coordinator': [],
+    CRM: []
+  });
+
   const [activationErrors, setActivationErrors] = useState([]);
 
   // 360 View Modal
@@ -175,7 +385,7 @@ export default function PartyMasterModule() {
 
   const handleTabChange = (newTab) => {
     setActiveTab(newTab);
-    if (newTab !== 'r03') {
+    if (newTab !== 'r03' && newTab !== 'hierarchy_tree') {
       loadOperationsData(newTab);
     }
   };
@@ -189,6 +399,11 @@ export default function PartyMasterModule() {
     return parties.filter(p => p.party_type === 'Dealer');
   }, [parties]);
 
+  // Employee Names List for Chip Suggestions
+  const employeeNames = useMemo(() => {
+    return employees.map(e => e.emp_name);
+  }, [employees]);
+
   // Filtered R03 Report List
   const filteredParties = useMemo(() => {
     return parties.filter(p => {
@@ -199,6 +414,8 @@ export default function PartyMasterModule() {
         (p.dealer_code && p.dealer_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (p.sub_dealer_code && p.sub_dealer_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (p.primary_mobile && p.primary_mobile.includes(searchTerm)) ||
+        (p.biz_contact_no_1 && p.biz_contact_no_1.includes(searchTerm)) ||
+        (p.contact_mobile_1_1 && p.contact_mobile_1_1.includes(searchTerm)) ||
         (p.owner_name && p.owner_name.toLowerCase().includes(searchTerm.toLowerCase()))
       );
 
@@ -215,15 +432,12 @@ export default function PartyMasterModule() {
     setActivePartyId(null);
     setWizardParty(null);
     setWizardStep('S00');
+    setS00ContactTab('biz');
     setS00Form({
       party_type: 'Dealer',
       firm_name: '',
       legal_name: '',
-      owner_name: '',
-      contact_person: '',
-      primary_mobile: '',
-      whatsapp_no: '',
-      official_email: '',
+      constitution_type: 'PROPRIETORSHIP',
       gstin: '',
       pan: '',
       address: '',
@@ -232,7 +446,28 @@ export default function PartyMasterModule() {
       city_village: '',
       pincode: '',
       order_category: 'Rotavator',
-      constitution_type: 'PROPRIETORSHIP'
+      biz_contact_no_1: '',
+      biz_contact_no_2: '',
+      biz_alt_no_1: '',
+      biz_alt_no_2: '',
+      biz_email_1: '',
+      biz_email_2: '',
+      biz_alt_email_1: '',
+      biz_alt_email_2: '',
+      contact_person_name_1: '',
+      contact_mobile_1_1: '',
+      contact_mobile_1_2: '',
+      contact_alt_mobile_1_1: '',
+      contact_alt_mobile_1_2: '',
+      contact_email_1_2: '',
+      contact_alt_email_1_1: '',
+      contact_person_name_2: '',
+      contact_mobile_2_1: '',
+      contact_mobile_2_2: '',
+      contact_alt_mobile_2_1: '',
+      contact_alt_mobile_2_2: '',
+      contact_email_2_2: '',
+      contact_alt_email_2_1: ''
     });
     setShowWizard(true);
   };
@@ -240,7 +475,8 @@ export default function PartyMasterModule() {
   const resumeWizard = (party) => {
     setActivePartyId(party.id);
     setWizardParty(party);
-    setWizardStep(party.next_step?.split('_')[0] || 'S00');
+    const step = party.next_step?.split('_')[0] || 'S00';
+    setWizardStep(step === 'S05' || step === 'S05_1' ? 'S05' : step);
     setShowWizard(true);
   };
 
@@ -248,7 +484,17 @@ export default function PartyMasterModule() {
   const handleS00Submit = async (e) => {
     e.preventDefault();
     try {
-      const created = await createPartyMaster(s00Form);
+      const primaryPhone = s00Form.biz_contact_no_1 || s00Form.contact_mobile_1_1 || '0000000000';
+      const owner = s00Form.contact_person_name_1 || s00Form.firm_name;
+
+      const payload = {
+        ...s00Form,
+        primary_mobile: primaryPhone,
+        owner_name: owner,
+        contact_person: s00Form.contact_person_name_1
+      };
+
+      const created = await createPartyMaster(payload);
       setActivePartyId(created.id);
       setWizardParty(created);
       await loadInitialData();
@@ -270,7 +516,9 @@ export default function PartyMasterModule() {
     e.preventDefault();
     try {
       await updatePartyStep(activePartyId, 'S01_Distributor_Registration', {
-        ...s01DistForm,
+        zone: s01DistForm.zone,
+        territory: s01DistForm.territory_coverage.join(', '),
+        warehouse_address: s01DistForm.warehouse_address,
         workflow_status: 'S01_Completed',
         next_step: 'S04_Commercial'
       });
@@ -289,7 +537,9 @@ export default function PartyMasterModule() {
     }
     try {
       await updatePartyStep(activePartyId, 'S02_Dealer_Registration', {
-        ...s02DealerForm,
+        parent_distributor_id: s02DealerForm.parent_distributor_id,
+        territory: s02DealerForm.territory_coverage.join(', '),
+        dealership_type: s02DealerForm.dealership_type,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
       });
@@ -313,8 +563,7 @@ export default function PartyMasterModule() {
       await updatePartyStep(activePartyId, 'S03_Sub_Dealer_Registration', {
         parent_dealer_id: s03SubDealerForm.parent_dealer_id,
         parent_distributor_id: derivedDistId,
-        territory: s03SubDealerForm.territory,
-        monthly_business_potential: s03SubDealerForm.monthly_business_potential,
+        territory: s03SubDealerForm.territory_coverage.join(', '),
         workflow_status: 'S03_Completed',
         next_step: 'S04_Commercial'
       });
@@ -341,47 +590,60 @@ export default function PartyMasterModule() {
     }
   };
 
-  const handleS05ProductsSubmit = async (e) => {
+  // Combined S05 Product Authorization & Territory Allocation Submit
+  const handleS05CombinedSubmit = async (e) => {
     e.preventDefault();
     if (s05SelectedProducts.length === 0) {
       alert('At least one Product must be authorized for this party!');
       return;
     }
     try {
+      // 1. Save products
       const items = s05SelectedProducts.map(p => ({ product_name: p, opening_stock_required: 1 }));
       await saveProductAuthorizations(activePartyId, items);
-      await updatePartyStep(activePartyId, 'S05_Product_Authorization', {
-        workflow_status: 'S05_Completed',
-        next_step: 'S05_1_Territory'
-      });
-      await loadInitialData();
-      setWizardStep('S05_1');
-    } catch (err) {
-      alert('Error in S05: ' + err.message);
-    }
-  };
 
-  const handleS051TerritorySubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await saveTerritoryAllocation(activePartyId, s051TerritoryForm);
-      await updatePartyStep(activePartyId, 'S05_1_Territory', {
-        state_name: s051TerritoryForm.state,
-        district_name: s051TerritoryForm.district,
-        workflow_status: 'S05_1_Completed',
+      // 2. Save territory
+      await saveTerritoryAllocation(activePartyId, {
+        zone: s05TerritoryForm.zone,
+        state: s05TerritoryForm.state,
+        district: s05TerritoryForm.district,
+        tehsil_area: s05TerritoryForm.tehsil_area,
+        market_coverage_area: s05TerritoryForm.market_coverage_chips,
+        territory_type: s05TerritoryForm.territory_type
+      });
+
+      await updatePartyStep(activePartyId, 'S05_Product_Authorization_Territory', {
+        state_name: s05TerritoryForm.state,
+        district_name: s05TerritoryForm.district,
+        workflow_status: 'S05_Completed',
         next_step: 'S06_Team_Assignment'
       });
+
       await loadInitialData();
       setWizardStep('S06');
     } catch (err) {
-      alert('Error in S05.1: ' + err.message);
+      alert('Error in S05: ' + err.message);
     }
   };
 
   const handleS06TeamSubmit = async (e) => {
     e.preventDefault();
     try {
-      await saveTeamAssignments(activePartyId, s06TeamAssignments);
+      // Convert role map to flat assignment array
+      const flatAssignments = [];
+      Object.entries(s06TeamMap).forEach(([role, names]) => {
+        names.forEach(empName => {
+          const emp = employees.find(e => e.emp_name === empName);
+          flatAssignments.push({
+            role_in_party: role,
+            employee_id: emp?.id || null,
+            employee_name: empName,
+            assignment_type: 'Primary'
+          });
+        });
+      });
+
+      await saveTeamAssignments(activePartyId, flatAssignments);
       await updatePartyStep(activePartyId, 'S06_Team_Assignment', {
         workflow_status: 'S06_Completed',
         next_step: 'S07_Activation'
@@ -484,7 +746,7 @@ export default function PartyMasterModule() {
           </div>
         </div>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem' }}>
-          <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700 }}>⚡ Active & Billed Directly</div>
+          <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700 }}>⚡ Direct Company Billing</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#34d399', marginTop: '0.2rem' }}>
             {parties.filter(p => p.billing_route_type === 'DIRECT_COMPANY_BILLING').length}
           </div>
@@ -495,6 +757,7 @@ export default function PartyMasterModule() {
       <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '1.25rem', overflowX: 'auto' }}>
         {[
           { id: 'r03', label: '📊 R03: Party Directory & Hierarchy Report', icon: FileText },
+          { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree (Who Under Whom)', icon: GitFork },
           { id: 'order_followup', label: '📞 Engine 1: Daily Order Followups', icon: Phone },
           { id: 'order_feedback', label: '⭐ Engine 2: Post-Order Feedback', icon: Star },
           { id: 'monthly_feedback', label: '📅 Engine 3: Monthly Health Checks', icon: Calendar },
@@ -519,7 +782,8 @@ export default function PartyMasterModule() {
                 background: isActive ? '#2563eb' : 'var(--bg-surface)',
                 color: isActive ? '#ffffff' : 'var(--text-secondary)',
                 boxShadow: isActive ? '0 3px 10px rgba(37,99,235,0.3)' : 'none',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
               }}
             >
               <Icon size={16} />
@@ -589,8 +853,8 @@ export default function PartyMasterModule() {
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem' }}>Party Code & Tier</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Firm & Contact</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Strict Channel Hierarchy (Breadcrumb)</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Firm & Contact Details</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Strict Channel Hierarchy (Who Under Whom)</th>
                   <th style={{ padding: '0.85rem 1rem' }}>State / Territory</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Billing Route</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Credit & Status</th>
@@ -631,25 +895,28 @@ export default function PartyMasterModule() {
                           </span>
                         </td>
 
-                        {/* Firm & Contact */}
+                        {/* Firm & Contact Details */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem' }}>{p.firm_name}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            {p.owner_name || p.contact_person || 'Principal'} • {p.primary_mobile}
+                            {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1}
                           </div>
+                          {(p.biz_email_1 || p.official_email) && (
+                            <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>{p.biz_email_1 || p.official_email}</div>
+                          )}
                         </td>
 
                         {/* Strict Channel Hierarchy Breadcrumb */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           {isDist && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
-                              👑 {p.firm_name}
+                              👑 {p.firm_name} <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>(Top-Level Master Hub)</span>
                             </div>
                           )}
 
                           {isDealer && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                              <span style={{ color: '#94a3b8' }}>
+                              <span style={{ color: '#60a5fa', fontWeight: 600 }}>
                                 👑 {p.parent_distributor ? p.parent_distributor.firm_name : <span style={{ color: '#ef4444' }}>Missing Parent DIS!</span>}
                               </span>
                               <ArrowRight size={12} className="text-gray-400" />
@@ -659,11 +926,11 @@ export default function PartyMasterModule() {
 
                           {isSubDealer && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                              <span style={{ color: '#94a3b8' }}>
+                              <span style={{ color: '#60a5fa', fontWeight: 600 }}>
                                 👑 {p.parent_distributor ? p.parent_distributor.firm_name : 'Parent DIS'}
                               </span>
                               <ArrowRight size={12} className="text-gray-400" />
-                              <span style={{ color: '#94a3b8' }}>
+                              <span style={{ color: '#34d399', fontWeight: 600 }}>
                                 🏪 {p.parent_dealer ? p.parent_dealer.firm_name : 'Parent DLR'}
                               </span>
                               <ArrowRight size={12} className="text-gray-400" />
@@ -750,6 +1017,117 @@ export default function PartyMasterModule() {
       )}
 
       {/* ========================================================= */}
+      {/* TAB: CHANNEL HIERARCHY TREE (WHO IS UNDER WHOM VISUALIZER) */}
+      {/* ========================================================= */}
+      {activeTab === 'hierarchy_tree' && (
+        <div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Channel Partner Hierarchy Visualizer</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: '0.2rem 0 0 0' }}>
+              Full visibility into which Distributors have which Dealers, and which Sub-Dealers belong to which Dealers.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {activeDistributors.length === 0 ? (
+              <div style={{ background: 'var(--bg-surface)', padding: '2rem', textAlign: 'center', borderRadius: '12px', color: 'var(--text-secondary)' }}>
+                No Distributors registered yet. Onboard a Distributor first via S00 ➔ S01.
+              </div>
+            ) : (
+              activeDistributors.map(dist => {
+                // Find all dealers under this distributor
+                const dealersUnderDist = parties.filter(p => p.party_type === 'Dealer' && p.parent_distributor_id === dist.id);
+
+                return (
+                  <div key={dist.id} style={{ background: 'var(--bg-surface)', border: '1.5px solid rgba(56,189,248,0.4)', borderRadius: '14px', padding: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+                    {/* Distributor Card Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '1.3rem' }}>👑</span>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', background: 'rgba(56,189,248,0.2)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                              {dist.distributor_code || dist.party_universal_code}
+                            </span>
+                            <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#ffffff' }}>{dist.firm_name}</span>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            Owner: {dist.owner_name} • Phone: {dist.primary_mobile} • State: {dist.state_name || 'Punjab'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#34d399', background: 'rgba(16,185,129,0.2)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                          {dealersUnderDist.length} Mapped Dealers
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Mapped Dealers and their Sub-Dealers */}
+                    <div style={{ marginTop: '1rem', paddingLeft: '1.5rem', borderLeft: '2px dashed rgba(56,189,248,0.3)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {dealersUnderDist.length === 0 ? (
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                          No dealers currently mapped under this distributor.
+                        </div>
+                      ) : (
+                        dealersUnderDist.map(dlr => {
+                          // Find all sub-dealers under this dealer
+                          const subDealersUnderDlr = parties.filter(p => p.party_type === 'Sub-Dealer' && p.parent_dealer_id === dlr.id);
+
+                          return (
+                            <div key={dlr.id} style={{ background: 'var(--bg-primary)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '1rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                  <span style={{ fontSize: '1.1rem' }}>🏪</span>
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.2)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                                        {dlr.dealer_code || dlr.party_universal_code}
+                                      </span>
+                                      <span style={{ fontWeight: 700, fontSize: '0.96rem', color: '#ffffff' }}>{dlr.firm_name}</span>
+                                      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.1rem 0.4rem', borderRadius: '4px', background: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'rgba(59,130,246,0.2)' : 'rgba(245,158,11,0.2)', color: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#60a5fa' : '#fbbf24' }}>
+                                        {dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : 'Distributor Billed'}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                      {dlr.owner_name} • {dlr.primary_mobile} • Territory: {dlr.district_name || 'Territory'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <span style={{ fontSize: '0.74rem', color: '#fbbf24', fontWeight: 600 }}>
+                                  {subDealersUnderDlr.length} Sub-Dealers
+                                </span>
+                              </div>
+
+                              {/* Nested Sub-Dealers */}
+                              {subDealersUnderDlr.length > 0 && (
+                                <div style={{ marginTop: '0.75rem', paddingLeft: '1.25rem', borderLeft: '2px dotted rgba(245,158,11,0.4)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  {subDealersUnderDlr.map(sdl => (
+                                    <div key={sdl.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.84rem', color: '#e2e8f0', background: 'rgba(245,158,11,0.08)', padding: '0.4rem 0.65rem', borderRadius: '6px' }}>
+                                      <span>🛒</span>
+                                      <span style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.75rem' }}>{sdl.sub_dealer_code || sdl.party_universal_code}</span>
+                                      <strong style={{ color: '#fff' }}>{sdl.firm_name}</strong>
+                                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>({sdl.owner_name} • {sdl.primary_mobile})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
       {/* TAB 2: ENGINE 1 - DAILY ORDER FOLLOWUP COCKPIT */}
       {/* ========================================================= */}
       {activeTab === 'order_followup' && (
@@ -776,7 +1154,7 @@ export default function PartyMasterModule() {
                   <div>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#38bdf8' }}>{party.distributor_code || party.dealer_code || party.party_universal_code}</span>
                     <h4 style={{ margin: '0.2rem 0', fontSize: '1.05rem', fontWeight: 700 }}>{party.firm_name}</h4>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{party.owner_name} • {party.primary_mobile}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{party.contact_person_name_1 || party.owner_name} • {party.contact_mobile_1_1 || party.primary_mobile}</div>
                   </div>
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.2)', color: '#34d399', borderRadius: '4px' }}>
                     {party.party_type}
@@ -1000,7 +1378,7 @@ export default function PartyMasterModule() {
       )}
 
       {/* ========================================================= */}
-      {/* S00 TO S07 ONBOARDING WIZARD MODAL (MATCHING USER'S IMAGE) */}
+      {/* S00 TO S07 ONBOARDING WIZARD MODAL (WITH MERGED S05 & S06 7 ROLES) */}
       {/* ========================================================= */}
       {showWizard && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
@@ -1019,7 +1397,7 @@ export default function PartyMasterModule() {
               </button>
             </div>
 
-            {/* Visual Step Cards Header (Exact match of User's Uploaded Image) */}
+            {/* Visual Step Cards Header (Merged S05) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.6rem', marginBottom: '1.5rem' }}>
               {[
                 { id: 'S00', label: 'S00 Party Master Creation' },
@@ -1027,8 +1405,7 @@ export default function PartyMasterModule() {
                 { id: 'S02', label: 'S02 Dealer Registration' },
                 { id: 'S03', label: 'S03 Sub-Dealer Registration' },
                 { id: 'S04', label: 'S04 Commercial Security Details' },
-                { id: 'S05', label: 'S05 Product Authorization' },
-                { id: 'S05_1', label: 'S05.1 Territory Allocation' },
+                { id: 'S05', label: 'S05 Product Auth & Territory' },
                 { id: 'S06', label: 'S06 Sales Team Assignment' },
                 { id: 'S07', label: 'S07 Partner Activation' }
               ].map(step => {
@@ -1057,97 +1434,276 @@ export default function PartyMasterModule() {
               })}
             </div>
 
-            {/* STEP S00: PARTY MASTER CREATION */}
+            {/* ======================================================= */}
+            {/* STEP S00: PARTY MASTER WITH ALL 22 CONTACT FIELDS */}
+            {/* ======================================================= */}
             {wizardStep === 'S00' && (
               <form onSubmit={handleS00Submit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '1rem' }}>S00: Channel Partner Main Identity</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Party Tier *</label>
-                    <select
-                      value={s00Form.party_type}
-                      onChange={e => setS00Form({ ...s00Form, party_type: e.target.value })}
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    >
-                      <option value="Distributor">Level 1: Distributor (Super Stockist)</option>
-                      <option value="Dealer">Level 2: Dealer (Authorized Showroom)</option>
-                      <option value="Sub-Dealer">Level 3: Sub-Dealer (Retail Counter)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Firm / Trade Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={s00Form.firm_name}
-                      onChange={e => setS00Form({ ...s00Form, firm_name: e.target.value })}
-                      placeholder="e.g. Kisan Agro Machinery"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Owner / Principal Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={s00Form.owner_name}
-                      onChange={e => setS00Form({ ...s00Form, owner_name: e.target.value })}
-                      placeholder="e.g. Sardar Gurdeep Singh"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Primary Mobile (Calling & WhatsApp) *</label>
-                    <input
-                      type="text"
-                      required
-                      value={s00Form.primary_mobile}
-                      onChange={e => setS00Form({ ...s00Form, primary_mobile: e.target.value })}
-                      placeholder="10-digit mobile number"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
-                    <select
-                      value={s00Form.state_name}
-                      onChange={e => setS00Form({ ...s00Form, state_name: e.target.value })}
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    >
-                      {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>District Name</label>
-                    <input
-                      type="text"
-                      value={s00Form.district_name}
-                      onChange={e => setS00Form({ ...s00Form, district_name: e.target.value })}
-                      placeholder="e.g. Ludhiana"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>GSTIN Number</label>
-                    <input
-                      type="text"
-                      value={s00Form.gstin}
-                      onChange={e => setS00Form({ ...s00Form, gstin: e.target.value })}
-                      placeholder="15-digit GSTIN"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>PAN Number</label>
-                    <input
-                      type="text"
-                      value={s00Form.pan}
-                      onChange={e => setS00Form({ ...s00Form, pan: e.target.value })}
-                      placeholder="10-digit PAN"
-                      style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                    />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S00: Channel Partner Main Identity</h3>
+                
+                {/* Core Identification */}
+                <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#60a5fa', marginBottom: '0.75rem' }}>Basic Firm Details</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.86rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Party Tier *</label>
+                      <select
+                        value={s00Form.party_type}
+                        onChange={e => setS00Form({ ...s00Form, party_type: e.target.value })}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        <option value="Distributor">Level 1: Distributor (Super Stockist)</option>
+                        <option value="Dealer">Level 2: Dealer (Authorized Showroom)</option>
+                        <option value="Sub-Dealer">Level 3: Sub-Dealer (Retail Counter)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Firm / Trade Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={s00Form.firm_name}
+                        onChange={e => setS00Form({ ...s00Form, firm_name: e.target.value })}
+                        placeholder="e.g. Kisan Agro Machinery"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Legal Registered Name</label>
+                      <input
+                        type="text"
+                        value={s00Form.legal_name}
+                        onChange={e => setS00Form({ ...s00Form, legal_name: e.target.value })}
+                        placeholder="As per GST/PAN"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
+                      <select
+                        value={s00Form.state_name}
+                        onChange={e => setS00Form({ ...s00Form, state_name: e.target.value })}
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      >
+                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
+                      <input
+                        type="text"
+                        required
+                        value={s00Form.district_name}
+                        onChange={e => setS00Form({ ...s00Form, district_name: e.target.value })}
+                        placeholder="e.g. Ludhiana"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>City / Village</label>
+                      <input
+                        type="text"
+                        value={s00Form.city_village}
+                        onChange={e => setS00Form({ ...s00Form, city_village: e.target.value })}
+                        placeholder="e.g. Khanna"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>GSTIN</label>
+                      <input
+                        type="text"
+                        value={s00Form.gstin}
+                        onChange={e => setS00Form({ ...s00Form, gstin: e.target.value })}
+                        placeholder="15-digit GSTIN"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>PAN</label>
+                      <input
+                        type="text"
+                        value={s00Form.pan}
+                        onChange={e => setS00Form({ ...s00Form, pan: e.target.value })}
+                        placeholder="10-digit PAN"
+                        style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}
+                      />
+                    </div>
                   </div>
                 </div>
+
+                {/* Sub-Tabs for Business Contacts vs Person 1 vs Person 2 */}
+                <div style={{ display: 'flex', gap: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setS00ContactTab('biz')}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      background: s00ContactTab === 'biz' ? '#2563eb' : 'rgba(255,255,255,0.06)',
+                      color: s00ContactTab === 'biz' ? '#fff' : '#cbd5e1'
+                    }}
+                  >
+                    🏢 Business Contacts (Official Firm)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setS00ContactTab('person1')}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      background: s00ContactTab === 'person1' ? '#10b981' : 'rgba(255,255,255,0.06)',
+                      color: s00ContactTab === 'person1' ? '#fff' : '#cbd5e1'
+                    }}
+                  >
+                    👤 Contact Person 1 (Primary Key Official)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setS00ContactTab('person2')}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      background: s00ContactTab === 'person2' ? '#f59e0b' : 'rgba(255,255,255,0.06)',
+                      color: s00ContactTab === 'person2' ? '#fff' : '#cbd5e1'
+                    }}
+                  >
+                    👥 Contact Person 2 (Secondary / Accounts)
+                  </button>
+                </div>
+
+                {/* TAB A: BUSINESS CONTACTS */}
+                {s00ContactTab === 'biz' && (
+                  <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(59,130,246,0.3)' }}>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#60a5fa', marginBottom: '0.75rem' }}>
+                      Official Business Communication Channels
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.84rem' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Contact Number 1 *</label>
+                        <input type="text" required value={s00Form.biz_contact_no_1} onChange={e => setS00Form({ ...s00Form, biz_contact_no_1: e.target.value })} placeholder="Main business phone" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Contact Number 2</label>
+                        <input type="text" value={s00Form.biz_contact_no_2} onChange={e => setS00Form({ ...s00Form, biz_contact_no_2: e.target.value })} placeholder="Second office phone" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Alternate Number 1</label>
+                        <input type="text" value={s00Form.biz_alt_no_1} onChange={e => setS00Form({ ...s00Form, biz_alt_no_1: e.target.value })} placeholder="Alternate landline / mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Alternate Number 2</label>
+                        <input type="text" value={s00Form.biz_alt_no_2} onChange={e => setS00Form({ ...s00Form, biz_alt_no_2: e.target.value })} placeholder="Secondary alternate" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Contact Mail ID 1</label>
+                        <input type="email" value={s00Form.biz_email_1} onChange={e => setS00Form({ ...s00Form, biz_email_1: e.target.value })} placeholder="orders@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Contact Mail ID 2</label>
+                        <input type="email" value={s00Form.biz_email_2} onChange={e => setS00Form({ ...s00Form, biz_email_2: e.target.value })} placeholder="accounts@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Alternate Mail ID 1</label>
+                        <input type="email" value={s00Form.biz_alt_email_1} onChange={e => setS00Form({ ...s00Form, biz_alt_email_1: e.target.value })} placeholder="support@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Business Alternate Mail ID 2</label>
+                        <input type="email" value={s00Form.biz_alt_email_2} onChange={e => setS00Form({ ...s00Form, biz_alt_email_2: e.target.value })} placeholder="mgmt@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB B: CONTACT PERSON 1 */}
+                {s00ContactTab === 'person1' && (
+                  <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#34d399', marginBottom: '0.75rem' }}>
+                      Contact Person 1 (Primary Key Official / Director / Proprietor)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.84rem' }}>
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Name 1 *</label>
+                        <input type="text" required value={s00Form.contact_person_name_1} onChange={e => setS00Form({ ...s00Form, contact_person_name_1: e.target.value })} placeholder="e.g. Sardar Gurdeep Singh" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mobile 1.1 *</label>
+                        <input type="text" required value={s00Form.contact_mobile_1_1} onChange={e => setS00Form({ ...s00Form, contact_mobile_1_1: e.target.value })} placeholder="10-digit primary mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mobile 1.2</label>
+                        <input type="text" value={s00Form.contact_mobile_1_2} onChange={e => setS00Form({ ...s00Form, contact_mobile_1_2: e.target.value })} placeholder="Second mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Alternate Mobile 1.1</label>
+                        <input type="text" value={s00Form.contact_alt_mobile_1_1} onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_1_1: e.target.value })} placeholder="Home / Alternate 1" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Alternate Mobile 1.2</label>
+                        <input type="text" value={s00Form.contact_alt_mobile_1_2} onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_1_2: e.target.value })} placeholder="Alternate 2" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mail ID 1.2</label>
+                        <input type="email" value={s00Form.contact_email_1_2} onChange={e => setS00Form({ ...s00Form, contact_email_1_2: e.target.value })} placeholder="person1@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Alternate Mail ID 1.1</label>
+                        <input type="email" value={s00Form.contact_alt_email_1_1} onChange={e => setS00Form({ ...s00Form, contact_alt_email_1_1: e.target.value })} placeholder="alt.person1@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB C: CONTACT PERSON 2 */}
+                {s00ContactTab === 'person2' && (
+                  <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(245,158,11,0.3)' }}>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.75rem' }}>
+                      Contact Person 2 (Secondary Official / Showroom Manager / Partner)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.84rem' }}>
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Name 2</label>
+                        <input type="text" value={s00Form.contact_person_name_2} onChange={e => setS00Form({ ...s00Form, contact_person_name_2: e.target.value })} placeholder="e.g. Rajesh Kumar (Manager)" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mobile 2.1</label>
+                        <input type="text" value={s00Form.contact_mobile_2_1} onChange={e => setS00Form({ ...s00Form, contact_mobile_2_1: e.target.value })} placeholder="10-digit mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mobile 2.2</label>
+                        <input type="text" value={s00Form.contact_mobile_2_2} onChange={e => setS00Form({ ...s00Form, contact_mobile_2_2: e.target.value })} placeholder="Second mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Alternate Mobile 2.1</label>
+                        <input type="text" value={s00Form.contact_alt_mobile_2_1} onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_2_1: e.target.value })} placeholder="Alternate mobile" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Alternate Mobile 2.2</label>
+                        <input type="text" value={s00Form.contact_alt_mobile_2_2} onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_2_2: e.target.value })} placeholder="Alternate 2" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Mail ID 2.2</label>
+                        <input type="email" value={s00Form.contact_email_2_2} onChange={e => setS00Form({ ...s00Form, contact_email_2_2: e.target.value })} placeholder="person2@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Contact Person Alternate Mail ID 2.1</label>
+                        <input type="email" value={s00Form.contact_alt_email_2_1} onChange={e => setS00Form({ ...s00Form, contact_alt_email_2_1: e.target.value })} placeholder="alt.person2@domain.com" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                   <button type="submit" style={{ padding: '0.65rem 1.4rem', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -1157,30 +1713,37 @@ export default function PartyMasterModule() {
               </form>
             )}
 
-            {/* STEP S01: DISTRIBUTOR REGISTRATION */}
+            {/* ======================================================= */}
+            {/* STEP S01: DISTRIBUTOR REGISTRATION (POTENTIALS REMOVED, CHIPS ADDED) */}
+            {/* ======================================================= */}
             {wizardStep === 'S01' && (
               <form onSubmit={handleS01DistSubmit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S01: Distributor Registration (Level 1 Hub)</h3>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S01: Distributor Registration (Level 1 Master Hub)</h3>
                 <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                  Distributors are the highest level partners. No parent party is required.
+                  Distributors are the highest level channel partner. No parent required.
                 </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Zone</label>
-                    <input type="text" value={s01DistForm.zone} onChange={e => setS01DistForm({ ...s01DistForm, zone: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Zone *</label>
+                    <input type="text" required value={s01DistForm.zone} onChange={e => setS01DistForm({ ...s01DistForm, zone: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Territory Coverage</label>
-                    <input type="text" value={s01DistForm.territory} onChange={e => setS01DistForm({ ...s01DistForm, territory: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
+                      Territory Coverage (Type area & press Enter to create chips)
+                    </label>
+                    <ChipInput
+                      chips={s01DistForm.territory_coverage}
+                      onChange={newChips => setS01DistForm({ ...s01DistForm, territory_coverage: newChips })}
+                      placeholder="Type district/zone and press Enter..."
+                      suggestions={['Punjab Central', 'Malwa Region', 'Majha Region', 'Doaba Zone', 'Haryana North', 'West UP']}
+                    />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Monthly Business Potential (₹)</label>
-                    <input type="number" value={s01DistForm.monthly_business_potential} onChange={e => setS01DistForm({ ...s01DistForm, monthly_business_potential: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Annual Business Potential (₹)</label>
-                    <input type="number" value={s01DistForm.annual_business_potential} onChange={e => setS01DistForm({ ...s01DistForm, annual_business_potential: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Warehouse Address</label>
+                    <input type="text" value={s01DistForm.warehouse_address} onChange={e => setS01DistForm({ ...s01DistForm, warehouse_address: e.target.value })} placeholder="Main stocking depot address..." style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
                 </div>
 
@@ -1192,7 +1755,9 @@ export default function PartyMasterModule() {
               </form>
             )}
 
+            {/* ======================================================= */}
             {/* STEP S02: DEALER REGISTRATION (PARENT DISTRIBUTOR MANDATORY) */}
+            {/* ======================================================= */}
             {wizardStep === 'S02' && (
               <form onSubmit={handleS02DealerSubmit}>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#34d399', marginBottom: '0.5rem' }}>S02: Dealer Registration (Level 2)</h3>
@@ -1218,13 +1783,21 @@ export default function PartyMasterModule() {
                     </select>
                   </div>
 
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Territory / Mandi</label>
-                    <input type="text" value={s02DealerForm.territory} onChange={e => setS02DealerForm({ ...s02DealerForm, territory: e.target.value })} placeholder="e.g. Khanna Mandi" style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#34d399', fontWeight: 700 }}>
+                      Territory Coverage (Type Mandi / Tehsils & press Enter)
+                    </label>
+                    <ChipInput
+                      chips={s02DealerForm.territory_coverage}
+                      onChange={newChips => setS02DealerForm({ ...s02DealerForm, territory_coverage: newChips })}
+                      placeholder="Type mandi/tehsil and press Enter..."
+                      suggestions={['Khanna Mandi', 'Samrala Area', 'Doraha', 'Sahnewal', 'Payal', 'Jagraon']}
+                    />
                   </div>
+
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Monthly Business Potential (₹)</label>
-                    <input type="number" value={s02DealerForm.monthly_business_potential} onChange={e => setS02DealerForm({ ...s02DealerForm, monthly_business_potential: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Showroom Area (Sq. Ft)</label>
+                    <input type="number" value={s02DealerForm.showroom_area_sqft} onChange={e => setS02DealerForm({ ...s02DealerForm, showroom_area_sqft: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
                 </div>
 
@@ -1236,7 +1809,9 @@ export default function PartyMasterModule() {
               </form>
             )}
 
+            {/* ======================================================= */}
             {/* STEP S03: SUB-DEALER REGISTRATION (AUTO-DERIVED DISTRIBUTOR) */}
+            {/* ======================================================= */}
             {wizardStep === 'S03' && (
               <form onSubmit={handleS03SubDealerSubmit}>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.5rem' }}>S03: Sub-Dealer Registration (Level 3)</h3>
@@ -1284,13 +1859,16 @@ export default function PartyMasterModule() {
                     )}
                   </div>
 
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil / Village</label>
-                    <input type="text" value={s03SubDealerForm.territory} onChange={e => setS03SubDealerForm({ ...s03SubDealerForm, territory: e.target.value })} placeholder="e.g. Samrala" style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Monthly Potential (₹)</label>
-                    <input type="number" value={s03SubDealerForm.monthly_business_potential} onChange={e => setS03SubDealerForm({ ...s03SubDealerForm, monthly_business_potential: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#fbbf24', fontWeight: 700 }}>
+                      Territory Coverage (Type Village / Block & press Enter)
+                    </label>
+                    <ChipInput
+                      chips={s03SubDealerForm.territory_coverage}
+                      onChange={newChips => setS03SubDealerForm({ ...s03SubDealerForm, territory_coverage: newChips })}
+                      placeholder="Type village/block and press Enter..."
+                      suggestions={['Samrala Block', 'Village Counters', 'Machhiwara Area', 'Khanna Rural']}
+                    />
                   </div>
                 </div>
 
@@ -1302,10 +1880,12 @@ export default function PartyMasterModule() {
               </form>
             )}
 
-            {/* STEP S04: COMMERCIAL & SECURITY DETAILS (BILLING ROUTING INCLUDED) */}
+            {/* ======================================================= */}
+            {/* STEP S04: COMMERCIAL & SECURITY (WITH SECURITY DEPOSIT DATE) */}
+            {/* ======================================================= */}
             {wizardStep === 'S04' && (
               <form onSubmit={handleS04CommercialSubmit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#fbbf24', marginBottom: '1rem' }}>S04: Commercial Terms, Credit & Billing Route</h3>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#fbbf24', marginBottom: '1rem' }}>S04: Commercial Terms, Credit & Security Details</h3>
                 
                 {/* Direct vs Distributor Billing Route Selector */}
                 <div style={{ background: '#1e293b', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -1342,7 +1922,7 @@ export default function PartyMasterModule() {
                   )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Sanctioned Credit Limit (₹) *</label>
                     <input type="number" required value={s04CommForm.credit_limit} onChange={e => setS04CommForm({ ...s04CommForm, credit_limit: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
@@ -1352,8 +1932,12 @@ export default function PartyMasterModule() {
                     <input type="number" required value={s04CommForm.credit_days} onChange={e => setS04CommForm({ ...s04CommForm, credit_days: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Security Deposit (₹)</label>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#fbbf24', fontWeight: 700 }}>Security Deposit (₹)</label>
                     <input type="number" value={s04CommForm.security_deposit_amount} onChange={e => setS04CommForm({ ...s04CommForm, security_deposit_amount: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#fbbf24', fontWeight: 700 }}>Security Deposit Date *</label>
+                    <input type="date" value={s04CommForm.security_deposit_date} onChange={e => setS04CommForm({ ...s04CommForm, security_deposit_date: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
                   </div>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Security Mode</label>
@@ -1372,128 +1956,139 @@ export default function PartyMasterModule() {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                   <button type="submit" style={{ padding: '0.65rem 1.4rem', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                    Save & Go to S05 Product Authorization ➔
+                    Save & Go to S05 Product & Territory ➔
                   </button>
                 </div>
               </form>
             )}
 
-            {/* STEP S05: PRODUCT AUTHORIZATION */}
+            {/* ======================================================= */}
+            {/* STEP S05: COMBINED PRODUCT AUTHORIZATION & TERRITORY */}
+            {/* ======================================================= */}
             {wizardStep === 'S05' && (
-              <form onSubmit={handleS05ProductsSubmit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S05: Product Authorization (Select Permitted Categories)</h3>
+              <form onSubmit={handleS05CombinedSubmit}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>
+                  S05: Product Authorization & Territory Allocation
+                </h3>
                 <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                  At least one Product must be authorized for partner activation.
+                  Select authorized machinery categories and configure territorial market coverage chips.
                 </p>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
-                  {PRODUCT_GROUPS.map(p => {
-                    const isChecked = s05SelectedProducts.includes(p.id);
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => {
-                          if (isChecked) {
-                            setS05SelectedProducts(s05SelectedProducts.filter(x => x !== p.id));
-                          } else {
-                            setS05SelectedProducts([...s05SelectedProducts, p.id]);
-                          }
-                        }}
-                        style={{
-                          padding: '0.85rem',
-                          borderRadius: '8px',
-                          border: isChecked ? '1.5px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
-                          background: isChecked ? 'rgba(16,185,129,0.12)' : '#1e293b',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.6rem'
-                        }}
-                      >
-                        <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '1.5px solid', borderColor: isChecked ? '#10b981' : '#94a3b8', background: isChecked ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {isChecked && <Check size={12} color="#fff" />}
+                {/* Top Section: Product Authorization */}
+                <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.75rem' }}>
+                    1. Authorized Product Machinery
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+                    {PRODUCT_GROUPS.map(p => {
+                      const isChecked = s05SelectedProducts.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            if (isChecked) {
+                              setS05SelectedProducts(s05SelectedProducts.filter(x => x !== p.id));
+                            } else {
+                              setS05SelectedProducts([...s05SelectedProducts, p.id]);
+                            }
+                          }}
+                          style={{
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            border: isChecked ? '1.5px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                            background: isChecked ? 'rgba(16,185,129,0.15)' : '#0f172a',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.6rem'
+                          }}
+                        >
+                          <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '1.5px solid', borderColor: isChecked ? '#10b981' : '#94a3b8', background: isChecked ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {isChecked && <Check size={12} color="#fff" />}
+                          </div>
+                          <span style={{ fontWeight: 600, fontSize: '0.84rem' }}>{p.name}</span>
                         </div>
-                        <span style={{ fontWeight: 600, fontSize: '0.86rem' }}>{p.name}</span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Bottom Section: Territory Allocation */}
+                <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34d399', marginBottom: '0.75rem' }}>
+                    2. Geographic Territory & Market Coverage
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.86rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
+                      <select value={s05TerritoryForm.state} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, state: e.target.value })} style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}>
+                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
+                      <input type="text" required value={s05TerritoryForm.district} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, district: e.target.value })} placeholder="e.g. Ludhiana" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil / Area</label>
+                      <input type="text" value={s05TerritoryForm.tehsil_area} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, tehsil_area: e.target.value })} placeholder="e.g. Khanna" style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8', fontWeight: 600 }}>Territory Type</label>
+                      <select value={s05TerritoryForm.territory_type} onChange={e => setS05TerritoryForm({ ...s05TerritoryForm, territory_type: e.target.value })} style={{ width: '100%', padding: '0.55rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff' }}>
+                        <option value="Exclusive">Exclusive (Single authorized dealer in this area)</option>
+                        <option value="Shared">Shared Territory</option>
+                        <option value="Open">Open Territory</option>
+                      </select>
+                    </div>
+
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', color: '#34d399', fontWeight: 700 }}>
+                        Market Coverage Areas (Type Mandi / Areas & press Enter to create chips)
+                      </label>
+                      <ChipInput
+                        chips={s05TerritoryForm.market_coverage_chips}
+                        onChange={newChips => setS05TerritoryForm({ ...s05TerritoryForm, market_coverage_chips: newChips })}
+                        placeholder="Type mandi, market or village and press Enter..."
+                        suggestions={['Khanna Grain Market', 'Samrala Chowk', 'Doraha Bypass', 'Sahnewal Mandi', 'Payal Road']}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                   <button type="submit" style={{ padding: '0.65rem 1.4rem', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                    Save & Go to S05.1 Territory ➔
+                    Save & Go to S06 Sales Team Assignment ➔
                   </button>
                 </div>
               </form>
             )}
 
-            {/* STEP S05.1: TERRITORY ALLOCATION */}
-            {wizardStep === 'S05_1' && (
-              <form onSubmit={handleS051TerritorySubmit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S05.1: Geographic Territory Allocation</h3>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>State *</label>
-                    <select value={s051TerritoryForm.state} onChange={e => setS051TerritoryForm({ ...s051TerritoryForm, state: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}>
-                      {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>District *</label>
-                    <input type="text" required value={s051TerritoryForm.district} onChange={e => setS051TerritoryForm({ ...s051TerritoryForm, district: e.target.value })} placeholder="e.g. Ludhiana" style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Tehsil / Area</label>
-                    <input type="text" value={s051TerritoryForm.tehsil_area} onChange={e => setS051TerritoryForm({ ...s051TerritoryForm, tehsil_area: e.target.value })} placeholder="e.g. Khanna" style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', color: '#94a3b8', fontWeight: 600 }}>Territory Type</label>
-                    <select value={s051TerritoryForm.territory_type} onChange={e => setS051TerritoryForm({ ...s051TerritoryForm, territory_type: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}>
-                      <option value="Exclusive">Exclusive Territory (No other dealer in this tehsil)</option>
-                      <option value="Shared">Shared Territory</option>
-                      <option value="Open">Open Territory</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                  <button type="submit" style={{ padding: '0.65rem 1.4rem', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                    Save & Go to S06 Team Assignment ➔
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* STEP S06: CLIENT TEAM ASSIGNMENT */}
+            {/* ======================================================= */}
+            {/* STEP S06: CLIENT TEAM ASSIGNMENT (ALL 7 ROLES + CHIPS) */}
+            {/* ======================================================= */}
             {wizardStep === 'S06' && (
               <form onSubmit={handleS06TeamSubmit}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>S06: Client Team Assignment (Staff Mapping)</h3>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>
+                  S06: Client Team Assignment (Staff Mapping - All 7 Roles)
+                </h3>
                 <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                  Assign dedicated personnel for Order Taking, Sales Coordination, and Territory Management.
+                  Assign dedicated personnel for all 7 organizational roles. Type or pick multiple persons as chips.
                 </p>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
-                  {s06TeamAssignments.map((assign, idx) => (
-                    <div key={idx} style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', color: '#60a5fa', fontWeight: 700 }}>
-                        {assign.role_in_party}
-                      </label>
-                      <select
-                        value={assign.employee_id}
-                        onChange={e => {
-                          const emp = employees.find(emp => emp.id === e.target.value);
-                          const updated = [...s06TeamAssignments];
-                          updated[idx] = { ...updated[idx], employee_id: e.target.value, employee_name: emp?.emp_name || 'Employee' };
-                          setS06TeamAssignments(updated);
-                        }}
-                        style={{ width: '100%', padding: '0.6rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                      >
-                        <option value="">-- Select Employee --</option>
-                        {employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.emp_name} ({emp.emp_code || 'EMP'})</option>
-                        ))}
-                      </select>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '1rem', fontSize: '0.86rem' }}>
+                  {ALL_CLIENT_TEAM_ROLES.map(role => (
+                    <div key={role.id} style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                        <span style={{ fontWeight: 700, color: '#60a5fa' }}>{role.label}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{s06TeamMap[role.id]?.length || 0} Assigned</span>
+                      </div>
+                      <ChipInput
+                        chips={s06TeamMap[role.id] || []}
+                        onChange={newChips => setS06TeamMap({ ...s06TeamMap, [role.id]: newChips })}
+                        placeholder={`Search or type ${role.id} employee...`}
+                        suggestions={employeeNames}
+                      />
                     </div>
                   ))}
                 </div>
@@ -1506,7 +2101,9 @@ export default function PartyMasterModule() {
               </form>
             )}
 
-            {/* STEP S07: PARTNER ACTIVATION (PRE-FLIGHT VALIDATION) */}
+            {/* ======================================================= */}
+            {/* STEP S07: PRE-FLIGHT VERIFICATION & ACTIVATION */}
+            {/* ======================================================= */}
             {wizardStep === 'S07' && (
               <div>
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399', marginBottom: '0.5rem' }}>S07: Pre-Flight Verification & Partner Activation</h3>
@@ -1537,10 +2134,10 @@ export default function PartyMasterModule() {
                       <CheckCircle2 size={16} /> S05 Product Authorization Mapped
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#34d399' }}>
-                      <CheckCircle2 size={16} /> S05.1 Territory & Mandi Allocated
+                      <CheckCircle2 size={16} /> S05 Territory & Mandi Allocated
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#34d399' }}>
-                      <CheckCircle2 size={16} /> S06 Primary Coordinator Assigned
+                      <CheckCircle2 size={16} /> S06 Client Team (NSM, RSM, Telecaller) Assigned
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#38bdf8' }}>
                       <ShieldCheck size={16} /> Strict Hierarchy Chain Validated
@@ -1593,14 +2190,14 @@ export default function PartyMasterModule() {
                   </span>
                 </div>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0.4rem 0 0 0' }}>{view360Party.firm_name}</h2>
-                <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Owner: <strong>{view360Party.owner_name}</strong> • Mobile: <strong>{view360Party.primary_mobile}</strong></div>
+                <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Contact: <strong>{view360Party.contact_person_name_1 || view360Party.owner_name}</strong> • Phone: <strong>{view360Party.contact_mobile_1_1 || view360Party.primary_mobile}</strong></div>
               </div>
               <button onClick={() => setView360Party(null)} style={{ padding: '0.5rem 1.2rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Close</button>
             </div>
 
             {/* Complete Channel Breadcrumb */}
             <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Channel Hierarchy Chain</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Channel Hierarchy Chain (Who Under Whom)</div>
               <div style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <span style={{ color: '#38bdf8' }}>👑 {view360Party.parent_distributor ? view360Party.parent_distributor.firm_name : (view360Party.party_type === 'Distributor' ? view360Party.firm_name : 'No Tagged Distributor')}</span>
                 {view360Party.party_type !== 'Distributor' && (
