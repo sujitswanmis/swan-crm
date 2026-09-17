@@ -1,11 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
+'use client';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Clock, Search, Calendar, RefreshCw, Download, Filter, 
   Activity, Users, AlertTriangle, ShieldCheck, Layers, Eye, 
-  ChevronLeft, ChevronRight, X, User, ArrowUpDown
+  ChevronLeft, ChevronRight, X, User, ArrowUpDown, ChevronDown, Check, UserCheck,
+  Moon, Sun
 } from 'lucide-react';
 import { getAuditLogs, getAuditLogFilters } from '@/app/actions/audit';
 import DateRangePicker from '@/components/common/DateRangePicker';
+
+const DEFAULT_COLUMNS = [
+  { key: 'user', label: 'USER / EMPLOYEE', defaultWidth: 230, minWidth: 160 },
+  { key: 'module', label: 'MODULE', defaultWidth: 140, minWidth: 100 },
+  { key: 'action', label: 'ACTION', defaultWidth: 150, minWidth: 110 },
+  { key: 'target', label: 'TARGET / ACTIVITY DETAILS', defaultWidth: 360, minWidth: 220 },
+  { key: 'source', label: 'SOURCE / IP', defaultWidth: 140, minWidth: 100 },
+  { key: 'timestamp', label: 'TIMESTAMP', defaultWidth: 210, minWidth: 160 },
+  { key: 'view', label: 'VIEW', defaultWidth: 70, minWidth: 60, align: 'center' }
+];
 
 export default function AuditLogsConfig() {
   const [logs, setLogs] = useState([]);
@@ -13,7 +25,9 @@ export default function AuditLogsConfig() {
     totalEvents: 0,
     todayEvents: 0,
     deleteEvents: 0,
-    uniqueUsers: 0
+    uniqueUsers: 0,
+    offHoursEvents: 0,
+    nightEvents: 0
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -27,9 +41,112 @@ export default function AuditLogsConfig() {
   const [selectedModule, setSelectedModule] = useState('all');
   const [selectedAction, setSelectedAction] = useState('all');
   const [selectedUser, setSelectedUser] = useState('all');
+  const [selectedTimeOfDay, setSelectedTimeOfDay] = useState('all'); // 'all' | 'off_hours' | 'day' | 'night' | 'custom'
+  const [customTimeFrom, setCustomTimeFrom] = useState('19:00');
+  const [customTimeTo, setCustomTimeTo] = useState('09:00');
   const [dateRangeQuick, setDateRangeQuick] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Searchable Employee Dropdown state
+  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
+  const [employeeSearchInput, setEmployeeSearchInput] = useState('');
+  const employeeDropdownRef = useRef(null);
+
+  // Resizable columns state
+  const [colWidths, setColWidths] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('audit_table_col_widths');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      user: 230,
+      module: 140,
+      action: 150,
+      target: 360,
+      source: 140,
+      timestamp: 210,
+      view: 70
+    };
+  });
+  const [resizingCol, setResizingCol] = useState(null);
+
+  const handleMouseDownResize = (colKey, currentWidth, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingCol(colKey);
+
+    const startX = e.clientX;
+    const colDef = DEFAULT_COLUMNS.find(c => c.key === colKey);
+    const minW = colDef?.minWidth || 80;
+
+    const onMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(minW, currentWidth + deltaX);
+      setColWidths(prev => {
+        const updated = { ...prev, [colKey]: newWidth };
+        try {
+          localStorage.setItem('audit_table_col_widths', JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleTouchStartResize = (colKey, currentWidth, e) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    setResizingCol(colKey);
+    const startX = touch.clientX;
+    const colDef = DEFAULT_COLUMNS.find(c => c.key === colKey);
+    const minW = colDef?.minWidth || 80;
+
+    const onTouchMove = (moveEvent) => {
+      const currentTouch = moveEvent.touches[0];
+      if (!currentTouch) return;
+      const deltaX = currentTouch.clientX - startX;
+      const newWidth = Math.max(minW, currentWidth + deltaX);
+      setColWidths(prev => {
+        const updated = { ...prev, [colKey]: newWidth };
+        try {
+          localStorage.setItem('audit_table_col_widths', JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
+    };
+
+    const onTouchEnd = () => {
+      setResizingCol(null);
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+    };
+
+    document.addEventListener('touchmove', onTouchMove);
+    document.addEventListener('touchend', onTouchEnd);
+  };
+
+  const handleResetColWidth = (colKey) => {
+    const colDef = DEFAULT_COLUMNS.find(c => c.key === colKey);
+    if (!colDef) return;
+    setColWidths(prev => {
+      const updated = { ...prev, [colKey]: colDef.defaultWidth };
+      try {
+        localStorage.setItem('audit_table_col_widths', JSON.stringify(updated));
+      } catch (err) {}
+      return updated;
+    });
+  };
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,7 +156,18 @@ export default function AuditLogsConfig() {
   // Selected Log for detail modal
   const [selectedLogDetail, setSelectedLogDetail] = useState(null);
 
-  // Load Filter metadata (Users list)
+  // Close employee dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target)) {
+        setIsEmployeeDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Load Filter metadata (Approved Users list)
   useEffect(() => {
     async function loadFilters() {
       const res = await getAuditLogFilters();
@@ -96,7 +224,10 @@ export default function AuditLogsConfig() {
         dateTo,
         module: selectedModule,
         actionType: selectedAction,
-        userId: selectedUser
+        userId: selectedUser,
+        timeOfDay: selectedTimeOfDay,
+        customTimeFrom,
+        customTimeTo
       });
 
       if (res.success) {
@@ -107,7 +238,9 @@ export default function AuditLogsConfig() {
             totalEvents: res.stats.totalEvents || 0,
             todayEvents: res.stats.todayEvents || 0,
             deleteEvents: res.stats.deleteEvents || 0,
-            uniqueUsers: res.stats.uniqueUsers || 0
+            uniqueUsers: res.stats.uniqueUsers || 0,
+            offHoursEvents: res.stats.offHoursEvents || 0,
+            nightEvents: res.stats.nightEvents || 0
           });
         }
       } else {
@@ -120,7 +253,7 @@ export default function AuditLogsConfig() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentPage, pageSize, searchQuery, dateFrom, dateTo, selectedModule, selectedAction, selectedUser]);
+  }, [currentPage, pageSize, searchQuery, dateFrom, dateTo, selectedModule, selectedAction, selectedUser, selectedTimeOfDay, customTimeFrom, customTimeTo]);
 
   useEffect(() => {
     fetchLogs();
@@ -132,6 +265,11 @@ export default function AuditLogsConfig() {
     setSelectedModule('all');
     setSelectedAction('all');
     setSelectedUser('all');
+    setSelectedTimeOfDay('all');
+    setCustomTimeFrom('19:00');
+    setCustomTimeTo('09:00');
+    setEmployeeSearchInput('');
+    setIsEmployeeDropdownOpen(false);
     setDateRangeQuick('all');
     setDateFrom('');
     setDateTo('');
@@ -252,9 +390,24 @@ export default function AuditLogsConfig() {
       </div>
 
       {/* KPI Metric Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         
-        <div style={{ background: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* Total System Events */}
+        <div 
+          onClick={handleResetFilters}
+          style={{ 
+            background: 'var(--bg-surface)', 
+            padding: '1rem 1.25rem', 
+            borderRadius: '10px', 
+            border: '1px solid var(--border-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '1rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+          title="Click to view all enterprise system logs (reset filters)"
+        >
           <div style={{ background: '#e0e7ff', padding: '0.75rem', borderRadius: '10px', color: '#4f46e5' }}>
             <Activity size={22} />
           </div>
@@ -264,16 +417,80 @@ export default function AuditLogsConfig() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* Activities Today */}
+        <div 
+          onClick={() => {
+            const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+            if (dateRangeQuick === 'today') {
+              setDateRangeQuick('all');
+              setDateFrom('');
+              setDateTo('');
+            } else {
+              setDateRangeQuick('today');
+              setDateFrom(todayStr);
+              setDateTo(todayStr);
+            }
+            setCurrentPage(1);
+          }}
+          style={{ 
+            background: dateRangeQuick === 'today' ? '#f0fdf4' : 'var(--bg-surface)', 
+            padding: '1rem 1.25rem', 
+            borderRadius: '10px', 
+            border: dateRangeQuick === 'today' ? '2px solid #16a34a' : '1px solid var(--border-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '1rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: dateRangeQuick === 'today' ? '0 4px 12px rgba(22, 163, 74, 0.15)' : 'none'
+          }}
+          title="Click to quickly filter Today's events in IST"
+        >
           <div style={{ background: '#dcfce7', padding: '0.75rem', borderRadius: '10px', color: '#16a34a' }}>
             <Clock size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Activities Today</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>Activities Today</span>
+              {dateRangeQuick === 'today' && <span style={{ fontSize: '0.65rem', background: '#16a34a', color: 'white', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>FILTERED</span>}
+            </div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#16a34a' }}>{stats.todayEvents.toLocaleString()}</div>
           </div>
         </div>
 
+        {/* 🌙 Off-Hours & Night Shift Events Quick KPI */}
+        <div 
+          onClick={() => {
+            setSelectedTimeOfDay(prev => prev === 'off_hours' ? 'all' : 'off_hours');
+            setCurrentPage(1);
+          }}
+          style={{ 
+            background: selectedTimeOfDay === 'off_hours' || selectedTimeOfDay === 'night' ? '#f5f3ff' : 'var(--bg-surface)', 
+            padding: '1rem 1.25rem', 
+            borderRadius: '10px', 
+            border: selectedTimeOfDay === 'off_hours' || selectedTimeOfDay === 'night' ? '2px solid #7c3aed' : '1px solid var(--border-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '1rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: selectedTimeOfDay === 'off_hours' || selectedTimeOfDay === 'night' ? '0 4px 12px rgba(124, 58, 237, 0.15)' : 'none'
+          }}
+          title="Click to quickly filter Off-Hours activities (≥19:00 to ≤09:00)"
+        >
+          <div style={{ background: '#ede9fe', padding: '0.75rem', borderRadius: '10px', color: '#7c3aed' }}>
+            <Moon size={22} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>Off-Hours / Night</span>
+              {(selectedTimeOfDay === 'off_hours' || selectedTimeOfDay === 'night') && <span style={{ fontSize: '0.65rem', background: '#7c3aed', color: 'white', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>FILTERED</span>}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#7c3aed' }}>{(stats.offHoursEvents || stats.nightEvents || 0).toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Registered Users */}
         <div style={{ background: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ background: '#e0f2fe', padding: '0.75rem', borderRadius: '10px', color: '#0284c7' }}>
             <Users size={22} />
@@ -284,12 +501,34 @@ export default function AuditLogsConfig() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* Delete / Critical Events */}
+        <div 
+          onClick={() => {
+            setSelectedAction(prev => prev === 'delete' ? 'all' : 'delete');
+            setCurrentPage(1);
+          }}
+          style={{ 
+            background: selectedAction === 'delete' ? '#fef2f2' : 'var(--bg-surface)', 
+            padding: '1rem 1.25rem', 
+            borderRadius: '10px', 
+            border: selectedAction === 'delete' ? '2px solid #dc2626' : '1px solid var(--border-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '1rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: selectedAction === 'delete' ? '0 4px 12px rgba(220, 38, 38, 0.15)' : 'none'
+          }}
+          title="Click to quickly filter Delete / Critical events"
+        >
           <div style={{ background: '#fee2e2', padding: '0.75rem', borderRadius: '10px', color: '#dc2626' }}>
             <AlertTriangle size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Delete / Critical Events</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>Delete / Critical</span>
+              {selectedAction === 'delete' && <span style={{ fontSize: '0.65rem', background: '#dc2626', color: 'white', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>FILTERED</span>}
+            </div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#dc2626' }}>{stats.deleteEvents.toLocaleString()}</div>
           </div>
         </div>
@@ -347,7 +586,7 @@ export default function AuditLogsConfig() {
 
         </div>
 
-        {/* Row 2: Dropdowns (Module, Action, User) + Reset Button */}
+        {/* Row 2: Dropdowns (Module, Action, User, Time/Shift) + Reset Button */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
           
           {/* Module Filter */}
@@ -414,42 +653,272 @@ export default function AuditLogsConfig() {
             </select>
           </div>
 
-          {/* User / Employee Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Employee:</span>
+          {/* Time / Shift Filter (Night & Off-Hours Support) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Shift / Hours:</span>
             <select
-              value={selectedUser}
+              value={selectedTimeOfDay}
               onChange={(e) => {
-                setSelectedUser(e.target.value);
+                setSelectedTimeOfDay(e.target.value);
                 setCurrentPage(1);
               }}
               style={{
                 padding: '0.45rem 0.75rem',
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-light)',
+                background: selectedTimeOfDay !== 'all' ? '#f5f3ff' : 'var(--bg-primary)',
+                border: selectedTimeOfDay !== 'all' ? '1px solid #c4b5fd' : '1px solid var(--border-light)',
                 borderRadius: '8px',
-                color: 'var(--text-primary)',
+                color: selectedTimeOfDay !== 'all' ? '#6d28d9' : 'var(--text-primary)',
+                fontWeight: selectedTimeOfDay !== 'all' ? 600 : 400,
                 fontSize: '0.8rem',
                 outline: 'none',
-                cursor: 'pointer',
-                maxWidth: '220px'
+                cursor: 'pointer'
               }}
             >
-              <option value="all">All Employees</option>
-              {userOptions.map((u, index) => {
-                const val = u.email || u.id || u.emp_name || String(index);
-                const label = u.emp_name || u.name || u.email || `User ${index + 1}`;
-                return (
-                  <option key={val} value={val}>
-                    {label}
-                  </option>
-                );
-              })}
+              <option value="all">⏱️ All Hours 24</option>
+              <option value="off_hours">🌙 Off hours (≥19:00 to ≤09:00)</option>
+              <option value="day">☀️ Day Shift (≥09:00 to &lt; 19:00)</option>
+              <option value="night">🦉 Night shift (≥20:00 to ≤08:00)</option>
+              <option value="custom">⚙️ Add Custom Hours</option>
             </select>
+
+            {selectedTimeOfDay === 'custom' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#f5f3ff', padding: '0.2rem 0.6rem', borderRadius: '8px', border: '1px solid #c4b5fd' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6d28d9' }}>From:</span>
+                <input
+                  type="time"
+                  value={customTimeFrom}
+                  onChange={(e) => {
+                    setCustomTimeFrom(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    padding: '0.2rem 0.35rem',
+                    border: '1px solid #c4b5fd',
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    background: '#fff',
+                    color: '#4c1d95',
+                    fontWeight: 600,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6d28d9' }}>To:</span>
+                <input
+                  type="time"
+                  value={customTimeTo}
+                  onChange={(e) => {
+                    setCustomTimeTo(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    padding: '0.2rem 0.35rem',
+                    border: '1px solid #c4b5fd',
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    background: '#fff',
+                    color: '#4c1d95',
+                    fontWeight: 600,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* User / Employee Searchable Filter */}
+          <div ref={employeeDropdownRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Employee:</span>
+            
+            <button
+              type="button"
+              onClick={() => {
+                setIsEmployeeDropdownOpen(prev => !prev);
+                setEmployeeSearchInput('');
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.5rem',
+                padding: '0.45rem 0.75rem',
+                background: selectedUser !== 'all' ? 'rgba(79, 70, 229, 0.08)' : 'var(--bg-primary)',
+                border: selectedUser !== 'all' ? '1px solid #c7d2fe' : '1px solid var(--border-light)',
+                borderRadius: '8px',
+                color: selectedUser !== 'all' ? '#4338ca' : 'var(--text-primary)',
+                fontSize: '0.8rem',
+                fontWeight: selectedUser !== 'all' ? 600 : 400,
+                outline: 'none',
+                cursor: 'pointer',
+                minWidth: '180px',
+                maxWidth: '260px',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <UserCheck size={14} color={selectedUser !== 'all' ? '#4f46e5' : 'var(--text-secondary)'} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedUser === 'all' 
+                    ? 'All Approved Staff' 
+                    : (userOptions.find(u => (u.email === selectedUser || u.id === selectedUser || u.user_id === selectedUser))?.emp_name || selectedUser)}
+                </span>
+              </div>
+              <ChevronDown size={14} color="var(--text-secondary)" style={{ transform: isEmployeeDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isEmployeeDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: 0,
+                zIndex: 50,
+                width: '320px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '10px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+                {/* Search Header */}
+                <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Search size={14} color="var(--text-secondary)" />
+                  <input
+                    type="text"
+                    placeholder="Search name, code, department..."
+                    value={employeeSearchInput}
+                    onChange={(e) => setEmployeeSearchInput(e.target.value)}
+                    autoFocus
+                    style={{
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8rem',
+                      width: '100%'
+                    }}
+                  />
+                  {employeeSearchInput && (
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeSearchInput('')}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-secondary)' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Staff List */}
+                <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '0.35rem 0' }}>
+                  {/* All Option */}
+                  <div
+                    onClick={() => {
+                      setSelectedUser('all');
+                      setIsEmployeeDropdownOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      color: selectedUser === 'all' ? '#4f46e5' : 'var(--text-primary)',
+                      fontWeight: selectedUser === 'all' ? 600 : 400,
+                      backgroundColor: selectedUser === 'all' ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseEnter={(e) => { if (selectedUser !== 'all') e.currentTarget.style.backgroundColor = 'var(--bg-primary)'; }}
+                    onMouseLeave={(e) => { if (selectedUser !== 'all') e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <span>All Approved Employees ({userOptions.length})</span>
+                    {selectedUser === 'all' && <Check size={14} color="#4f46e5" />}
+                  </div>
+
+                  {/* Filtered Users */}
+                  {userOptions
+                    .filter(u => {
+                      if (!employeeSearchInput) return true;
+                      const q = employeeSearchInput.toLowerCase();
+                      return (
+                        (u.emp_name && u.emp_name.toLowerCase().includes(q)) ||
+                        (u.email && u.email.toLowerCase().includes(q)) ||
+                        (u.emp_id && u.emp_id.toLowerCase().includes(q)) ||
+                        (u.department && u.department.toLowerCase().includes(q))
+                      );
+                    })
+                    .map((u, index) => {
+                      const userKey = u.email || u.id || u.user_id || String(index);
+                      const isSelected = selectedUser === userKey || selectedUser === u.email || selectedUser === u.user_id;
+
+                      return (
+                        <div
+                          key={userKey}
+                          onClick={() => {
+                            setSelectedUser(u.email || u.user_id || u.id);
+                            setIsEmployeeDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            padding: '0.5rem 0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            color: isSelected ? '#4f46e5' : 'var(--text-primary)',
+                            fontWeight: isSelected ? 600 : 400,
+                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                            borderBottom: '1px solid rgba(0,0,0,0.03)',
+                            transition: 'background 0.15s'
+                          }}
+                          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-primary)'; }}
+                          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontWeight: 600 }}>{u.emp_name}</span>
+                              {u.emp_id && (
+                                <span style={{ fontSize: '0.7rem', padding: '0.05rem 0.35rem', background: '#e0e7ff', color: '#4338ca', borderRadius: '4px', fontWeight: 700 }}>
+                                  {u.emp_id}
+                                </span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {u.email} {u.department ? `• ${u.department}` : ''}
+                            </span>
+                          </div>
+                          {isSelected && <Check size={15} color="#4f46e5" />}
+                        </div>
+                      );
+                    })}
+
+                  {userOptions.length > 0 && userOptions.filter(u => {
+                    if (!employeeSearchInput) return true;
+                    const q = employeeSearchInput.toLowerCase();
+                    return (
+                      (u.emp_name && u.emp_name.toLowerCase().includes(q)) ||
+                      (u.email && u.email.toLowerCase().includes(q)) ||
+                      (u.emp_id && u.emp_id.toLowerCase().includes(q)) ||
+                      (u.department && u.department.toLowerCase().includes(q))
+                    );
+                  }).length === 0 && (
+                    <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      No approved employee matches &quot;{employeeSearchInput}&quot;
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Reset Filters */}
-          {(searchQuery || selectedModule !== 'all' || selectedAction !== 'all' || selectedUser !== 'all' || dateRangeQuick !== 'all' || dateFrom || dateTo) && (
+          {(searchQuery || selectedModule !== 'all' || selectedAction !== 'all' || selectedUser !== 'all' || selectedTimeOfDay !== 'all' || dateRangeQuick !== 'all' || dateFrom || dateTo) && (
             <button
               onClick={handleResetFilters}
               style={{
@@ -485,16 +954,71 @@ export default function AuditLogsConfig() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', position: 'relative' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+            <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)' }}>
                 <tr style={{ color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '220px', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>User / Employee</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '130px', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>Module</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '150px', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>Action</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>Target / Activity Details</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '160px', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>Source / IP</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '170px', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>Timestamp</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 600, width: '60px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)' }}>View</th>
+                  {DEFAULT_COLUMNS.map((col, idx) => {
+                    const width = colWidths[col.key] || col.defaultWidth;
+                    return (
+                      <th
+                        key={col.key}
+                        style={{
+                          width: `${width}px`,
+                          minWidth: `${col.minWidth}px`,
+                          maxWidth: `${width}px`,
+                          position: 'relative',
+                          padding: '0.85rem 1rem',
+                          fontWeight: 600,
+                          textAlign: col.align || 'left',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          background: 'var(--th-bg)',
+                          boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)'
+                        }}
+                      >
+                        <span>{col.label}</span>
+
+                        {/* Draggable Resizer between columns */}
+                        {idx < DEFAULT_COLUMNS.length - 1 && (
+                          <div
+                            onMouseDown={(e) => handleMouseDownResize(col.key, width, e)}
+                            onTouchStart={(e) => handleTouchStartResize(col.key, width, e)}
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={() => handleResetColWidth(col.key)}
+                            className={`column-resizer ${resizingCol === col.key ? 'is-resizing' : ''}`}
+                            title="Drag to resize column width | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: '-6px',
+                              top: 0,
+                              height: '100%',
+                              width: '14px',
+                              cursor: 'col-resize',
+                              userSelect: 'none',
+                              touchAction: 'none',
+                              zIndex: 25,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <div 
+                              className="resizer-bar"
+                              style={{
+                                width: resizingCol === col.key ? '4px' : '3px',
+                                height: '75%',
+                                backgroundColor: resizingCol === col.key ? 'var(--accent-color, #2563eb)' : '#94a3b8',
+                                borderRadius: '3px',
+                                boxShadow: resizingCol === col.key ? '0 0 6px var(--accent-color)' : '0 1px 2px rgba(0,0,0,0.15)',
+                                transition: 'all 0.15s ease'
+                              }}
+                            />
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -511,6 +1035,7 @@ export default function AuditLogsConfig() {
                     .join('')
                     .toUpperCase();
                   const timeDisplay = log.time || (log.created_at ? new Date(log.created_at).toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
                     day: '2-digit', month: '2-digit', year: 'numeric',
                     hour: '2-digit', minute: '2-digit', second: '2-digit',
                     hour12: true
@@ -522,23 +1047,29 @@ export default function AuditLogsConfig() {
                       key={log.id} 
                       style={{ 
                         borderBottom: '1px solid var(--border-light)', 
+                        borderLeft: log.isLateNight 
+                          ? '4px solid #db2777' 
+                          : (log.isNight ? '4px solid #7c3aed' : '4px solid transparent'),
+                        backgroundColor: log.isLateNight 
+                          ? 'rgba(219, 39, 119, 0.025)' 
+                          : (log.isNight ? 'rgba(124, 58, 237, 0.02)' : 'transparent'),
                         transition: 'background 0.15s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--th-filtered-bg)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = log.isLateNight ? 'rgba(219, 39, 119, 0.06)' : (log.isNight ? 'rgba(124, 58, 237, 0.06)' : 'var(--th-filtered-bg)')}
+                      onMouseLeave={(e) => e.currentTarget.style.background = log.isLateNight ? 'rgba(219, 39, 119, 0.025)' : (log.isNight ? 'rgba(124, 58, 237, 0.02)' : 'transparent')}
                     >
                       {/* User Column */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ width: `${colWidths.user || 230}px`, minWidth: '160px', maxWidth: `${colWidths.user || 230}px`, padding: '0.85rem 1rem', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                           <div style={{ 
                             width: '32px', height: '32px', borderRadius: '50%', 
-                            background: 'var(--accent-color)', color: 'white',
+                            background: log.isLateNight ? '#be185d' : (log.isNight ? '#6d28d9' : 'var(--accent-color)'), color: 'white',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 
                           }}>
                             {initials || 'U'}
                           </div>
-                          <div style={{ minWidth: 0 }}>
+                          <div style={{ minWidth: 0, overflow: 'hidden' }}>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {userName}
                             </div>
@@ -550,13 +1081,17 @@ export default function AuditLogsConfig() {
                       </td>
 
                       {/* Module Badge */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ width: `${colWidths.module || 140}px`, minWidth: '100px', maxWidth: `${colWidths.module || 140}px`, padding: '0.85rem 1rem', overflow: 'hidden' }}>
                         <span style={{ 
                           display: 'inline-block',
                           padding: '0.25rem 0.6rem', 
                           borderRadius: '6px', 
                           fontSize: '0.75rem', 
                           fontWeight: 600,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
                           ...moduleStyle
                         }}>
                           {moduleName}
@@ -564,13 +1099,17 @@ export default function AuditLogsConfig() {
                       </td>
 
                       {/* Action Badge */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ width: `${colWidths.action || 150}px`, minWidth: '110px', maxWidth: `${colWidths.action || 150}px`, padding: '0.85rem 1rem', overflow: 'hidden' }}>
                         <span style={{ 
                           display: 'inline-block',
                           padding: '0.25rem 0.6rem', 
                           borderRadius: '6px', 
                           fontSize: '0.75rem', 
                           fontWeight: 600,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
                           ...actionStyle
                         }}>
                           {log.action || 'Activity'}
@@ -578,9 +1117,10 @@ export default function AuditLogsConfig() {
                       </td>
 
                       {/* Target / Details */}
-                      <td style={{ padding: '0.85rem 1rem', color: 'var(--text-primary)', lineHeight: 1.4, maxWidth: '400px' }}>
+                      <td style={{ width: `${colWidths.target || 360}px`, minWidth: '220px', maxWidth: `${colWidths.target || 360}px`, padding: '0.85rem 1rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
                         <div style={{ 
                           wordBreak: 'break-word',
+                          whiteSpace: 'normal',
                           fontSize: '0.85rem'
                         }}>
                           {log.target || '—'}
@@ -588,19 +1128,38 @@ export default function AuditLogsConfig() {
                       </td>
 
                       {/* IP / Source */}
-                      <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                      <td style={{ width: `${colWidths.source || 140}px`, minWidth: '100px', maxWidth: `${colWidths.source || 140}px`, padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.75rem', fontWeight: 500 }}>
                           🌐 {ipDisplay}
                         </span>
                       </td>
 
-                      {/* Timestamp */}
-                      <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{timeDisplay}</div>
+                      {/* Timestamp & Shift Indicator */}
+                      <td style={{ width: `${colWidths.timestamp || 210}px`, minWidth: '160px', maxWidth: `${colWidths.timestamp || 210}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.82rem' }}>{timeDisplay}</div>
+                        {log.isNightShift ? (
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fdf2f8', color: '#be185d', border: '1px solid #fbcfe8', fontSize: '0.7rem', fontWeight: 700 }}>
+                              🦉 Night shift (≥20:00 to ≤08:00)
+                            </span>
+                          </div>
+                        ) : log.isOffHours ? (
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe', fontSize: '0.7rem', fontWeight: 600 }}>
+                              🌙 Off hours (≥19:00 to ≤09:00)
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontSize: '0.7rem', fontWeight: 500 }}>
+                              ☀️ Day Shift (≥09:00 to &lt; 19:00)
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Inspect Modal Button */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                      <td style={{ width: `${colWidths.view || 70}px`, minWidth: '60px', maxWidth: `${colWidths.view || 70}px`, padding: '0.85rem 1rem', textAlign: 'center' }}>
                         <button
                           onClick={() => setSelectedLogDetail(log)}
                           title="Inspect Details"
@@ -762,6 +1321,25 @@ export default function AuditLogsConfig() {
                 <span style={{ color: 'var(--text-primary)' }}>{selectedLogDetail.time}</span>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Shift / Hours:</span>
+                <div>
+                  {selectedLogDetail.isNightShift ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fdf2f8', color: '#be185d', border: '1px solid #fbcfe8', fontSize: '0.75rem', fontWeight: 700 }}>
+                      🦉 Night shift (≥20:00 to ≤08:00)
+                    </span>
+                  ) : selectedLogDetail.isOffHours ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe', fontSize: '0.75rem', fontWeight: 600 }}>
+                      🌙 Off hours (≥19:00 to ≤09:00)
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontSize: '0.75rem', fontWeight: 500 }}>
+                      ☀️ Day Shift (≥09:00 to &lt; 19:00)
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '0.5rem' }}>
                 <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Source / IP:</span>
                 <span style={{ color: 'var(--text-primary)' }}>{selectedLogDetail.ip}</span>
@@ -796,6 +1374,25 @@ export default function AuditLogsConfig() {
           </div>
         </div>
       )}
+
+      {/* Styles for Draggable Column Resizer */}
+      <style jsx>{`
+        .column-resizer {
+          opacity: 0.6;
+          transition: opacity 0.15s ease;
+        }
+        .column-resizer:hover,
+        .column-resizer.is-resizing {
+          opacity: 1 !important;
+        }
+        .column-resizer:hover .resizer-bar,
+        .column-resizer.is-resizing .resizer-bar {
+          background-color: var(--accent-color, #2563eb) !important;
+          width: 4px !important;
+          height: 90% !important;
+          box-shadow: 0 0 8px rgba(37, 99, 235, 0.5) !important;
+        }
+      `}</style>
 
     </div>
   );
