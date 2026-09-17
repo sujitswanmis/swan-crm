@@ -39,6 +39,25 @@ export async function GET(req) {
     let isConnected = session.status === 'connected' || !!session.customer_answer_time;
     let isEnded = session.status === 'ended' || session.status === 'failed';
 
+    // 45s Hard Cutoff: Prevent ghost ringing from ever surviving telecom timeout
+    if (!isConnected && !isEnded && ['initiated', 'ringing', 'customer_ringing'].includes(session.status)) {
+      const ageMs = Date.now() - new Date(session.created_at || session.start_time).getTime();
+      if (ageMs > 45000) {
+        isEnded = true;
+        session.status = 'ended';
+        session.hangup_cause = session.hangup_cause || 'no_answer';
+        adminClient
+          .from('call_sessions')
+          .update({
+            status: 'ended',
+            hangup_cause: session.hangup_cause,
+            end_time: new Date().toISOString()
+          })
+          .eq('id', session.id)
+          .then(() => {});
+      }
+    }
+
     // Fast active check: If agent is waiting in conference and customer pickup hasn't synced yet,
     // inspect Plivo conference bridge in real time to catch customer entry immediately
     if (!isConnected && !isEnded && session.conference_name && session.agent_answer_time) {

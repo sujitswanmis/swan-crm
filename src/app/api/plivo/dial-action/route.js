@@ -77,6 +77,21 @@ export async function POST(req) {
     const recordUrl = event.DialBLegRecordingUrl || event.RecordingUrl || event.RecordUrl || '';
 
     if (session && session.status !== 'ended') {
+      // If the session was converted to a multi-party conference, do NOT terminate
+      const { data: currentSession } = await adminClient
+        .from('call_sessions')
+        .select('conference_name, status')
+        .eq('id', session.id)
+        .maybeSingle();
+
+      if (currentSession?.conference_name) {
+        console.log(`dial-action: session ${session.room_name} is conferenced, skipping dial termination`);
+        return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+          status: 200,
+          headers: { 'Content-Type': 'application/xml' }
+        });
+      }
+
       const determinedCause = mapDialOutcome(dialStatus, hangupCause);
       const endTime = new Date();
       const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
