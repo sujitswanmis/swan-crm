@@ -2818,17 +2818,20 @@ export default function CRMContainer({
                   <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-color)', letterSpacing: '-0.01em' }}>Creations</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '2px' }}>
-                  <span style={{
-                    fontSize: '0.62rem',
-                    fontWeight: 700,
-                    color: 'var(--accent-color)',
-                    background: 'var(--nav-active-bg)',
-                    padding: '0.1rem 0.45rem',
-                    borderRadius: '9999px',
-                    border: '1px solid rgba(37, 99, 235, 0.2)',
-                    letterSpacing: '0.02em'
-                  }}>
-                    v{pkg.version || '1.0.552'}
+                  <span
+                    suppressHydrationWarning
+                    style={{
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      color: 'var(--accent-color)',
+                      background: 'var(--nav-active-bg)',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: '9999px',
+                      border: '1px solid rgba(37, 99, 235, 0.2)',
+                      letterSpacing: '0.02em'
+                    }}
+                  >
+                    v{pkg.version || '1.0.584'}
                   </span>
                 </div>
               </div>

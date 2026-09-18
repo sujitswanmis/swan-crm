@@ -326,17 +326,20 @@ function LoginFormContent() {
                 <div>SuPuja Creations</div>
                 <div style={{ fontSize: '1rem', fontWeight: 700, color: '#4338ca', marginTop: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
                   <span>Workplace Gateway</span>
-                  <span style={{
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    color: '#4338ca',
-                    background: '#eef2ff',
-                    padding: '0.12rem 0.55rem',
-                    borderRadius: '9999px',
-                    border: '1px solid #c7d2fe',
-                    letterSpacing: '0.02em'
-                  }}>
-                    v{pkg.version || '1.0.520'} PRO
+                  <span
+                    suppressHydrationWarning
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      color: '#4338ca',
+                      background: '#eef2ff',
+                      padding: '0.12rem 0.55rem',
+                      borderRadius: '9999px',
+                      border: '1px solid #c7d2fe',
+                      letterSpacing: '0.02em'
+                    }}
+                  >
+                    v{pkg.version || '1.0.584'} PRO
                   </span>
                 </div>
               </>
