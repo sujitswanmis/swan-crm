@@ -1111,7 +1111,7 @@ export default function PartyMasterModule({
           partnerName: currentP?.firm_name || '',
           partnerCode: currentP?.party_universal_code || currentP?.party_type || '',
           status: s08ActivationStatus,
-          confirmText: 'Go to Partner Directory ➔',
+          confirmText: 'Go to Party Master Report ➔',
           onConfirm: () => {
             switchTab('r03');
           }

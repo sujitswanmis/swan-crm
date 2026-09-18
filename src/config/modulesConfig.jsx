@@ -88,7 +88,7 @@ export const MODULES_CONFIG = [
       { id: 's06', label: 'S06 Product Auth & Territory' },
       { id: 's07', label: 'S07 Sales Team Assignment' },
       { id: 's08', label: 'S08 Partner Activation' },
-      { id: 'r03', label: '📊 R03 Directory & Reports' },
+      { id: 'r03', label: '📊 Party Master Report' },
       { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' },
       { id: 'order_followup', label: '📞 Daily Order Followups' },
       { id: 'order_feedback', label: '⭐ Post-Order Feedback' },

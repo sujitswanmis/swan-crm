@@ -206,7 +206,7 @@ export const PARTY_SUBTAB_TITLES = {
   s06: 'S06 Product Auth & Territory',
   s07: 'S07 Sales Team Assignment',
   s08: 'S08 Partner Activation',
-  r03: 'R03 Party Directory & Hierarchy Report',
+  r03: 'Party Master Report',
   hierarchy_tree: 'Channel Hierarchy Tree',
   order_followup: 'Engine 1: Daily Order Followups',
   order_feedback: 'Engine 2: Post-Order Feedback',
@@ -3456,7 +3456,7 @@ export default function CRMContainer({
                                 className="submenu-item"
                                 data-active={activeTab === 'party' && partySubTab === 'r03'}
                               >
-                                📊 R03 Directory & Report
+                                📊 Party Master Report
                               </button>
 
                               <button
