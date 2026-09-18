@@ -34,17 +34,8 @@ import { getTransferredLeads, confirmLeadTransfer } from '@/app/actions/partyHan
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 import StageDataTable from './StageDataTable';
 import StageConfigModal from './StageConfigModal';
+import { PRODUCT_GROUPS } from '@/config/productCatalog';
 const INDIAN_STATES = ALL_INDIAN_STATES;
-
-const PRODUCT_GROUPS = [
-  { id: 'ROTAVATOR', name: 'Rotavator (Champion & Regular Series)', category: 'Implement' },
-  { id: 'LASER_LEVELLER', name: 'Swan Laser Land Leveller & Transmitter', category: 'Implement' },
-  { id: 'MULCHER', name: 'Straw Mulcher & Shrub Master', category: 'Implement' },
-  { id: 'SUPER_SEEDER', name: 'Super Seeder & Happy Seeder', category: 'Implement' },
-  { id: 'CULTIVATOR_TILLER', name: 'Spring Loaded Cultivator & Tiller', category: 'Implement' },
-  { id: 'DISC_HARROW', name: 'Heavy Duty Disc Harrow', category: 'Implement' },
-  { id: 'SPARE_PARTS', name: 'Genuine Swan Blades, Gearbox & Spares', category: 'Spare Part' }
-];
 
 const ALL_CLIENT_TEAM_ROLES = [
   { id: 'NSM', label: 'NSM (National Sales Manager)' },
@@ -2299,12 +2290,9 @@ export default function PartyMasterModule({
               <div style={{ marginBottom: '0.85rem' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Select Product Machinery</label>
                 <select value={orderForm.product} onChange={e => setOrderForm({ ...orderForm, product: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}>
-                  <option value="Rotavator 7ft Champion">Rotavator 7ft Champion Series</option>
-                  <option value="Rotavator 6ft Semi-Champion">Rotavator 6ft Semi-Champion</option>
-                  <option value="Swan Laser Land Leveller">Swan Laser Land Leveller Kit</option>
-                  <option value="Straw Mulcher 7ft">Straw Mulcher 7ft</option>
-                  <option value="Super Seeder 8ft">Super Seeder 8ft</option>
-                  <option value="Rotavator Blades Box (50 pcs)">Rotavator Blades Box (50 pcs)</option>
+                  {PRODUCT_GROUPS.map(p => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
+                  ))}
                 </select>
               </div>
 

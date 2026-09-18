@@ -8,19 +8,12 @@ import {
   Lock,
   ShieldCheck,
   Building2,
-  Users
+  Users,
+  Search
 } from 'lucide-react';
 import { ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
-
-export const PRODUCT_GROUPS = [
-  { id: 'ROTAVATOR', name: 'Rotavator (Champion & Regular Series)', category: 'Implement' },
-  { id: 'LASER_LEVELLER', name: 'Swan Laser Land Leveller & Transmitter', category: 'Implement' },
-  { id: 'MULCHER', name: 'Straw Mulcher & Shrub Master', category: 'Implement' },
-  { id: 'SUPER_SEEDER', name: 'Super Seeder & Happy Seeder', category: 'Implement' },
-  { id: 'CULTIVATOR_TILLER', name: 'Spring Loaded Cultivator & Tiller', category: 'Implement' },
-  { id: 'DISC_HARROW', name: 'Heavy Duty Disc Harrow', category: 'Implement' },
-  { id: 'SPARE_PARTS', name: 'Genuine Swan Blades, Gearbox & Spares', category: 'Spare Part' }
-];
+import { PRODUCT_GROUPS } from '@/config/productCatalog';
+export { PRODUCT_GROUPS };
 
 export const ALL_CLIENT_TEAM_ROLES = [
   { id: 'NSM', label: 'NSM (National Sales Manager)' },
@@ -390,6 +383,7 @@ export default function StageConfigModal({
   };
 
   const currentTheme = STAGE_THEME_MAP[activeTab] || STAGE_THEME_MAP.s01;
+  const [productSearch, setProductSearch] = useState('');
 
   // Reusable theme-adaptive style tokens for all modal forms
   const cardStyle = {
@@ -1377,31 +1371,138 @@ export default function StageConfigModal({
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary, #0f172a)', marginBottom: '0.75rem' }}>
-                      Select Allowed Products ({s06ProductCategory === 'Both' ? 'All Products' : s06ProductCategory + 's'}):
+                    {/* Header bar with counter, search & select all */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <span>Select Allowed Products ({s06ProductCategory === 'Both' ? 'All Products' : s06ProductCategory + 's'}):</span>
+                        <span style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '12px',
+                          background: 'rgba(8, 145, 178, 0.15)',
+                          color: '#0891b2',
+                          border: '1px solid rgba(8, 145, 178, 0.3)'
+                        }}>
+                          {s05SelectedProducts.length} selected
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {/* Filter Search */}
+                        <div style={{ position: 'relative', width: '210px' }}>
+                          <Search size={13} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                          <input
+                            type="text"
+                            value={productSearch}
+                            onChange={e => setProductSearch(e.target.value)}
+                            placeholder="Search 37 products..."
+                            style={{
+                              ...inputStyle,
+                              padding: '0.35rem 0.65rem 0.35rem 1.8rem',
+                              fontSize: '0.78rem'
+                            }}
+                          />
+                        </div>
+
+                        {/* Select All */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const applicable = PRODUCT_GROUPS.filter(p => {
+                              if (s06ProductCategory === 'Implement') return p.category === 'Implement';
+                              if (s06ProductCategory === 'Spare Part') return p.category === 'Spare Part';
+                              return true;
+                            }).map(p => p.id);
+                            setS05SelectedProducts(Array.from(new Set([...s05SelectedProducts, ...applicable])));
+                          }}
+                          style={{
+                            padding: '0.35rem 0.65rem',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(8,145,178,0.4)',
+                            background: 'rgba(8,145,178,0.1)',
+                            color: '#0891b2',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✓ Select All
+                        </button>
+
+                        {/* Clear */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (s06ProductCategory === 'Both') {
+                              setS05SelectedProducts([]);
+                            } else if (s06ProductCategory === 'Implement') {
+                              setS05SelectedProducts(s05SelectedProducts.filter(id => {
+                                const p = PRODUCT_GROUPS.find(x => x.id === id);
+                                return p && p.category !== 'Implement';
+                              }));
+                            } else {
+                              setS05SelectedProducts(s05SelectedProducts.filter(id => id !== 'SPARE_PARTS'));
+                            }
+                          }}
+                          style={{
+                            padding: '0.35rem 0.65rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--bg-surface)',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+
+                    {/* Scrollable Products Grid */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                      gap: '0.65rem',
+                      maxHeight: '340px',
+                      overflowY: 'auto',
+                      paddingRight: '0.25rem'
+                    }}>
                       {PRODUCT_GROUPS.filter(p => {
-                        if (s06ProductCategory === 'Implement') return p.category === 'Implement';
-                        if (s06ProductCategory === 'Spare Part') return p.category === 'Spare Part';
+                        if (s06ProductCategory === 'Implement' && p.category !== 'Implement') return false;
+                        if (s06ProductCategory === 'Spare Part' && p.category !== 'Spare Part') return false;
+                        if (productSearch.trim()) {
+                          const q = productSearch.trim().toLowerCase();
+                          return p.name.toLowerCase().includes(q) || (p.subCategory && p.subCategory.toLowerCase().includes(q));
+                        }
                         return true;
                       }).map(p => {
-                        const isChecked = s05SelectedProducts.includes(p.id);
+                        const isChecked = s05SelectedProducts.includes(p.id) ||
+                          s05SelectedProducts.includes(p.name) ||
+                          (p.id.startsWith('ROTAVATOR_') && s05SelectedProducts.includes('ROTAVATOR')) ||
+                          (p.id === 'LASER_LAND_LEVELLER' && s05SelectedProducts.includes('LASER_LEVELLER')) ||
+                          (p.id === 'EXTRA_HEAVY_DUTY_CULTIVATOR' && s05SelectedProducts.includes('CULTIVATOR_TILLER')) ||
+                          (p.id === 'HEAVY_DUTY_DISC_HARROW' && s05SelectedProducts.includes('DISC_HARROW'));
+
                         return (
                           <div
                             key={p.id}
                             onClick={() => {
                               if (isChecked) {
-                                setS05SelectedProducts(s05SelectedProducts.filter(x => x !== p.id));
+                                setS05SelectedProducts(s05SelectedProducts.filter(x =>
+                                  x !== p.id && x !== p.name && x !== 'ROTAVATOR' && x !== 'LASER_LEVELLER' && x !== 'CULTIVATOR_TILLER' && x !== 'DISC_HARROW'
+                                ));
                               } else {
                                 setS05SelectedProducts([...s05SelectedProducts, p.id]);
                               }
                             }}
                             style={{
-                              padding: '0.75rem',
+                              padding: '0.65rem 0.75rem',
                               borderRadius: '8px',
                               border: isChecked ? '1.5px solid #0891b2' : '1px solid var(--border-light, #e2e8f0)',
-                              background: isChecked ? 'rgba(8, 145, 178, 0.1)' : 'var(--bg-surface, #ffffff)',
+                              background: isChecked ? 'rgba(8, 145, 178, 0.08)' : 'var(--bg-surface, #ffffff)',
                               color: 'var(--text-primary, #0f172a)',
                               cursor: 'pointer',
                               display: 'flex',
@@ -1411,7 +1512,7 @@ export default function StageConfigModal({
                               transition: 'all 0.15s'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
                               <div style={{
                                 width: '18px',
                                 height: '18px',
@@ -1421,21 +1522,25 @@ export default function StageConfigModal({
                                 background: isChecked ? '#0891b2' : 'transparent',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center'
+                                justifyContent: 'center',
+                                flexShrink: 0
                               }}>
                                 {isChecked && <Check size={12} color="#fff" />}
                               </div>
-                              <span style={{ fontWeight: 600, fontSize: '0.84rem' }}>{p.name}</span>
+                              <span style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>
+                                {p.name}
+                              </span>
                             </div>
                             <span style={{
-                              fontSize: '0.68rem',
-                              padding: '0.15rem 0.4rem',
+                              fontSize: '0.65rem',
+                              padding: '0.12rem 0.35rem',
                               borderRadius: '4px',
                               fontWeight: 700,
                               background: p.category === 'Implement' ? 'rgba(8, 145, 178, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                              color: p.category === 'Implement' ? '#0891b2' : '#d97706'
+                              color: p.category === 'Implement' ? '#0891b2' : '#d97706',
+                              flexShrink: 0
                             }}>
-                              {p.category}
+                              {p.subCategory || p.category}
                             </span>
                           </div>
                         );
