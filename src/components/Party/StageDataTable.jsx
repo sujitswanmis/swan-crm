@@ -690,49 +690,27 @@ export default function StageDataTable({
 
                     {/* Action Button */}
                     <td style={{ padding: '0.75rem 0.9rem', textAlign: 'center' }}>
-                      {isSelected ? (
-                        <button
-                          type="button"
-                          onClick={() => onSelectParty(party)}
-                          style={{
-                            padding: '0.4rem 0.85rem',
-                            background: '#10b981',
-                            border: 'none',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontWeight: 700,
-                            fontSize: '0.76rem',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            boxShadow: '0 2px 6px rgba(16,185,129,0.3)'
-                          }}
-                        >
-                          <Check size={13} /> Editing Below ↓
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onSelectParty(party)}
-                          style={{
-                            padding: '0.4rem 0.85rem',
-                            background: isApproved ? 'rgba(59,130,246,0.15)' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                            border: isApproved ? '1px solid #3b82f6' : 'none',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontWeight: 700,
-                            fontSize: '0.76rem',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.35rem',
-                            boxShadow: isApproved ? 'none' : '0 2px 6px rgba(37,99,235,0.25)'
-                          }}
-                        >
-                          <ArrowRight size={13} /> {isApproved ? 'Edit / View ➔' : 'Configure ➔'}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => onSelectParty(party)}
+                        style={{
+                          padding: '0.42rem 0.85rem',
+                          background: isApproved ? 'rgba(59,130,246,0.15)' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                          border: isApproved ? '1px solid #3b82f6' : 'none',
+                          borderRadius: '6px',
+                          color: isApproved ? '#60a5fa' : '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.76rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          boxShadow: isApproved ? 'none' : '0 2px 6px rgba(37,99,235,0.25)',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <ArrowRight size={13} /> {isApproved ? 'Edit / View ➔' : 'Configure ➔'}
+                      </button>
                     </td>
                   </tr>
                 );
