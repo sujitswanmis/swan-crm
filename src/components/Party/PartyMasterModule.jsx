@@ -650,9 +650,15 @@ export default function PartyMasterModule({
       contact_alt_email_2_1: party.contact_alt_email_2_1 || lead.cp2_email_1 || ''
     }));
 
-    if (party.billing_route_type) {
-      setS04CommForm(prev => ({ ...prev, billing_route_type: party.billing_route_type }));
-    }
+    const commTerms = (party.party_commercial_terms && party.party_commercial_terms[0]) || {};
+    setS04CommForm(prev => ({
+      ...prev,
+      billing_route_type: party.billing_route_type || prev.billing_route_type || 'DIRECT_COMPANY_BILLING',
+      security_deposit_amount: party.security_deposit_amount ?? commTerms.security_deposit_amount ?? prev.security_deposit_amount,
+      credit_limit: party.credit_limit ?? commTerms.credit_limit ?? prev.credit_limit,
+      credit_days: party.credit_days ?? commTerms.credit_days ?? prev.credit_days
+    }));
+
     if (party.zone) {
       setS01DistForm(prev => ({ ...prev, zone: party.zone }));
     }
@@ -692,9 +698,21 @@ export default function PartyMasterModule({
       setS06TeamMap(prev => ({ ...prev, ...newTeamMap }));
     }
 
-    if (party.state_name) {
+    if (party.territory_allocations && party.territory_allocations.length > 0) {
+      const terr = party.territory_allocations[0];
       setS05TerritoryForm(prev => ({
         ...prev,
+        zone: terr.zone || party.zone || prev.zone,
+        state: terr.state || party.state_name || prev.state,
+        district: terr.district || party.district_name || prev.district,
+        tehsil_area: terr.tehsil_area || prev.tehsil_area,
+        market_coverage_chips: Array.isArray(terr.market_coverage_area) ? terr.market_coverage_area : (typeof terr.market_coverage_area === 'string' && terr.market_coverage_area ? terr.market_coverage_area.split(',').map(s => s.trim()) : prev.market_coverage_chips),
+        territory_type: terr.territory_type || prev.territory_type
+      }));
+    } else if (party.state_name) {
+      setS05TerritoryForm(prev => ({
+        ...prev,
+        zone: party.zone || prev.zone,
         state: party.state_name,
         district: party.district_name || '',
         tehsil_area: party.tehsil || prev.tehsil_area
@@ -1045,21 +1063,122 @@ export default function PartyMasterModule({
     if (!party) return { s00: false, s01: false, s02: false, s03: false, s04: false, tier: false, s05: false, s06: false, s07: false, s08: false };
     const pId = party.id;
     const local = stageConfirmedMap[pId] || {};
+    const metaStages = party.meta_stages || {};
 
     const isDist = party.party_type === 'Distributor';
     const isDealer = party.party_type === 'Dealer';
     const isSubDealer = party.party_type === 'Sub-Dealer';
 
-    const s00Approved = Boolean(local.s00 || (party.source_lead_id ? (party.workflow_status !== 'S00_TRANSFERRED' && party.party_status !== 'Pending Confirmation' && party.party_status !== 'Draft_From_Lead' && party.onboarding_stage !== 'S00_Party_Entry') : true));
-    const s01Approved = Boolean(local.s01 || (party.firm_name && (party.primary_mobile || party.biz_contact_no_1)));
-    const s02Approved = isDist ? Boolean(local.s02 || party.zone || party.workflow_status?.includes('S01_Completed') || party.workflow_status?.includes('S04') || party.workflow_status?.includes('S05')) : true;
-    const s03Approved = isDealer ? Boolean(local.s03 || party.parent_distributor_id) : true;
-    const s04Approved = isSubDealer ? Boolean(local.s04 || party.parent_dealer_id) : true;
+    // If partner is already Active in DB or final_status is Active, all stages are verified
+    const isPartyActive = party.party_status === 'Active' || party.final_status === 'Active';
+
+    // Check stage hierarchy in onboarding_stage
+    const STAGE_ORDER = [
+      'S00_Party_Entry',
+      'S01_Registration',
+      'S02_Party_Classification',
+      'S03_Dealer_Distributor_Mapping',
+      'S04_KYC_Commercial_Verification',
+      'S05_Product_Authorization',
+      'S06_Territory_Allocation',
+      'S07_Employee_Assignment',
+      'S08_Party_Activation'
+    ];
+    const currentStageIdx = STAGE_ORDER.indexOf(party.onboarding_stage);
+
+    const s00Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 1 ||
+      local.s00 ||
+      metaStages.s00 ||
+      (party.source_lead_id ? (party.workflow_status !== 'S00_TRANSFERRED' && party.party_status !== 'Pending Confirmation' && party.party_status !== 'Draft_From_Lead' && party.onboarding_stage !== 'S00_Party_Entry') : true)
+    );
+
+    const s01Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 1 ||
+      local.s01 ||
+      metaStages.s01 ||
+      (party.firm_name && (party.primary_mobile || party.biz_contact_no_1))
+    );
+
+    const s02Approved = isDist
+      ? Boolean(
+          isPartyActive ||
+          currentStageIdx >= 2 ||
+          local.s02 ||
+          metaStages.s02 ||
+          party.zone ||
+          party.workflow_status?.includes('S01_Completed') ||
+          party.workflow_status?.includes('S02_Completed') ||
+          party.workflow_status?.includes('S04') ||
+          party.workflow_status?.includes('S05')
+        )
+      : true;
+
+    const s03Approved = isDealer
+      ? Boolean(
+          isPartyActive ||
+          currentStageIdx >= 3 ||
+          local.s03 ||
+          metaStages.s03 ||
+          party.parent_distributor_id ||
+          party.workflow_status?.includes('S03_Completed')
+        )
+      : true;
+
+    const s04Approved = isSubDealer
+      ? Boolean(
+          isPartyActive ||
+          currentStageIdx >= 3 ||
+          local.s04 ||
+          metaStages.s04 ||
+          party.parent_dealer_id ||
+          party.workflow_status?.includes('S04_Completed')
+        )
+      : true;
+
     const tierApproved = isDist ? s02Approved : (isDealer ? s03Approved : s04Approved);
-    const s05Approved = Boolean(local.s05 || party.billing_route_type || party.commercial_status === 'Completed' || (party.party_commercial_terms && party.party_commercial_terms.length > 0));
-    const s06Approved = Boolean(local.s06 || (party.product_authorizations && party.product_authorizations.length > 0) || (party.territory_allocations && party.territory_allocations.length > 0) || party.district_name);
-    const s07Approved = Boolean(local.s07 || (party.team_assignments && party.team_assignments.length > 0));
-    const s08Approved = Boolean(local.s08 || ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.party_status) || ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.final_status));
+
+    const s05Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 4 ||
+      local.s05 ||
+      metaStages.s05 ||
+      party.billing_route_type ||
+      party.commercial_status === 'Completed' ||
+      party.workflow_status?.includes('S05_Completed') ||
+      (party.party_commercial_terms && party.party_commercial_terms.length > 0)
+    );
+
+    const s06Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 6 ||
+      local.s06 ||
+      metaStages.s06 ||
+      (party.product_authorizations && party.product_authorizations.length > 0) ||
+      (party.territory_allocations && party.territory_allocations.length > 0) ||
+      party.workflow_status?.includes('S06_Completed') ||
+      party.district_name
+    );
+
+    const s07Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 7 ||
+      local.s07 ||
+      metaStages.s07 ||
+      (party.team_assignments && party.team_assignments.length > 0) ||
+      party.workflow_status?.includes('S07_Completed')
+    );
+
+    const s08Approved = Boolean(
+      isPartyActive ||
+      currentStageIdx >= 8 ||
+      local.s08 ||
+      metaStages.s08 ||
+      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.party_status) ||
+      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.final_status)
+    );
 
     return {
       s00: s00Approved,

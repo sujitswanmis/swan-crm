@@ -12,6 +12,49 @@ const getAdminClient = () => {
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 /**
+ * Safe JSON metadata parser & updater for party_master.business_nature
+ * Ensures product authorizations, territory, team assignments, and channel links persist in Supabase
+ */
+function parsePartyMeta(businessNature) {
+  if (!businessNature || typeof businessNature !== 'string') return {};
+  if (businessNature.startsWith('SWAN_PARTY_META:')) {
+    try {
+      return JSON.parse(businessNature.slice('SWAN_PARTY_META:'.length));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+async function updatePartyMeta(adminClient, partyId, partialMeta) {
+  try {
+    const { data: current } = await adminClient
+      .from('party_master')
+      .select('business_nature')
+      .eq('id', partyId)
+      .maybeSingle();
+
+    const existing = parsePartyMeta(current?.business_nature);
+    const merged = { ...existing, ...partialMeta };
+    const serialized = 'SWAN_PARTY_META:' + JSON.stringify(merged);
+
+    await adminClient
+      .from('party_master')
+      .update({
+        business_nature: serialized,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', partyId);
+
+    return merged;
+  } catch (err) {
+    console.warn('updatePartyMeta notice:', err.message);
+    return partialMeta;
+  }
+}
+
+/**
  * Fetch complete party list with hierarchy information (R03 Ready)
  */
 export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
@@ -82,22 +125,42 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
     }
 
     const enrichedData = parties.map(item => {
-      const parentDist = item.parent_distributor_id ? partyMap.get(item.parent_distributor_id) : null;
-      const parentDealer = item.parent_dealer_id ? partyMap.get(item.parent_dealer_id) : null;
+      const meta = parsePartyMeta(item.business_nature);
+      
+      const distId = item.parent_distributor_id || meta.parent_distributor_id || null;
+      const dealerId = item.parent_dealer_id || meta.parent_dealer_id || null;
+
+      const parentDist = distId ? partyMap.get(distId) : null;
+      const parentDealer = dealerId ? partyMap.get(dealerId) : null;
       
       // If subdealer, auto-derive distributor from parent dealer if not directly set
-      const effectiveDist = parentDist || (parentDealer?.parent_distributor_id ? partyMap.get(parentDealer.parent_distributor_id) : null);
+      const effectiveDist = parentDist || (parentDealer?.parent_distributor_id ? partyMap.get(parentDealer.parent_distributor_id) : (parentDealer ? partyMap.get(parsePartyMeta(parentDealer.business_nature).parent_distributor_id) : null));
 
       const lead = item.source_lead_id ? leadMap.get(item.source_lead_id) : null;
       const roles = item.party_roles || [];
       const contacts = item.party_contacts || [];
       const addresses = item.party_addresses || [];
+      const commercialTerms = item.party_commercial_terms || [];
+      const primaryComm = commercialTerms[0] || null;
 
       const primaryRole = roles[0]?.role_type;
       const pType = item.party_type || (primaryRole === 'DISTRIBUTOR' ? 'Distributor' : primaryRole === 'DIRECT_CUSTOMER' ? 'Sub-Dealer' : (lead?.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead?.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer'));
 
       const primaryContact = contacts.find(c => c.is_primary) || contacts[0];
       const primaryAddress = addresses.find(a => a.is_primary) || addresses[0];
+
+      // Merge authorizations, territory, and team from DB tables OR meta fallback
+      const prodAuths = (authMap[item.id] && authMap[item.id].length > 0) 
+        ? authMap[item.id] 
+        : (meta.product_authorizations || []);
+      
+      const terrAllocs = (territoryMap[item.id] && territoryMap[item.id].length > 0)
+        ? territoryMap[item.id]
+        : (meta.territory ? [meta.territory] : (meta.territory_allocations || []));
+
+      const teamAssigns = (teamMap[item.id] && teamMap[item.id].length > 0)
+        ? teamMap[item.id]
+        : (meta.team_assignments || []);
 
       return {
         ...item,
@@ -137,6 +200,10 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         contact_alt_email_2_1: item.contact_alt_email_2_1 || lead?.cp2_email_1 || '',
         gstin: item.gstin && item.gstin.includes('Error creating party') ? '' : (item.gstin || lead?.business_gst || ''),
         pan: item.pan || lead?.pan || '',
+        parent_distributor_id: distId,
+        parent_dealer_id: dealerId,
+        parent_distributor_name: effectiveDist?.firm_name || null,
+        parent_dealer_name: parentDealer?.firm_name || null,
         parent_distributor: effectiveDist ? {
           id: effectiveDist.id,
           party_universal_code: effectiveDist.party_universal_code,
@@ -149,10 +216,20 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
           dealer_code: parentDealer.dealer_code || parentDealer.party_universal_code,
           firm_name: parentDealer.firm_name
         } : null,
-        product_category: (authMap[item.id] && authMap[item.id][0]?.product_category) || item.product_category || null,
-        product_authorizations: authMap[item.id] || [],
-        territory_allocations: territoryMap[item.id] || [],
-        team_assignments: teamMap[item.id] || []
+        zone: item.zone || meta.zone || (terrAllocs[0]?.zone) || null,
+        dealership_type: item.dealership_type || meta.dealership_type || 'EXCLUSIVE_SWAN',
+        showroom_area_sqft: item.showroom_area_sqft || meta.showroom_area_sqft || 2500,
+        billing_route_type: item.billing_route_type || meta.billing_route_type || 'DIRECT_COMPANY_BILLING',
+        commercial_status: item.commercial_status || meta.commercial_status || (commercialTerms.length > 0 ? 'Completed' : null),
+        security_deposit_amount: item.security_deposit_amount ?? primaryComm?.security_deposit_amount ?? meta.security_deposit_amount ?? 0,
+        credit_limit: item.credit_limit ?? primaryComm?.credit_limit ?? meta.credit_limit ?? 0,
+        credit_days: item.credit_days ?? primaryComm?.credit_days ?? meta.credit_days ?? 30,
+        product_category: (prodAuths[0]?.product_category) || item.product_category || meta.product_category || null,
+        product_authorizations: prodAuths,
+        territory_allocations: terrAllocs,
+        team_assignments: teamAssigns,
+        meta_stages: meta.stages || {},
+        meta: meta
       };
     });
 
@@ -394,6 +471,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
       'S03_Sub_Dealer_Registration': 'S03_Dealer_Distributor_Mapping',
       'S04_Commercial': 'S04_KYC_Commercial_Verification',
       'S05_Product_Territory': 'S05_Product_Authorization',
+      'S05_Product_Authorization_Territory': 'S06_Territory_Allocation',
       'S06_Team_Assignment': 'S07_Employee_Assignment',
       'S07_Activation': 'S08_Party_Activation'
     };
@@ -572,6 +650,42 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     }
   }
 
+  // 5. Update party metadata (parent links, zone, route, stages)
+  const metaUpdates = {};
+  if (stepData.parent_distributor_id !== undefined) metaUpdates.parent_distributor_id = stepData.parent_distributor_id;
+  if (stepData.parent_dealer_id !== undefined) metaUpdates.parent_dealer_id = stepData.parent_dealer_id;
+  if (stepData.dealership_type !== undefined) metaUpdates.dealership_type = stepData.dealership_type;
+  if (stepData.showroom_area_sqft !== undefined) metaUpdates.showroom_area_sqft = stepData.showroom_area_sqft;
+  if (stepData.billing_route_type !== undefined) metaUpdates.billing_route_type = stepData.billing_route_type;
+  if (stepData.commercial_status !== undefined) metaUpdates.commercial_status = stepData.commercial_status;
+  if (stepData.credit_limit !== undefined) metaUpdates.credit_limit = stepData.credit_limit;
+  if (stepData.credit_days !== undefined) metaUpdates.credit_days = stepData.credit_days;
+  if (stepData.security_deposit_amount !== undefined) metaUpdates.security_deposit_amount = stepData.security_deposit_amount;
+  if (stepData.zone !== undefined) metaUpdates.zone = stepData.zone;
+  if (stepData.product_category !== undefined) metaUpdates.product_category = stepData.product_category;
+
+  if (stepName) {
+    const stageKeyMap = {
+      'S00_Party_Master': 's01',
+      'S01_Distributor_Registration': 's02',
+      'S02_Dealer_Registration': 's03',
+      'S03_Sub_Dealer_Registration': 's04',
+      'S04_Commercial': 's05',
+      'S05_Product_Territory': 's06',
+      'S05_Product_Authorization_Territory': 's06',
+      'S06_Team_Assignment': 's07',
+      'S07_Activation': 's08'
+    };
+    if (stageKeyMap[stepName]) {
+      const existingMeta = parsePartyMeta(currentParty.business_nature);
+      metaUpdates.stages = { ...(existingMeta.stages || {}), [stageKeyMap[stepName]]: true };
+    }
+  }
+
+  if (Object.keys(metaUpdates).length > 0) {
+    await updatePartyMeta(adminClient, partyId, metaUpdates);
+  }
+
   return updated;
 }
 
@@ -581,7 +695,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
 export async function saveProductAuthorizations(partyId, products, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   try {
-    // Delete existing and insert new
+    // Delete existing and insert new in table if table exists
     await adminClient.from('party_product_authorizations').delete().eq('party_id', partyId);
     
     if (products && products.length > 0) {
@@ -602,6 +716,16 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
   } catch (err) {
     console.warn('saveProductAuthorizations fallback:', err.message);
   }
+
+  // Always persist authorisations and stage in party metadata
+  await updatePartyMeta(adminClient, partyId, {
+    product_authorizations: products || [],
+    stages: {
+      ...(parsePartyMeta((await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data?.business_nature).stages || {}),
+      s06: true
+    }
+  });
+
   return true;
 }
 
@@ -610,6 +734,7 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
  */
 export async function saveTerritoryAllocation(partyId, territoryData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
+  let savedRecord = territoryData;
   try {
     await adminClient.from('party_territory_allocations').delete().eq('party_id', partyId);
 
@@ -628,11 +753,18 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
 
     const { data, error } = await adminClient.from('party_territory_allocations').insert([record]).select().single();
     if (error) console.warn('party_territory_allocations notice:', error.message);
-    return data || record;
+    if (data) savedRecord = data;
   } catch (err) {
     console.warn('saveTerritoryAllocation fallback:', err.message);
-    return territoryData;
   }
+
+  // Always persist territory in party metadata
+  await updatePartyMeta(adminClient, partyId, {
+    territory: territoryData,
+    zone: territoryData.zone || 'North Zone'
+  });
+
+  return savedRecord;
 }
 
 /**
@@ -659,6 +791,16 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
   } catch (err) {
     console.warn('saveTeamAssignments fallback:', err.message);
   }
+
+  // Always persist team assignments and stage in party metadata
+  await updatePartyMeta(adminClient, partyId, {
+    team_assignments: assignments || [],
+    stages: {
+      ...(parsePartyMeta((await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data?.business_nature).stages || {}),
+      s07: true
+    }
+  });
+
   return true;
 }
 
@@ -696,6 +838,17 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
     console.error('Error activating party:', actErr);
     throw new Error(actErr.message);
   }
+
+  // Always update metadata stages in party_master
+  const existingMeta = parsePartyMeta(activated.business_nature);
+  await updatePartyMeta(adminClient, partyId, {
+    activation_status: finalStatus,
+    activation_remarks: remarks,
+    stages: {
+      ...(existingMeta.stages || {}),
+      s08: true
+    }
+  });
 
   // If originated from lead, also update lead_party_handoffs to ACTIVATED
   try {
@@ -738,16 +891,31 @@ export async function getParty360Details(partyId) {
     adminClient.from('party_team_assignments').select('*').eq('party_id', partyId)
   ]);
 
+  const rawParty = partyRes?.data || null;
+  const meta = parsePartyMeta(rawParty?.business_nature);
+
+  const mergedParty = rawParty ? {
+    ...rawParty,
+    parent_distributor_id: rawParty.parent_distributor_id || meta.parent_distributor_id || null,
+    parent_dealer_id: rawParty.parent_dealer_id || meta.parent_dealer_id || null,
+    zone: rawParty.zone || meta.zone || meta.territory?.zone || null,
+    dealership_type: rawParty.dealership_type || meta.dealership_type || 'EXCLUSIVE_SWAN',
+    showroom_area_sqft: rawParty.showroom_area_sqft || meta.showroom_area_sqft || 2500,
+    billing_route_type: rawParty.billing_route_type || meta.billing_route_type || 'DIRECT_COMPANY_BILLING',
+    commercial_status: rawParty.commercial_status || meta.commercial_status || (commercialRes?.data ? 'Completed' : null),
+    meta: meta
+  } : null;
+
   return {
-    party: partyRes?.data || null,
+    party: mergedParty,
     roles: rolesRes?.data || [],
     contacts: contactsRes?.data || [],
     addresses: addressesRes?.data || [],
     relationship_history: historyRes?.data || [],
-    commercial: commercialRes?.data || null,
-    product_authorizations: authsRes?.data || [],
-    territory_allocations: territoriesRes?.data || [],
-    team_assignments: teamsRes?.data || []
+    commercial: commercialRes?.data || (meta.credit_limit !== undefined ? { credit_limit: meta.credit_limit, credit_days: meta.credit_days || 30 } : null),
+    product_authorizations: (authsRes?.data && authsRes.data.length > 0) ? authsRes.data : (meta.product_authorizations || []),
+    territory_allocations: (territoriesRes?.data && territoriesRes.data.length > 0) ? territoriesRes.data : (meta.territory ? [meta.territory] : []),
+    team_assignments: (teamsRes?.data && teamsRes.data.length > 0) ? teamsRes.data : (meta.team_assignments || [])
   };
 }
 
