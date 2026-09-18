@@ -20,7 +20,7 @@ import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
-import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import Papa from 'papaparse';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
@@ -1639,6 +1639,9 @@ export default function LeadTable({
         });
         if (onLeadsChange) {
           onLeadsChange(processedLead);
+        }
+        if (processedLead) {
+          upsertLeadsLocally([processedLead]);
         }
       }
     }

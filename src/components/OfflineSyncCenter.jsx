@@ -554,6 +554,32 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                 <span style={{ fontSize: '11px', color: '#64748b' }}>
                   Storage: Browser IndexedDB (Zero Data Loss)
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Resync all leads from cloud? This will update local cache with fresh data.")) {
+                      window.dispatchEvent(new CustomEvent('crm_force_full_sync'));
+                      setToastMessage('🔄 Resyncing all leads from cloud...');
+                      setShowModal(false);
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    color: '#38bdf8',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Resync all leads from cloud without clearing browser site data"
+                >
+                  <RefreshCw style={{ width: '11px', height: '11px' }} />
+                  Resync Leads
+                </button>
                 {pendingItems.length > 0 && (
                   <button
                     type="button"

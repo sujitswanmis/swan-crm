@@ -358,6 +358,56 @@ export async function saveLeadsLocally(leads) {
 }
 
 /**
+ * Upsert specific leads into IndexedDB without clearing existing store.
+ * Updates existing leads by ID or inserts new ones.
+ */
+export async function upsertLeadsLocally(leadsToUpsert) {
+  const arr = Array.isArray(leadsToUpsert) ? leadsToUpsert : (leadsToUpsert ? [leadsToUpsert] : []);
+  if (arr.length === 0) return false;
+  try {
+    const db = await openOfflineDB();
+    if (!db) return false;
+
+    const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+    const store = tx.objectStore(STORES.LEADS_CACHE);
+    
+    for (const lead of arr) {
+      if (lead && lead.id) {
+        store.put(lead);
+      }
+    }
+
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Failed to upsert leads locally:', err);
+    return false;
+  }
+}
+
+/**
+ * Clear leads cache from IndexedDB
+ */
+export async function clearLocalLeadsCache() {
+  try {
+    const db = await openOfflineDB();
+    if (!db) return false;
+    const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+    const store = tx.objectStore(STORES.LEADS_CACHE);
+    store.clear();
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Failed to clear leads cache:', err);
+    return false;
+  }
+}
+
+/**
  * Read cached leads from IndexedDB when offline
  */
 export async function getLocalLeads() {

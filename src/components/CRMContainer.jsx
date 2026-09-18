@@ -41,8 +41,7 @@ import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
 import OfflineRuleModule from './Offline/OfflineRuleModule';
-import OfflineBlockScreen from './Offline/OfflineBlockScreen';
-import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline } from '@/utils/offlineSync';
+import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, clearLocalLeadsCache } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
@@ -1095,6 +1094,7 @@ export default function CRMContainer({
     loadTeam();
   }, []);
   
+  const loadLeadsRef = useRef(null);
   const prevLeadsSigRef = useRef('');
   const initialSyncFinishedRef = useRef(false);
   const saveLeadsTimeoutRef = useRef(null);
@@ -1110,19 +1110,8 @@ export default function CRMContainer({
 
   const updateLeadsIfChanged = (newList) => {
     const listToProcess = Array.isArray(newList) ? newList : (newList ? [newList] : []);
-    // ⚡ PERF FIX: O(1) boundary-probe signature — previously generated ~2.5MB string per call via .map().join('|')
-    const len = listToProcess.length;
-    const first = listToProcess[0];
-    const mid = listToProcess[Math.floor(len / 2)];
-    const last = listToProcess[len - 1];
-    const sig = `${len}-${first?.id || ''}-${first?.status || ''}-${first?.updated_at || ''}-${mid?.id || ''}-${mid?.status || ''}-${last?.id || ''}-${last?.status || ''}-${last?.updated_at || ''}`;
-    if (prevLeadsSigRef.current !== sig) {
-      prevLeadsSigRef.current = sig;
-      setLeads(Array.isArray(newList) ? newList : (prev => {
-        if (!newList) return prev;
-        return prev.map(l => l.id === newList.id ? { ...l, ...newList } : l);
-      }));
-    }
+    prevLeadsSigRef.current = '';
+    setLeads(listToProcess);
   };
 
   // Client-side fetch of all leads (Progressive Loading with sync tracking)
@@ -1133,23 +1122,28 @@ export default function CRMContainer({
       return;
     }
 
-    async function loadLeads() {
+    async function loadLeads(forceFull = false) {
+      loadLeadsRef.current = loadLeads;
       setIsSyncing(true);
       const supabase = createClient();
       
-      // 0. Instant 0ms Cache Hydration from IndexedDB
+      // 0. Instant 0ms Cache Hydration from IndexedDB (skip if forceFull)
       let localCachedLeads = [];
-      try {
-        localCachedLeads = await getLocalLeads();
-        if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
-          setRawLeads(localCachedLeads);
-          setSyncLoadedCount(localCachedLeads.length);
-          setLoadingLeads(false);
-        } else {
+      if (!forceFull) {
+        try {
+          localCachedLeads = await getLocalLeads();
+          if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
+            setRawLeads(localCachedLeads);
+            setSyncLoadedCount(localCachedLeads.length);
+            setLoadingLeads(false);
+          } else {
+            setLoadingLeads(true);
+          }
+        } catch (cacheErr) {
+          console.warn("Local leads cache read error:", cacheErr);
           setLoadingLeads(true);
         }
-      } catch (cacheErr) {
-        console.warn("Local leads cache read error:", cacheErr);
+      } else {
         setLoadingLeads(true);
       }
 
@@ -1252,7 +1246,7 @@ export default function CRMContainer({
       };
 
       try {
-        const hasValidLocalCache = Array.isArray(localCachedLeads) && localCachedLeads.length > 0 &&
+        const hasValidLocalCache = !forceFull && Array.isArray(localCachedLeads) && localCachedLeads.length > 0 &&
           localCachedLeads.some(l => Array.isArray(l.lead_notes) && l.lead_notes.length > 0);
 
         if (hasValidLocalCache) {
@@ -1296,16 +1290,19 @@ export default function CRMContainer({
             }
           }
 
-          // 3. Fetch any newly added leads
+          // 3. Fetch newly added leads since maxLeadCreatedAt (always query, no total check blocker)
           let newLeads = [];
-          if (maxLeadCreatedAt && total > localCachedLeads.length) {
+          if (maxLeadCreatedAt) {
             try {
-              const { data: deltaLeads, error: dLeadErr } = await supabase
+              let deltaQuery = supabase
                 .from('leads')
                 .select('*')
                 .gt('created_at', maxLeadCreatedAt)
-                .order('created_at', { ascending: false })
-                .limit(1000);
+                .order('created_at', { ascending: false });
+              if (_agentCompanyFilter) {
+                deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
+              }
+              const { data: deltaLeads, error: dLeadErr } = await deltaQuery.limit(2000);
               if (!dLeadErr && Array.isArray(deltaLeads)) {
                 newLeads = deltaLeads;
               }
@@ -1314,7 +1311,45 @@ export default function CRMContainer({
             }
           }
 
-          // 4. Merge cleanly: Preserve existing notes, apply fresh Page 0 updates, add new leads & notes
+          // 4. CRITICAL: Fetch all leads assigned to the logged-in agent/user (catches older assigned leads)
+          let myAssignedLeads = [];
+          if (userId) {
+            try {
+              const { data: assignedData, error: assignedErr } = await supabase
+                .from('leads')
+                .select('*')
+                .eq('assigned_to', userId);
+              if (!assignedErr && Array.isArray(assignedData)) {
+                myAssignedLeads = assignedData;
+              }
+            } catch (e) {
+              console.warn("Assigned leads delta fetch error:", e);
+            }
+          }
+
+          // 5. Fetch updated leads from touched notes
+          let touchedLeads = [];
+          if (newNotes.length > 0) {
+            const knownIds = new Set([
+              ...page0Data.map(l => l.id),
+              ...newLeads.map(l => l.id),
+              ...myAssignedLeads.map(l => l.id)
+            ]);
+            const touchedIds = Array.from(new Set(newNotes.map(n => n.lead_id).filter(id => id && !knownIds.has(id))));
+            if (touchedIds.length > 0) {
+              for (let i = 0; i < touchedIds.length; i += 100) {
+                const chunk = touchedIds.slice(i, i + 100);
+                try {
+                  const { data: batchLeads } = await supabase.from('leads').select('*').in('id', chunk);
+                  if (Array.isArray(batchLeads)) {
+                    touchedLeads.push(...batchLeads);
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+
+          // 6. Merge cleanly: Preserve existing notes, apply fresh Page 0 updates, add new leads & notes
           const leadsMap = new Map();
           for (const l of localCachedLeads) {
             leadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
@@ -1332,8 +1367,31 @@ export default function CRMContainer({
 
           // Add brand new leads
           for (const nl of newLeads) {
-            if (!leadsMap.has(nl.id)) {
+            const existing = leadsMap.get(nl.id);
+            if (existing) {
+              leadsMap.set(nl.id, { ...existing, ...nl, lead_notes: existing.lead_notes });
+            } else {
               leadsMap.set(nl.id, { ...nl, lead_notes: [] });
+            }
+          }
+
+          // Add / update assigned leads for this user
+          for (const al of myAssignedLeads) {
+            const existing = leadsMap.get(al.id);
+            if (existing) {
+              leadsMap.set(al.id, { ...existing, ...al, lead_notes: existing.lead_notes });
+            } else {
+              leadsMap.set(al.id, { ...al, lead_notes: [] });
+            }
+          }
+
+          // Add / update touched leads from notes
+          for (const tl of touchedLeads) {
+            const existing = leadsMap.get(tl.id);
+            if (existing) {
+              leadsMap.set(tl.id, { ...existing, ...tl, lead_notes: existing.lead_notes });
+            } else {
+              leadsMap.set(tl.id, { ...tl, lead_notes: [] });
             }
           }
 
@@ -1460,20 +1518,43 @@ export default function CRMContainer({
     const channel = supabase
       .channel('crm_container_leads')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
+        const newRow = payload.new;
+        if (!newRow || !newRow.id) return;
+        upsertLeadsLocally([{ ...newRow, lead_notes: [] }]);
         setRawLeads((current) => {
-          if (current.some(item => item.id === payload.new.id)) return current;
-          const updated = [{ ...payload.new, lead_notes: [] }, ...current];
+          if (current.some(item => item.id === newRow.id)) return current;
+          const updated = [{ ...newRow, lead_notes: [] }, ...current];
           debouncedSaveLeadsLocally(updated);
           return updated;
+        });
+        setLeads((current) => {
+          if (current.some(item => item.id === newRow.id)) return current;
+          return [{ ...newRow, lead_notes: [] }, ...current];
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
+        const updatedRow = payload.new;
+        if (!updatedRow || !updatedRow.id) return;
+        upsertLeadsLocally([updatedRow]);
         setRawLeads((current) => {
-          const updated = current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item);
+          const exists = current.some(item => item.id === updatedRow.id);
+          let updated;
+          if (exists) {
+            updated = current.map(item => item.id === updatedRow.id ? { ...item, ...updatedRow, lead_notes: item.lead_notes || [] } : item);
+          } else {
+            updated = [{ ...updatedRow, lead_notes: [] }, ...current];
+          }
           debouncedSaveLeadsLocally(updated);
           return updated;
         });
-        setLeads((current) => current.map(item => item.id === payload.new.id ? { ...item, ...payload.new, lead_notes: item.lead_notes || [] } : item));
+        setLeads((current) => {
+          const exists = current.some(item => item.id === updatedRow.id);
+          if (exists) {
+            return current.map(item => item.id === updatedRow.id ? { ...item, ...updatedRow, lead_notes: item.lead_notes || [] } : item);
+          } else {
+            return [{ ...updatedRow, lead_notes: [] }, ...current];
+          }
+        });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         setRawLeads((current) => {
@@ -1511,12 +1592,30 @@ export default function CRMContainer({
         setRawLeads(cached.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
       }
     };
+
+    const handleLeadsImported = (e) => {
+      if (e.detail) {
+        handleLeadsChange(e.detail);
+      }
+    };
+
+    const handleForceFullSync = async () => {
+      await clearLocalLeadsCache();
+      if (loadLeadsRef.current) {
+        loadLeadsRef.current(true);
+      }
+    };
+
     window.addEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
+    window.addEventListener('crm_leads_imported', handleLeadsImported);
+    window.addEventListener('crm_force_full_sync', handleForceFullSync);
 
     return () => {
       if (saveLeadsTimeoutRef.current) clearTimeout(saveLeadsTimeoutRef.current);
       supabase.removeChannel(channel);
       window.removeEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
+      window.removeEventListener('crm_leads_imported', handleLeadsImported);
+      window.removeEventListener('crm_force_full_sync', handleForceFullSync);
     };
   }, [hasLeadsAccess]);
 
@@ -1532,9 +1631,9 @@ export default function CRMContainer({
         preFilteredLeads = rawLeads.filter(l => l.our_company === adminCompanyFilter);
       }
     } else {
-      // Regular Agents only see their assigned company's leads
+      // Regular Agents only see their assigned company's leads OR leads assigned directly to them
       if (userCompany) {
-         preFilteredLeads = rawLeads.filter(l => l.our_company === userCompany);
+         preFilteredLeads = rawLeads.filter(l => l.our_company === userCompany || (userId && l.assigned_to === userId));
       }
     }
     
@@ -1580,12 +1679,15 @@ export default function CRMContainer({
 
     setRawLeads(prevRaw => {
       const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
-      const next = prevRaw.map(l => {
+      const existingIds = new Set(prevRaw.map(l => l.id));
+      const brandNew = leadsArray.filter(l => l && l.id && !existingIds.has(l.id));
+      const updatedExisting = prevRaw.map(l => {
         if (updatedMap.has(l.id)) {
           return { ...l, ...updatedMap.get(l.id) };
         }
         return l;
       });
+      const next = brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
       // Synchronize in-memory changes to IndexedDB so page reload preserves recent updates
       debouncedSaveLeadsLocally(next);
       return next;
@@ -1593,12 +1695,15 @@ export default function CRMContainer({
 
     setLeads(prevLeads => {
       const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
-      return prevLeads.map(l => {
+      const existingIds = new Set(prevLeads.map(l => l.id));
+      const brandNew = leadsArray.filter(l => l && l.id && !existingIds.has(l.id));
+      const updatedExisting = prevLeads.map(l => {
         if (updatedMap.has(l.id)) {
           return { ...l, ...updatedMap.get(l.id) };
         }
         return l;
       });
+      return brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
     });
   };
 
@@ -5030,7 +5135,7 @@ export default function CRMContainer({
             </div>
 
             {/* Global Offline Mode Status & Sync Center Pill */}
-            <OfflineSyncCenter onSyncComplete={() => fetchLeads()} />
+            <OfflineSyncCenter onSyncComplete={() => loadLeadsRef.current && loadLeadsRef.current(false)} />
 
             {/* Live Session Inactivity Expiry Countdown & Mouse Tracker (Desktop) */}
             <div className="desktop-only">
@@ -5624,7 +5729,12 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <ClientRegistration 
-                    onRegistrationSuccess={() => handleTabChange('report')} 
+                    onRegistrationSuccess={(newLeads) => {
+                      if (newLeads) {
+                        handleLeadsChange(newLeads);
+                      }
+                      handleTabChange('report');
+                    }} 
                     canWrite={canWrite} 
                     teamMembers={teamMembers}
                   />

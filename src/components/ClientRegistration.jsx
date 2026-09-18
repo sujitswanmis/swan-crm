@@ -9,7 +9,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
-import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally } from '@/utils/offlineSync';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -988,7 +988,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             }
             if (insertError) throw insertError;
             
-            // Log initial history
+            let finalNewLeadObj = null;
             if (insertedData && insertedData.length > 0) {
               const newLead = insertedData[0];
               // Get the total count of leads to calculate the stable 15-digit Lead ID
@@ -1001,19 +1001,31 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               // Save the persistent ID back to the database
               await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', newLead.id);
               
-              await supabase.from('lead_notes').insert([{
+              const regNote = {
                 lead_id: newLead.id,
                 note_text: 'Client Registration Form Submitted',
-                created_by: actor
-              }]);
+                created_by: actor,
+                created_at: new Date().toISOString()
+              };
+              await supabase.from('lead_notes').insert([regNote]);
               
               try {
                 await logAuditAction('Create Lead', `Created New Lead: ${cleanPayload.company || cleanPayload.name || 'Unknown'}`);
               } catch(e) { console.error('Audit Log failed', e); }
+
+              finalNewLeadObj = {
+                ...newLead,
+                lead_ref_id: newFormattedId,
+                lead_notes: [regNote]
+              };
+              await upsertLeadsLocally([finalNewLeadObj]);
             }
             
             alert('Client Registered Successfully!');
-            if (onRegistrationSuccess) onRegistrationSuccess();
+            if (onRegistrationSuccess) onRegistrationSuccess(finalNewLeadObj);
+            if (finalNewLeadObj) {
+              window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [finalNewLeadObj] }));
+            }
           } catch (netErr) {
             console.error('Lead insert error:', netErr);
             const isRealOffline = (typeof navigator !== 'undefined' && !navigator.onLine) ||
@@ -1558,10 +1570,14 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
     setIsSubmitting(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = normalizeEmployeeName(user?.email?.split('@')[0] || 'Admin', teamMembers);
+
       // 1. Fetch current lead count once to generate incremental lead_ref_ids cleanly beforehand
       const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
       let currentSeq = count || 0;
 
+      const allInsertedLeads = [];
       const chunkSize = 200;
       for (let i = 0; i < filteredImportData.length; i += chunkSize) {
         const chunk = filteredImportData.slice(i, i + chunkSize);
@@ -1586,6 +1602,9 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             copy.assigned_to = null;
           }
 
+          if (!copy.entry_by) copy.entry_by = actor;
+          if (!copy.created_by) copy.created_by = actor;
+
           // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
           Object.keys(copy).forEach(k => {
             if (copy[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to')) {
@@ -1596,19 +1615,44 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           return sanitizeLeadPayloadForDb(copy, false);
         });
 
-        const { error } = await supabase.from('leads').insert(cleanChunk);
+        const { data: insertedRows, error } = await supabase.from('leads').insert(cleanChunk).select();
         if (error) {
           console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
           throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
+        }
+        if (Array.isArray(insertedRows) && insertedRows.length > 0) {
+          allInsertedLeads.push(...insertedRows);
         }
 
         // Brief yield to avoid blocking the main thread
         await new Promise(resolve => setTimeout(resolve, 30));
       }
 
+      // 2. Immediately upsert all inserted leads to local IndexedDB
+      if (allInsertedLeads.length > 0) {
+        await upsertLeadsLocally(allInsertedLeads);
+
+        // Batch insert registration notes in background for audit & delta sync tracking
+        try {
+          const notes = allInsertedLeads.map(l => ({
+            lead_id: l.id,
+            note_text: 'Client Registered via Bulk Import' + (l.assigned_to ? ` (Assigned to ${normalizeEmployeeName(l.assigned_to, teamMembers)})` : ''),
+            created_by: actor
+          }));
+          for (let j = 0; j < notes.length; j += 200) {
+            await supabase.from('lead_notes').insert(notes.slice(j, j + 200));
+          }
+        } catch (noteErr) {
+          console.warn("Failed to create bulk import notes:", noteErr);
+        }
+      }
+
       alert(`Successfully uploaded ${filteredImportData.length} new clients!\n${duplicatesCount > 0 ? `(${duplicatesCount} duplicates were safely skipped)` : ''}`);
       setShowImporter(false);
-      if (onRegistrationSuccess) onRegistrationSuccess();
+      if (onRegistrationSuccess) onRegistrationSuccess(allInsertedLeads);
+      if (allInsertedLeads.length > 0) {
+        window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: allInsertedLeads }));
+      }
     } catch (err) {
       console.error(err);
       alert('Error uploading file: ' + err.message);

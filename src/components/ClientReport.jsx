@@ -11,6 +11,7 @@ import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, norma
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { upsertLeadsLocally } from '@/utils/offlineSync';
 
 export const EDITABLE_COLUMNS = [
   { key: 'state_name', label: 'State' },
@@ -1401,6 +1402,19 @@ export default function ClientReport({
           .update({ assigned_to: selectedAssignee })
           .in('id', chunk);
         if (error) throw error;
+
+        // Insert assignment audit notes into lead_notes
+        try {
+          const notes = chunk.map(leadId => ({
+            lead_id: leadId,
+            note_text: `Assigned to ${assigneeName} by ${userName || 'Admin'}`,
+            created_by: userName || 'Admin'
+          }));
+          await supabase.from('lead_notes').insert(notes);
+        } catch (noteErr) {
+          console.warn("Failed to insert assignment notes:", noteErr);
+        }
+
         // Yield briefly to event loop to keep the UI responsive
         await new Promise(r => setTimeout(r, 20));
       }
@@ -1428,6 +1442,11 @@ export default function ClientReport({
         onLeadsChange(updatedLeadsList);
       }
 
+      // Upsert locally to IndexedDB immediately so reload preserves the changes
+      if (updatedLeadsList.length > 0) {
+        upsertLeadsLocally(updatedLeadsList);
+      }
+
       setSelectedRows([]);
       setSelectedAssignee('');
       alert(`Successfully assigned ${selectedRows.length} leads to ${assigneeName}!`);
@@ -1453,6 +1472,7 @@ export default function ClientReport({
       return updated;
     }));
     if (onLeadsChange && updatedList.length > 0) onLeadsChange(updatedList);
+    if (updatedList.length > 0) upsertLeadsLocally(updatedList);
   };
 
   const toggleRowSelection = (id) => {
