@@ -44,7 +44,7 @@ export async function GET(req) {
     let isEnded = session.status === 'ended' || session.status === 'failed';
 
     // 45s Hard Cutoff: Prevent ghost ringing from ever surviving telecom timeout
-    if (!isConnected && !isEnded && ['initiated', 'ringing', 'customer_ringing'].includes(session.status)) {
+    if (!isConnected && !isEnded && ['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(session.status)) {
       const ageMs = Date.now() - new Date(session.created_at || session.start_time).getTime();
       if (ageMs > 45000) {
         isEnded = true;

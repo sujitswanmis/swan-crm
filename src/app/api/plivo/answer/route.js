@@ -40,7 +40,7 @@ export async function POST(req) {
           process.env.SUPABASE_SERVICE_ROLE_KEY
         );
         const updatePayload = {
-          status: 'customer_ringing',
+          status: 'agent_answered',
           agent_answer_time: new Date().toISOString()
         };
         if (callUuid) {

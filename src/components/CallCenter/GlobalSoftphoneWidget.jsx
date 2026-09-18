@@ -65,7 +65,7 @@ class IndianRingbackController {
       }
 
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       const schedule = () => {
@@ -238,6 +238,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const plivoClientRef = useRef(null);
   const nodeRef = useRef(null);
   const activeSessionRef = useRef(null);
+  const optimisticCallRef = useRef(null);
   const agentDataRef = useRef(null);
   const announcementTimerRef = useRef(null);
   const handleSessionTerminationAnnouncementRef = useRef(null);
@@ -247,18 +248,26 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [activeSession]);
 
   useEffect(() => {
+    optimisticCallRef.current = optimisticCall;
+  }, [optimisticCall]);
+
+  useEffect(() => {
     agentDataRef.current = agentData;
   }, [agentData]);
 
   const startRingingAudio = useCallback((roomName) => {
-    const target = roomName || activeSessionRef.current?.room_name || optimisticCall?.roomName;
+    // Only ring if we are in browser_webrtc mode (mobile/external devices ring themselves)
+    const mode = optimisticCallRef.current?.callingMode || activeSessionRef.current?.calling_mode || callingMode;
+    if (mode && mode !== 'browser_webrtc') return;
+
+    const target = roomName || activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
     globalRingController.start(target);
-  }, [optimisticCall?.roomName]);
+  }, [callingMode]);
 
   const stopRingingAudio = useCallback((roomName) => {
-    const target = roomName || activeSessionRef.current?.room_name || optimisticCall?.roomName;
+    const target = roomName || activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
     globalRingController.stop(target);
-  }, [optimisticCall?.roomName]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -295,7 +304,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [stopRingingAudio]);
 
   const hangupCall = useCallback(async () => {
-    const currentRoom = activeSessionRef.current?.room_name || optimisticCall?.roomName;
+    const currentRoom = activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
     const currentAgentId = agentDataRef.current?.id;
 
     // Stop ringback audio immediately
@@ -305,6 +314,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setActiveCall(null);
     setActiveSession(null);
     setOptimisticCall(null);
+    optimisticCallRef.current = null;
     setIncomingCall(null);
     setCallDuration(0);
 
@@ -343,7 +353,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         window.dispatchEvent(new CustomEvent('crm:call-ended', { detail: { roomName: currentRoom } }));
       }, 700);
     }
-  }, [stopRingingAudio, optimisticCall?.roomName]);
+  }, [stopRingingAudio]);
 
   const updateActiveSession = useCallback((newSession) => {
     if (newSession && (newSession.status === 'connected' || newSession.customer_answer_time)) {
@@ -359,7 +369,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
           try { plivoClientRef.current.hangup(); } catch (e) {}
         }
         setActiveCall(null);
-        setOptimisticCall(null);
+        if (!optimisticCallRef.current || (Date.now() - (optimisticCallRef.current.startTime || 0) > 25000)) {
+          setOptimisticCall(null);
+        }
         setCallDuration(0);
         stopRingingAudio();
         if (typeof window !== 'undefined') {
@@ -612,7 +624,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const fetchSession = useCallback(async () => {
     if (!agentData) return;
     try {
-      const activeRoom = activeSessionRef.current?.room_name || optimisticCall?.roomName;
+      const activeRoom = activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
       let url = `/api/plivo/session-status?agent_id=${agentData.id}`;
       if (activeRoom) {
         url += `&room=${encodeURIComponent(activeRoom)}`;
@@ -625,34 +637,45 @@ export default function GlobalSoftphoneWidget({ userId }) {
         const s = statusData.activeSession;
         if (statusData.isConnected || statusData.customerAnswered || s.status === 'connected' || s.customer_answer_time) {
           stopRingingAudio(s.room_name);
-        } else if (s.status === 'customer_ringing' || s.status === 'ringing') {
+        } else if (s.status === 'customer_ringing') {
           if (!s.customer_answer_time) {
             startRingingAudio(s.room_name);
           }
+        } else {
+          stopRingingAudio(s.room_name);
         }
         setOptimisticCall(null);
         updateActiveSession(s);
       } else if (statusData?.isEnded) {
-        // Prevent stale ended sessions from wiping out a fresh (< 15s) optimistic call
-        const isFreshOptimistic = optimisticCall && (Date.now() - (optimisticCall.startTime || 0) < 15000);
+        // Prevent stale ended sessions from wiping out a fresh (< 25s) optimistic call
+        const isFreshOptimistic = optimisticCallRef.current && (Date.now() - (optimisticCallRef.current.startTime || 0) < 25000);
         if (!isFreshOptimistic || (statusData.activeSession?.room_name === activeRoom)) {
           stopRingingAudio(activeRoom);
           const prev = activeSessionRef.current;
-          if (prev) {
+          if (prev && (!statusData.activeSession || statusData.activeSession.id === prev.id)) {
             handleSessionTerminationAnnouncement(statusData.activeSession || prev);
           }
           updateActiveSession(null);
           setOptimisticCall(null);
         }
       } else {
-        // Only run getRecentCalls fallback if we were actively recovering an ongoing session
-        if (activeSessionRef.current || optimisticCall) {
+        // statusData is { activeSession: null }
+        // CRITICAL ZERO-FLICKER GUARD:
+        // When start-call is in-flight (< 25s), sessionData is null on the server until Plivo responds.
+        // NEVER clear optimisticCall or revert to dialpad here!
+        const isFreshOptimistic = optimisticCallRef.current && (Date.now() - (optimisticCallRef.current.startTime || 0) < 25000);
+        if (isFreshOptimistic) {
+          return;
+        }
+
+        // Only run getRecentCalls fallback if we previously had an active session that we might have lost track of
+        if (activeSessionRef.current) {
           const { data } = await getRecentCalls(agentData.id);
           if (data) {
             const active = data.find(c => {
               const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
               const ageInMs = Date.now() - new Date(c.created_at).getTime();
-              if (['initiated', 'ringing', 'customer_ringing'].includes(c.status) && ageInMs > 45000) return false;
+              if (['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(c.status) && ageInMs > 45000) return false;
               const isRecent = ageInMs < 1000 * 60 * 10;
               return isStatusActive && isRecent;
             });
@@ -660,10 +683,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
             if (active) {
               if (active.status === 'connected' || active.customer_answer_time) {
                 stopRingingAudio(active.room_name);
-              } else if (active.status === 'customer_ringing' || active.status === 'ringing') {
+              } else if (active.status === 'customer_ringing') {
                 if (!active.customer_answer_time) {
                   startRingingAudio(active.room_name);
                 }
+              } else {
+                stopRingingAudio(active.room_name);
               }
               setOptimisticCall(null);
               updateActiveSession(active);
@@ -675,24 +700,17 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
                   handleSessionTerminationAnnouncement(latest);
                 }
+                updateActiveSession(null);
+                setOptimisticCall(null);
               }
-              updateActiveSession(null);
-              setOptimisticCall(null);
             }
-          }
-        } else {
-          const prev = activeSessionRef.current;
-          if (prev) {
-            stopRingingAudio(prev.room_name);
-            updateActiveSession(null);
-            setOptimisticCall(null);
           }
         }
       }
     } catch (err) {
       console.error('Error fetching softphone session:', err);
     }
-  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement, optimisticCall?.roomName]);
+  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
 
   // Dynamic Polling: 1000ms during active call/ringing, 60s background fallback when idle (Realtime handles instant pickup)
   useEffect(() => {
@@ -733,20 +751,25 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (isStatusActive && isRecent) {
           if (updated.status === 'connected' || updated.customer_answer_time) {
             stopRingingAudio();
-          } else if (updated.status === 'customer_ringing' || updated.status === 'ringing') {
-            startRingingAudio();
+          } else if (updated.status === 'customer_ringing') {
+            startRingingAudio(updated.room_name);
+          } else {
+            stopRingingAudio();
           }
           setOptimisticCall(null);
           updateActiveSession(updated);
         } else {
-          // Terminal session state: trigger announcement
+          // Terminal session state: trigger announcement ONLY if it belongs to our session or room
           const prevSession = activeSessionRef.current;
-          if (prevSession && prevSession.id === updated.id) {
+          const currentOptimistic = optimisticCallRef.current;
+          const isOurSession = (prevSession && prevSession.id === updated.id) ||
+                               (currentOptimistic && updated.room_name === currentOptimistic.roomName);
+          if (isOurSession) {
             stopRingingAudio();
             handleSessionTerminationAnnouncement(updated);
+            updateActiveSession(null);
+            setOptimisticCall(null);
           }
-          updateActiveSession(null);
-          setOptimisticCall(null);
         }
       })
       .subscribe();
@@ -1050,17 +1073,19 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
     const clientRoomName = `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-    // 1. Set immediate optimistic UI state! (0 ms latency)
-    setOptimisticCall({
+    // 1. Set immediate optimistic UI state! (0 ms latency, completely steady)
+    const optimisticState = {
       roomName: clientRoomName,
       customerNumber: display10Digit,
       callingMode,
       status: 'initiating',
       startTime: Date.now()
-    });
+    };
+    setOptimisticCall(optimisticState);
+    optimisticCallRef.current = optimisticState;
 
-    // 2. Start authentic Indian telephone ringing audio loop immediately
-    startRingingAudio(clientRoomName);
+    // DO NOT start ringing tone here. Customer has not rung yet.
+    // Ringing will only start when telecom network confirms customer_ringing.
 
     // Set flag so onIncomingCall knows this is our outbound call
     localStorage.setItem('pendingOutboundCall', 'true');
@@ -1081,17 +1106,21 @@ export default function GlobalSoftphoneWidget({ userId }) {
       if (result.error) {
         stopRingingAudio(clientRoomName);
         setOptimisticCall(null);
+        optimisticCallRef.current = null;
         alert("Call Error: " + result.error);
       } else {
         if (!directNumber) setCustomerNumber('');
         // Instantly adopt session if returned!
         if (result.session) {
           updateActiveSession(result.session);
+          setOptimisticCall(null);
+          optimisticCallRef.current = null;
         }
       }
     } catch (err) {
       stopRingingAudio(clientRoomName);
       setOptimisticCall(null);
+      optimisticCallRef.current = null;
       alert("Failed to start call");
     }
   };
@@ -1491,7 +1520,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                   ? 'Call Connected'
                   : (activeSession?.status === 'customer_ringing'
                       ? 'Ringing Customer...'
-                      : (optimisticCall ? 'Connecting to Line...' : 'Ringing Customer...'))}
+                      : (optimisticCall || activeSession?.status === 'initiated' || activeSession?.status === 'agent_answered' ? 'Connecting to Line...' : 'Ringing Customer...'))}
               </div>
 
               {/* Target Number */}

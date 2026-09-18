@@ -40,7 +40,7 @@ export default function CallCenterModule({ userId }) {
     if (data) {
       setRecentCalls(data);
       // Check if there is an active session
-      const active = data.find(c => ['initiated', 'ringing', 'agent_answered', 'connected'].includes(c.status));
+      const active = data.find(c => ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status));
       setActiveSession(active || null);
     }
   };
