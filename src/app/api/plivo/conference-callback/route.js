@@ -54,9 +54,14 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
     // removed to avoid duplicate/overlapping audio.
 
     // Dial customer with ring/hangup callbacks and explicit ring timeout.
-    // SDK verified params: hangupUrl, hangupMethod, ringTimeout (call.js lines 704, 705, 718)
     try {
-      console.log(`Dialing customer: from=${fromNumber}, to=${customerNumber}, room=${roomName}`);
+      let cleanCustomer = String(customerNumber).trim().replace(/[^\d+]/g, '');
+      if (!cleanCustomer.startsWith('+')) {
+        const digits = cleanCustomer.replace(/\D/g, '').slice(-10);
+        cleanCustomer = `+91${digits}`;
+      }
+
+      console.log(`Dialing customer: from=${fromNumber}, to=${cleanCustomer}, room=${roomName}`);
 
       // Guard: check if customer call already exists for this session
       const { data: existingSession } = await adminClient
@@ -75,7 +80,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         const ringCallbackUrl = `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`;
         const dialResponse = await client.calls.create(
           fromNumber,
-          customerNumber,
+          cleanCustomer,
           `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
           {
             answerMethod: 'POST',

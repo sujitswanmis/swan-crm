@@ -120,7 +120,7 @@ export async function POST(req) {
 
       if (currentSession?.conference_name) {
         console.log(`dial-action: session ${session.room_name} is conferenced, skipping dial termination`);
-        return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', {
           status: 200,
           headers: { 'Content-Type': 'application/xml' }
         });

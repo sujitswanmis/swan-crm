@@ -28,65 +28,13 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // 1. Fetch active call session to get call UUIDs
-    const { data: session } = await adminClient
-      .from('call_sessions')
-      .select('*')
-      .eq('room_name', roomName)
-      .maybeSingle();
+    // Tag session with conference_name
+    await adminClient.from('call_sessions').update({
+      conference_name: roomName
+    }).eq('room_name', roomName);
 
-    // 2. If the current call was in standard 2-party <Dial> mode and not yet conferenced,
-    // seamlessly transfer both legs (agent A-leg and customer B-leg) into <Conference>!
-    if (session?.agent_call_uuid && session.status !== 'ended' && !session.conference_name) {
-      // Mark session as conferenced BEFORE calling transfer so dial-action does not terminate the call
-      await adminClient.from('call_sessions').update({
-        conference_name: roomName
-      }).eq('id', session.id);
-
-      const confAgentUrl = `${appBaseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=agent_conf`;
-      const confCustUrl = `${appBaseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=customer_conf`;
-
-      try {
-        await client.calls.transfer(session.agent_call_uuid, {
-          legs: 'both',
-          aleg_url: confAgentUrl,
-          alegUrl: confAgentUrl,
-          aleg_method: 'POST',
-          alegMethod: 'POST',
-          bleg_url: confCustUrl,
-          blegUrl: confCustUrl,
-          bleg_method: 'POST',
-          blegMethod: 'POST'
-        });
-        console.log(`Successfully transferred both call legs for room ${roomName} to conference`);
-      } catch (transferErr) {
-        console.warn('Transfer both legs failed, falling back to individual leg transfers:', transferErr?.message || transferErr);
-        try {
-          await client.calls.transfer(session.agent_call_uuid, {
-            legs: 'aleg',
-            aleg_url: confAgentUrl,
-            alegUrl: confAgentUrl,
-            aleg_method: 'POST',
-            alegMethod: 'POST'
-          });
-        } catch (_e1) {}
-
-        if (session.customer_call_uuid) {
-          try {
-            await client.calls.transfer(session.customer_call_uuid, {
-              legs: 'aleg',
-              aleg_url: confCustUrl,
-              alegUrl: confCustUrl,
-              aleg_method: 'POST',
-              alegMethod: 'POST'
-            });
-          } catch (_e2) {}
-        }
-      }
-    }
-
-    // 3. Dial the 2nd participant and route them into the SAME conference
-    // We pass role=guest so that endConferenceOnExit is false
+    // Dial the new participant and route them into the SAME conference
+    // We pass role=guest so that startConferenceOnEnter is true and endConferenceOnExit is false
     const response = await client.calls.create(
       fromNumber,
       dialNumber,
