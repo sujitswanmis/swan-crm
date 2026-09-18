@@ -1422,27 +1422,6 @@ export default function PartyMasterModule({
         </div>
       </div>
 
-      {/* Active Partner Context Info (When a partner is being configured) */}
-      {activePartyId && (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.65rem 1rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ fontSize: '0.82rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>Configuring Channel Partner:</span>
-            <strong style={{ color: '#fff', fontSize: '0.95rem' }}>{wizardParty?.firm_name || 'Selected Partner'}</strong>
-            <span style={{ padding: '0.12rem 0.45rem', borderRadius: '4px', background: 'rgba(59,130,246,0.2)', color: '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
-              {wizardParty?.party_type || 'Party'}
-            </span>
-          </div>
-          <button 
-            type="button"
-            onClick={() => { setActivePartyId(null); setWizardParty(null); }} 
-            className="btn-action-secondary" 
-            style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', fontWeight: 600 }}
-          >
-            Clear Selection
-          </button>
-        </div>
-      )}
-
       {/* ========================================================= */}
       {/* SUBMENU TAB S00: TRANSFERED TO PARTY MASTER (FROM STAGE 07) */}
       {/* ========================================================= */}
@@ -1605,89 +1584,6 @@ export default function PartyMasterModule({
       )}
 
       {/* ========================================================= */}
-      {/* SHARED PARTNER CONTEXT & GATEKEEPER BANNER FOR S01 TO S08 */}
-      {/* ========================================================= */}
-      {['s01', 's02', 's03', 's04', 's05', 's06', 's07', 's08'].includes(activeTab) && (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <div>
-                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Active Channel Partner:</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
-                  <select
-                    value={activePartyId || ''}
-                    onChange={e => {
-                      const selId = e.target.value;
-                      if (!selId) {
-                        startNewPartyWizard();
-                      } else {
-                        const p = parties.find(x => x.id === selId);
-                        if (p) {
-                          resumeWizard(p, activeTab);
-                          setIsStageModalOpen(true);
-                        }
-                      }
-                    }}
-                    style={{
-                      padding: '0.5rem 0.8rem',
-                      background: 'var(--bg-primary)',
-                      border: '1.5px solid var(--border-light)',
-                      borderRadius: '8px',
-                      color: 'var(--text-primary)',
-                      fontWeight: 700,
-                      fontSize: '0.88rem',
-                      minWidth: '260px'
-                    }}
-                  >
-                    <option value="">-- + Onboard New Partner (Draft) --</option>
-                    {parties.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.firm_name} ({p.party_type} • {p.final_status || 'Draft'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {activePartyId && wizardParty && (
-                <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 800, padding: '0.25rem 0.6rem', borderRadius: '6px', background: 'rgba(59,130,246,0.2)', color: '#60a5fa' }}>
-                    {wizardParty.party_universal_code || wizardParty.party_type}
-                  </span>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '6px', background: wizardParty.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)', color: wizardParty.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#34d399' : '#fbbf24' }}>
-                    {wizardParty.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '🏢 Direct Company' : '👑 Distributor Billed'}
-                  </span>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '6px', background: wizardParty.final_status === 'Active' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: wizardParty.final_status === 'Active' ? '#34d399' : '#f87171' }}>
-                    Status: {wizardParty.final_status || 'Draft'}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={startNewPartyWizard}
-              style={{
-                padding: '0.5rem 1rem',
-                background: 'rgba(16,185,129,0.15)',
-                border: '1px solid #10b981',
-                color: '#34d399',
-                fontWeight: 700,
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '0.82rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}
-            >
-              <Plus size={15} /> + New Partner
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
       {/* SUBMENU TABS S01 TO S08: STAGE DATA TABLES */}
       {/* ========================================================= */}
       {activeTab === 's01' && (
@@ -1784,7 +1680,11 @@ export default function PartyMasterModule({
       <StageConfigModal
         isOpen={isStageModalOpen}
         activeTab={activeTab}
-        onClose={() => setIsStageModalOpen(false)}
+        onClose={() => {
+          setIsStageModalOpen(false);
+          setActivePartyId(null);
+          setWizardParty(null);
+        }}
         onSwitchTab={(tab) => {
           switchTab(tab, true);
           setIsStageModalOpen(true);
