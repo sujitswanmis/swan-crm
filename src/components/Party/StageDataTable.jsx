@@ -157,8 +157,14 @@ export default function StageDataTable({
       const code = (p.party_universal_code || '').toLowerCase();
       const firm = (p.firm_name || '').toLowerCase();
       const legal = (p.legal_name || '').toLowerCase();
-      const phone = (p.primary_mobile || p.biz_contact_no_1 || p.contact_mobile_1_1 || '').toLowerCase();
-      const contactPerson = (p.contact_person_name_1 || p.owner_name || p.contact_person || '').toLowerCase();
+      const phone = [
+        p.primary_mobile, p.biz_contact_no_1, p.biz_contact_no_2,
+        p.contact_mobile_1_1, p.contact_mobile_2_1, p.contact_mobile_3_1
+      ].filter(Boolean).join(' ').toLowerCase();
+      const contactPerson = [
+        p.contact_person_name_1, p.contact_person_name_2, p.contact_person_name_3,
+        p.owner_name, p.contact_person
+      ].filter(Boolean).join(' ').toLowerCase();
       const district = (p.district_name || '').toLowerCase();
       const state = (p.state_name || '').toLowerCase();
       const gstin = (p.gstin || '').toLowerCase();

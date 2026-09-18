@@ -231,9 +231,9 @@ export default function PartyMasterModule({
   const [wizardStep, setWizardStep] = useState('S00'); // 'S00' | 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07'
   const [activePartyId, setActivePartyId] = useState(null);
   const [wizardParty, setWizardParty] = useState(null);
-  const [s00ContactTab, setS00ContactTab] = useState('biz'); // 'biz' | 'person1' | 'person2'
+  const [s00ContactTab, setS00ContactTab] = useState('biz'); // 'biz' | 'person1' | 'person2' | 'person3'
 
-  // S00 Form State (With All 22 Specific Contact Fields)
+  // S00 Form State (With All Specific Contact Fields)
   const [s00Form, setS00Form] = useState({
     party_type: 'Dealer',
     firm_name: '',
@@ -250,7 +250,7 @@ export default function PartyMasterModule({
     pincode: '',
     order_category: 'Rotavator',
     
-    // Business Contacts
+    // Official Business Contacts
     biz_contact_no_1: '',
     biz_contact_no_2: '',
     biz_alt_no_1: '',
@@ -276,7 +276,17 @@ export default function PartyMasterModule({
     contact_alt_mobile_2_1: '',
     contact_alt_mobile_2_2: '',
     contact_email_2_2: '',
-    contact_alt_email_2_1: ''
+    contact_alt_email_2_1: '',
+
+    // Contact Person 3
+    contact_person_name_3: '',
+    contact_mobile_3_1: '',
+    contact_mobile_3_2: '',
+    contact_alt_mobile_3_1: '',
+    contact_alt_mobile_3_2: '',
+    contact_email_3_1: '',
+    contact_email_3_2: '',
+    contact_alt_email_3_1: ''
   });
 
   // Step Data States (Territory Coverage exclusively moved to S05)
@@ -588,7 +598,15 @@ export default function PartyMasterModule({
       contact_alt_mobile_2_1: '',
       contact_alt_mobile_2_2: '',
       contact_email_2_2: '',
-      contact_alt_email_2_1: ''
+      contact_alt_email_2_1: '',
+      contact_person_name_3: '',
+      contact_mobile_3_1: '',
+      contact_mobile_3_2: '',
+      contact_alt_mobile_3_1: '',
+      contact_alt_mobile_3_2: '',
+      contact_email_3_1: '',
+      contact_email_3_2: '',
+      contact_alt_email_3_1: ''
     });
     setS06ProductCategory('Both');
     setS05SelectedProducts(['ROTAVATOR', 'SPARE_PARTS']);
@@ -639,28 +657,36 @@ export default function PartyMasterModule({
       city_village: party.city_village || lead.city_name || lead.city || '',
       pincode: party.pincode || lead.pin_code || lead.pincode || '',
       order_category: party.order_category || lead.requirement || 'Rotavator',
-      biz_contact_no_1: party.biz_contact_no_1 || party.primary_mobile || lead.business_contact_1 || lead.phone || '',
-      biz_contact_no_2: party.biz_contact_no_2 || lead.business_contact_2 || '',
-      biz_alt_no_1: party.biz_alt_no_1 || lead.business_alt_1 || '',
-      biz_alt_no_2: party.biz_alt_no_2 || lead.business_alt_2 || '',
-      biz_email_1: party.biz_email_1 || party.official_email || lead.business_email_1 || lead.email || '',
-      biz_email_2: party.biz_email_2 || lead.business_email_2 || '',
-      biz_alt_email_1: party.biz_alt_email_1 || lead.business_alt_email_1 || '',
-      biz_alt_email_2: party.biz_alt_email_2 || lead.business_alt_email_2 || '',
-      contact_person_name_1: party.contact_person_name_1 || party.contact_person || party.owner_name || lead.name || lead.cp1_name || '',
-      contact_mobile_1_1: party.contact_mobile_1_1 || party.primary_mobile || lead.phone || lead.cp1_mobile_1 || '',
-      contact_mobile_1_2: party.contact_mobile_1_2 || lead.cp1_mobile_2 || '',
-      contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || lead.cp1_alt_1 || '',
-      contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || lead.cp1_alt_2 || '',
-      contact_email_1_2: party.contact_email_1_2 || party.official_email || lead.email || lead.cp1_email_2 || '',
-      contact_alt_email_1_1: party.contact_alt_email_1_1 || lead.cp1_alt_1 || '',
-      contact_person_name_2: party.contact_person_name_2 || lead.cp2_name || '',
-      contact_mobile_2_1: party.contact_mobile_2_1 || lead.cp2_mobile_1 || '',
-      contact_mobile_2_2: party.contact_mobile_2_2 || lead.cp2_mobile_2 || '',
-      contact_alt_mobile_2_1: party.contact_alt_mobile_2_1 || lead.cp2_alt_1 || '',
-      contact_alt_mobile_2_2: party.contact_alt_mobile_2_2 || lead.cp2_alt_2 || '',
-      contact_email_2_2: party.contact_email_2_2 || lead.cp2_email_2 || '',
-      contact_alt_email_2_1: party.contact_alt_email_2_1 || lead.cp2_email_1 || ''
+      biz_contact_no_1: party.biz_contact_no_1 || party.meta?.biz_contact_no_1 || party.primary_mobile || lead.business_contact_1 || lead.phone || '',
+      biz_contact_no_2: party.biz_contact_no_2 || party.meta?.biz_contact_no_2 || lead.business_contact_2 || '',
+      biz_alt_no_1: party.biz_alt_no_1 || party.meta?.biz_alt_no_1 || lead.business_alt_1 || '',
+      biz_alt_no_2: party.biz_alt_no_2 || party.meta?.biz_alt_no_2 || lead.business_alt_2 || '',
+      biz_email_1: party.biz_email_1 || party.meta?.biz_email_1 || party.official_email || lead.business_email_1 || lead.email || '',
+      biz_email_2: party.biz_email_2 || party.meta?.biz_email_2 || lead.business_email_2 || '',
+      biz_alt_email_1: party.biz_alt_email_1 || party.meta?.biz_alt_email_1 || lead.business_alt_email_1 || '',
+      biz_alt_email_2: party.biz_alt_email_2 || party.meta?.biz_alt_email_2 || lead.business_alt_email_2 || '',
+      contact_person_name_1: party.contact_person_name_1 || party.meta?.contact_person_name_1 || party.contact_person || party.owner_name || lead.name || lead.cp1_name || '',
+      contact_mobile_1_1: party.contact_mobile_1_1 || party.meta?.contact_mobile_1_1 || party.primary_mobile || lead.phone || lead.cp1_mobile_1 || '',
+      contact_mobile_1_2: party.contact_mobile_1_2 || party.meta?.contact_mobile_1_2 || lead.cp1_mobile_2 || '',
+      contact_alt_mobile_1_1: party.contact_alt_mobile_1_1 || party.meta?.contact_alt_mobile_1_1 || lead.cp1_alt_1 || '',
+      contact_alt_mobile_1_2: party.contact_alt_mobile_1_2 || party.meta?.contact_alt_mobile_1_2 || lead.cp1_alt_2 || '',
+      contact_email_1_2: party.contact_email_1_2 || party.meta?.contact_email_1_2 || party.official_email || lead.email || lead.cp1_email_2 || '',
+      contact_alt_email_1_1: party.contact_alt_email_1_1 || party.meta?.contact_alt_email_1_1 || lead.cp1_alt_1 || '',
+      contact_person_name_2: party.contact_person_name_2 || party.meta?.contact_person_name_2 || lead.cp2_name || '',
+      contact_mobile_2_1: party.contact_mobile_2_1 || party.meta?.contact_mobile_2_1 || lead.cp2_mobile_1 || '',
+      contact_mobile_2_2: party.contact_mobile_2_2 || party.meta?.contact_mobile_2_2 || lead.cp2_mobile_2 || '',
+      contact_alt_mobile_2_1: party.contact_alt_mobile_2_1 || party.meta?.contact_alt_mobile_2_1 || lead.cp2_alt_1 || '',
+      contact_alt_mobile_2_2: party.contact_alt_mobile_2_2 || party.meta?.contact_alt_mobile_2_2 || lead.cp2_alt_2 || '',
+      contact_email_2_2: party.contact_email_2_2 || party.meta?.contact_email_2_2 || lead.cp2_email_2 || '',
+      contact_alt_email_2_1: party.contact_alt_email_2_1 || party.meta?.contact_alt_email_2_1 || lead.cp2_email_1 || '',
+      contact_person_name_3: party.contact_person_name_3 || party.meta?.contact_person_name_3 || lead.cp3_name || '',
+      contact_mobile_3_1: party.contact_mobile_3_1 || party.meta?.contact_mobile_3_1 || lead.cp3_mobile_1 || '',
+      contact_mobile_3_2: party.contact_mobile_3_2 || party.meta?.contact_mobile_3_2 || lead.cp3_mobile_2 || '',
+      contact_alt_mobile_3_1: party.contact_alt_mobile_3_1 || party.meta?.contact_alt_mobile_3_1 || lead.cp3_alt_1 || '',
+      contact_alt_mobile_3_2: party.contact_alt_mobile_3_2 || party.meta?.contact_alt_mobile_3_2 || lead.cp3_alt_2 || '',
+      contact_email_3_1: party.contact_email_3_1 || party.meta?.contact_email_3_1 || lead.cp3_email_1 || '',
+      contact_email_3_2: party.contact_email_3_2 || party.meta?.contact_email_3_2 || lead.cp3_email_2 || '',
+      contact_alt_email_3_1: party.contact_alt_email_3_1 || party.meta?.contact_alt_email_3_1 || lead.cp3_email_2 || ''
     }));
 
     const commTerms = (party.party_commercial_terms && party.party_commercial_terms[0]) || {};

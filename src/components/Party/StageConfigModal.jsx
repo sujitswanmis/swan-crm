@@ -810,6 +810,22 @@ export default function StageConfigModal({
                     >
                       👥 Contact Person 2 (Secondary / Accounts)
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setS00ContactTab('person3')}
+                      style={{
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        background: s00ContactTab === 'person3' ? '#8b5cf6' : 'var(--bg-surface, #ffffff)',
+                        color: s00ContactTab === 'person3' ? '#ffffff' : 'var(--text-secondary, #475569)'
+                      }}
+                    >
+                      👤 Contact Person 3 (Additional Key Official)
+                    </button>
                   </div>
 
                   {/* TAB A: BUSINESS CONTACTS */}
@@ -928,6 +944,87 @@ export default function StageConfigModal({
                         <div>
                           <label style={labelStyle}>Contact Person Alternate Mail ID 2.1</label>
                           <input type="email" value={s00Form.contact_alt_email_2_1} onChange={e => setS00Form({ ...s00Form, contact_alt_email_2_1: e.target.value })} placeholder="alt.person2@domain.com" style={inputStyle} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB D: CONTACT PERSON 3 */}
+                  {s00ContactTab === 'person3' && (
+                    <div style={{ ...cardStyle, border: '1.5px solid rgba(139, 92, 246, 0.35)' }}>
+                      <div style={{ ...sectionHeaderStyle, color: '#8b5cf6' }}>
+                        Contact Person 3 (Additional Key Official / Field Representative / Alternate)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.84rem' }}>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={labelStyle}>Contact Person Name 3</label>
+                          <input
+                            type="text"
+                            value={s00Form.contact_person_name_3 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_person_name_3: e.target.value })}
+                            placeholder="e.g. Jaspreet Singh"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Person Mobile 3.1</label>
+                          <input
+                            type="text"
+                            value={s00Form.contact_mobile_3_1 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_mobile_3_1: e.target.value })}
+                            placeholder="Additional mobile"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Person Mobile 3.2</label>
+                          <input
+                            type="text"
+                            value={s00Form.contact_mobile_3_2 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_mobile_3_2: e.target.value })}
+                            placeholder="Second mobile"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Alternate Mobile 3.1</label>
+                          <input
+                            type="text"
+                            value={s00Form.contact_alt_mobile_3_1 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_3_1: e.target.value })}
+                            placeholder="Home / Alternate 1"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Alternate Mobile 3.2</label>
+                          <input
+                            type="text"
+                            value={s00Form.contact_alt_mobile_3_2 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_alt_mobile_3_2: e.target.value })}
+                            placeholder="Alternate 2"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Person Mail ID 3.1</label>
+                          <input
+                            type="email"
+                            value={s00Form.contact_email_3_1 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_email_3_1: e.target.value })}
+                            placeholder="person3@domain.com"
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Person Alternate Mail ID 3.2</label>
+                          <input
+                            type="email"
+                            value={s00Form.contact_email_3_2 || s00Form.contact_alt_email_3_1 || ''}
+                            onChange={e => setS00Form({ ...s00Form, contact_email_3_2: e.target.value, contact_alt_email_3_1: e.target.value })}
+                            placeholder="alt.person3@domain.com"
+                            style={inputStyle}
+                          />
                         </div>
                       </div>
                     </div>

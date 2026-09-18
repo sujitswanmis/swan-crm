@@ -176,28 +176,36 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         block_name: item.block_name || lead?.block_name || '',
         city_village: item.city_village || lead?.city_name || lead?.city || '',
         order_category: item.order_category || lead?.requirement || 'Rotavator',
-        biz_contact_no_1: item.biz_contact_no_1 || lead?.business_contact_1 || item.primary_mobile || '',
-        biz_contact_no_2: item.biz_contact_no_2 || lead?.business_contact_2 || '',
-        biz_alt_no_1: item.biz_alt_no_1 || lead?.business_alt_1 || '',
-        biz_alt_no_2: item.biz_alt_no_2 || lead?.business_alt_2 || '',
-        biz_email_1: item.biz_email_1 || lead?.business_email_1 || item.official_email || '',
-        biz_email_2: item.biz_email_2 || lead?.business_email_2 || '',
-        biz_alt_email_1: item.biz_alt_email_1 || lead?.business_alt_email_1 || '',
-        biz_alt_email_2: item.biz_alt_email_2 || lead?.business_alt_email_2 || '',
-        contact_person_name_1: item.contact_person_name_1 || primaryContact?.contact_name || lead?.name || lead?.cp1_name || item.firm_name,
-        contact_mobile_1_1: item.contact_mobile_1_1 || primaryContact?.primary_mobile || lead?.phone || lead?.cp1_mobile_1 || item.primary_mobile,
-        contact_mobile_1_2: item.contact_mobile_1_2 || lead?.cp1_mobile_2 || '',
-        contact_alt_mobile_1_1: item.contact_alt_mobile_1_1 || lead?.cp1_alt_1 || '',
-        contact_alt_mobile_1_2: item.contact_alt_mobile_1_2 || lead?.cp1_alt_2 || '',
-        contact_email_1_2: item.contact_email_1_2 || lead?.cp1_email_2 || lead?.email || '',
-        contact_alt_email_1_1: item.contact_alt_email_1_1 || lead?.cp1_alt_1 || '',
-        contact_person_name_2: item.contact_person_name_2 || lead?.cp2_name || '',
-        contact_mobile_2_1: item.contact_mobile_2_1 || lead?.cp2_mobile_1 || '',
-        contact_mobile_2_2: item.contact_mobile_2_2 || lead?.cp2_mobile_2 || '',
-        contact_alt_mobile_2_1: item.contact_alt_mobile_2_1 || lead?.cp2_alt_1 || '',
-        contact_alt_mobile_2_2: item.contact_alt_mobile_2_2 || lead?.cp2_alt_2 || '',
-        contact_email_2_2: item.contact_email_2_2 || lead?.cp2_email_2 || '',
-        contact_alt_email_2_1: item.contact_alt_email_2_1 || lead?.cp2_email_1 || '',
+        biz_contact_no_1: item.biz_contact_no_1 || meta.biz_contact_no_1 || lead?.business_contact_1 || item.primary_mobile || '',
+        biz_contact_no_2: item.biz_contact_no_2 || meta.biz_contact_no_2 || lead?.business_contact_2 || '',
+        biz_alt_no_1: item.biz_alt_no_1 || meta.biz_alt_no_1 || lead?.business_alt_1 || '',
+        biz_alt_no_2: item.biz_alt_no_2 || meta.biz_alt_no_2 || lead?.business_alt_2 || '',
+        biz_email_1: item.biz_email_1 || meta.biz_email_1 || lead?.business_email_1 || item.official_email || '',
+        biz_email_2: item.biz_email_2 || meta.biz_email_2 || lead?.business_email_2 || '',
+        biz_alt_email_1: item.biz_alt_email_1 || meta.biz_alt_email_1 || lead?.business_alt_email_1 || '',
+        biz_alt_email_2: item.biz_alt_email_2 || meta.biz_alt_email_2 || lead?.business_alt_email_2 || '',
+        contact_person_name_1: item.contact_person_name_1 || meta.contact_person_name_1 || primaryContact?.contact_name || lead?.name || lead?.cp1_name || item.firm_name,
+        contact_mobile_1_1: item.contact_mobile_1_1 || meta.contact_mobile_1_1 || primaryContact?.primary_mobile || lead?.phone || lead?.cp1_mobile_1 || item.primary_mobile,
+        contact_mobile_1_2: item.contact_mobile_1_2 || meta.contact_mobile_1_2 || lead?.cp1_mobile_2 || '',
+        contact_alt_mobile_1_1: item.contact_alt_mobile_1_1 || meta.contact_alt_mobile_1_1 || lead?.cp1_alt_1 || '',
+        contact_alt_mobile_1_2: item.contact_alt_mobile_1_2 || meta.contact_alt_mobile_1_2 || lead?.cp1_alt_2 || '',
+        contact_email_1_2: item.contact_email_1_2 || meta.contact_email_1_2 || lead?.cp1_email_2 || lead?.email || '',
+        contact_alt_email_1_1: item.contact_alt_email_1_1 || meta.contact_alt_email_1_1 || lead?.cp1_alt_1 || '',
+        contact_person_name_2: item.contact_person_name_2 || meta.contact_person_name_2 || lead?.cp2_name || '',
+        contact_mobile_2_1: item.contact_mobile_2_1 || meta.contact_mobile_2_1 || lead?.cp2_mobile_1 || '',
+        contact_mobile_2_2: item.contact_mobile_2_2 || meta.contact_mobile_2_2 || lead?.cp2_mobile_2 || '',
+        contact_alt_mobile_2_1: item.contact_alt_mobile_2_1 || meta.contact_alt_mobile_2_1 || lead?.cp2_alt_1 || '',
+        contact_alt_mobile_2_2: item.contact_alt_mobile_2_2 || meta.contact_alt_mobile_2_2 || lead?.cp2_alt_2 || '',
+        contact_email_2_2: item.contact_email_2_2 || meta.contact_email_2_2 || lead?.cp2_email_2 || '',
+        contact_alt_email_2_1: item.contact_alt_email_2_1 || meta.contact_alt_email_2_1 || lead?.cp2_email_1 || '',
+        contact_person_name_3: item.contact_person_name_3 || meta.contact_person_name_3 || lead?.cp3_name || '',
+        contact_mobile_3_1: item.contact_mobile_3_1 || meta.contact_mobile_3_1 || lead?.cp3_mobile_1 || '',
+        contact_mobile_3_2: item.contact_mobile_3_2 || meta.contact_mobile_3_2 || lead?.cp3_mobile_2 || '',
+        contact_alt_mobile_3_1: item.contact_alt_mobile_3_1 || meta.contact_alt_mobile_3_1 || lead?.cp3_alt_1 || '',
+        contact_alt_mobile_3_2: item.contact_alt_mobile_3_2 || meta.contact_alt_mobile_3_2 || lead?.cp3_alt_2 || '',
+        contact_email_3_1: item.contact_email_3_1 || meta.contact_email_3_1 || lead?.cp3_email_1 || '',
+        contact_email_3_2: item.contact_email_3_2 || meta.contact_email_3_2 || lead?.cp3_email_2 || '',
+        contact_alt_email_3_1: item.contact_alt_email_3_1 || meta.contact_alt_email_3_1 || lead?.cp3_email_2 || '',
         gstin: item.gstin && item.gstin.includes('Error creating party') ? '' : (item.gstin || lead?.business_gst || ''),
         pan: item.pan || lead?.pan || '',
         parent_distributor_id: distId,
@@ -433,6 +441,24 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
     }
   }
 
+  // 6. Save initial metadata (including CP1, CP2, CP3 and official channels)
+  const initialMeta = {};
+  const metaKeys = [
+    'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2', 'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
+    'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2', 'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1',
+    'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
+    'biz_contact_no_1', 'biz_contact_no_2', 'biz_alt_no_1', 'biz_alt_no_2', 'biz_email_1', 'biz_email_2', 'biz_alt_email_1', 'biz_alt_email_2',
+    'state_name', 'district_name', 'tehsil', 'block_name', 'city_village', 'pincode', 'order_category',
+    'parent_distributor_id', 'parent_dealer_id', 'dealership_type', 'showroom_area_sqft', 'billing_route_type'
+  ];
+  metaKeys.forEach(k => {
+    if (cleanPartyData[k] !== undefined && cleanPartyData[k] !== null && cleanPartyData[k] !== '') {
+      initialMeta[k] = cleanPartyData[k];
+    }
+  });
+  initialMeta.stages = { s01: true };
+  await updatePartyMeta(adminClient, party.id, initialMeta);
+
   return party;
 }
 
@@ -650,8 +676,18 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     }
   }
 
-  // 5. Update party metadata (parent links, zone, route, stages)
+  // 5. Update party metadata (parent links, zone, route, contacts, stages)
   const metaUpdates = {};
+  const contactMetaKeys = [
+    'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2', 'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
+    'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2', 'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1',
+    'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
+    'biz_contact_no_1', 'biz_contact_no_2', 'biz_alt_no_1', 'biz_alt_no_2', 'biz_email_1', 'biz_email_2', 'biz_alt_email_1', 'biz_alt_email_2',
+    'state_name', 'district_name', 'tehsil', 'block_name', 'city_village', 'pincode', 'order_category'
+  ];
+  contactMetaKeys.forEach(k => {
+    if (stepData[k] !== undefined) metaUpdates[k] = stepData[k];
+  });
   if (stepData.parent_distributor_id !== undefined) metaUpdates.parent_distributor_id = stepData.parent_distributor_id;
   if (stepData.parent_dealer_id !== undefined) metaUpdates.parent_dealer_id = stepData.parent_dealer_id;
   if (stepData.dealership_type !== undefined) metaUpdates.dealership_type = stepData.dealership_type;
@@ -903,6 +939,36 @@ export async function getParty360Details(partyId) {
     showroom_area_sqft: rawParty.showroom_area_sqft || meta.showroom_area_sqft || 2500,
     billing_route_type: rawParty.billing_route_type || meta.billing_route_type || 'DIRECT_COMPANY_BILLING',
     commercial_status: rawParty.commercial_status || meta.commercial_status || (commercialRes?.data ? 'Completed' : null),
+    contact_person_name_1: rawParty.contact_person_name_1 || meta.contact_person_name_1 || null,
+    contact_mobile_1_1: rawParty.contact_mobile_1_1 || meta.contact_mobile_1_1 || null,
+    contact_mobile_1_2: rawParty.contact_mobile_1_2 || meta.contact_mobile_1_2 || null,
+    contact_alt_mobile_1_1: rawParty.contact_alt_mobile_1_1 || meta.contact_alt_mobile_1_1 || null,
+    contact_alt_mobile_1_2: rawParty.contact_alt_mobile_1_2 || meta.contact_alt_mobile_1_2 || null,
+    contact_email_1_2: rawParty.contact_email_1_2 || meta.contact_email_1_2 || null,
+    contact_alt_email_1_1: rawParty.contact_alt_email_1_1 || meta.contact_alt_email_1_1 || null,
+    contact_person_name_2: rawParty.contact_person_name_2 || meta.contact_person_name_2 || null,
+    contact_mobile_2_1: rawParty.contact_mobile_2_1 || meta.contact_mobile_2_1 || null,
+    contact_mobile_2_2: rawParty.contact_mobile_2_2 || meta.contact_mobile_2_2 || null,
+    contact_alt_mobile_2_1: rawParty.contact_alt_mobile_2_1 || meta.contact_alt_mobile_2_1 || null,
+    contact_alt_mobile_2_2: rawParty.contact_alt_mobile_2_2 || meta.contact_alt_mobile_2_2 || null,
+    contact_email_2_2: rawParty.contact_email_2_2 || meta.contact_email_2_2 || null,
+    contact_alt_email_2_1: rawParty.contact_alt_email_2_1 || meta.contact_alt_email_2_1 || null,
+    contact_person_name_3: rawParty.contact_person_name_3 || meta.contact_person_name_3 || null,
+    contact_mobile_3_1: rawParty.contact_mobile_3_1 || meta.contact_mobile_3_1 || null,
+    contact_mobile_3_2: rawParty.contact_mobile_3_2 || meta.contact_mobile_3_2 || null,
+    contact_alt_mobile_3_1: rawParty.contact_alt_mobile_3_1 || meta.contact_alt_mobile_3_1 || null,
+    contact_alt_mobile_3_2: rawParty.contact_alt_mobile_3_2 || meta.contact_alt_mobile_3_2 || null,
+    contact_email_3_1: rawParty.contact_email_3_1 || meta.contact_email_3_1 || null,
+    contact_email_3_2: rawParty.contact_email_3_2 || meta.contact_email_3_2 || null,
+    contact_alt_email_3_1: rawParty.contact_alt_email_3_1 || meta.contact_alt_email_3_1 || null,
+    biz_contact_no_1: rawParty.biz_contact_no_1 || meta.biz_contact_no_1 || null,
+    biz_contact_no_2: rawParty.biz_contact_no_2 || meta.biz_contact_no_2 || null,
+    biz_alt_no_1: rawParty.biz_alt_no_1 || meta.biz_alt_no_1 || null,
+    biz_alt_no_2: rawParty.biz_alt_no_2 || meta.biz_alt_no_2 || null,
+    biz_email_1: rawParty.biz_email_1 || meta.biz_email_1 || null,
+    biz_email_2: rawParty.biz_email_2 || meta.biz_email_2 || null,
+    biz_alt_email_1: rawParty.biz_alt_email_1 || meta.biz_alt_email_1 || null,
+    biz_alt_email_2: rawParty.biz_alt_email_2 || meta.biz_alt_email_2 || null,
     meta: meta
   } : null;
 

@@ -113,7 +113,17 @@ export async function sendLeadToParty(leadId, userId) {
     contact_alt_mobile_2_1: lead.cp2_alt_1 || null,
     contact_alt_mobile_2_2: lead.cp2_alt_2 || null,
     contact_email_2_2: lead.cp2_email_2 || null,
-    contact_alt_email_2_1: lead.cp2_email_1 || null
+    contact_alt_email_2_1: lead.cp2_email_1 || null,
+
+    // Contact person 3
+    contact_person_name_3: lead.cp3_name || null,
+    contact_mobile_3_1: lead.cp3_mobile_1 || null,
+    contact_mobile_3_2: lead.cp3_mobile_2 || null,
+    contact_alt_mobile_3_1: lead.cp3_alt_1 || null,
+    contact_alt_mobile_3_2: lead.cp3_alt_2 || null,
+    contact_email_3_1: lead.cp3_email_1 || null,
+    contact_email_3_2: lead.cp3_email_2 || null,
+    contact_alt_email_3_1: lead.cp3_email_2 || null
   };
 
   let party;
