@@ -2,31 +2,47 @@
 
 import { getAdminClient } from '@/utils/supabase/adminClient';
 
+const VALID_LEAD_DB_COLUMNS = new Set([
+  'id', 'lead_ref_id', 'lead_date', 'name', 'company', 'our_company',
+  'email', 'phone', 'status', 'priority', 'deal_value', 'source',
+  'source_name', 'assigned_to', 'created_by', 'entry_by', 'created_at',
+  'follow_up_date', 'business_type', 'business_gst', 'business_contact_1',
+  'business_contact_2', 'business_alt_1', 'business_alt_2', 'business_email_1',
+  'business_email_2', 'business_alt_email_1', 'business_alt_email_2',
+  'cp1_name', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2', 'cp1_email_2',
+  'cp2_name', 'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
+  'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
+  'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
+  'district_name', 'city_name', 'tehsil_name', 'block_name', 'pin_code',
+  'address', 'requirement', 'investment', 'buying_timeline'
+]);
+
 /**
  * Strips all non-database / virtual / computed fields before sending to Supabase
+ * Strictly whitelists against real Postgres columns on the 'leads' table
  */
-function cleanLeadPayload(payload) {
+function cleanLeadPayload(payload, isUpdate = false) {
   if (!payload || typeof payload !== 'object') return {};
-  const clean = { ...payload };
+  const input = { ...payload };
 
-  if (clean.next_follow_up_date && !clean.follow_up_date) {
-    clean.follow_up_date = clean.next_follow_up_date;
+  if (input.next_follow_up_date && !input.follow_up_date) {
+    input.follow_up_date = input.next_follow_up_date;
   }
 
-  const forbidden = [
-    'id', 'is_offline_pending', 'queueId', 'lead_formatted_id', 'sr_no',
-    'last_status', 'latest_remark', 'latest_emp_name', 'completion_count',
-    'last_follow_up_duration', 'last_timestamp', 'next_follow_up_date',
-    'lead_notes', 'noteText', 'business_contact_aio', 'business_email_aio',
-    'cp_name_aio', 'cp_mobile_aio', 'cp_email_aio', 'actor', 'userName',
-    'title', 'actionType', 'entityType', 'timestamp', 'retryCount',
-    'updated_at', 'created_at', 'lastError'
-  ];
+  const clean = {};
+  for (const key of Object.keys(input)) {
+    if (VALID_LEAD_DB_COLUMNS.has(key)) {
+      clean[key] = input[key];
+    }
+  }
 
-  forbidden.forEach((f) => delete clean[f]);
+  if (isUpdate) {
+    delete clean.id;
+    delete clean.created_at;
+  }
 
   for (const k in clean) {
-    if (clean[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k === 'assigned_to' || k.endsWith('_id'))) {
+    if (clean[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to' || k.endsWith('_id'))) {
       clean[k] = null;
     }
   }
@@ -50,7 +66,7 @@ export async function forceSyncOfflineItem(item) {
       const actor = item.payload.created_by || item.payload.actor || 'System';
 
       if (item.actionType === 'create') {
-        let payload = cleanLeadPayload(item.payload);
+        let payload = cleanLeadPayload(item.payload, false);
         let inserted = null;
 
         // Dynamic field healing loop: try up to 4 times stripping invalid columns if DB errors
@@ -87,7 +103,7 @@ export async function forceSyncOfflineItem(item) {
           return { success: true, discarded: true };
         }
 
-        let payload = cleanLeadPayload(item.payload);
+        let payload = cleanLeadPayload(item.payload, true);
 
         // Dynamic field healing loop
         for (let attempt = 0; attempt < 4; attempt++) {

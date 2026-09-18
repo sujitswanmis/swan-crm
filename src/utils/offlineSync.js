@@ -652,32 +652,50 @@ export async function removeQueueItem(queueId, syncedData = null) {
 }
 
 /**
- * Strips all non-database / virtual / computed fields before sending to Supabase
+ * Whitelist of verified Supabase Postgres columns for the 'leads' table.
+ * All computed, joined, virtual, or non-schema fields are stripped before database communication.
  */
-export function sanitizeLeadPayloadForDb(payload) {
-  if (!payload || typeof payload !== 'object') return {};
-  const clean = { ...payload };
+export const VALID_LEAD_DB_COLUMNS = new Set([
+  'id', 'lead_ref_id', 'lead_date', 'name', 'company', 'our_company',
+  'email', 'phone', 'status', 'priority', 'deal_value', 'source',
+  'source_name', 'assigned_to', 'created_by', 'entry_by', 'created_at',
+  'follow_up_date', 'business_type', 'business_gst', 'business_contact_1',
+  'business_contact_2', 'business_alt_1', 'business_alt_2', 'business_email_1',
+  'business_email_2', 'business_alt_email_1', 'business_alt_email_2',
+  'cp1_name', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2', 'cp1_email_2',
+  'cp2_name', 'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
+  'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
+  'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
+  'district_name', 'city_name', 'tehsil_name', 'block_name', 'pin_code',
+  'address', 'requirement', 'investment', 'buying_timeline'
+]);
 
-  if (clean.next_follow_up_date && !clean.follow_up_date) {
-    clean.follow_up_date = clean.next_follow_up_date;
+/**
+ * Strips all non-database / virtual / computed fields before sending to Supabase
+ * Strictly whitelists against real Postgres columns on the 'leads' table
+ */
+export function sanitizeLeadPayloadForDb(payload, isUpdate = false) {
+  if (!payload || typeof payload !== 'object') return {};
+  const input = { ...payload };
+
+  if (input.next_follow_up_date && !input.follow_up_date) {
+    input.follow_up_date = input.next_follow_up_date;
   }
 
-  const forbiddenFields = [
-    'id', 'is_offline_pending', 'queueId', 'lead_formatted_id', 'sr_no',
-    'last_status', 'latest_remark', 'latest_emp_name', 'completion_count',
-    'last_follow_up_duration', 'last_timestamp', 'next_follow_up_date',
-    'lead_notes', 'noteText', 'business_contact_aio', 'business_email_aio',
-    'cp_name_aio', 'cp_mobile_aio', 'cp_email_aio', 'actor', 'userName',
-    'title', 'actionType', 'entityType', 'timestamp', 'retryCount',
-    'updated_at', 'created_at', 'lastError'
-  ];
+  const clean = {};
+  for (const key of Object.keys(input)) {
+    if (VALID_LEAD_DB_COLUMNS.has(key)) {
+      clean[key] = input[key];
+    }
+  }
 
-  forbiddenFields.forEach((field) => {
-    delete clean[field];
-  });
+  if (isUpdate) {
+    delete clean.id;
+    delete clean.created_at;
+  }
 
   for (const k in clean) {
-    if (clean[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k === 'assigned_to' || k.endsWith('_id'))) {
+    if (clean[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to' || k.endsWith('_id'))) {
       clean[k] = null;
     }
   }
@@ -709,15 +727,31 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         if (item.actionType === 'create') {
           const noteText = item.payload.noteText || item.payload.remarks;
           const actor = item.payload.created_by || item.payload.actor || 'System';
-          const cleanPayload = sanitizeLeadPayloadForDb(item.payload);
+          const cleanPayload = sanitizeLeadPayloadForDb(item.payload, false);
 
-          const { data: inserted, error } = await supabaseClient
-            .from('leads')
-            .insert([cleanPayload])
-            .select()
-            .single();
-
-          if (error) throw error;
+          let inserted = null;
+          let insertError = null;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const { data, error } = await supabaseClient
+              .from('leads')
+              .insert([cleanPayload])
+              .select()
+              .single();
+            if (!error) {
+              inserted = data;
+              insertError = null;
+              break;
+            }
+            const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
+            if (match && match[1] && cleanPayload[match[1]] !== undefined) {
+              delete cleanPayload[match[1]];
+              insertError = error;
+            } else {
+              insertError = error;
+              break;
+            }
+          }
+          if (insertError) throw insertError;
 
           if (inserted && noteText) {
             try {
@@ -740,15 +774,30 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
 
           const noteText = item.payload.noteText || item.payload.remarks;
           const actor = item.payload.created_by || item.payload.actor || 'System';
-          const cleanPayload = sanitizeLeadPayloadForDb(item.payload);
+          const cleanPayload = sanitizeLeadPayloadForDb(item.payload, true);
 
           if (Object.keys(cleanPayload).length > 0) {
-            const { error } = await supabaseClient
-              .from('leads')
-              .update(cleanPayload)
-              .eq('id', targetId);
-
-            if (error) throw error;
+            let updateError = null;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              if (Object.keys(cleanPayload).length === 0) break;
+              const { error } = await supabaseClient
+                .from('leads')
+                .update(cleanPayload)
+                .eq('id', targetId);
+              if (!error) {
+                updateError = null;
+                break;
+              }
+              const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
+              if (match && match[1] && cleanPayload[match[1]] !== undefined) {
+                delete cleanPayload[match[1]];
+                updateError = error;
+              } else {
+                updateError = error;
+                break;
+              }
+            }
+            if (updateError) throw updateError;
           }
 
           if (noteText) {

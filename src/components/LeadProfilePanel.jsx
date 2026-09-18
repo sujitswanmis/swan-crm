@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
-import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
@@ -1339,7 +1339,8 @@ export default function LeadProfilePanel({
   };
 
   const handleSaveEdit = async () => {
-    const cleanForm = normalizeLeadRecord({ ...editForm });
+    const rawNormalized = normalizeLeadRecord({ ...editForm });
+    const cleanForm = sanitizeLeadPayloadForDb(rawNormalized, true);
     const actor = normalizeEmployeeName(userName || 'System');
 
     if (onLeadUpdate) {
@@ -1348,7 +1349,24 @@ export default function LeadProfilePanel({
     setIsEditing(false);
 
     try {
-      const { error: updateError } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
+      let updateError = null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (Object.keys(cleanForm).length === 0) break;
+        const { error } = await supabase.from('leads').update(cleanForm).eq('id', lead.id);
+        if (!error) {
+          updateError = null;
+          break;
+        }
+        const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && cleanForm[match[1]] !== undefined) {
+          console.warn(`Removing invalid column '${match[1]}' and retrying profile update...`);
+          delete cleanForm[match[1]];
+          updateError = error;
+        } else {
+          updateError = error;
+          break;
+        }
+      }
       if (updateError) throw updateError;
       
       await supabase.from('lead_notes').insert([{
@@ -1361,14 +1379,21 @@ export default function LeadProfilePanel({
       } catch(e) {}
       alert('Lead profile updated successfully!');
     } catch (netErr) {
-      console.warn('Network profile update failed, fallback to offline:', netErr);
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (isOffline) {
+      console.error('Network profile update failed:', netErr);
+      const isRealOffline = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (netErr && (
+          netErr.name === 'TypeError' ||
+          /failed to fetch|network\s*error|load\s*failed/i.test(netErr.message || '')
+        ));
+
+      if (isRealOffline) {
         const check = canPerformOfflineAction('profileEdit');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
-          alert('⚡ Network issue: Profile changes saved to device! They will sync to cloud automatically.');
+          alert('⚡ Offline Mode: Device is offline. Profile changes saved to device storage! They will sync to cloud when connected.');
         }
+      } else {
+        alert(`Failed to update profile: ${netErr.message || 'Database error occurred'}`);
       }
     }
   };
