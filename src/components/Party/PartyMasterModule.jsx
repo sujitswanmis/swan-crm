@@ -785,7 +785,13 @@ export default function PartyMasterModule({
       'R03': 'r03'
     }[step] || 's01';
 
-    switchTab(targetTab || targetSubmenu);
+    if (targetTab) {
+      if (targetTab !== activeTab) {
+        switchTab(targetTab, true);
+      }
+    } else if (!activeTab || activeTab === 's00' || activeTab === 'overview') {
+      switchTab(targetSubmenu, true);
+    }
     setShowWizard(false);
   };
 
@@ -830,18 +836,8 @@ export default function PartyMasterModule({
       }));
 
       setIsStageModalOpen(false);
-
-      // Route to appropriate Tier Step
-      if (s00Form.party_type === 'Distributor') {
-        setWizardStep('S01');
-        switchTab('s02');
-      } else if (s00Form.party_type === 'Dealer') {
-        setWizardStep('S02');
-        switchTab('s03');
-      } else {
-        setWizardStep('S03');
-        switchTab('s04');
-      }
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -868,8 +864,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s02: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S04');
-      switchTab('s05');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -905,8 +901,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s03: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S04');
-      switchTab('s05');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -944,8 +940,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s04: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S04');
-      switchTab('s05');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -971,8 +967,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s05: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S05');
-      switchTab('s06');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -1029,8 +1025,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s06: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S06');
-      switchTab('s07');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,
@@ -1068,8 +1064,8 @@ export default function PartyMasterModule({
         [activePartyId]: { ...(prev[activePartyId] || {}), s07: true }
       }));
       setIsStageModalOpen(false);
-      setWizardStep('S07');
-      switchTab('s08');
+      setActivePartyId(null);
+      setWizardParty(null);
     } catch (err) {
       setCenterAlert({
         isOpen: true,

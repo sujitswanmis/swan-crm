@@ -1042,7 +1042,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S01 ➔ Move to Tier Registration
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S01 Details
                     </button>
                   </div>
                 </form>
@@ -1120,7 +1120,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S02 ➔ Move to S05 Commercial Security
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S02 Distributor Details
                     </button>
                   </div>
                 </form>
@@ -1196,7 +1196,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S03 ➔ Move to S05 Commercial Security
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S03 Dealer Mapping
                     </button>
                   </div>
                 </form>
@@ -1277,7 +1277,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S04 ➔ Move to S05 Commercial Security
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S04 Sub-Dealer Mapping
                     </button>
                   </div>
                 </form>
@@ -1386,7 +1386,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S05 ➔ Move to S06 Product &amp; Territory
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S05 Commercial Details
                     </button>
                   </div>
                 </form>
@@ -1736,7 +1736,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S06 ➔ Move to S07 Sales Team Assignment
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S06 Products &amp; Territory
                     </button>
                   </div>
                 </form>
@@ -1789,7 +1789,7 @@ export default function StageConfigModal({
                       type="submit"
                       style={submitBtnStyle}
                     >
-                      <CheckCircle2 size={16} /> Approve &amp; Confirm S07 ➔ Move to S08 Partner Activation
+                      <CheckCircle2 size={16} /> Save &amp; Confirm S07 Sales Team Assignment
                     </button>
                   </div>
                 </form>
