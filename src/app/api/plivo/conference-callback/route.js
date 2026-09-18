@@ -16,7 +16,7 @@ export async function POST(req) {
 
     const url = new URL(req.url);
     const roomName = url.searchParams.get('room') || event.room || event.ConferenceName;
-    const customerNumber = url.searchParams.get('customer_number') || event.customer_number;
+    let customerNumber = url.searchParams.get('customer_number') || event.customer_number || '';
 
     const baseUrl = getPlivoWebhookBaseUrl(req);
 
@@ -42,6 +42,25 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
   const conferenceName = event.ConferenceName;
 
   // 1. FAST PATH: Dial customer instantly when agent is first member in conference
+  if (eventType === 'enter' && event.ConferenceFirstMember === 'true') {
+    // If customerNumber not in URL, look up from session DB
+    if (!customerNumber) {
+      const { data: lookupSession } = await adminClient
+        .from('call_sessions')
+        .select('customer_number, customer_call_uuid, status')
+        .eq('room_name', roomName)
+        .maybeSingle();
+      if (
+        lookupSession?.customer_number &&
+        !lookupSession.customer_call_uuid &&
+        lookupSession.status !== 'customer_ringing' &&
+        lookupSession.status !== 'connected'
+      ) {
+        customerNumber = lookupSession.customer_number;
+      }
+    }
+  }
+
   if (eventType === 'enter' && event.ConferenceFirstMember === 'true' && customerNumber) {
     const authId = process.env.PLIVO_AUTH_ID;
     const authToken = process.env.PLIVO_AUTH_TOKEN;
@@ -54,14 +73,9 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
     // removed to avoid duplicate/overlapping audio.
 
     // Dial customer with ring/hangup callbacks and explicit ring timeout.
+    // SDK verified params: hangupUrl, hangupMethod, ringTimeout (call.js lines 704, 705, 718)
     try {
-      let cleanCustomer = String(customerNumber).trim().replace(/[^\d+]/g, '');
-      if (!cleanCustomer.startsWith('+')) {
-        const digits = cleanCustomer.replace(/\D/g, '').slice(-10);
-        cleanCustomer = `+91${digits}`;
-      }
-
-      console.log(`Dialing customer: from=${fromNumber}, to=${cleanCustomer}, room=${roomName}`);
+      console.log(`Dialing customer: from=${fromNumber}, to=${customerNumber}, room=${roomName}`);
 
       // Guard: check if customer call already exists for this session
       const { data: existingSession } = await adminClient
@@ -80,7 +94,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         const ringCallbackUrl = `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`;
         const dialResponse = await client.calls.create(
           fromNumber,
-          cleanCustomer,
+          customerNumber,
           `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=customer`,
           {
             answerMethod: 'POST',
