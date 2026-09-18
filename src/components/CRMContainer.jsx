@@ -206,6 +206,7 @@ export const PARTY_SUBTAB_TITLES = {
   s06: 'S06 Product Auth & Territory',
   s07: 'S07 Sales Team Assignment',
   s08: 'S08 Partner Activation',
+  report: 'Party Master Report',
   r03: 'Party Master Report',
   hierarchy_tree: 'Channel Hierarchy Tree',
   order_followup: 'Engine 1: Daily Order Followups',
@@ -425,9 +426,11 @@ export default function CRMContainer({
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
     let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || searchParams?.get('step') || initialSearchParams?.tab || initialSearchParams?.subtab || initialSearchParams?.step || '').toLowerCase();
     if (cleanPath && cleanPath.startsWith('party/')) {
-      const sub = cleanPath.split('/')[1];
+      let sub = cleanPath.split('/')[1];
+      if (sub === 'r03' || sub === 'party-master-report') sub = 'report';
       if (sub) return sub;
     }
+    if (queryTab === 'r03' || queryTab === 'party-master-report') queryTab = 'report';
     if (queryTab) return queryTab;
     return 's00';
   });
@@ -487,7 +490,16 @@ export default function CRMContainer({
         } else if (partyTab) {
           sub = partyTab;
         }
-        if (sub) setPartySubTab(sub.toLowerCase());
+        if (sub) {
+          let cleanSub = sub.toLowerCase();
+          if (cleanSub === 'r03' || cleanSub === 'party-master-report') {
+            cleanSub = 'report';
+            if (typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/party/r03') {
+              window.history.replaceState(null, '', '/party/report');
+            }
+          }
+          setPartySubTab(cleanSub);
+        }
         setPartyMenuExpanded(true);
       }
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
@@ -1727,7 +1739,14 @@ export default function CRMContainer({
         sub = params.get('tab') || params.get('subtab') || params.get('step');
       }
       if (sub) {
-        setPartySubTab(sub.toLowerCase());
+        let cleanSub = sub.toLowerCase();
+        if (cleanSub === 'r03' || cleanSub === 'party-master-report') {
+          cleanSub = 'report';
+          if (typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/party/r03') {
+            window.history.replaceState(null, '', '/party/report');
+          }
+        }
+        setPartySubTab(cleanSub);
       }
       tab = 'party';
       setPartyMenuExpanded(true);
@@ -1824,7 +1843,14 @@ export default function CRMContainer({
           sub = params.get('tab') || params.get('subtab') || params.get('step');
         }
         if (sub) {
-          setPartySubTab(sub.toLowerCase());
+          let cleanSub = sub.toLowerCase();
+          if (cleanSub === 'r03' || cleanSub === 'party-master-report') {
+            cleanSub = 'report';
+            if (typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/party/r03') {
+              window.history.replaceState(null, '', '/party/report');
+            }
+          }
+          setPartySubTab(cleanSub);
         }
         tab = 'party';
         setPartyMenuExpanded(true);
@@ -1967,7 +1993,8 @@ export default function CRMContainer({
         setActiveTab('party');
       });
       const targetSub = partySubTab || 's00';
-      window.history.pushState(null, '', `/party/${targetSub}`);
+      const cleanTarget = (targetSub === 'r03' || targetSub === 'party-master-report') ? 'report' : targetSub;
+      window.history.pushState(null, '', `/party/${cleanTarget}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
@@ -2065,7 +2092,8 @@ export default function CRMContainer({
   };
 
   const handlePartySubTabChange = (subTabId) => {
-    const cleanSub = (subTabId || 's00').toLowerCase();
+    let cleanSub = (subTabId || 's00').toLowerCase();
+    if (cleanSub === 'r03' || cleanSub === 'party-master-report') cleanSub = 'report';
     setPartySubTab(cleanSub);
     if (activeTab !== 'party') {
       React.startTransition(() => {
@@ -3452,9 +3480,9 @@ export default function CRMContainer({
                               </div>
 
                               <button
-                                onClick={() => handlePartySubTabChange('r03')}
+                                onClick={() => handlePartySubTabChange('report')}
                                 className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'r03'}
+                                data-active={activeTab === 'party' && (partySubTab === 'report' || partySubTab === 'r03')}
                               >
                                 📊 Party Master Report
                               </button>

@@ -510,7 +510,7 @@ export default function PartyMasterModule({
     if (onSubTabChange) {
       onSubTabChange(newTab);
     }
-    if (newTab !== 'r03' && newTab !== 'hierarchy_tree') {
+    if (newTab !== 'report' && newTab !== 'r03' && newTab !== 'hierarchy_tree') {
       loadOperationsData(newTab);
     }
   };
@@ -782,7 +782,8 @@ export default function PartyMasterModule({
       'S05_1': 's06',
       'S06': 's07',
       'S07': 's08',
-      'R03': 'r03'
+      'R03': 'report',
+      'report': 'report'
     }[step] || 's01';
 
     if (targetTab) {
@@ -1113,7 +1114,7 @@ export default function PartyMasterModule({
           status: s08ActivationStatus,
           confirmText: 'Go to Party Master Report ➔',
           onConfirm: () => {
-            switchTab('r03');
+            switchTab('report');
           }
         });
       }
@@ -1740,9 +1741,9 @@ export default function PartyMasterModule({
       />
 
       {/* ========================================================= */}
-      {/* TAB 1: R03 PARTY MANAGEMENT REPORT & HIERARCHY TABLE */}
+      {/* TAB 1: PARTY MASTER REPORT & HIERARCHY TABLE */}
       {/* ========================================================= */}
-      {activeTab === 'r03' && (
+      {(activeTab === 'report' || activeTab === 'r03') && (
         <div>
           {/* Controls Bar */}
           <div style={{ background: 'var(--bg-surface)', padding: '1rem', borderRadius: '12px', marginBottom: '1rem', border: '1px solid var(--border-light)', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
