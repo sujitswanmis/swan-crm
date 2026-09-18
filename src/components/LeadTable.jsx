@@ -224,7 +224,10 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         is_offline_pending: true,
         lead_notes: [newNote, ...(lead.lead_notes || [])]
       };
-      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
       return;
     }
 
@@ -245,7 +248,10 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         is_offline_pending: false,
         lead_notes: [newNote, ...(lead.lead_notes || [])]
       };
-      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
+      const processed = processLeads([updatedRawLead], teamMembers)[0];
+      if (info.table.options.meta?.updateLeadInState) {
+        info.table.options.meta.updateLeadInState(processed);
+      }
     } catch (netErr) {
       console.warn('Network updateAssignee failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadAssign');
@@ -260,7 +266,6 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         is_offline_pending: true,
         lead_notes: [newNote, ...(lead.lead_notes || [])]
       };
-      setRawLeads((current) => current.map(item => item.id === lead.id ? updatedRawLead : item));
       const processed = processLeads([updatedRawLead], teamMembers)[0];
       if (info.table.options.meta?.updateLeadInState) {
         info.table.options.meta.updateLeadInState(processed);
