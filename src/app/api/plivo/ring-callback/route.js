@@ -28,23 +28,47 @@ const TERMINAL_CUSTOMER_STATUSES = new Set([
 ]);
 
 // Normalize Plivo terminal cause for voice and UI announcement
-function categorizeHangupCause(callStatus, hangupCause, hangupSource) {
+function categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec = 0, hasAnswered = false) {
   const s = (callStatus || '').toLowerCase();
   const h = (hangupCause || '').toLowerCase();
-  
-  if (s === 'rejected' || h.includes('reject') || h.includes('call rejected')) {
+
+  if (hasAnswered) {
+    return 'customer_hangup';
+  }
+
+  if (
+    h.includes('switched_off') ||
+    h.includes('unallocated') ||
+    h.includes('absent') ||
+    h.includes('unreachable') ||
+    h.includes('out of service') ||
+    h.includes('destination out of service') ||
+    h.includes('no_route') ||
+    h.includes('temporary_failure') ||
+    h.includes('network congestion') ||
+    h.includes('destination_out_of_order') ||
+    h.includes('user does not exist')
+  ) {
+    return 'switched_off';
+  }
+
+  if (ringingSec <= 3 && (s === 'failed' || s === 'busy' || h.includes('busy') || h.includes('normal_clearing'))) {
+    return 'switched_off';
+  }
+
+  if (s === 'rejected' || h.includes('reject') || h.includes('call rejected') || h.includes('declined')) {
     return 'rejected';
   }
   if (s === 'busy' || s.includes('busy') || h.includes('busy') || h.includes('user_busy')) {
     return 'busy';
   }
-  if (s.includes('timeout') || s === 'no-answer' || h.includes('timeout') || h.includes('no_answer') || h.includes('no answer')) {
+  if (s.includes('timeout') || s === 'no-answer' || h.includes('timeout') || h.includes('no_answer') || h.includes('no answer') || ringingSec >= 28) {
     return 'no_answer';
   }
   if (s.includes('cancel') || h.includes('cancel')) {
-    return 'rejected';
+    return 'agent_hangup';
   }
-  if (s === 'failed' || h.includes('failed') || h.includes('unallocated') || h.includes('absent')) {
+  if (s === 'failed' || h.includes('failed')) {
     return 'failed';
   }
   return s || h || 'failed';
@@ -73,6 +97,12 @@ export async function POST(req) {
 
     // If completely empty payload, return 200 for idempotency
     if (!callStatus && !hangupCause && !callUuid) {
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    // Guest leg (3rd party participant) failure/hangup must NEVER terminate active agent session or conference
+    if (leg === 'guest') {
+      console.log(`ring-callback: guest leg ${callStatus} / cause=${hangupCause} ended for room=${roomFromQuery}`);
       return new NextResponse('OK', { status: 200 });
     }
 
@@ -146,7 +176,7 @@ export async function POST(req) {
           ? Math.max(0, Math.floor((endTime - agentAnsTime) / 1000))
           : Math.max(0, Math.floor((endTime - startTime) / 1000));
         talkSec = 0;
-        determinedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
+        determinedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false);
       }
 
       // Update DB with terminal status and normalized cause

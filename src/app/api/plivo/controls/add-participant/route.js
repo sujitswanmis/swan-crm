@@ -35,9 +35,14 @@ export async function POST(req) {
       .eq('room_name', roomName)
       .maybeSingle();
 
-    // 2. If the current call was in standard 2-party <Dial> mode,
+    // 2. If the current call was in standard 2-party <Dial> mode and not yet conferenced,
     // seamlessly transfer both legs (agent A-leg and customer B-leg) into <Conference>!
-    if (session?.agent_call_uuid && session.status !== 'ended') {
+    if (session?.agent_call_uuid && session.status !== 'ended' && !session.conference_name) {
+      // Mark session as conferenced BEFORE calling transfer so dial-action does not terminate the call
+      await adminClient.from('call_sessions').update({
+        conference_name: roomName
+      }).eq('id', session.id);
+
       const confAgentUrl = `${appBaseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=agent_conf`;
       const confCustUrl = `${appBaseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=customer_conf`;
 
@@ -45,19 +50,38 @@ export async function POST(req) {
         await client.calls.transfer(session.agent_call_uuid, {
           legs: 'both',
           aleg_url: confAgentUrl,
+          alegUrl: confAgentUrl,
           aleg_method: 'POST',
+          alegMethod: 'POST',
           bleg_url: confCustUrl,
-          bleg_method: 'POST'
+          blegUrl: confCustUrl,
+          bleg_method: 'POST',
+          blegMethod: 'POST'
         });
-
-        // Mark session as conferenced so dial-action callback does not terminate the call
-        await adminClient.from('call_sessions').update({
-          conference_name: roomName
-        }).eq('id', session.id);
-
-        console.log(`Successfully transferred call legs for room ${roomName} to conference`);
+        console.log(`Successfully transferred both call legs for room ${roomName} to conference`);
       } catch (transferErr) {
-        console.error('Plivo call transfer to conference error:', transferErr);
+        console.warn('Transfer both legs failed, falling back to individual leg transfers:', transferErr?.message || transferErr);
+        try {
+          await client.calls.transfer(session.agent_call_uuid, {
+            legs: 'aleg',
+            aleg_url: confAgentUrl,
+            alegUrl: confAgentUrl,
+            aleg_method: 'POST',
+            alegMethod: 'POST'
+          });
+        } catch (_e1) {}
+
+        if (session.customer_call_uuid) {
+          try {
+            await client.calls.transfer(session.customer_call_uuid, {
+              legs: 'aleg',
+              aleg_url: confCustUrl,
+              alegUrl: confCustUrl,
+              aleg_method: 'POST',
+              alegMethod: 'POST'
+            });
+          } catch (_e2) {}
+        }
       }
     }
 

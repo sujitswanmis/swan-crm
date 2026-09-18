@@ -13,7 +13,7 @@ export async function POST(req) {
     }
 
     const body = await req.json();
-    const { customerNumber, callingMode, agentEndpoint, agentMobile } = body;
+    const { customerNumber, callingMode, agentEndpoint, agentMobile, roomName: clientRoomName } = body;
 
     if (!customerNumber || !callingMode) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
@@ -28,7 +28,7 @@ export async function POST(req) {
     }
 
     const client = new plivo.Client(authId, authToken);
-    const roomName = `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const roomName = clientRoomName || `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
     // Create Call Session in DB
     const adminClient = require('@supabase/supabase-js').createClient(

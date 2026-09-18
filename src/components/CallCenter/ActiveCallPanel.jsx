@@ -160,7 +160,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     
     setLoadingAction('add_participant');
     try {
-      await fetch('/api/plivo/controls/add-participant', {
+      const res = await fetch('/api/plivo/controls/add-participant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,10 +168,15 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
           participantNumber: newParticipant
         })
       });
-      setNewParticipant('');
-      alert('Dialing new participant...');
+      const data = await res.json();
+      if (data.error) {
+        alert('Failed to add participant: ' + data.error);
+      } else {
+        setNewParticipant('');
+        setTimeout(fetchMembers, 1000);
+      }
     } catch (err) {
-      alert('Failed to add participant');
+      alert('Failed to add participant: ' + (err.message || err));
     } finally {
       setLoadingAction(null);
     }

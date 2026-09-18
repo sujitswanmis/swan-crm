@@ -161,6 +161,19 @@ function playAudioTone(type) {
         osc.start(ctx.currentTime + delay);
         osc.stop(ctx.currentTime + delay + 0.12);
       });
+    } else if (type === 'switched_off') {
+      [0, 0.16, 0.32].forEach((delay, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(360 - idx * 45, ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.13);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.13);
+      });
     } else if (type === 'disconnect') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -238,14 +251,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [agentData]);
 
   const startRingingAudio = useCallback((roomName) => {
-    // With direct Plivo <Dial>, real telecom early media (carrier ringing, caller tune, operator switched-off announcement)
-    // is streamed live over WebRTC. Synthetic tones are omitted to prevent drowning out operator messages.
-  }, []);
+    const target = roomName || activeSessionRef.current?.room_name || optimisticCall?.roomName;
+    globalRingController.start(target);
+  }, [optimisticCall?.roomName]);
 
   const stopRingingAudio = useCallback((roomName) => {
-    const target = roomName || activeSessionRef.current?.room_name;
+    const target = roomName || activeSessionRef.current?.room_name || optimisticCall?.roomName;
     globalRingController.stop(target);
-  }, []);
+  }, [optimisticCall?.roomName]);
 
   useEffect(() => {
     return () => {
@@ -259,6 +272,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
     if (type === 'rejected') playAudioTone('rejected');
     else if (type === 'busy') playAudioTone('busy');
+    else if (type === 'switched_off') playAudioTone('switched_off');
     else if (type === 'no_answer') playAudioTone('rejected');
     else playAudioTone('disconnect');
 
@@ -543,6 +557,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
       return;
     }
 
+    // Switched off / out of coverage
+    if (cause === 'switched_off' || cause.includes('switch') || cause.includes('unreach') || cause.includes('absent') || cause.includes('unallocated') || cause.includes('destination out of service') || cause.includes('out of service')) {
+      triggerAnnouncement({
+        type: 'switched_off',
+        title: 'Customer का Phone Switched Off है',
+        subtitle: 'Customer ka phone switched off ya out of network coverage hai.',
+        speech: 'Customer ka phone switched off ya network se bahar hai.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
+
     // Customer cut / rejected while ringing
     if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel')) {
       triggerAnnouncement({
@@ -607,13 +633,17 @@ export default function GlobalSoftphoneWidget({ userId }) {
         setOptimisticCall(null);
         updateActiveSession(s);
       } else if (statusData?.isEnded) {
-        stopRingingAudio(activeRoom);
-        const prev = activeSessionRef.current;
-        if (prev) {
-          handleSessionTerminationAnnouncement(statusData.activeSession || prev);
+        // Prevent stale ended sessions from wiping out a fresh (< 15s) optimistic call
+        const isFreshOptimistic = optimisticCall && (Date.now() - (optimisticCall.startTime || 0) < 15000);
+        if (!isFreshOptimistic || (statusData.activeSession?.room_name === activeRoom)) {
+          stopRingingAudio(activeRoom);
+          const prev = activeSessionRef.current;
+          if (prev) {
+            handleSessionTerminationAnnouncement(statusData.activeSession || prev);
+          }
+          updateActiveSession(null);
+          setOptimisticCall(null);
         }
-        updateActiveSession(null);
-        setOptimisticCall(null);
       } else {
         // Only run getRecentCalls fallback if we were actively recovering an ongoing session
         if (activeSessionRef.current || optimisticCall) {
@@ -1018,8 +1048,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
     // Dismiss previous announcement
     setCallAnnouncement(null);
 
+    const clientRoomName = `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
     // 1. Set immediate optimistic UI state! (0 ms latency)
     setOptimisticCall({
+      roomName: clientRoomName,
       customerNumber: display10Digit,
       callingMode,
       status: 'initiating',
@@ -1027,7 +1060,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     });
 
     // 2. Start authentic Indian telephone ringing audio loop immediately
-    startRingingAudio();
+    startRingingAudio(clientRoomName);
 
     // Set flag so onIncomingCall knows this is our outbound call
     localStorage.setItem('pendingOutboundCall', 'true');
@@ -1037,6 +1070,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          roomName: clientRoomName,
           customerNumber: formattedE164,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
@@ -1045,22 +1079,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
       });
       const result = await res.json();
       if (result.error) {
-        stopRingingAudio();
+        stopRingingAudio(clientRoomName);
         setOptimisticCall(null);
         alert("Call Error: " + result.error);
       } else {
         if (!directNumber) setCustomerNumber('');
-        if (result.roomName) {
-          startRingingAudio(result.roomName);
-        }
         // Instantly adopt session if returned!
         if (result.session) {
           updateActiveSession(result.session);
         }
-        setOptimisticCall(null);
       }
     } catch (err) {
-      stopRingingAudio();
+      stopRingingAudio(clientRoomName);
       setOptimisticCall(null);
       alert("Failed to start call");
     }
@@ -1338,10 +1368,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
             <div style={{
               background: callAnnouncement.type === 'rejected' ? 'rgba(239, 68, 68, 0.12)' :
                           callAnnouncement.type === 'busy' ? 'rgba(245, 158, 11, 0.12)' :
+                          callAnnouncement.type === 'switched_off' ? 'rgba(139, 92, 246, 0.12)' :
                           callAnnouncement.type === 'no_answer' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(100, 116, 139, 0.12)',
               border: `1px solid ${
                 callAnnouncement.type === 'rejected' ? '#ef4444' :
                 callAnnouncement.type === 'busy' ? '#f59e0b' :
+                callAnnouncement.type === 'switched_off' ? '#8b5cf6' :
                 callAnnouncement.type === 'no_answer' ? '#3b82f6' : 'var(--border-light)'
               }`,
               borderRadius: '8px',
@@ -1355,7 +1387,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
-                    background: callAnnouncement.type === 'rejected' ? '#ef4444' : callAnnouncement.type === 'busy' ? '#f59e0b' : '#3b82f6',
+                    background: callAnnouncement.type === 'rejected' ? '#ef4444' :
+                                callAnnouncement.type === 'busy' ? '#f59e0b' :
+                                callAnnouncement.type === 'switched_off' ? '#8b5cf6' : '#3b82f6',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1363,6 +1397,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                     flexShrink: 0
                   }}>
                     {callAnnouncement.type === 'rejected' ? <PhoneOff size={16} /> :
+                     callAnnouncement.type === 'switched_off' ? <PhoneOff size={16} /> :
                      callAnnouncement.type === 'busy' ? <Clock size={16} /> :
                      <PhoneMissed size={16} />}
                   </div>

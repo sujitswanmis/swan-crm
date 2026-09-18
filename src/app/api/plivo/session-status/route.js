@@ -21,7 +21,11 @@ export async function GET(req) {
     if (room) {
       query = query.eq('room_name', room);
     } else {
-      query = query.eq('agent_id', agentId).order('created_at', { ascending: false }).limit(1);
+      // When room is not provided, only search for currently active/ongoing sessions for this agent
+      query = query.eq('agent_id', agentId)
+        .in('status', ['initiated', 'ringing', 'customer_ringing', 'agent_answered', 'connected'])
+        .order('created_at', { ascending: false })
+        .limit(1);
     }
 
     const { data: sessionData, error } = await query.maybeSingle();

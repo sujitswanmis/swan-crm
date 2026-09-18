@@ -2,28 +2,62 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // Normalize DialStatus / DialHangupCause to user-friendly CRM status
-function mapDialOutcome(dialStatus, hangupCause) {
+function mapDialOutcome(dialStatus, hangupCause, ringStatus, duration = 0, hasAnswered = false) {
   const s = (dialStatus || '').toLowerCase();
   const h = (hangupCause || '').toLowerCase();
+  const isRing = String(ringStatus).toLowerCase() === 'true';
 
-  if (s === 'busy' || h.includes('busy') || h.includes('user_busy')) {
-    return 'busy';
+  // 1. If customer answered and spoke, it's a completed conversation
+  if (hasAnswered || s === 'completed') {
+    return 'customer_hangup';
   }
-  if (s === 'no-answer' || s === 'timeout' || h.includes('timeout') || h.includes('no_answer')) {
-    return 'no_answer';
+
+  // 2. Explicit switched off, out of coverage, unallocated, network congestion, or invalid destination
+  if (
+    h.includes('switched_off') ||
+    h.includes('unallocated') ||
+    h.includes('absent') ||
+    h.includes('unreachable') ||
+    h.includes('out of service') ||
+    h.includes('destination out of service') ||
+    h.includes('no_route') ||
+    h.includes('temporary_failure') ||
+    h.includes('network congestion') ||
+    h.includes('destination_out_of_order') ||
+    h.includes('user does not exist')
+  ) {
+    return 'switched_off';
   }
+
+  // 3. Indian Telecom behavior: If DialRingStatus is FALSE and call failed or returned busy/normal_clearing before ringing
+  // Indian telecom carriers return USER_BUSY, NORMAL_CLEARING, or FAILED when a phone is switched off/out of network without ringing!
+  if (!isRing && (s === 'failed' || s === 'busy' || h.includes('busy') || h.includes('normal_clearing'))) {
+    return 'switched_off';
+  }
+
+  // 4. If ringing DID occur:
+  if (isRing) {
+    if (h.includes('reject') || h.includes('call rejected') || h.includes('declined')) {
+      return 'rejected';
+    }
+    if (s === 'busy' || h.includes('busy') || h.includes('user_busy')) {
+      return 'busy';
+    }
+    if (s === 'no-answer' || s === 'timeout' || h.includes('timeout') || h.includes('no_answer')) {
+      return 'no_answer';
+    }
+  }
+
+  // 5. Explicit cancellations
   if (s === 'cancel' || h.includes('cancel')) {
     return 'agent_hangup';
   }
-  if (h.includes('reject') || h.includes('call rejected')) {
-    return 'rejected';
-  }
-  if (s === 'completed') {
-    return 'customer_hangup';
-  }
-  if (s === 'failed') {
-    return 'failed';
-  }
+
+  // 6. General fallbacks
+  if (s === 'busy' || h.includes('busy')) return 'busy';
+  if (s === 'no-answer' || s === 'timeout' || h.includes('timeout')) return 'no_answer';
+  if (h.includes('reject') || h.includes('declined')) return 'rejected';
+
   return s || 'failed';
 }
 
@@ -46,7 +80,7 @@ export async function POST(req) {
     const duration = parseInt(event.DialBLegDuration || event.Duration || '0', 10);
     const ringStatus = event.DialRingStatus;
 
-    console.log(`dial-action: room=${roomName}, DialStatus=${dialStatus}, cause=${hangupCause}, duration=${duration}`);
+    console.log(`dial-action: room=${roomName}, DialStatus=${dialStatus}, cause=${hangupCause}, ringStatus=${ringStatus}, duration=${duration}`);
 
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -92,7 +126,8 @@ export async function POST(req) {
         });
       }
 
-      const determinedCause = mapDialOutcome(dialStatus, hangupCause);
+      const hasCustomerAnswered = !!session.customer_answer_time;
+      const determinedCause = mapDialOutcome(dialStatus, hangupCause, ringStatus, duration, hasCustomerAnswered);
       const endTime = new Date();
       const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
       const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
@@ -118,6 +153,10 @@ export async function POST(req) {
         ringing_duration_sec: ringingSec
       };
 
+      if (aLegUuid && !session.agent_call_uuid) {
+        updateData.agent_call_uuid = aLegUuid;
+      }
+
       if (recordUrl) {
         updateData.recording_url = recordUrl;
       }
@@ -125,7 +164,7 @@ export async function POST(req) {
       await adminClient.from('call_sessions').update(updateData).eq('id', session.id);
     }
 
-    // Return Hangup XML so Plivo cleanly terminates the call flow
+    // Return Hangup XML or empty Response for clean completion
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Hangup/>

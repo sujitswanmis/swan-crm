@@ -13,10 +13,13 @@ export async function POST(req) {
     const event = Object.fromEntries(searchParams);
 
     const roomName = url.searchParams.get('room') || event.room || '';
-    const bLegUuid = event.DialBLegUUID || event.CallUUID || '';
+    const bLegUuid = event.DialBLegUUID || '';
+    const aLegUuid = event.DialALegUUID || event.CallUUID || '';
     const dialStatus = (event.DialStatus || event.CallStatus || '').toLowerCase();
+    const dialAction = (event.DialAction || '').toLowerCase();
+    const ringStatus = String(event.DialRingStatus || '').toLowerCase();
 
-    console.log(`dial-callback: room=${roomName}, status=${dialStatus}, bLeg=${bLegUuid}`);
+    console.log(`dial-callback: room=${roomName}, action=${dialAction}, status=${dialStatus}, ringStatus=${ringStatus}, aLeg=${aLegUuid}, bLeg=${bLegUuid}`);
 
     if (roomName) {
       const adminClient = createClient(
@@ -26,11 +29,12 @@ export async function POST(req) {
 
       const updateData = {};
       if (bLegUuid) updateData.customer_call_uuid = bLegUuid;
+      if (aLegUuid) updateData.agent_call_uuid = aLegUuid;
 
-      if (dialStatus === 'answered' || dialStatus === 'in-progress' || dialStatus === 'completed') {
+      if (dialAction === 'answer' || dialAction === 'connected' || dialStatus === 'answered' || dialStatus === 'in-progress' || dialStatus === 'completed') {
         updateData.status = 'connected';
         updateData.customer_answer_time = new Date().toISOString();
-      } else if (dialStatus === 'ringing') {
+      } else if (dialStatus === 'ringing' || ringStatus === 'true') {
         updateData.status = 'customer_ringing';
       }
 
