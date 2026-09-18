@@ -380,6 +380,19 @@ export default function PartyMasterModule({
   const [s08Remarks, setS08Remarks] = useState('');
   const [stageConfirmedMap, setStageConfirmedMap] = useState({});
 
+  // Centered Alert/Success Modal state (replaces browser native window.alert)
+  const [centerAlert, setCenterAlert] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    partnerName: '',
+    partnerCode: '',
+    status: 'Active',
+    type: 'success', // 'success' | 'warning' | 'error'
+    confirmText: 'OK',
+    onConfirm: null
+  });
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -804,7 +817,12 @@ export default function PartyMasterModule({
         switchTab('s04');
       }
     } catch (err) {
-      alert('Error saving S01 Party Master: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S01 Registration Error',
+        message: err.message
+      });
     }
   };
 
@@ -827,14 +845,24 @@ export default function PartyMasterModule({
       setWizardStep('S04');
       switchTab('s05');
     } catch (err) {
-      alert('Error in S02 Distributor: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S02 Distributor Error',
+        message: err.message
+      });
     }
   };
 
   const handleS02DealerSubmit = async (e) => {
     e.preventDefault();
     if (!s02DealerForm.parent_distributor_id) {
-      alert('CRITICAL RULE: Dealer must belong to an Active Parent Distributor!');
+      setCenterAlert({
+        isOpen: true,
+        type: 'warning',
+        title: 'Parent Distributor Required',
+        message: 'CRITICAL RULE: Dealer must belong to an Active Parent Distributor!'
+      });
       return;
     }
     try {
@@ -854,14 +882,24 @@ export default function PartyMasterModule({
       setWizardStep('S04');
       switchTab('s05');
     } catch (err) {
-      alert('Error in S03 Dealer: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S03 Dealer Error',
+        message: err.message
+      });
     }
   };
 
   const handleS03SubDealerSubmit = async (e) => {
     e.preventDefault();
     if (!s03SubDealerForm.parent_dealer_id) {
-      alert('CRITICAL RULE: Sub-Dealer must belong to an Active Parent Dealer!');
+      setCenterAlert({
+        isOpen: true,
+        type: 'warning',
+        title: 'Parent Dealer Required',
+        message: 'CRITICAL RULE: Sub-Dealer must belong to an Active Parent Dealer!'
+      });
       return;
     }
     const selectedDealer = parties.find(p => p.id === s03SubDealerForm.parent_dealer_id);
@@ -883,7 +921,12 @@ export default function PartyMasterModule({
       setWizardStep('S04');
       switchTab('s05');
     } catch (err) {
-      alert('Error in S04 Sub-Dealer: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S04 Sub-Dealer Error',
+        message: err.message
+      });
     }
   };
 
@@ -905,7 +948,12 @@ export default function PartyMasterModule({
       setWizardStep('S05');
       switchTab('s06');
     } catch (err) {
-      alert('Error in S05 Commercial: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S05 Commercial Error',
+        message: err.message
+      });
     }
   };
 
@@ -913,7 +961,12 @@ export default function PartyMasterModule({
   const handleS05CombinedSubmit = async (e) => {
     e.preventDefault();
     if (s05SelectedProducts.length === 0) {
-      alert('At least one Product must be authorized for this party!');
+      setCenterAlert({
+        isOpen: true,
+        type: 'warning',
+        title: 'Product Required',
+        message: 'At least one Product must be authorized for this party!'
+      });
       return;
     }
     try {
@@ -953,7 +1006,12 @@ export default function PartyMasterModule({
       setWizardStep('S06');
       switchTab('s07');
     } catch (err) {
-      alert('Error in S06 Product & Territory: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S06 Product & Territory Error',
+        message: err.message
+      });
     }
   };
 
@@ -987,7 +1045,12 @@ export default function PartyMasterModule({
       setWizardStep('S07');
       switchTab('s08');
     } catch (err) {
-      alert('Error in S07 Sales Team: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'S07 Sales Team Error',
+        message: err.message
+      });
     }
   };
 
@@ -997,9 +1060,19 @@ export default function PartyMasterModule({
       const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks);
       if (!res.success) {
         setActivationErrors(res.errors || []);
-        alert('Activation Notice: ' + (res.errors || []).join('\n'));
+        setCenterAlert({
+          isOpen: true,
+          type: 'warning',
+          title: 'Activation Notice',
+          message: (res.errors || []).join('\n'),
+          partnerName: '',
+          partnerCode: '',
+          status: s08ActivationStatus,
+          confirmText: 'Dismiss',
+          onConfirm: null
+        });
       } else {
-        alert(`🎉 Channel Partner status set to "${s08ActivationStatus}" successfully!`);
+        const currentP = parties.find(p => p.id === activePartyId) || wizardParty;
         setShowWizard(false);
         setIsStageModalOpen(false);
         setStageConfirmedMap(prev => ({
@@ -1007,10 +1080,33 @@ export default function PartyMasterModule({
           [activePartyId]: { ...(prev[activePartyId] || {}), s08: true }
         }));
         await loadInitialData();
-        switchTab('r03');
+
+        setCenterAlert({
+          isOpen: true,
+          type: 'success',
+          title: 'Channel Partner Activated',
+          message: `🎉 Channel Partner status set to "${s08ActivationStatus}" successfully!`,
+          partnerName: currentP?.firm_name || '',
+          partnerCode: currentP?.party_universal_code || currentP?.party_type || '',
+          status: s08ActivationStatus,
+          confirmText: 'Go to Partner Directory ➔',
+          onConfirm: () => {
+            switchTab('r03');
+          }
+        });
       }
     } catch (err) {
-      alert('Activation Error: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'Activation Error',
+        message: err.message,
+        partnerName: '',
+        partnerCode: '',
+        status: '',
+        confirmText: 'Dismiss',
+        onConfirm: null
+      });
     }
   };
 
@@ -1029,7 +1125,15 @@ export default function PartyMasterModule({
       setLoadingTransfers(true);
       const res = await confirmLeadTransfer(leadItem.handoff_id, leadItem.party_id, 'Admin');
       if (res && res.success) {
-        alert(`Lead "${leadItem.firm_name || leadItem.lead_name}" confirmed successfully! Moving to S01 Party Master Creation.`);
+        setCenterAlert({
+          isOpen: true,
+          type: 'success',
+          title: 'Lead Transfer Confirmed',
+          message: `Lead "${leadItem.firm_name || leadItem.lead_name}" confirmed successfully!`,
+          subMessage: 'Party Master record initialized. Moving to Stage S01 Registration.',
+          confirmText: 'Continue to S01 ➔',
+          onConfirm: null
+        });
         const [freshParties, freshTrans] = await Promise.all([
           getPartyList(),
           getTransferredLeads()
@@ -1053,7 +1157,12 @@ export default function PartyMasterModule({
         setIsStageModalOpen(true);
       }
     } catch (err) {
-      alert('Error confirming transfer: ' + err.message);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'Transfer Confirmation Error',
+        message: err.message
+      });
     } finally {
       setLoadingTransfers(false);
     }
@@ -2516,9 +2625,16 @@ export default function PartyMasterModule({
             <form onSubmit={async (e) => {
               e.preventDefault();
               await createComplaintTicket(complaintForm);
-              alert('Complaint ticket generated successfully with SLA countdown timer!');
               setShowComplaintModal(false);
               loadOperationsData('complaints');
+              setCenterAlert({
+                isOpen: true,
+                type: 'success',
+                title: 'Complaint Ticket Issued',
+                message: 'Complaint ticket generated successfully with SLA countdown timer!',
+                confirmText: 'Done',
+                onConfirm: null
+              });
             }}>
               <div style={{ marginBottom: '0.85rem' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Select Channel Partner *</label>
@@ -2559,6 +2675,210 @@ export default function PartyMasterModule({
                 <button type="submit" style={{ padding: '0.6rem 1.25rem', background: '#ef4444', border: 'none', color: '#fff', fontWeight: 700, borderRadius: '8px' }}>Issue Ticket</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* CENTERED SUCCESS & ALERT POPUP MODAL (REPLACES BROWSER ALERT) */}
+      {/* ========================================================= */}
+      {centerAlert.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              if (centerAlert.onConfirm) centerAlert.onConfirm();
+              setCenterAlert(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              border: centerAlert.type === 'success'
+                ? '1.5px solid rgba(16, 185, 129, 0.45)'
+                : centerAlert.type === 'error'
+                  ? '1.5px solid rgba(239, 68, 68, 0.45)'
+                  : '1.5px solid rgba(245, 158, 11, 0.45)',
+              borderRadius: '20px',
+              padding: '2.2rem 2rem',
+              width: '100%',
+              maxWidth: '460px',
+              color: '#ffffff',
+              textAlign: 'center',
+              boxShadow: centerAlert.type === 'success'
+                ? '0 25px 55px rgba(0,0,0,0.85), 0 0 35px rgba(16, 185, 129, 0.25)'
+                : '0 25px 55px rgba(0,0,0,0.85), 0 0 30px rgba(239, 68, 68, 0.25)',
+              position: 'relative'
+            }}
+          >
+            {/* Top Close [x] */}
+            <button
+              onClick={() => {
+                if (centerAlert.onConfirm) centerAlert.onConfirm();
+                setCenterAlert(prev => ({ ...prev, isOpen: false }));
+              }}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'rgba(255,255,255,0.06)',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={16} />
+            </button>
+
+            {/* Glowing Icon Badge */}
+            <div
+              style={{
+                width: '74px',
+                height: '74px',
+                borderRadius: '50%',
+                margin: '0 auto 1.25rem auto',
+                background: centerAlert.type === 'success'
+                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1))'
+                  : centerAlert.type === 'error'
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.1))'
+                    : 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(180, 83, 9, 0.1))',
+                border: centerAlert.type === 'success'
+                  ? '2px solid #10b981'
+                  : centerAlert.type === 'error'
+                    ? '2px solid #ef4444'
+                    : '2px solid #f59e0b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: centerAlert.type === 'success'
+                  ? '0 0 20px rgba(16, 185, 129, 0.35)'
+                  : '0 0 20px rgba(239, 68, 68, 0.35)'
+              }}
+            >
+              {centerAlert.type === 'success' ? (
+                <span style={{ fontSize: '2.3rem', lineHeight: 1 }}>🎉</span>
+              ) : centerAlert.type === 'error' ? (
+                <span style={{ fontSize: '2.3rem', lineHeight: 1 }}>⚠️</span>
+              ) : (
+                <span style={{ fontSize: '2.3rem', lineHeight: 1 }}>ℹ️</span>
+              )}
+            </div>
+
+            {/* Title / Badge */}
+            <div style={{ marginBottom: '0.4rem' }}>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  padding: '0.2rem 0.65rem',
+                  borderRadius: '6px',
+                  background: centerAlert.type === 'success'
+                    ? 'rgba(16, 185, 129, 0.15)'
+                    : 'rgba(239, 68, 68, 0.15)',
+                  color: centerAlert.type === 'success' ? '#34d399' : '#f87171'
+                }}
+              >
+                {centerAlert.title || 'Notification'}
+              </span>
+            </div>
+
+            {/* Main Message requested by user */}
+            <h3
+              style={{
+                fontSize: '1.25rem',
+                fontWeight: 800,
+                color: '#f8fafc',
+                margin: '0.65rem 0 0.5rem 0',
+                lineHeight: 1.4
+              }}
+            >
+              {centerAlert.message}
+            </h3>
+
+            {/* SubMessage if present */}
+            {centerAlert.subMessage && (
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.86rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                {centerAlert.subMessage}
+              </p>
+            )}
+
+            {/* Partner Info Details if available */}
+            {centerAlert.partnerName && (
+              <div
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '10px',
+                  padding: '0.75rem 1rem',
+                  margin: '1rem 0 1.5rem 0',
+                  fontSize: '0.85rem'
+                }}
+              >
+                <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '0.92rem' }}>
+                  {centerAlert.partnerName}
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '0.78rem', marginTop: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  {centerAlert.partnerCode && <span>Code: <strong>{centerAlert.partnerCode}</strong></span>}
+                  <span>•</span>
+                  <span>Operational Status: <strong style={{ color: '#34d399' }}>{centerAlert.status || 'Active'}</strong></span>
+                </div>
+              </div>
+            )}
+
+            {!centerAlert.partnerName && !centerAlert.subMessage && <div style={{ height: '1.25rem' }} />}
+
+            {/* Action Button */}
+            <button
+              onClick={() => {
+                if (centerAlert.onConfirm) centerAlert.onConfirm();
+                setCenterAlert(prev => ({ ...prev, isOpen: false }));
+              }}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1.5rem',
+                background: centerAlert.type === 'success'
+                  ? 'linear-gradient(135deg, #10b981, #059669)'
+                  : centerAlert.type === 'error'
+                    ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                    : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                border: 'none',
+                borderRadius: '10px',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '0.96rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                boxShadow: centerAlert.type === 'success'
+                  ? '0 4px 18px rgba(16, 185, 129, 0.45)'
+                  : '0 4px 18px rgba(239, 68, 68, 0.45)'
+              }}
+            >
+              <CheckCircle2 size={18} />
+              {centerAlert.confirmText || 'OK'}
+            </button>
           </div>
         </div>
       )}
