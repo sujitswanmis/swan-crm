@@ -66,7 +66,7 @@ const STAGE_CONFIGS = {
     desc: 'Authorize implement machinery categories (Rotavator, Mulcher, etc.) and assign geographic districts.',
     filterTiers: null,
     checkApproval: (app) => app.s06,
-    col5Title: 'Authorized Products & Territory'
+    col5Title: 'Category, Products & Territory'
   },
   s07: {
     badge: 'STAGE S07',
@@ -254,12 +254,28 @@ export default function StageDataTable({
 
     if (stageId === 's06') {
       const authCount = party.product_authorizations?.length || 0;
+      const cat = party.product_category || party.product_authorizations?.[0]?.product_category || (authCount > 1 ? 'Both' : (authCount === 1 ? (party.product_authorizations[0]?.product_name === 'SPARE_PARTS' ? 'Spare Part' : 'Implement') : null));
       const dist = party.district_name || 'All Mandis';
       const st = party.state_name || '';
       return (
         <div>
-          <div style={{ fontWeight: 700, color: authCount > 0 ? '#38bdf8' : '#fbbf24' }}>
-            {authCount > 0 ? `📦 ${authCount} Implements Auth.` : '⚠️ Products Pending'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            {cat && (
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                padding: '0.15rem 0.45rem',
+                borderRadius: '4px',
+                background: cat === 'Implement' ? 'rgba(56,189,248,0.2)' : (cat === 'Spare Part' ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'),
+                color: cat === 'Implement' ? '#38bdf8' : (cat === 'Spare Part' ? '#fbbf24' : '#34d399'),
+                border: `1px solid ${cat === 'Implement' ? '#0284c7' : (cat === 'Spare Part' ? '#d97706' : '#059669')}`
+              }}>
+                {cat}
+              </span>
+            )}
+            <span style={{ fontWeight: 700, color: authCount > 0 ? '#38bdf8' : '#fbbf24' }}>
+              {authCount > 0 ? `📦 ${authCount} Products Auth.` : '⚠️ Products Pending'}
+            </span>
           </div>
           <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
             Territory: {dist}{st ? `, ${st}` : ''}

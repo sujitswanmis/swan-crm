@@ -36,13 +36,13 @@ import StageDataTable from './StageDataTable';
 const INDIAN_STATES = ALL_INDIAN_STATES;
 
 const PRODUCT_GROUPS = [
-  { id: 'ROTAVATOR', name: 'Rotavator (Champion & Regular Series)' },
-  { id: 'LASER_LEVELLER', name: 'Swan Laser Land Leveller & Transmitter' },
-  { id: 'MULCHER', name: 'Straw Mulcher & Shrub Master' },
-  { id: 'SUPER_SEEDER', name: 'Super Seeder & Happy Seeder' },
-  { id: 'CULTIVATOR_TILLER', name: 'Spring Loaded Cultivator & Tiller' },
-  { id: 'DISC_HARROW', name: 'Heavy Duty Disc Harrow' },
-  { id: 'SPARE_PARTS', name: 'Genuine Swan Blades, Gearbox & Spares' }
+  { id: 'ROTAVATOR', name: 'Rotavator (Champion & Regular Series)', category: 'Implement' },
+  { id: 'LASER_LEVELLER', name: 'Swan Laser Land Leveller & Transmitter', category: 'Implement' },
+  { id: 'MULCHER', name: 'Straw Mulcher & Shrub Master', category: 'Implement' },
+  { id: 'SUPER_SEEDER', name: 'Super Seeder & Happy Seeder', category: 'Implement' },
+  { id: 'CULTIVATOR_TILLER', name: 'Spring Loaded Cultivator & Tiller', category: 'Implement' },
+  { id: 'DISC_HARROW', name: 'Heavy Duty Disc Harrow', category: 'Implement' },
+  { id: 'SPARE_PARTS', name: 'Genuine Swan Blades, Gearbox & Spares', category: 'Spare Part' }
 ];
 
 const ALL_CLIENT_TEAM_ROLES = [
@@ -296,6 +296,7 @@ export default function PartyMasterModule({
 
   // Combined S05 Product Authorization & Territory Allocation
   const [s05SelectedProducts, setS05SelectedProducts] = useState(['ROTAVATOR', 'SPARE_PARTS']);
+  const [s06ProductCategory, setS06ProductCategory] = useState('Both'); // 'Implement' | 'Spare Part' | 'Both'
   const [s05TerritoryForm, setS05TerritoryForm] = useState({
     zone: 'North Zone',
     state: 'Punjab',
@@ -562,6 +563,8 @@ export default function PartyMasterModule({
       contact_email_2_2: '',
       contact_alt_email_2_1: ''
     });
+    setS06ProductCategory('Both');
+    setS05SelectedProducts(['ROTAVATOR', 'SPARE_PARTS']);
     switchTab('s01');
     setShowWizard(false);
   };
@@ -645,7 +648,20 @@ export default function PartyMasterModule({
       setS08Remarks(party.remarks);
     }
     if (party.product_authorizations && party.product_authorizations.length > 0) {
-      setS05SelectedProducts(party.product_authorizations.map(p => p.product_name || p.order_category));
+      const pNames = party.product_authorizations.map(p => p.product_name || p.order_category);
+      setS05SelectedProducts(pNames);
+      const savedCat = party.product_category || party.product_authorizations[0]?.product_category;
+      if (savedCat && ['Implement', 'Spare Part', 'Both'].includes(savedCat)) {
+        setS06ProductCategory(savedCat);
+      } else {
+        const hasSpares = pNames.includes('SPARE_PARTS');
+        const hasImplements = pNames.some(x => x !== 'SPARE_PARTS');
+        if (hasSpares && hasImplements) setS06ProductCategory('Both');
+        else if (hasSpares) setS06ProductCategory('Spare Part');
+        else setS06ProductCategory('Implement');
+      }
+    } else {
+      setS06ProductCategory(party.product_category || 'Both');
     }
     if (party.team_assignments && party.team_assignments.length > 0) {
       const newTeamMap = {
@@ -865,7 +881,12 @@ export default function PartyMasterModule({
     }
     try {
       // 1. Save products
-      const items = s05SelectedProducts.map(p => ({ product_name: p, opening_stock_required: 1 }));
+      const items = s05SelectedProducts.map(p => ({
+        product_name: p,
+        product_category: s06ProductCategory,
+        order_category: s06ProductCategory === 'Spare Part' ? 'Spare Parts' : p,
+        opening_stock_required: 1
+      }));
       await saveProductAuthorizations(activePartyId, items);
 
       // 2. Save territory
@@ -881,6 +902,7 @@ export default function PartyMasterModule({
       await updatePartyStep(activePartyId, 'S05_Product_Authorization_Territory', {
         state_name: s05TerritoryForm.state,
         district_name: s05TerritoryForm.district,
+        product_category: s06ProductCategory,
         workflow_status: 'S06_Completed',
         next_step: 'S06_Team_Assignment'
       });
@@ -2289,13 +2311,84 @@ export default function PartyMasterModule({
               </span>
             </div>
 
-            {/* 1. Product Authorization */}
-            <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.75rem' }}>
-                1. Authorized Product Machinery (Select Allowed Categories)
+            {/* 1. Product Authorization & Category */}
+            <div style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#38bdf8' }}>
+                    1. Product Category &amp; Machinery Authorization
+                  </div>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Select product line category (Implement, Spare Part, or Both) and specify authorized machinery.
+                  </p>
+                </div>
+              </div>
+
+              {/* Product Category Dropdown Field */}
+              <div style={{ marginBottom: '1.25rem', background: '#0f172a', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.25)' }}>
+                <label style={{ display: 'block', marginBottom: '0.35rem', color: '#38bdf8', fontWeight: 800, fontSize: '0.88rem' }}>
+                  Product Category *
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <select
+                    value={s06ProductCategory}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setS06ProductCategory(val);
+                      if (val === 'Spare Part') {
+                        setS05SelectedProducts(['SPARE_PARTS']);
+                      } else if (val === 'Implement') {
+                        setS05SelectedProducts(prev => {
+                          const filtered = prev.filter(x => x !== 'SPARE_PARTS');
+                          return filtered.length > 0 ? filtered : ['ROTAVATOR'];
+                        });
+                      } else if (val === 'Both') {
+                        setS05SelectedProducts(prev => prev.includes('SPARE_PARTS') ? prev : [...prev, 'SPARE_PARTS']);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '320px',
+                      padding: '0.65rem 0.85rem',
+                      background: '#1e293b',
+                      border: '1.5px solid #38bdf8',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="Implement">Implement</option>
+                    <option value="Spare Part">Spare Part</option>
+                    <option value="Both">Both</option>
+                  </select>
+
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    background: s06ProductCategory === 'Implement' ? 'rgba(56,189,248,0.15)' : (s06ProductCategory === 'Spare Part' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)'),
+                    color: s06ProductCategory === 'Implement' ? '#38bdf8' : (s06ProductCategory === 'Spare Part' ? '#fbbf24' : '#34d399'),
+                    border: `1px solid ${s06ProductCategory === 'Implement' ? '#0284c7' : (s06ProductCategory === 'Spare Part' ? '#d97706' : '#059669')}`
+                  }}>
+                    {s06ProductCategory === 'Implement' && '🚜 Farm Implements (Rotavator, Mulcher, Laser Leveller, etc.)'}
+                    {s06ProductCategory === 'Spare Part' && '⚙️ Genuine Blades, Gearbox & Spare Parts only'}
+                    {s06ProductCategory === 'Both' && '✨ Both Implements & Genuine Spare Parts'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.75rem' }}>
+                Select Allowed Products ({s06ProductCategory === 'Both' ? 'All Products' : s06ProductCategory + 's'}):
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
-                {PRODUCT_GROUPS.map(p => {
+                {PRODUCT_GROUPS.filter(p => {
+                  if (s06ProductCategory === 'Implement') return p.category === 'Implement';
+                  if (s06ProductCategory === 'Spare Part') return p.category === 'Spare Part';
+                  return true;
+                }).map(p => {
                   const isChecked = s05SelectedProducts.includes(p.id);
                   return (
                     <div
@@ -2315,13 +2408,26 @@ export default function PartyMasterModule({
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
+                        justifyContent: 'space-between',
                         gap: '0.6rem'
                       }}
                     >
-                      <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '1.5px solid', borderColor: isChecked ? '#10b981' : '#94a3b8', background: isChecked ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {isChecked && <Check size={12} color="#fff" />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '1.5px solid', borderColor: isChecked ? '#10b981' : '#94a3b8', background: isChecked ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isChecked && <Check size={12} color="#fff" />}
+                        </div>
+                        <span style={{ fontWeight: 600, fontSize: '0.84rem' }}>{p.name}</span>
                       </div>
-                      <span style={{ fontWeight: 600, fontSize: '0.84rem' }}>{p.name}</span>
+                      <span style={{
+                        fontSize: '0.68rem',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '4px',
+                        fontWeight: 700,
+                        background: p.category === 'Implement' ? 'rgba(56,189,248,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: p.category === 'Implement' ? '#38bdf8' : '#fbbf24'
+                      }}>
+                        {p.category}
+                      </span>
                     </div>
                   );
                 })}

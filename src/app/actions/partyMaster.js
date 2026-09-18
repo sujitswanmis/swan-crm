@@ -149,6 +149,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
           dealer_code: parentDealer.dealer_code || parentDealer.party_universal_code,
           firm_name: parentDealer.firm_name
         } : null,
+        product_category: (authMap[item.id] && authMap[item.id][0]?.product_category) || item.product_category || null,
         product_authorizations: authMap[item.id] || [],
         territory_allocations: territoryMap[item.id] || [],
         team_assignments: teamMap[item.id] || []
@@ -588,7 +589,7 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
         tenant_id: tenantId,
         party_id: partyId,
         order_category: p.order_category || 'Rotavator',
-        product_category: p.product_category || 'Champion',
+        product_category: p.product_category || 'Both',
         product_name: p.product_name,
         opening_stock_required: p.opening_stock_required || 0,
         is_authorized: true,
