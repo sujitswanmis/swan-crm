@@ -471,8 +471,8 @@ export default function StageDataTable({
                 padding: '0.35rem 0.75rem',
                 border: 'none',
                 borderRadius: '6px',
-                background: statusFilter === 'ALL' ? 'var(--bg-surface)' : 'transparent',
-                color: statusFilter === 'ALL' ? '#fff' : 'var(--text-secondary)',
+                background: statusFilter === 'ALL' ? (meta.badgeColor || 'var(--accent-color, #2563eb)') : 'transparent',
+                color: statusFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.78rem',
                 cursor: 'pointer'
@@ -489,7 +489,7 @@ export default function StageDataTable({
                 border: 'none',
                 borderRadius: '6px',
                 background: statusFilter === 'PENDING' ? 'rgba(245,158,11,0.2)' : 'transparent',
-                color: statusFilter === 'PENDING' ? '#fbbf24' : 'var(--text-secondary)',
+                color: statusFilter === 'PENDING' ? '#d97706' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.78rem',
                 cursor: 'pointer',
@@ -509,7 +509,7 @@ export default function StageDataTable({
                 border: 'none',
                 borderRadius: '6px',
                 background: statusFilter === 'APPROVED' ? 'rgba(16,185,129,0.2)' : 'transparent',
-                color: statusFilter === 'APPROVED' ? '#34d399' : 'var(--text-secondary)',
+                color: statusFilter === 'APPROVED' ? '#059669' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.78rem',
                 cursor: 'pointer',
@@ -533,8 +533,8 @@ export default function StageDataTable({
         overflowY: 'auto'
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-          <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#1e293b' }}>
-            <tr style={{ borderBottom: '1px solid var(--border-light)', color: '#94a3b8' }}>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)' }}>
+            <tr style={{ borderBottom: '1px solid var(--border-light, #cbd5e1)', color: 'var(--table-header-text, #1e293b)' }}>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Firm &amp; Legal Name</th>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Channel Tier</th>
@@ -581,11 +581,11 @@ export default function StageDataTable({
                 const isApproved = meta.checkApproval(approvals);
                 const isSelected = activePartyId === party.id;
 
-                // Tier badge colors
+                // Tier badge colors with high-contrast text for both themes
                 const tierColors = {
-                  'Distributor': { bg: 'rgba(139,92,246,0.18)', text: '#c084fc', border: '#a855f7' },
-                  'Dealer': { bg: 'rgba(59,130,246,0.18)', text: '#60a5fa', border: '#3b82f6' },
-                  'Sub-Dealer': { bg: 'rgba(20,184,166,0.18)', text: '#2dd4bf', border: '#14b8a6' }
+                  'Distributor': { bg: 'rgba(139,92,246,0.15)', text: '#7c3aed', border: 'rgba(139,92,246,0.4)' },
+                  'Dealer': { bg: 'rgba(37,99,235,0.15)', text: '#2563eb', border: 'rgba(37,99,235,0.4)' },
+                  'Sub-Dealer': { bg: 'rgba(13,148,136,0.15)', text: '#0d9488', border: 'rgba(13,148,136,0.4)' }
                 };
                 const tierConfig = tierColors[party.party_type] || tierColors['Dealer'];
 
@@ -695,17 +695,17 @@ export default function StageDataTable({
                         onClick={() => onSelectParty(party)}
                         style={{
                           padding: '0.42rem 0.85rem',
-                          background: isApproved ? 'rgba(59,130,246,0.15)' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                          border: isApproved ? '1px solid #3b82f6' : 'none',
+                          background: isApproved ? meta.badgeBg : (meta.badgeColor || '#2563eb'),
+                          border: isApproved ? `1px solid ${meta.badgeColor}` : 'none',
                           borderRadius: '6px',
-                          color: isApproved ? '#60a5fa' : '#fff',
+                          color: isApproved ? meta.badgeColor : '#ffffff',
                           fontWeight: 700,
                           fontSize: '0.76rem',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '0.35rem',
-                          boxShadow: isApproved ? 'none' : '0 2px 6px rgba(37,99,235,0.25)',
+                          boxShadow: isApproved ? 'none' : `0 2px 8px ${meta.badgeBg}`,
                           transition: 'all 0.15s'
                         }}
                       >

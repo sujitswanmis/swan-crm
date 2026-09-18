@@ -798,6 +798,8 @@ export default function PartyMasterModule({
     try {
       await updatePartyStep(activePartyId, 'S01_Distributor_Registration', {
         zone: s01DistForm.zone,
+        state: s01DistForm.state,
+        district: s01DistForm.district,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
       });
