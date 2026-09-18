@@ -667,7 +667,7 @@ export const VALID_LEAD_DB_COLUMNS = new Set([
   'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
   'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
   'district_name', 'city_name', 'tehsil_name', 'block_name', 'pin_code',
-  'address', 'requirement', 'investment', 'buying_timeline'
+  'address', 'requirement', 'investment', 'buying_timeline', 'client_status'
 ]);
 
 /**

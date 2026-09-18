@@ -1113,8 +1113,9 @@ export default function CRMContainer({
     // ⚡ PERF FIX: O(1) boundary-probe signature — previously generated ~2.5MB string per call via .map().join('|')
     const len = listToProcess.length;
     const first = listToProcess[0];
+    const mid = listToProcess[Math.floor(len / 2)];
     const last = listToProcess[len - 1];
-    const sig = `${len}-${first?.id || ''}-${first?.status || ''}-${last?.id || ''}-${last?.status || ''}`;
+    const sig = `${len}-${first?.id || ''}-${first?.status || ''}-${first?.updated_at || ''}-${mid?.id || ''}-${mid?.status || ''}-${last?.id || ''}-${last?.status || ''}-${last?.updated_at || ''}`;
     if (prevLeadsSigRef.current !== sig) {
       prevLeadsSigRef.current = sig;
       setLeads(Array.isArray(newList) ? newList : (prev => {
@@ -1574,14 +1575,20 @@ export default function CRMContainer({
     const leadsArray = Array.isArray(updatedFilteredLeads) ? updatedFilteredLeads : (updatedFilteredLeads ? [updatedFilteredLeads] : []);
     if (leadsArray.length === 0) return;
 
+    // Invalidate probe signature so next filter run never drops this update
+    prevLeadsSigRef.current = '';
+
     setRawLeads(prevRaw => {
       const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
-      return prevRaw.map(l => {
+      const next = prevRaw.map(l => {
         if (updatedMap.has(l.id)) {
           return { ...l, ...updatedMap.get(l.id) };
         }
         return l;
       });
+      // Synchronize in-memory changes to IndexedDB so page reload preserves recent updates
+      debouncedSaveLeadsLocally(next);
+      return next;
     });
 
     setLeads(prevLeads => {

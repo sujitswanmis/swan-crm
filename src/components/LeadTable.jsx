@@ -1986,9 +1986,17 @@ export default function LeadTable({
             userId={userId}
             userName={userName}
             stages={stages}
+            onLeadUpdate={(updatedLead) => {
+              const processed = processLeads([updatedLead], teamMembers)[0] || updatedLead;
+              setData(curr => curr.map(item => item.id === processed.id ? { ...item, ...processed } : item));
+              setSelectedLead(processed);
+              if (onLeadsChange) onLeadsChange(processed);
+            }}
             onUpdateLead={(updatedLead) => {
-              setData(curr => curr.map(item => item.id === updatedLead.id ? { ...item, ...updatedLead } : item));
-              if (onLeadsChange) onLeadsChange(updatedLead);
+              const processed = processLeads([updatedLead], teamMembers)[0] || updatedLead;
+              setData(curr => curr.map(item => item.id === processed.id ? { ...item, ...processed } : item));
+              setSelectedLead(processed);
+              if (onLeadsChange) onLeadsChange(processed);
             }}
             onNextLead={handleNextLead}
             onPrevLead={handlePrevLead}
@@ -2983,7 +2991,15 @@ export default function LeadTable({
         <div className="modal-container">
           <ClientRegistration 
             initialData={selectedLead} 
-            onRegistrationSuccess={() => { setSelectedLead(null); setIsModalOpen(false); }} 
+            onRegistrationSuccess={(savedLead) => {
+              if (savedLead) {
+                const processed = processLeads([savedLead], teamMembers)[0] || savedLead;
+                setData(curr => curr.map(item => item.id === processed.id ? { ...item, ...processed } : item));
+                if (onLeadsChange) onLeadsChange(processed);
+              }
+              setSelectedLead(null);
+              setIsModalOpen(false);
+            }} 
             isEditMode={true} 
             onClose={() => { setSelectedLead(null); setIsModalOpen(false); }} 
           />
@@ -3073,6 +3089,14 @@ export default function LeadTable({
              // Since processLeads expects an array of raw leads, we can pass it
              // and merge back into our data state
              const processed = processLeads([updatedRawLead], teamMembers)[0];
+             setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
+             setSelectedLead(processed);
+             if (onLeadsChange) {
+               onLeadsChange(processed);
+             }
+          }}
+          onUpdateLead={(updatedRawLead) => {
+             const processed = processLeads([updatedRawLead], teamMembers)[0] || updatedRawLead;
              setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
              setSelectedLead(processed);
              if (onLeadsChange) {

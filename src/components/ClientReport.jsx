@@ -1300,6 +1300,29 @@ export default function ClientReport({
     setLoading(false);
   }, [initialData, teamMembers]);
 
+  const handleLeadUpdated = (updatedLead) => {
+    if (!updatedLead || !updatedLead.id) return;
+
+    setSelectedLead(prev => (prev?.id === updatedLead.id ? { ...prev, ...updatedLead } : prev));
+
+    setLeads(prev => prev.map(l => {
+      if (l.id !== updatedLead.id) return l;
+      const merged = { ...l, ...updatedLead };
+      const assignedName = merged.assigned_to 
+        ? normalizeEmployeeName(merged.assigned_to, teamMembers) 
+        : (merged.assigned_to_name ? normalizeEmployeeName(merged.assigned_to_name, teamMembers) : 'Unassigned');
+      return {
+        ...merged,
+        assigned_to_name: assignedName,
+        lead_formatted_id: merged.lead_ref_id || merged.id
+      };
+    }));
+
+    if (onLeadsChange) {
+      onLeadsChange(updatedLead);
+    }
+  };
+
   const handleDeleteSelected = async () => {
     if (!canDelete) {
       alert("Permission Denied: You do not have permission to delete leads.");
@@ -2086,8 +2109,11 @@ export default function ClientReport({
           <ClientRegistration 
             initialData={selectedLead} 
             isEditMode={true} 
-            onClose={() => { setIsProfileOpen(false); window.location.reload(); }}
-            onRegistrationSuccess={() => { setIsProfileOpen(false); window.location.reload(); }}
+            onClose={() => setIsProfileOpen(false)}
+            onRegistrationSuccess={(savedLead) => {
+              handleLeadUpdated(savedLead || selectedLead);
+              setIsProfileOpen(false);
+            }}
           />
         </div>
       )}
@@ -2096,9 +2122,11 @@ export default function ClientReport({
         <LeadProfilePanel 
           lead={selectedLead} 
           isOpen={true} 
-          onClose={() => { setIsProfileOpen(false); window.location.reload(); }} 
+          onClose={() => setIsProfileOpen(false)} 
           mode="history"
           userName={userName}
+          onLeadUpdate={handleLeadUpdated}
+          onUpdateLead={handleLeadUpdated}
         />
       )}
 

@@ -872,9 +872,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             setIsSubmitting(false);
             return;
           }
+          const updatedLeadObj = { ...initialData, ...cleanPayload };
           await enqueueOfflineAction('update', 'lead', { ...cleanPayload, id: initialData.id });
           alert('⚡ Offline Mode: Device is offline. Client updates saved to device storage! They will sync to cloud when connected.');
-          if (onRegistrationSuccess) onRegistrationSuccess();
+          if (onRegistrationSuccess) onRegistrationSuccess(updatedLeadObj);
           if (onClose) onClose();
         } else {
           try {
@@ -899,6 +900,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             }
             if (updateError) throw updateError;
 
+            const updatedLeadObj = { ...initialData, ...cleanPayload };
             const statusChanged = cleanPayload.status && cleanPayload.status !== initialData.status;
             const cleanOldStatus = (!initialData.status || initialData.status === 'None' || initialData.status.toLowerCase() === 'new' || initialData.status.toLowerCase() === 'pending') 
               ? '01 - New Stage' 
@@ -918,7 +920,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             } catch(e) { console.error('Audit Log failed', e); }
             
             alert('Client Updated Successfully!');
-            if (onRegistrationSuccess) onRegistrationSuccess();
+            if (onRegistrationSuccess) onRegistrationSuccess(updatedLeadObj);
             if (onClose) onClose();
           } catch (netErr) {
             console.error('Lead update error:', netErr);
@@ -935,9 +937,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 setIsSubmitting(false);
                 return;
               }
+              const updatedLeadObj = { ...initialData, ...cleanPayload };
               await enqueueOfflineAction('update', 'lead', { ...cleanPayload, id: initialData.id });
               alert('⚡ Offline Mode: Device is offline. Client updates saved to device storage! They will sync to cloud when connected.');
-              if (onRegistrationSuccess) onRegistrationSuccess();
+              if (onRegistrationSuccess) onRegistrationSuccess(updatedLeadObj);
               if (onClose) onClose();
             } else {
               alert(`Failed to update client: ${netErr.message || 'Database error occurred'}`);

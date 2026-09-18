@@ -423,6 +423,13 @@ export default function LeadProfilePanel({
   totalLeadsCount
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const [activeLead, setActiveLead] = useState(lead);
+  const currentLead = activeLead || lead || {};
+
+  useEffect(() => {
+    setActiveLead(lead);
+  }, [lead]);
+
   const [notes, setNotes] = useState([]);
   const [callLogs, setCallLogs] = useState([]);
   const [isLoadingCalls, setIsLoadingCalls] = useState(false);
@@ -485,6 +492,7 @@ export default function LeadProfilePanel({
   const recognitionRef = useRef(null);
 
   const notifyLeadUpdate = (updatedLeadObj) => {
+    setActiveLead(prev => ({ ...(prev || {}), ...updatedLeadObj }));
     if (onLeadUpdate) onLeadUpdate(updatedLeadObj);
     if (onUpdateLead) onUpdateLead(updatedLeadObj);
   };
@@ -516,18 +524,19 @@ export default function LeadProfilePanel({
   }, [isOpen, hasNextLead, hasPrevLead, onNextLead, onPrevLead, onClose]);
 
   useEffect(() => {
-    if (lead?.status) {
-      setCurrentStatus(formatStatusWithNumbers(lead.status, stages));
+    const l = activeLead || lead;
+    if (l?.status) {
+      setCurrentStatus(formatStatusWithNumbers(l.status, stages));
     }
-    if (lead) {
-      setCurrentClientStatus(lead.client_status || lead.clientStatus || 'None');
-      setCurrentPriority(lead.priority || 'LP00: None');
-      setCurrentBusinessType(lead.business_type || '');
-      setCurrentRequirement(lead.requirement || '');
-      setCurrentInvestment(lead.investment || '');
-      setCurrentBuyingTimeline(lead.buying_timeline || '');
+    if (l) {
+      setCurrentClientStatus(l.client_status || l.clientStatus || 'None');
+      setCurrentPriority(l.priority || 'LP00: None');
+      setCurrentBusinessType(l.business_type || '');
+      setCurrentRequirement(l.requirement || '');
+      setCurrentInvestment(l.investment || '');
+      setCurrentBuyingTimeline(l.buying_timeline || '');
     }
-  }, [lead?.status, lead?.client_status, lead?.clientStatus, lead?.priority, lead?.business_type, lead?.requirement, lead?.investment, lead?.buying_timeline, stages]);
+  }, [lead?.id, activeLead?.status, activeLead?.client_status, activeLead?.clientStatus, activeLead?.priority, activeLead?.business_type, activeLead?.requirement, activeLead?.investment, activeLead?.buying_timeline, stages]);
 
   useEffect(() => {
     if (propStages && propStages.length > 0) {
@@ -740,14 +749,14 @@ export default function LeadProfilePanel({
     const formattedNewStatus = formatStatusWithNumbers(newStatus, stages);
     if (formattedNewStatus === currentStatus) return;
 
-    const oldStatus = currentStatus || formatStatusWithNumbers(lead.status, stages) || '01 - New Stage';
+    const oldStatus = currentStatus || formatStatusWithNumbers(currentLead.status, stages) || '01 - New Stage';
     const nowIso = new Date().toISOString();
     const actor = normalizeEmployeeName(userName || 'Agent');
     const noteText = `Status changed from ${oldStatus} to ${formattedNewStatus}`;
 
     const statusNote = {
       id: `local_note_${Date.now()}`,
-      lead_id: lead.id,
+      lead_id: currentLead.id || lead.id,
       note_text: noteText,
       created_by: actor,
       created_at: nowIso
@@ -757,7 +766,7 @@ export default function LeadProfilePanel({
     setNotes(prev => [statusNote, ...prev]);
 
     const updatedLeadObj = {
-      ...lead,
+      ...currentLead,
       status: formattedNewStatus,
       last_status: formattedNewStatus,
       updated_at: nowIso,
@@ -824,9 +833,9 @@ export default function LeadProfilePanel({
   };
 
   const handleAttributeUpdate = async (fieldKey, newValue, displayLabel) => {
-    if (!lead || !lead.id || !fieldKey) return;
+    if (!currentLead || !currentLead.id || !fieldKey) return;
 
-    const storedVal = (lead[fieldKey] !== undefined && lead[fieldKey] !== null) ? String(lead[fieldKey]).trim() : '';
+    const storedVal = (currentLead[fieldKey] !== undefined && currentLead[fieldKey] !== null) ? String(currentLead[fieldKey]).trim() : '';
     const cleanNewVal = (newValue !== undefined && newValue !== null) ? String(newValue).trim() : '';
 
     if (storedVal === cleanNewVal && savingField !== fieldKey) return;
@@ -845,7 +854,7 @@ export default function LeadProfilePanel({
 
     const newLocalNote = {
       id: `local_attr_${Date.now()}`,
-      lead_id: lead.id,
+      lead_id: currentLead.id,
       note_text: noteText,
       created_by: actor,
       created_at: nowIso
@@ -854,7 +863,7 @@ export default function LeadProfilePanel({
     setNotes(prev => [newLocalNote, ...prev]);
 
     const updatedLeadObj = {
-      ...lead,
+      ...currentLead,
       [fieldKey]: newValue,
       updated_at: nowIso,
       last_timestamp: nowIso,
@@ -1050,6 +1059,58 @@ export default function LeadProfilePanel({
     fetchNotes();
     fetchCalls();
 
+    // Fetch fresh lead details directly from Supabase on panel open to guarantee zero stale data
+    let isMounted = true;
+    const fetchFreshLead = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('id', lead.id)
+          .single();
+
+        if (!error && data && isMounted) {
+          setActiveLead(prev => ({ ...(prev || {}), ...data }));
+          if (data.status) setCurrentStatus(formatStatusWithNumbers(data.status, stages));
+          if (data.client_status !== undefined) setCurrentClientStatus(data.client_status || 'None');
+          if (data.priority !== undefined) setCurrentPriority(data.priority || 'LP00: None');
+          if (data.business_type !== undefined) setCurrentBusinessType(data.business_type || '');
+          if (data.requirement !== undefined) setCurrentRequirement(data.requirement || '');
+          if (data.investment !== undefined) setCurrentInvestment(data.investment || '');
+          if (data.buying_timeline !== undefined) setCurrentBuyingTimeline(data.buying_timeline || '');
+          if (data.follow_up_date) {
+            const date = new Date(data.follow_up_date);
+            const tzOffset = date.getTimezoneOffset() * 60000;
+            const localISOTime = new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+            setFollowUpDate(localISOTime);
+          }
+          setEditForm(prev => ({
+            ...prev,
+            name: data.name || prev.name || '',
+            company: data.company || '',
+            email: data.email || '',
+            phone: data.phone || '',
+            business_type: data.business_type || '',
+            deal_value: data.deal_value || 0,
+            source: data.source || 'Website'
+          }));
+        }
+      } catch (err) {
+        console.warn('Could not fetch fresh lead row from Supabase:', err);
+      }
+    };
+    fetchFreshLead();
+
+    // Subscribe to lead updates in realtime
+    const leadChannel = supabase
+      .channel(`lead-data-${lead.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${lead.id}` }, (payload) => {
+        if (payload?.new) {
+          setActiveLead(prev => ({ ...(prev || {}), ...payload.new }));
+        }
+      })
+      .subscribe();
+
     // Subscribe to new notes
     const noteChannel = supabase
       .channel(`notes-${lead.id}`)
@@ -1077,6 +1138,8 @@ export default function LeadProfilePanel({
     }
 
     return () => {
+      isMounted = false;
+      supabase.removeChannel(leadChannel);
       supabase.removeChannel(noteChannel);
       supabase.removeChannel(callChannel);
       if (typeof window !== 'undefined') {
@@ -1267,22 +1330,20 @@ export default function LeadProfilePanel({
       const noteText = 'Follow-up date cleared';
       const newNote = {
         id: Date.now(),
-        lead_id: lead.id,
+        lead_id: currentLead.id || lead.id,
         note_text: noteText,
         created_by: actor,
         created_at: new Date().toISOString()
       };
 
-      if (onLeadUpdate) {
-        onLeadUpdate({ ...lead, follow_up_date: null, is_offline_pending: false });
-      }
+      notifyLeadUpdate({ ...currentLead, follow_up_date: null, is_offline_pending: false });
 
       try {
-        const { error: updateError } = await supabase.from('leads').update({ follow_up_date: null }).eq('id', lead.id);
+        const { error: updateError } = await supabase.from('leads').update({ follow_up_date: null }).eq('id', currentLead.id || lead.id);
         if (updateError) throw updateError;
 
         await supabase.from('lead_notes').insert([{
-          lead_id: lead.id,
+          lead_id: currentLead.id || lead.id,
           note_text: noteText,
           created_by: actor
         }]);
@@ -1292,7 +1353,7 @@ export default function LeadProfilePanel({
         if (isOffline) {
           const check = canPerformOfflineAction('leadFollowUp');
           if (check.allowed) {
-            await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: null });
+            await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: null });
           }
         }
       }
@@ -1306,21 +1367,19 @@ export default function LeadProfilePanel({
     const formattedDate = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const noteText = `Follow-up scheduled for: ${formattedDate}`;
 
-    if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, follow_up_date: isoDateStr, is_offline_pending: false });
-    }
+    notifyLeadUpdate({ ...currentLead, follow_up_date: isoDateStr, is_offline_pending: false });
 
     try {
-      const { error: updateError } = await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', lead.id);
+      const { error: updateError } = await supabase.from('leads').update({ follow_up_date: isoDateStr }).eq('id', currentLead.id || lead.id);
       if (updateError) throw updateError;
 
       await supabase.from('lead_notes').insert([{
-        lead_id: lead.id,
+        lead_id: currentLead.id || lead.id,
         note_text: noteText,
         created_by: actor
       }]);
       try {
-        logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" on ${formattedDate}`);
+        logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${currentLead.company || currentLead.name || currentLead.lead_ref_id || currentLead.id}" on ${formattedDate}`);
       } catch(e) {}
     } catch (netErr) {
       console.warn('Network follow-up update failed, fallback to offline:', netErr);
@@ -1328,7 +1387,7 @@ export default function LeadProfilePanel({
       if (isOffline) {
         const check = canPerformOfflineAction('leadFollowUp');
         if (check.allowed) {
-          await enqueueOfflineAction('update', 'lead', { id: lead.id, follow_up_date: isoDateStr });
+          await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: isoDateStr });
         }
       }
     }
@@ -1343,9 +1402,8 @@ export default function LeadProfilePanel({
     const cleanForm = sanitizeLeadPayloadForDb(rawNormalized, true);
     const actor = normalizeEmployeeName(userName || 'System');
 
-    if (onLeadUpdate) {
-      onLeadUpdate({ ...lead, ...cleanForm, is_offline_pending: false });
-    }
+    const updatedLeadObj = { ...currentLead, ...cleanForm, is_offline_pending: false };
+    notifyLeadUpdate(updatedLeadObj);
     setIsEditing(false);
 
     try {
@@ -1459,22 +1517,22 @@ export default function LeadProfilePanel({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: '220px', flex: '1 1 auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    {lead.name || 'Unnamed Lead'}
+                    {currentLead.name || 'Unnamed Lead'}
                   </h2>
-                  {lead.lead_ref_id && (
+                  {currentLead.lead_ref_id && (
                     <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '1px 7px', borderRadius: '9999px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
-                      REF: #{lead.lead_ref_id}
+                      REF: #{currentLead.lead_ref_id}
                     </span>
                   )}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                  {lead.company && <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.company}</span>}
-                  {lead.company && (lead.phone || lead.email) && <span>•</span>}
-                  {lead.phone && <span>📞 {lead.phone}</span>}
-                  {lead.email && (
+                  {currentLead.company && <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{currentLead.company}</span>}
+                  {currentLead.company && (currentLead.phone || currentLead.email) && <span>•</span>}
+                  {currentLead.phone && <span>📞 {currentLead.phone}</span>}
+                  {currentLead.email && (
                     <>
                       <span>•</span>
-                      <span>✉️ {lead.email}</span>
+                      <span>✉️ {currentLead.email}</span>
                     </>
                   )}
                 </div>
@@ -1982,7 +2040,7 @@ export default function LeadProfilePanel({
                   )}
                 </button>
 
-                {currentRequirement !== (lead.requirement || '') && (
+                {currentRequirement !== (currentLead.requirement || '') && (
                   <button
                     type="button"
                     onClick={() => handleAttributeUpdate('requirement', currentRequirement, 'Detailed Requirement')}
@@ -2012,7 +2070,7 @@ export default function LeadProfilePanel({
               placeholder="Enter client requirements, product details, model, specifications..."
               onChange={(e) => setCurrentRequirement(e.target.value)}
               onBlur={() => {
-                if (currentRequirement !== (lead.requirement || '')) {
+                if (currentRequirement !== (currentLead.requirement || '')) {
                   handleAttributeUpdate('requirement', currentRequirement, 'Detailed Requirement');
                 }
               }}
@@ -2066,8 +2124,8 @@ export default function LeadProfilePanel({
             </div>
           ) : (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light, #e2e8f0)' }}>
-              <div>Value: <b style={{ color: 'var(--text-primary)' }}>₹{lead.deal_value || 0}</b></div>
-              <div>Source: <b style={{ color: 'var(--text-primary)' }}>{lead.source || 'N/A'}</b></div>
+              <div>Value: <b style={{ color: 'var(--text-primary)' }}>₹{currentLead.deal_value || 0}</b></div>
+              <div>Source: <b style={{ color: 'var(--text-primary)' }}>{currentLead.source || 'N/A'}</b></div>
             </div>
           )}
         </div>
