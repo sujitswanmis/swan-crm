@@ -202,6 +202,12 @@ export default function PartyMasterModule({
   }, [activeSubTab]);
 
   useEffect(() => {
+    if (['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(activeTab)) {
+      loadOperationsData(activeTab);
+    }
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isStageModalOpen) {
         setIsStageModalOpen(false);

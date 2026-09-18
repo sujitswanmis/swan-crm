@@ -156,7 +156,7 @@ const KeepAliveTab = React.memo(
 );
 
 export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isAdmin = typeof userRole === 'string' && (userRole.toLowerCase() === 'admin' || userRole.toLowerCase() === 'superadmin' || userRole.toLowerCase() === 'masteradmin');
   if (isAdmin) return true;
   if (!moduleAccess) return false;
 
@@ -414,7 +414,11 @@ export default function CRMContainer({
     }
     return 'agents';
   });
-  const [partyMenuExpanded, setPartyMenuExpanded] = useState(false);
+  const [partyMenuExpanded, setPartyMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath === 'party' || (cleanPath && cleanPath.startsWith('party/'));
+  });
   const [partyPendingCount, setPartyPendingCount] = useState(0);
   const [partySubTab, setPartySubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -484,6 +488,7 @@ export default function CRMContainer({
           sub = partyTab;
         }
         if (sub) setPartySubTab(sub.toLowerCase());
+        setPartyMenuExpanded(true);
       }
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
         setDashboardSubTab(path === 'pipeline' || path === 'leads-data' ? 'lead-data' : path);
@@ -1714,6 +1719,51 @@ export default function CRMContainer({
       }
     } else if (tab === 'location-master' || tab === 'location_territory') {
       tab = 'location_master';
+    } else if (tab === 'party' || (tab && tab.startsWith('party/'))) {
+      let sub = '';
+      if (tab.startsWith('party/')) {
+        sub = tab.split('/')[1];
+      } else {
+        sub = params.get('tab') || params.get('subtab') || params.get('step');
+      }
+      if (sub) {
+        setPartySubTab(sub.toLowerCase());
+      }
+      tab = 'party';
+      setPartyMenuExpanded(true);
+    } else if (tab === 'calladmin' || tab === 'call-admin' || (tab && (tab.startsWith('calladmin/') || tab.startsWith('call-admin/')))) {
+      let sub = '';
+      if (tab.includes('/')) {
+        sub = tab.split('/')[1];
+      } else {
+        sub = params.get('tab') || params.get('subtab');
+      }
+      if (sub) {
+        setCallAdminSubTab(sub.toLowerCase());
+      }
+      tab = 'calladmin';
+      setCallAdminMenuExpanded(true);
+    } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
+      let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub) {
+        setAttendanceSubTab(sub.toLowerCase());
+      }
+      tab = 'attendance';
+      setAttendanceMenuExpanded(true);
+    } else if (tab === 'checklist' || (tab && tab.startsWith('checklist/'))) {
+      let sub = tab.startsWith('checklist/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub) {
+        setChecklistSubTab(sub.toLowerCase());
+      }
+      tab = 'checklist';
+      setChecklistMenuExpanded(true);
+    } else if (tab === 'delegation' || (tab && tab.startsWith('delegation/'))) {
+      let sub = tab.startsWith('delegation/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub) {
+        setDelegationSubTab(sub.toLowerCase());
+      }
+      tab = 'delegation';
+      setDelegationMenuExpanded(true);
     }
     if (tab) {
       setActiveTab(tab);
@@ -1777,6 +1827,40 @@ export default function CRMContainer({
           setPartySubTab(sub.toLowerCase());
         }
         tab = 'party';
+        setPartyMenuExpanded(true);
+      } else if (tab === 'calladmin' || tab === 'call-admin' || (tab && (tab.startsWith('calladmin/') || tab.startsWith('call-admin/')))) {
+        let sub = '';
+        if (tab.includes('/')) {
+          sub = tab.split('/')[1];
+        } else {
+          sub = params.get('tab') || params.get('subtab');
+        }
+        if (sub) {
+          setCallAdminSubTab(sub.toLowerCase());
+        }
+        tab = 'calladmin';
+        setCallAdminMenuExpanded(true);
+      } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
+        let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub) {
+          setAttendanceSubTab(sub.toLowerCase());
+        }
+        tab = 'attendance';
+        setAttendanceMenuExpanded(true);
+      } else if (tab === 'checklist' || (tab && tab.startsWith('checklist/'))) {
+        let sub = tab.startsWith('checklist/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub) {
+          setChecklistSubTab(sub.toLowerCase());
+        }
+        tab = 'checklist';
+        setChecklistMenuExpanded(true);
+      } else if (tab === 'delegation' || (tab && tab.startsWith('delegation/'))) {
+        let sub = tab.startsWith('delegation/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub) {
+          setDelegationSubTab(sub.toLowerCase());
+        }
+        tab = 'delegation';
+        setDelegationMenuExpanded(true);
       }
       
       if (!tab) {
@@ -5570,7 +5654,7 @@ export default function CRMContainer({
               {/* Call Admin */}
               <KeepAliveTab 
                 isActive={activeTab === 'calladmin'} 
-                isVisited={isTabPermitted('calladmin', moduleAccess, userRole) && visitedTabs.has('calladmin')}
+                isVisited={isTabPermitted('calladmin', moduleAccess, userRole) && (visitedTabs.has('calladmin') || activeTab === 'calladmin')}
               >
                 <ErrorBoundary>
                   <CallAdminModule 
@@ -5615,7 +5699,7 @@ export default function CRMContainer({
               {/* Party Master */}
               <KeepAliveTab 
                 isActive={activeTab === 'party'} 
-                isVisited={isTabPermitted('party', moduleAccess, userRole) && visitedTabs.has('party')}
+                isVisited={isTabPermitted('party', moduleAccess, userRole) && (visitedTabs.has('party') || activeTab === 'party')}
               >
                 <ErrorBoundary>
                   <PartyMasterModule 

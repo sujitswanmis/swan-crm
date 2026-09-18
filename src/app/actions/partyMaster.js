@@ -727,15 +727,15 @@ export async function getParty360Details(partyId) {
     territoriesRes,
     teamsRes
   ] = await Promise.all([
-    adminClient.from('party_master').select('*').eq('id', partyId).single().catch(() => ({ data: null })),
-    adminClient.from('party_roles').select('*').eq('party_id', partyId).catch(() => ({ data: [] })),
-    adminClient.from('party_contacts').select('*').eq('party_id', partyId).catch(() => ({ data: [] })),
-    adminClient.from('party_addresses').select('*').eq('party_id', partyId).catch(() => ({ data: [] })),
-    adminClient.from('party_relationship_history').select('*').eq('party_id', partyId).order('created_at', { ascending: false }).catch(() => ({ data: [] })),
-    adminClient.from('party_commercial_terms').select('*').eq('party_id', partyId).single().catch(() => ({ data: null })),
-    adminClient.from('party_product_authorizations').select('*').eq('party_id', partyId).catch(() => ({ data: [] })),
-    adminClient.from('party_territory_allocations').select('*').eq('party_id', partyId).catch(() => ({ data: [] })),
-    adminClient.from('party_team_assignments').select('*').eq('party_id', partyId).catch(() => ({ data: [] }))
+    adminClient.from('party_master').select('*').eq('id', partyId).maybeSingle(),
+    adminClient.from('party_roles').select('*').eq('party_id', partyId),
+    adminClient.from('party_contacts').select('*').eq('party_id', partyId),
+    adminClient.from('party_addresses').select('*').eq('party_id', partyId),
+    adminClient.from('party_relationship_history').select('*').eq('party_id', partyId).order('created_at', { ascending: false }),
+    adminClient.from('party_commercial_terms').select('*').eq('party_id', partyId).maybeSingle(),
+    adminClient.from('party_product_authorizations').select('*').eq('party_id', partyId),
+    adminClient.from('party_territory_allocations').select('*').eq('party_id', partyId),
+    adminClient.from('party_team_assignments').select('*').eq('party_id', partyId)
   ]);
 
   return {
