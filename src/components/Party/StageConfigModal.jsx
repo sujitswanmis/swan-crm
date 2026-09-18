@@ -462,9 +462,6 @@ export default function StageConfigModal({
         justifyContent: 'center',
         padding: '1.25rem 1rem'
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
     >
       <div
         style={{
