@@ -393,15 +393,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
   }, [stopRingingAudio]);
 
-  const handleActivePanelCallEnded = useCallback((endedSession) => {
-    const s = endedSession || activeSessionRef.current;
-    if (s) {
-      handleSessionTerminationAnnouncement(s);
-    }
-    updateActiveSession(null);
-    setOptimisticCall(null);
-  }, [handleSessionTerminationAnnouncement, updateActiveSession]);
-
   const updateActiveSession = useCallback((newSession) => {
     if (newSession && (newSession.status === 'connected' || newSession.customer_answer_time)) {
       stopRingingAudio();
@@ -677,6 +668,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
   useEffect(() => {
     handleSessionTerminationAnnouncementRef.current = handleSessionTerminationAnnouncement;
   }, [handleSessionTerminationAnnouncement]);
+
+  const handleActivePanelCallEnded = useCallback((endedSession) => {
+    const s = endedSession || activeSessionRef.current;
+    if (s) {
+      handleSessionTerminationAnnouncement(s);
+    }
+    updateActiveSession(null);
+    setOptimisticCall(null);
+  }, [handleSessionTerminationAnnouncement, updateActiveSession]);
 
   const fetchSession = useCallback(async () => {
     if (!agentData) return;
