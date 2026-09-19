@@ -235,8 +235,8 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       console.log('Conference exit check: Conference not found or empty, count = 0');
     }
 
-    // End the conference ONLY if the agent leaves, or if no one remains in the conference
-    const shouldEndConference = isAgentExit || membersCount === 0;
+    // End the conference if the agent leaves, or if customer leaves in 1-on-1 call (only 1 member remaining), or if room empty
+    const shouldEndConference = isAgentExit || membersCount <= 1;
 
     if (shouldEndConference && session.status !== 'ended') {
       const endTime = new Date();
@@ -264,7 +264,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
         if (isAgentExit) {
           hangupCause = 'agent_hangup';
           hangupSource = 'agent';
-        } else if (session.status === 'connected') {
+        } else if (session.status === 'connected' || session.customer_answer_time) {
           hangupCause = 'customer_hangup';
           hangupSource = 'customer';
         } else {

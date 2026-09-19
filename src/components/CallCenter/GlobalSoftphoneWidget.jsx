@@ -38,8 +38,8 @@ class IndianRingbackController {
 
       const dur = 0.4;
       gain.gain.setValueAtTime(0.0001, startTime);
-      gain.gain.linearRampToValueAtTime(0.08, startTime + 0.025);
-      gain.gain.setValueAtTime(0.08, startTime + dur - 0.025);
+      gain.gain.linearRampToValueAtTime(0.25, startTime + 0.025);
+      gain.gain.setValueAtTime(0.25, startTime + dur - 0.025);
       gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
 
       osc1.start(startTime);
@@ -65,7 +65,7 @@ class IndianRingbackController {
       }
 
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       const schedule = () => {
@@ -197,16 +197,22 @@ function speakOutcome(text) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   try {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'hi-IN';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find(v => v.lang === 'hi-IN' || v.lang.startsWith('hi')) 
-      || voices.find(v => v.lang === 'en-IN')
-      || voices[0];
-    if (voice) utterance.voice = voice;
-    window.speechSynthesis.speak(utterance);
+    setTimeout(() => {
+      try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'hi-IN';
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        const voices = window.speechSynthesis.getVoices() || [];
+        const voice = voices.find(v => v.lang === 'hi-IN' || v.lang.startsWith('hi')) 
+          || voices.find(v => v.lang === 'en-IN')
+          || (voices.length > 0 ? voices[0] : null);
+        if (voice) utterance.voice = voice;
+        window.speechSynthesis.speak(utterance);
+      } catch (innerErr) {
+        console.warn("SpeechSynthesis inner speak error:", innerErr);
+      }
+    }, 50);
   } catch (e) {
     console.warn("Speech synthesis error:", e);
   }
@@ -652,8 +658,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (!isFreshOptimistic || (statusData.activeSession?.room_name === activeRoom)) {
           stopRingingAudio(activeRoom);
           const prev = activeSessionRef.current;
-          if (prev && (!statusData.activeSession || statusData.activeSession.id === prev.id)) {
-            handleSessionTerminationAnnouncement(statusData.activeSession || prev);
+          const endedData = statusData.activeSession || prev || (activeRoom ? { room_name: activeRoom, hangup_cause: statusData.hangupCause } : null);
+          if (endedData) {
+            handleSessionTerminationAnnouncement(endedData);
           }
           updateActiveSession(null);
           setOptimisticCall(null);
@@ -1084,8 +1091,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setOptimisticCall(optimisticState);
     optimisticCallRef.current = optimisticState;
 
-    // DO NOT start ringing tone here. Customer has not rung yet.
-    // Ringing will only start when telecom network confirms customer_ringing.
+    // Start ringback audio directly inside the user click gesture!
+    // This unlocks browser AudioContext immediately so the agent hears "tur tur" without browser autoplay block.
+    if (callingMode === 'browser_webrtc') {
+      startRingingAudio(clientRoomName);
+    }
 
     // Set flag so onIncomingCall knows this is our outbound call
     localStorage.setItem('pendingOutboundCall', 'true');

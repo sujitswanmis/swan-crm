@@ -73,10 +73,10 @@ export async function POST(req) {
       : '';
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${custParam}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${encodeURIComponent(cleanRoom)}`;
-    // waitSound loops ringback.wav for the AGENT while waiting for customer.
+    // waitSound loops ringback.mp3 for the AGENT while waiting for customer.
     // Audio stops automatically with zero latency when startConferenceOnEnter fires (customer joins).
     const waitSoundAttr = isAgentRole
-      ? ` waitSound="${appBaseUrl}/ringback.wav"`
+      ? ` waitSound="${appBaseUrl}/ringback.mp3"`
       : '';
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
