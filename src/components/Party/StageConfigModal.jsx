@@ -520,6 +520,19 @@ export default function StageConfigModal({
                     }}>
                       {modalParty.party_type}
                     </span>
+                    {(modalParty.our_company || s00Form.our_company) && (
+                      <span style={{
+                        fontSize: '0.72rem',
+                        padding: '0.1rem 0.45rem',
+                        borderRadius: '4px',
+                        background: (modalParty.our_company || s00Form.our_company) === 'NSTLP' ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: (modalParty.our_company || s00Form.our_company) === 'NSTLP' ? '#ec4899' : '#d97706',
+                        border: `1px solid ${(modalParty.our_company || s00Form.our_company) === 'NSTLP' ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                        fontWeight: 800
+                      }}>
+                        🏢 {modalParty.our_company || s00Form.our_company}
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span style={{ color: currentTheme.color, fontWeight: 700 }}>+ Direct Channel Partner Onboarding</span>
@@ -605,6 +618,18 @@ export default function StageConfigModal({
                           <option value="Distributor">Level 1: Distributor (Super Stockist)</option>
                           <option value="Dealer">Level 2: Dealer (Authorized Showroom)</option>
                           <option value="Sub-Dealer">Level 3: Sub-Dealer (Retail Counter)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ ...labelStyle, color: '#f59e0b', fontWeight: 700 }}>Our Company Name *</label>
+                        <select
+                          value={s00Form.our_company || 'NSMLR'}
+                          onChange={e => setS00Form({ ...s00Form, our_company: e.target.value })}
+                          style={{ ...inputStyle, borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.05)' }}
+                          required
+                        >
+                          <option value="NSMLR">NSMLR (New Swan Multitech Ltd)</option>
+                          <option value="NSTLP">NSTLP (Swan Agro / Transmission)</option>
                         </select>
                       </div>
                       <div>

@@ -226,6 +226,7 @@ export default function PartyMasterModule({
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'Distributor' | 'Dealer' | 'Sub-Dealer'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Draft'
   const [billingFilter, setBillingFilter] = useState('ALL'); // 'ALL' | 'DIRECT_COMPANY_BILLING' | 'DISTRIBUTOR_BILLED'
+  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
 
   // Wizard States (S00 to S07)
   const [showWizard, setShowWizard] = useState(false);
@@ -236,6 +237,7 @@ export default function PartyMasterModule({
 
   // S00 Form State (With All Specific Contact Fields)
   const [s00Form, setS00Form] = useState({
+    our_company: 'NSMLR',
     party_type: 'Dealer',
     firm_name: '',
     legal_name: '',
@@ -610,10 +612,11 @@ export default function PartyMasterModule({
       const matchesType = typeFilter === 'ALL' || p.party_type === typeFilter;
       const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'Active' ? p.final_status === 'Active' : p.final_status !== 'Active');
       const matchesBilling = billingFilter === 'ALL' || p.billing_route_type === billingFilter;
+      const matchesCompany = companyFilter === 'ALL' || (p.our_company || 'NSMLR') === companyFilter;
 
-      return matchesSearch && matchesType && matchesStatus && matchesBilling;
+      return matchesSearch && matchesType && matchesStatus && matchesBilling && matchesCompany;
     });
-  }, [parties, searchTerm, typeFilter, statusFilter, billingFilter]);
+  }, [parties, searchTerm, typeFilter, statusFilter, billingFilter, companyFilter]);
 
   // Wizard Launch Handler
   const startNewPartyWizard = () => {
@@ -622,6 +625,7 @@ export default function PartyMasterModule({
     setWizardStep('S00');
     setS00ContactTab('biz');
     setS00Form({
+      our_company: 'NSMLR',
       party_type: 'Dealer',
       firm_name: '',
       legal_name: '',
@@ -702,6 +706,7 @@ export default function PartyMasterModule({
 
     setS00Form(prev => ({
       ...prev,
+      our_company: party.our_company || party.meta?.our_company || lead.our_company || 'NSMLR',
       party_type: party.party_type || (lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer'),
       firm_name: party.firm_name || lead.company || lead.name || '',
       legal_name: party.legal_name || lead.company || lead.name || '',
@@ -1230,6 +1235,10 @@ export default function PartyMasterModule({
           resumeWizard(targetParty);
         } else {
           setActivePartyId(leadItem.party_id);
+          setS00Form(prev => ({
+            ...prev,
+            our_company: leadItem.our_company || leadItem.lead?.our_company || 'NSMLR'
+          }));
         }
         setStageConfirmedMap(prev => ({
           ...prev,
@@ -1540,6 +1549,7 @@ export default function PartyMasterModule({
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead Universal ID</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Our Company</th>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead & Firm Name</th>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Contact Person & Phone</th>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Location (State / District)</th>
@@ -1551,14 +1561,14 @@ export default function PartyMasterModule({
               <tbody>
                 {loadingTransfers ? (
                   <tr>
-                    <td colSpan="7" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <td colSpan="8" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem auto' }} />
                       Loading transferred leads...
                     </td>
                   </tr>
                 ) : transferredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+                    <td colSpan="8" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
                       <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
                         No leads transferred from Stage 07 yet.
                       </div>
@@ -1577,6 +1587,19 @@ export default function PartyMasterModule({
                       <tr key={lead.handoff_id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                         <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#38bdf8' }}>
                           {lead.lead_universal_id || 'LEAD'}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 800,
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '5px',
+                            background: (lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: (lead.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                            border: `1px solid ${(lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                          }}>
+                            {lead.our_company || 'NSMLR'}
+                          </span>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{lead.firm_name || lead.lead_name}</div>
@@ -1843,6 +1866,16 @@ export default function PartyMasterModule({
 
             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <select
+                value={companyFilter}
+                onChange={e => setCompanyFilter(e.target.value)}
+                style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+              >
+                <option value="ALL">All Companies (Our Company)</option>
+                <option value="NSMLR">NSMLR</option>
+                <option value="NSTLP">NSTLP</option>
+              </select>
+
+              <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value)}
                 style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
@@ -1909,18 +1942,31 @@ export default function PartyMasterModule({
                           <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24' }}>
                             {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code}
                           </div>
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '4px',
-                            marginTop: '0.2rem',
-                            background: isDist ? 'rgba(56,189,248,0.2)' : isDealer ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                            color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24'
-                          }}>
-                            {isDist ? '👑 Level 1: Distributor' : isDealer ? '🏪 Level 2: Dealer' : '🛒 Level 3: Sub-Dealer'}
-                          </span>
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '4px',
+                              background: isDist ? 'rgba(56,189,248,0.2)' : isDealer ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                              color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24'
+                            }}>
+                              {isDist ? '👑 Level 1: Distributor' : isDealer ? '🏪 Level 2: Dealer' : '🛒 Level 3: Sub-Dealer'}
+                            </span>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.7rem',
+                              fontWeight: 800,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              background: (p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                              color: (p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                              border: `1px solid ${(p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                            }} title={`Our Company: ${p.our_company || 'NSMLR'}`}>
+                              {p.our_company || 'NSMLR'}
+                            </span>
+                          </div>
                         </td>
 
                         {/* Firm & Contact Details */}

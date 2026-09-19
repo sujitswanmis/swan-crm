@@ -101,6 +101,7 @@ export default function StageDataTable({
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED'
+  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
   const [onlyStageTier, setOnlyStageTier] = useState(Boolean(meta.filterTiers));
 
   // Compute status map for all parties
@@ -151,10 +152,14 @@ export default function StageDataTable({
       if (statusFilter === 'PENDING' && isApproved) return false;
       if (statusFilter === 'APPROVED' && !isApproved) return false;
 
+      // Company Filter
+      if (companyFilter !== 'ALL' && (p.our_company || 'NSMLR') !== companyFilter) return false;
+
       // Search Term Filter
       if (!term) return true;
 
       const code = (p.party_universal_code || '').toLowerCase();
+      const company = (p.our_company || '').toLowerCase();
       const firm = (p.firm_name || '').toLowerCase();
       const legal = (p.legal_name || '').toLowerCase();
       const phone = [
@@ -171,6 +176,7 @@ export default function StageDataTable({
 
       return (
         code.includes(term) ||
+        company.includes(term) ||
         firm.includes(term) ||
         legal.includes(term) ||
         phone.includes(term) ||
@@ -180,7 +186,7 @@ export default function StageDataTable({
         gstin.includes(term)
       );
     });
-  }, [tierFilteredParties, partyApprovalMap, meta, statusFilter, searchTerm]);
+  }, [tierFilteredParties, partyApprovalMap, meta, statusFilter, companyFilter, searchTerm]);
 
   // Stage-specific column 5 content renderer
   const renderStageCol5 = (party, approvals) => {
@@ -527,6 +533,24 @@ export default function StageDataTable({
               <CheckCircle2 size={12} /> Approved ({approvedCount})
             </button>
           </div>
+
+          <select
+            value={companyFilter}
+            onChange={e => setCompanyFilter(e.target.value)}
+            style={{
+              padding: '0.35rem 0.65rem',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              fontSize: '0.78rem',
+              fontWeight: 600
+            }}
+          >
+            <option value="ALL">All Companies (Our Company)</option>
+            <option value="NSMLR">NSMLR</option>
+            <option value="NSTLP">NSTLP</option>
+          </select>
         </div>
       </div>
 
@@ -542,6 +566,7 @@ export default function StageDataTable({
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)' }}>
             <tr style={{ borderBottom: '1px solid var(--border-light, #cbd5e1)', color: 'var(--table-header-text, #1e293b)' }}>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>
+              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Our Company</th>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Firm &amp; Legal Name</th>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Channel Tier</th>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Contact &amp; Location</th>
@@ -553,7 +578,7 @@ export default function StageDataTable({
           <tbody>
             {displayedParties.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ padding: '2.5rem 1rem', textAlign: 'center' }}>
+                <td colSpan="8" style={{ padding: '2.5rem 1rem', textAlign: 'center' }}>
                   <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.98rem', marginBottom: '0.3rem' }}>
                     No channel partners found.
                   </div>
@@ -615,6 +640,21 @@ export default function StageDataTable({
                           </span>
                         )}
                       </div>
+                    </td>
+
+                    {/* Our Company */}
+                    <td style={{ padding: '0.75rem 0.9rem' }}>
+                      <span style={{
+                        fontSize: '0.74rem',
+                        fontWeight: 800,
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '5px',
+                        background: (party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: (party.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                        border: `1px solid ${(party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                      }}>
+                        {party.our_company || 'NSMLR'}
+                      </span>
                     </td>
 
                     {/* Firm Name */}

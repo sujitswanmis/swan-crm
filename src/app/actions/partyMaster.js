@@ -27,7 +27,7 @@ function parsePartyMeta(businessNature) {
   return {};
 }
 
-async function updatePartyMeta(adminClient, partyId, partialMeta) {
+export async function updatePartyMeta(adminClient, partyId, partialMeta) {
   try {
     const { data: current } = await adminClient
       .from('party_master')
@@ -166,6 +166,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         ...item,
         lead: lead,
         party_type: pType,
+        our_company: item.our_company || meta.our_company || lead?.our_company || 'NSMLR',
         final_status: item.party_status === 'Draft_From_Lead' ? 'Draft' : (item.party_status || 'Draft'),
         workflow_status: item.party_status === 'Draft_From_Lead' ? 'S00_TRANSFERRED' : (item.onboarding_stage || 'S01_Approved'),
         state_name: item.state_name || primaryAddress?.state_name || lead?.state_name || lead?.state || 'Punjab',
@@ -441,9 +442,10 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
     }
   }
 
-  // 6. Save initial metadata (including CP1, CP2, CP3 and official channels)
+  // 6. Save initial metadata (including CP1, CP2, CP3, our_company, and official channels)
   const initialMeta = {};
   const metaKeys = [
+    'our_company',
     'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2', 'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
     'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2', 'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1',
     'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
@@ -456,6 +458,9 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
       initialMeta[k] = cleanPartyData[k];
     }
   });
+  if (!initialMeta.our_company) {
+    initialMeta.our_company = cleanPartyData.our_company || 'NSMLR';
+  }
   initialMeta.stages = { s01: true };
   await updatePartyMeta(adminClient, party.id, initialMeta);
 
@@ -679,6 +684,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   // 5. Update party metadata (parent links, zone, route, contacts, stages)
   const metaUpdates = {};
   const contactMetaKeys = [
+    'our_company',
     'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2', 'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
     'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2', 'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1',
     'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
@@ -688,6 +694,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   contactMetaKeys.forEach(k => {
     if (stepData[k] !== undefined) metaUpdates[k] = stepData[k];
   });
+  if (stepData.our_company !== undefined) metaUpdates.our_company = stepData.our_company;
   if (stepData.parent_distributor_id !== undefined) metaUpdates.parent_distributor_id = stepData.parent_distributor_id;
   if (stepData.parent_dealer_id !== undefined) metaUpdates.parent_dealer_id = stepData.parent_dealer_id;
   if (stepData.dealership_type !== undefined) metaUpdates.dealership_type = stepData.dealership_type;

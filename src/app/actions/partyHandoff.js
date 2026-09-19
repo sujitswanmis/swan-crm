@@ -1,7 +1,19 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createPartyMaster } from './partyMaster';
+import { createPartyMaster, updatePartyMeta } from './partyMaster';
+
+function parsePartyMeta(businessNature) {
+  if (!businessNature || typeof businessNature !== 'string') return {};
+  if (businessNature.startsWith('SWAN_PARTY_META:')) {
+    try {
+      return JSON.parse(businessNature.slice('SWAN_PARTY_META:'.length));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -74,6 +86,7 @@ export async function sendLeadToParty(leadId, userId) {
     firm_name: leadFirmName,
     legal_name: leadLegalName,
     party_type: pType,
+    our_company: lead.our_company || 'NSMLR',
     primary_mobile: leadPrimaryPhone,
     official_email: leadEmail,
     gstin: lead.business_gst || lead.gstin || lead.gst_no || null,
@@ -147,6 +160,14 @@ export async function sendLeadToParty(leadId, userId) {
         updated_at: new Date().toISOString()
       })
       .eq('id', party.id);
+
+    try {
+      await updatePartyMeta(adminClient, party.id, {
+        our_company: lead.our_company || 'NSMLR'
+      });
+    } catch (e) {
+      console.warn('updatePartyMeta notice for existing party:', e.message);
+    }
   } else {
     // 3. Create New Party Draft with all lead fields
     party = await createPartyMaster(partyMasterPayload);
@@ -278,6 +299,9 @@ export async function getTransferredLeads() {
         const party = partyMap.get(h.target_party_id) || {};
         const isConfirmed = h.handoff_status === 'APPROVED' || h.handoff_status === 'ACTIVATED' || (party.party_status && party.party_status !== 'Draft_From_Lead');
 
+        const partyMeta = parsePartyMeta(party.business_nature);
+        const effectiveCompany = lead.our_company || party.our_company || partyMeta.our_company || 'NSMLR';
+
         return {
           id: h.id,
           handoff_id: h.id,
@@ -285,6 +309,7 @@ export async function getTransferredLeads() {
           lead_universal_id: lead.lead_ref_id || (lead.id ? `LD-${lead.id.slice(-6)}` : 'LEAD'),
           party_id: h.target_party_id,
           party_universal_code: party.party_universal_code,
+          our_company: effectiveCompany,
           firm_name: party.firm_name || lead.company || lead.name || 'Channel Partner',
           legal_name: party.legal_name || lead.company || lead.name,
           party_type: lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer',
@@ -332,12 +357,16 @@ export async function getTransferredLeads() {
     return partiesFallback.map(p => {
       const lead = leadMap.get(p.source_lead_id) || {};
       const isConfirmed = p.party_status !== 'Draft_From_Lead';
+      const partyMeta = parsePartyMeta(p.business_nature);
+      const effectiveCompany = lead.our_company || p.our_company || partyMeta.our_company || 'NSMLR';
+
       return {
         id: p.id,
         handoff_id: p.id,
         party_id: p.id,
         lead_universal_id: lead.lead_ref_id || (lead.id ? `LD-${lead.id.slice(-6)}` : 'LEAD'),
         party_universal_code: p.party_universal_code,
+        our_company: effectiveCompany,
         firm_name: p.firm_name || lead.company || lead.name,
         legal_name: p.legal_name || lead.name,
         party_type: lead.business_type?.toLowerCase().includes('distributor') ? 'Distributor' : lead.business_type?.toLowerCase().includes('sub') ? 'Sub-Dealer' : 'Dealer',
