@@ -432,6 +432,23 @@ const LeadStatusCell = React.memo(({ info }) => {
         info.table.options.meta.updateLeadInState(processed);
       }
       
+      // Automatic Transfer to Party Master S00 when status is "Transfer to Party Master"
+      const isTransferStatus = (newStatus || '').toLowerCase().includes('transfer to party master') || 
+                               (newStatus || '').toLowerCase().includes('party master');
+      if (isTransferStatus) {
+        try {
+          const currentUserId = info.table.options.meta?.userId || null;
+          const transferRes = await sendLeadToParty(lead.id, currentUserId);
+          if (transferRes?.success) {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+            }
+          }
+        } catch (transErr) {
+          console.warn("Automatic transfer to party master notice:", transErr.message || transErr);
+        }
+      }
+      
       // Trigger WhatsApp automation (non-blocking)
       triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
         if (!res.success) {
@@ -812,10 +829,48 @@ const columns = [
     enableGlobalFilter: false,
     cell: info => {
       const lead = info.row.original;
+      const st = (lead?.status || '').toLowerCase();
+      const isStage07 = st.startsWith('07') || st.startsWith('7;') || st.startsWith('08') || st.startsWith('8;') || st.includes('final stage') || st.includes('party master') || st.includes('transfer');
       return (
-        <button onClick={() => info.table.options.meta?.onOpenProfile(lead, 'history')} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-          Update History
-        </button>
+        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => info.table.options.meta?.onOpenProfile(lead, 'history')} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            Update History
+          </button>
+          {isStage07 && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const currentUserId = info.table.options.meta?.userId || null;
+                  const res = await sendLeadToParty(lead.id, currentUserId);
+                  if (res && res.success) {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+                    }
+                    alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now waiting in S00 for confirmation.`);
+                  }
+                } catch (err) {
+                  alert(err?.message || 'Failed to transfer lead to Party Master');
+                }
+              }}
+              title="Transfer this lead to Party Master (S00)"
+              style={{
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.73rem',
+                fontWeight: 700,
+                borderRadius: '4px',
+                border: '1px solid rgba(56,189,248,0.5)',
+                background: 'rgba(37,99,235,0.12)',
+                color: '#38bdf8',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              🚀 S00
+            </button>
+          )}
+        </div>
       );
     }
   },

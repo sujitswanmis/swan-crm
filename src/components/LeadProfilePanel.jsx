@@ -808,6 +808,23 @@ export default function LeadProfilePanel({
         triggerWhatsappAutomationForStage(lead.id, formattedNewStatus);
       } catch (e) {}
 
+      // Automatic Transfer to Party Master S00 when status is "Transfer to Party Master"
+      const isTransferStatus = (formattedNewStatus || '').toLowerCase().includes('transfer to party master') || 
+                               (formattedNewStatus || '').toLowerCase().includes('party master');
+      if (isTransferStatus) {
+        try {
+          const transferRes = await sendLeadToParty(lead.id, userId);
+          if (transferRes?.success) {
+            setTransferredPartyCode(transferRes.partyCode);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+            }
+          }
+        } catch (transErr) {
+          console.warn("Automatic transfer to party master notice from profile panel:", transErr.message || transErr);
+        }
+      }
+
       setStatusUpdateSuccess(true);
       setTimeout(() => setStatusUpdateSuccess(false), 2000);
     } catch (err) {
@@ -1300,6 +1317,20 @@ export default function LeadProfilePanel({
         try {
           triggerWhatsappAutomationForStage(lead.id, statusToUpdate);
         } catch (e) {}
+
+        // Automatic Transfer to Party Master S00 when status is "Transfer to Party Master"
+        const isTransferStatus = (statusToUpdate || '').toLowerCase().includes('transfer to party master') || 
+                                 (statusToUpdate || '').toLowerCase().includes('party master');
+        if (isTransferStatus) {
+          try {
+            const transferRes = await sendLeadToParty(lead.id, userId);
+            if (transferRes?.success && typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+            }
+          } catch (transErr) {
+            console.warn("Automatic transfer to party master notice from note update:", transErr.message || transErr);
+          }
+        }
       }
     } catch (netErr) {
       console.warn('Network addNote/status update failed, checking offline fallback:', netErr?.message || netErr);

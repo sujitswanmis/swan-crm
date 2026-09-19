@@ -450,9 +450,30 @@ export default function CRMContainer({
     };
     fetchPendingTransfers();
     window.addEventListener('party_transferred_updated', fetchPendingTransfers);
+
+    let supabaseChannel = null;
+    try {
+      const supabase = createClient();
+      supabaseChannel = supabase
+        .channel('realtime_crm_pending_transfers')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_party_handoffs' }, () => {
+          fetchPendingTransfers();
+        })
+        .subscribe();
+    } catch (_) {}
+
+    const intervalTimer = setInterval(fetchPendingTransfers, 30000);
+
     return () => {
       active = false;
       window.removeEventListener('party_transferred_updated', fetchPendingTransfers);
+      clearInterval(intervalTimer);
+      if (supabaseChannel) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(supabaseChannel);
+        } catch (_) {}
+      }
     };
   }, []);
 

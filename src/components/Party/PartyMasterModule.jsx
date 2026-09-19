@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createClient } from '@/utils/supabase/client';
 import {
   Building2, Users, Plus, Eye, RefreshCw, X, MapPin, Phone, Mail,
   CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowRightLeft,
@@ -403,9 +404,67 @@ export default function PartyMasterModule({
     onConfirm: null
   });
 
+  const refreshTransferredLeads = useCallback(async () => {
+    try {
+      const transRes = await getTransferredLeads();
+      setTransferredLeads(transRes || []);
+    } catch (err) {
+      console.warn('Could not refresh transferred leads:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  // When activeTab changes to s00, immediately refresh transferred leads
+  useEffect(() => {
+    if (activeTab === 's00') {
+      refreshTransferredLeads();
+    }
+  }, [activeTab, refreshTransferredLeads]);
+
+  // Realtime subscription and window event listener for instant S00 updates
+  useEffect(() => {
+    const handleLocalUpdate = () => {
+      refreshTransferredLeads();
+    };
+    window.addEventListener('party_transferred_updated', handleLocalUpdate);
+
+    let supabaseChannel = null;
+    try {
+      const supabase = createClient();
+      supabaseChannel = supabase
+        .channel('realtime_party_s00_transfers')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_party_handoffs' }, () => {
+          refreshTransferredLeads();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'party_master' }, () => {
+          refreshTransferredLeads();
+        })
+        .subscribe();
+    } catch (realtimeErr) {
+      console.warn('Realtime handoffs subscription error:', realtimeErr);
+    }
+
+    // Interval polling when viewing s00 (every 10s fallback)
+    const pollTimer = setInterval(() => {
+      if (activeTab === 's00') {
+        refreshTransferredLeads();
+      }
+    }, 10000);
+
+    return () => {
+      window.removeEventListener('party_transferred_updated', handleLocalUpdate);
+      clearInterval(pollTimer);
+      if (supabaseChannel) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(supabaseChannel);
+        } catch (_) {}
+      }
+    };
+  }, [refreshTransferredLeads, activeTab]);
 
   const loadInitialData = async () => {
     setLoading(true);
@@ -1434,24 +1493,46 @@ export default function PartyMasterModule({
                 Converted leads transferred from <strong>Lead Data &gt; 07 - Final Stage</strong>. Review, confirm and advance directly to <strong>S01 Party Master Creation</strong>.
               </p>
             </div>
-            <button
-              onClick={startNewPartyWizard}
-              style={{
-                padding: '0.6rem 1.25rem',
-                background: '#10b981',
-                border: 'none',
-                borderRadius: '8px',
-                color: '#fff',
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem'
-              }}
-            >
-              <Plus size={16} /> + Onboard Direct Partner (Without Lead Handoff)
-            </button>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={refreshTransferredLeads}
+                title="Refresh transferred leads from Lead Data"
+                style={{
+                  padding: '0.6rem 1rem',
+                  background: 'var(--bg-surface)',
+                  border: '1.5px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <RefreshCw size={15} /> Refresh S00
+              </button>
+              <button
+                onClick={startNewPartyWizard}
+                style={{
+                  padding: '0.6rem 1.25rem',
+                  background: '#10b981',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <Plus size={16} /> + Onboard Direct Partner (Without Lead Handoff)
+              </button>
+            </div>
           </div>
 
           <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>

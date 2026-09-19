@@ -22,11 +22,18 @@ export async function sendLeadToParty(leadId, userId) {
 
   if (leadErr || !lead) throw new Error('Lead not found');
 
-  // Verify Stage 07 (can be '07 - Final Stage', '7;...', or contain 'Final Stage')
+  // Verify Stage 07 / S08 / Final Stage or status containing transfer / party master
   const st = lead.status || '';
-  const isStage07 = st.startsWith('07') || st.startsWith('7;') || st.toLowerCase().includes('final stage');
-  if (!isStage07) {
-    throw new Error('"Transfer to Party Master" is only allowed for leads in 07 - Final Stage');
+  const isStageAllowed = 
+    st.startsWith('07') || 
+    st.startsWith('7;') || 
+    st.startsWith('08') || 
+    st.startsWith('8;') || 
+    st.toLowerCase().includes('final stage') || 
+    st.toLowerCase().includes('party master') || 
+    st.toLowerCase().includes('transfer');
+  if (!isStageAllowed) {
+    throw new Error('"Transfer to Party Master" is only allowed for leads in Final Stage or with status "Transfer to Party Master"');
   }
 
   // 2. Check duplicate party by mobile or GSTIN
@@ -210,6 +217,35 @@ export async function sendLeadToParty(leadId, userId) {
 export async function getTransferredLeads() {
   const adminClient = getAdminClient();
   try {
+    // 0. Auto-Heal: Ensure any leads marked "Transfer to Party Master" in leads table are recorded in handoffs
+    try {
+      const { data: markedLeads } = await adminClient
+        .from('leads')
+        .select('id')
+        .ilike('status', '%transfer to party master%')
+        .limit(50);
+
+      if (markedLeads && markedLeads.length > 0) {
+        const { data: existingHandoffs } = await adminClient
+          .from('lead_party_handoffs')
+          .select('lead_id')
+          .in('lead_id', markedLeads.map(l => l.id));
+
+        const existingSet = new Set((existingHandoffs || []).map(h => h.lead_id));
+        const missingLeads = markedLeads.filter(l => !existingSet.has(l.id));
+
+        for (const m of missingLeads) {
+          try {
+            await sendLeadToParty(m.id, null);
+          } catch (autoErr) {
+            console.warn('Auto-heal sendLeadToParty notice:', autoErr.message);
+          }
+        }
+      }
+    } catch (healErr) {
+      console.warn('Auto-heal check warning:', healErr.message);
+    }
+
     const { data: handoffs, error: hErr } = await adminClient
       .from('lead_party_handoffs')
       .select('*')
