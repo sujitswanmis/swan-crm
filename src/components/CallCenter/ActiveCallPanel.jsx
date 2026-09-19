@@ -21,7 +21,12 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
       fetchMembers();
       interval = setInterval(fetchMembers, 2500); // Poll every 2.5s for live updates
     }
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== 'undefined' && window.__crm_stop_all_ringing) {
+        window.__crm_stop_all_ringing(session?.room_name);
+      }
+    };
   }, [session]);
 
   // Also listen to supabase changes for this session

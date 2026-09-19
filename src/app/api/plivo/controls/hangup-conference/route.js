@@ -14,22 +14,29 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // 1. Instantly update database call session status to ended to unblock the agent UI
-    const endTime = new Date();
-    let query = adminClient.from('call_sessions').update({
-      status: 'ended',
-      hangup_cause: 'agent_hangup',
-      hangup_source: 'agent',
-      end_time: endTime.toISOString()
-    });
-
+    // 1. Fetch current session to preserve any customer-side termination cause
+    let fetchQuery = adminClient.from('call_sessions').select('*');
     if (roomName) {
-      query = query.eq('room_name', roomName);
+      fetchQuery = fetchQuery.eq('room_name', roomName);
     } else {
-      query = query.eq('agent_id', agentId).in('status', ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing']);
+      fetchQuery = fetchQuery.eq('agent_id', agentId).in('status', ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing']);
+    }
+    const { data: session } = await fetchQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    const endTime = new Date();
+    const preserveCause = session?.hangup_cause && !['agent_hangup', 'failed', 'initiated'].includes(session.hangup_cause);
+    const hangupCause = preserveCause ? session.hangup_cause : 'agent_hangup';
+    const hangupSource = preserveCause ? (session.hangup_source || 'customer_leg') : 'agent';
+
+    if (session) {
+      await adminClient.from('call_sessions').update({
+        status: 'ended',
+        hangup_cause: hangupCause,
+        hangup_source: hangupSource,
+        end_time: endTime.toISOString()
+      }).eq('id', session.id);
     }
 
-    const { data: session } = await query.select().order('created_at', { ascending: false }).limit(1).maybeSingle();
     const targetRoom = roomName || session?.room_name;
 
     // 2. Perform Plivo hangups in the background

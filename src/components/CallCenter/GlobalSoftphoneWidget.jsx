@@ -603,7 +603,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
       lastAnnouncedRoomRef.current = announceKey;
     }
 
-    if (cause === 'agent_hangup') return; // Agent deliberately ended it
+    if (cause === 'agent_hangup') {
+      if (!sessionData.customer_answer_time && (sessionData.ringing_duration_sec >= 25)) {
+        triggerAnnouncement({
+          type: 'no_answer',
+          title: 'Customer ने Phone नहीं उठाया',
+          subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
+          speech: 'Customer ne phone nahi uthaya.',
+          customerNumber: cleanNum
+        });
+      }
+      return;
+    }
 
     // If customer was connected and answered, then hung up
     if (sessionData.customer_answer_time || cause === 'customer_hangup') {
@@ -670,13 +681,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [handleSessionTerminationAnnouncement]);
 
   const handleActivePanelCallEnded = useCallback((endedSession) => {
+    stopRingingAudio();
     const s = endedSession || activeSessionRef.current;
     if (s) {
       handleSessionTerminationAnnouncement(s);
     }
     updateActiveSession(null);
     setOptimisticCall(null);
-  }, [handleSessionTerminationAnnouncement, updateActiveSession]);
+  }, [handleSessionTerminationAnnouncement, updateActiveSession, stopRingingAudio]);
 
   const fetchSession = useCallback(async () => {
     if (!agentData) return;

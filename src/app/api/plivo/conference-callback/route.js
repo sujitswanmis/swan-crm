@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
-import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
+import { getPlivoWebhookBaseUrl, categorizeHangupCause } from '@/app/api/plivo/utils';
 
 export async function GET() {
   return new NextResponse('Plivo Conference Callback Active', { status: 200 });
@@ -98,6 +98,8 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
           {
             answerMethod: 'POST',
             fallbackMethod: 'POST',
+            ringUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`,
+            ringMethod: 'POST',
             hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`,
             hangupMethod: 'POST',
             ringTimeout: 35,
@@ -257,7 +259,7 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
 
       let hangupCause = session.hangup_cause;
       let hangupSource = session.hangup_source;
-      if (!hangupCause) {
+      if (!hangupCause || hangupCause === 'initiated') {
         if (session.status === 'connected' || session.customer_answer_time) {
           if (isAgentExit) {
             hangupCause = 'agent_hangup';
@@ -268,8 +270,20 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
           }
         } else {
           if (isAgentExit) {
-            hangupCause = 'agent_hangup';
-            hangupSource = 'agent';
+            // If agent exited before customer pickup, check if customer leg already failed/rejected/switched off
+            let custDeterminedCause = null;
+            if (session.customer_call_uuid) {
+              try {
+                const plivoCl = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+                const custCall = await plivoCl.calls.get(session.customer_call_uuid);
+                if (custCall && (custCall.endTime || custCall.hangupCauseName)) {
+                  custDeterminedCause = categorizeHangupCause(custCall.callState, custCall.hangupCauseName, custCall.hangupSource, ringingSec, false);
+                  if (custCall.hangupSource) hangupSource = custCall.hangupSource;
+                }
+              } catch (_e) {}
+            }
+            hangupCause = custDeterminedCause || 'agent_hangup';
+            if (!custDeterminedCause) hangupSource = 'agent';
           } else {
             hangupCause = 'rejected';
             hangupSource = 'customer';

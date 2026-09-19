@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
+import { categorizeHangupCause } from '@/app/api/plivo/utils';
 
 export async function GET(req) {
   try {
@@ -62,36 +63,74 @@ export async function GET(req) {
       }
     }
 
-    // Fast active check: If agent is waiting in conference and customer pickup hasn't synced yet,
-    // inspect Plivo conference bridge in real time to catch customer entry immediately
+    // Fast active check: If agent is waiting in conference, check customer leg status in real time
     if (!isConnected && !isEnded && session.conference_name && session.agent_answer_time) {
       try {
         const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-        const conf = await client.conferences.get(session.conference_name);
-        const members = conf?.members || [];
 
-        if (members.length >= 2) {
-          // Customer has entered the conference! Mark connected immediately
-          isConnected = true;
-          const nowIso = new Date().toISOString();
-          session.status = 'connected';
-          session.customer_answer_time = session.customer_answer_time || nowIso;
+        // 1. Instant check: Did customer call terminate (decline, switched off, busy, reject)?
+        if (session.customer_call_uuid) {
+          try {
+            const custCall = await client.calls.get(session.customer_call_uuid);
+            if (custCall && (custCall.endTime || custCall.hangupCauseName || custCall.callState === 'completed' || custCall.callState === 'hangup')) {
+              isEnded = true;
+              session.status = 'ended';
+              const ringSec = session.agent_answer_time
+                ? Math.max(0, Math.floor((Date.now() - new Date(session.agent_answer_time).getTime()) / 1000))
+                : 0;
+              const cause = categorizeHangupCause(custCall.callState, custCall.hangupCauseName, custCall.hangupSource, ringSec, false);
+              session.hangup_cause = cause;
+              session.hangup_source = custCall.hangupSource || 'Carrier';
 
-          // Non-blocking update in DB
-          adminClient
-            .from('call_sessions')
-            .update({
-              status: 'connected',
-              customer_answer_time: session.customer_answer_time
-            })
-            .eq('id', session.id)
-            .then(() => {});
-        } else if (members.length === 0 && session.agent_call_uuid) {
-          // Both members left or conference dissolved
-          const confAgeMs = Date.now() - new Date(session.start_time || session.created_at).getTime();
-          if (confAgeMs > 8000) {
-            isEnded = true;
-            session.status = 'ended';
+              // Terminate conference & agent leg immediately so softphone stops ringing
+              try { await client.conferences.hangup(session.conference_name); } catch (_e) {}
+              if (session.agent_call_uuid) {
+                try { await client.calls.hangup(session.agent_call_uuid); } catch (_e) {}
+              }
+
+              // Update DB non-blocking
+              adminClient
+                .from('call_sessions')
+                .update({
+                  status: 'ended',
+                  hangup_cause: cause,
+                  hangup_source: session.hangup_source,
+                  end_time: new Date().toISOString()
+                })
+                .eq('id', session.id)
+                .then(() => {});
+            }
+          } catch (_callErr) {}
+        }
+
+        // 2. If customer hasn't terminated, check conference bridge for pickup
+        if (!isEnded) {
+          const conf = await client.conferences.get(session.conference_name);
+          const members = conf?.members || [];
+
+          if (members.length >= 2) {
+            // Customer has entered the conference! Mark connected immediately
+            isConnected = true;
+            const nowIso = new Date().toISOString();
+            session.status = 'connected';
+            session.customer_answer_time = session.customer_answer_time || nowIso;
+
+            // Non-blocking update in DB
+            adminClient
+              .from('call_sessions')
+              .update({
+                status: 'connected',
+                customer_answer_time: session.customer_answer_time
+              })
+              .eq('id', session.id)
+              .then(() => {});
+          } else if (members.length === 0 && session.agent_call_uuid) {
+            // Both members left or conference dissolved
+            const confAgeMs = Date.now() - new Date(session.start_time || session.created_at).getTime();
+            if (confAgeMs > 8000) {
+              isEnded = true;
+              session.status = 'ended';
+            }
           }
         }
       } catch (_confErr) {

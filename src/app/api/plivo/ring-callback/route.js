@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
+import { categorizeHangupCause } from '@/app/api/plivo/utils';
 
 // All terminal customer-side call status values from Plivo (various spellings)
 const TERMINAL_CUSTOMER_STATUSES = new Set([
@@ -27,52 +28,7 @@ const TERMINAL_CUSTOMER_STATUSES = new Set([
   'completed'
 ]);
 
-// Normalize Plivo terminal cause for voice and UI announcement
-function categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec = 0, hasAnswered = false) {
-  const s = (callStatus || '').toLowerCase();
-  const h = (hangupCause || '').toLowerCase();
 
-  if (hasAnswered) {
-    return 'customer_hangup';
-  }
-
-  if (
-    h.includes('switched_off') ||
-    h.includes('unallocated') ||
-    h.includes('absent') ||
-    h.includes('unreachable') ||
-    h.includes('out of service') ||
-    h.includes('destination out of service') ||
-    h.includes('no_route') ||
-    h.includes('temporary_failure') ||
-    h.includes('network congestion') ||
-    h.includes('destination_out_of_order') ||
-    h.includes('user does not exist')
-  ) {
-    return 'switched_off';
-  }
-
-  if (ringingSec <= 3 && (s === 'failed' || s === 'busy' || h.includes('busy') || h.includes('normal_clearing'))) {
-    return 'switched_off';
-  }
-
-  if (s === 'rejected' || h.includes('reject') || h.includes('call rejected') || h.includes('declined')) {
-    return 'rejected';
-  }
-  if (s === 'busy' || s.includes('busy') || h.includes('busy') || h.includes('user_busy')) {
-    return 'busy';
-  }
-  if (s.includes('timeout') || s === 'no-answer' || h.includes('timeout') || h.includes('no_answer') || h.includes('no answer') || ringingSec >= 28) {
-    return 'no_answer';
-  }
-  if (s.includes('cancel') || h.includes('cancel')) {
-    return 'agent_hangup';
-  }
-  if (s === 'failed' || h.includes('failed')) {
-    return 'failed';
-  }
-  return s || h || 'failed';
-}
 
 export async function GET() {
   return new NextResponse('Plivo Ring Callback Active', { status: 200 });
@@ -150,9 +106,23 @@ export async function POST(req) {
         return new NextResponse('OK', { status: 200 });
       }
 
-      // Idempotency: skip only if already marked ended or failed
+      // If session was prematurely marked with a generic placeholder (like agent_hangup or failed),
+      // upgrade it with the true customer telecom cause so realtime announcements fire accurately
       if (session.status === 'ended' || session.status === 'failed') {
-        console.log(`ring-callback: session already ${session.status}, skipping terminal handling`);
+        const isGeneric = !session.hangup_cause || session.hangup_cause === 'agent_hangup' || session.hangup_cause === 'failed' || session.hangup_cause === 'initiated';
+        if (isGeneric && !session.customer_answer_time) {
+          const ringingSec = session.ringing_duration_sec || (session.agent_answer_time ? Math.max(0, Math.floor((Date.now() - new Date(session.agent_answer_time).getTime()) / 1000)) : 0);
+          const trueCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false);
+          if (trueCause && trueCause !== 'failed') {
+            await adminClient.from('call_sessions').update({
+              hangup_cause: trueCause,
+              hangup_source: hangupSource || 'customer_leg'
+            }).eq('id', session.id);
+            console.log(`ring-callback: upgraded ended session ${session.id} cause to ${trueCause}`);
+          }
+        } else {
+          console.log(`ring-callback: session already ${session.status} (${session.hangup_cause}), skipping`);
+        }
         return new NextResponse('OK', { status: 200 });
       }
 
