@@ -35,7 +35,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
         { event: 'UPDATE', schema: 'public', table: 'call_sessions', filter: `id=eq.${session.id}` },
         (payload) => {
           if (payload.new.status === 'ended' || payload.new.status === 'failed') {
-            onCallEnded();
+            onCallEnded?.(payload.new);
           }
         }
       )
@@ -187,10 +187,13 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)' }}>
         <div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 2s infinite' }} />
-            Active Call Session
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: (session.status === 'connected' || session.customer_answer_time) ? '#10b981' : '#f59e0b', animation: 'pulse 2s infinite' }} />
+            {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Ringing Customer...' : 'Connecting to Line...')}
           </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.25rem' }}>Room: {session.room_name}</p>
+          <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-color)', marginTop: '0.25rem' }}>
+            Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
+          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.15rem' }}>Room: {session.room_name}</p>
         </div>
         <button 
           onClick={handleHangupAll}
@@ -204,16 +207,25 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Users size={16} /> Live Participants ({members.length})
+          <Users size={16} /> Live Participants ({members.length + ((!session.customer_answer_time && session.status !== 'connected' && session.customer_number) ? 1 : 0)})
         </h3>
         
-        {members.length === 0 ? (
-          <div style={{ padding: '1rem', background: 'var(--bg-primary)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            <Loader2 size={16} className="spin" style={{ display: 'inline', marginRight: '0.5rem' }} /> Waiting for participants to join...
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {members.map(member => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {/* If customer hasn't answered yet, show them as ringing participant */}
+          {(!session.customer_answer_time && session.status !== 'connected' && session.customer_number) && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
+              <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
+                  <Loader2 size={12} className="spin" /> {session.status === 'customer_ringing' ? 'Phone Ringing (Waiting for pickup)...' : 'Connecting to telecom line...'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {members.map(member => (
               <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '8px', borderLeft: '4px solid var(--accent-color)' }}>
                 <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
@@ -264,7 +276,6 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
               </div>
             ))}
           </div>
-        )}
       </div>
 
       <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>

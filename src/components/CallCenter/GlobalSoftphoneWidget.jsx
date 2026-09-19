@@ -17,7 +17,6 @@ class IndianRingbackController {
     this.safetyTimer = null;
     this.isPlaying = false;
     this.activeRoom = null;
-    this.answeredRooms = new Set();
   }
 
   _burst(startTime) {
@@ -38,8 +37,8 @@ class IndianRingbackController {
 
       const dur = 0.4;
       gain.gain.setValueAtTime(0.0001, startTime);
-      gain.gain.linearRampToValueAtTime(0.25, startTime + 0.025);
-      gain.gain.setValueAtTime(0.25, startTime + dur - 0.025);
+      gain.gain.linearRampToValueAtTime(0.35, startTime + 0.025);
+      gain.gain.setValueAtTime(0.35, startTime + dur - 0.025);
       gain.gain.linearRampToValueAtTime(0.0001, startTime + dur);
 
       osc1.start(startTime);
@@ -65,7 +64,6 @@ class IndianRingbackController {
 
   start(roomName) {
     if (typeof window === 'undefined') return;
-    if (roomName && this.answeredRooms.has(roomName)) return;
     if (this.isPlaying) return;
     this.isPlaying = true;
     this.activeRoom = roomName || null;
@@ -84,7 +82,7 @@ class IndianRingbackController {
         try { this.masterGain.disconnect(); } catch (e) {}
       }
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       const schedule = () => {
@@ -108,8 +106,6 @@ class IndianRingbackController {
   }
 
   stop(roomName) {
-    if (roomName) this.answeredRooms.add(roomName);
-    if (this.activeRoom) this.answeredRooms.add(this.activeRoom);
     this.isPlaying = false;
     this.activeRoom = null;
 
@@ -225,14 +221,23 @@ function speakOutcome(text) {
           window.speechSynthesis.resume();
         }
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'hi-IN';
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
         const voices = window.speechSynthesis.getVoices() || [];
-        const voice = voices.find(v => v.lang === 'hi-IN' || v.lang.startsWith('hi')) 
-          || voices.find(v => v.lang === 'en-IN')
-          || (voices.length > 0 ? voices[0] : null);
-        if (voice) utterance.voice = voice;
+        const hindiVoice = voices.find(v => v.lang === 'hi-IN' || v.lang.startsWith('hi'));
+        const indianVoice = voices.find(v => v.lang === 'en-IN');
+        const fallbackVoice = voices.length > 0 ? voices[0] : null;
+
+        if (hindiVoice) {
+          utterance.voice = hindiVoice;
+          utterance.lang = 'hi-IN';
+        } else if (indianVoice) {
+          utterance.voice = indianVoice;
+          utterance.lang = 'en-IN';
+        } else {
+          if (fallbackVoice) utterance.voice = fallbackVoice;
+          utterance.lang = fallbackVoice?.lang || 'en-US';
+        }
         window.speechSynthesis.speak(utterance);
       } catch (innerErr) {
         console.warn("SpeechSynthesis inner speak error:", innerErr);
@@ -387,6 +392,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }, 700);
     }
   }, [stopRingingAudio]);
+
+  const handleActivePanelCallEnded = useCallback((endedSession) => {
+    const s = endedSession || activeSessionRef.current;
+    if (s) {
+      handleSessionTerminationAnnouncement(s);
+    }
+    updateActiveSession(null);
+    setOptimisticCall(null);
+  }, [handleSessionTerminationAnnouncement, updateActiveSession]);
 
   const updateActiveSession = useCallback((newSession) => {
     if (newSession && (newSession.status === 'connected' || newSession.customer_answer_time)) {
@@ -1624,7 +1638,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
           {activeSession && activeSession.status !== 'ended' && (
             <div style={{ marginTop: '0.5rem' }}>
-              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={hangupCall} />
+              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={handleActivePanelCallEnded} />
             </div>
           )}
 
