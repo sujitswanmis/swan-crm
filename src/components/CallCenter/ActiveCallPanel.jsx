@@ -8,6 +8,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [heldMembers, setHeldMembers] = useState({});
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -188,52 +189,51 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   };
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1.5rem', boxShadow: 'var(--neumorphic-shadow-flat)', marginBottom: '1.5rem', color: 'var(--text-primary)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)' }}>
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', boxShadow: 'var(--neumorphic-shadow-flat)', marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-light)' }}>
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: (session.status === 'connected' || session.customer_answer_time) ? '#10b981' : '#f59e0b', animation: 'pulse 2s infinite' }} />
+          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: (session.status === 'connected' || session.customer_answer_time) ? '#10b981' : '#f59e0b', animation: 'pulse 2s infinite' }} />
             {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Ringing Customer...' : 'Connecting to Line...')}
           </h2>
-          <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-color)', marginTop: '0.25rem' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent-color)', marginTop: '0.2rem' }}>
             Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.15rem' }}>Room: {session.room_name}</p>
         </div>
         <button 
           onClick={handleHangupAll}
           disabled={loadingAction === 'hangup_all'}
-          style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+          style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.45rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}
         >
-          {loadingAction === 'hangup_all' ? <Loader2 size={16} className="spin" /> : <PhoneOff size={16} />}
+          {loadingAction === 'hangup_all' ? <Loader2 size={14} className="spin" /> : <PhoneOff size={14} />}
           End Call For All
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-        <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Users size={16} /> Live Participants ({members.length + ((!session.customer_answer_time && session.status !== 'connected' && session.customer_number) ? 1 : 0)})
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' }}>
+        <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0 0 0.25rem 0' }}>
+          <Users size={14} /> Live Participants ({members.length + ((!session.customer_answer_time && session.status !== 'connected' && session.customer_number) ? 1 : 0)})
         </h3>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           {/* If customer hasn't answered yet, show them as ringing participant */}
           {(!session.customer_answer_time && session.status !== 'connected' && session.customer_number) && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-primary)', borderRadius: '6px', borderLeft: '3px solid #f59e0b' }}>
               <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
-                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
                   Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
-                  <Loader2 size={12} className="spin" /> {session.status === 'customer_ringing' ? 'Phone Ringing (Waiting for pickup)...' : 'Connecting to telecom line...'}
+                <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
+                  <Loader2 size={11} className="spin" /> {session.status === 'customer_ringing' ? 'Phone Ringing (Waiting for pickup)...' : 'Connecting to telecom line...'}
                 </div>
               </div>
             </div>
           )}
 
           {members.map(member => (
-              <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '8px', borderLeft: '4px solid var(--accent-color)' }}>
+              <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-primary)', borderRadius: '6px', borderLeft: '3px solid var(--accent-color)' }}>
                 <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
                     {(() => {
                       let name = member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
                       if (name && typeof name === 'string') {
@@ -250,32 +250,32 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                       return name;
                     })()}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
                   <button 
                     onClick={() => handleHoldToggle(member.memberId, heldMembers[member.memberId] || false)}
                     disabled={loadingAction === `hold_${member.memberId}`}
                     title={heldMembers[member.memberId] ? "Resume Call" : "Hold Call"}
-                    style={{ background: heldMembers[member.memberId] ? 'var(--status-contacted-bg)' : 'var(--bg-surface)', color: heldMembers[member.memberId] ? 'var(--status-contacted-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ background: heldMembers[member.memberId] ? 'var(--status-contacted-bg)' : 'var(--bg-surface)', color: heldMembers[member.memberId] ? 'var(--status-contacted-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {loadingAction === `hold_${member.memberId}` ? <Loader2 size={16} className="spin" /> : (heldMembers[member.memberId] ? <Play size={16} /> : <Pause size={16} />)}
+                    {loadingAction === `hold_${member.memberId}` ? <Loader2 size={14} className="spin" /> : (heldMembers[member.memberId] ? <Play size={14} /> : <Pause size={14} />)}
                   </button>
                   <button 
                     onClick={() => handleMuteToggle(member.memberId, member.muted)}
                     disabled={loadingAction === `mute_${member.memberId}`}
                     title={member.muted ? "Unmute" : "Mute"}
-                    style={{ background: member.muted ? 'var(--status-new-bg)' : 'var(--bg-surface)', color: member.muted ? 'var(--status-new-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ background: member.muted ? 'var(--status-new-bg)' : 'var(--bg-surface)', color: member.muted ? 'var(--status-new-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {loadingAction === `mute_${member.memberId}` ? <Loader2 size={16} className="spin" /> : (member.muted ? <MicOff size={16} /> : <Mic size={16} />)}
+                    {loadingAction === `mute_${member.memberId}` ? <Loader2 size={14} className="spin" /> : (member.muted ? <MicOff size={14} /> : <Mic size={14} />)}
                   </button>
                   <button 
                     onClick={() => handleKick(member.memberId)}
                     disabled={loadingAction === `kick_${member.memberId}`}
                     title="Kick Participant"
-                    style={{ background: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-light)', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ background: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {loadingAction === `kick_${member.memberId}` ? <Loader2 size={16} className="spin" /> : <UserX size={16} />}
+                    {loadingAction === `kick_${member.memberId}` ? <Loader2 size={14} className="spin" /> : <UserX size={14} />}
                   </button>
                 </div>
               </div>
@@ -283,29 +283,37 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
           </div>
       </div>
 
-      <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
-        <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Merge 3rd Party (Add to Call)</h3>
-        <form onSubmit={handleAddParticipant} style={{ display: 'flex', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', flex: 1, border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-surface)' }}>
-            <span style={{ background: 'var(--bg-primary)', padding: '0.5rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 500, borderRight: '1px solid var(--border-light)', display: 'flex', alignItems: 'center' }}>+91</span>
-            <input 
-              type="text" 
-              value={newParticipant}
-              onChange={(e) => setNewParticipant(e.target.value.replace(/[^0-9]/g, ''))}
-              placeholder="Enter 10 digit number"
-              maxLength={10}
-              style={{ flex: 1, padding: '0.5rem 0.75rem', border: 'none', outline: 'none', fontSize: '0.9rem', background: 'transparent', color: 'var(--text-primary)' }}
-            />
-          </div>
-          <button 
-            type="submit"
-            disabled={loadingAction === 'add_participant' || newParticipant.length < 10}
-            style={{ background: 'var(--accent-color)', color: 'var(--bg-surface)', border: 'none', padding: '0 1rem', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', opacity: newParticipant.length < 10 ? 0.5 : 1 }}
-          >
-            {loadingAction === 'add_participant' ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />}
-            Dial & Add
-          </button>
-        </form>
+      <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid var(--border-light)' }}>
+        <button
+          type="button"
+          onClick={() => setShowAddParticipant(!showAddParticipant)}
+          style={{ background: 'transparent', border: 'none', color: 'var(--accent-color)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '2px 0' }}
+        >
+          <UserPlus size={14} /> {showAddParticipant ? 'Hide Add Participant' : '+ Merge 3rd Party (Add to Call)'}
+        </button>
+        {showAddParticipant && (
+          <form onSubmit={handleAddParticipant} style={{ display: 'flex', gap: '0.4rem', marginTop: '0.45rem' }}>
+            <div style={{ display: 'flex', flex: 1, border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden', background: 'var(--bg-surface)' }}>
+              <span style={{ background: 'var(--bg-primary)', padding: '0.35rem 0.55rem', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 500, borderRight: '1px solid var(--border-light)', display: 'flex', alignItems: 'center' }}>+91</span>
+              <input 
+                type="text" 
+                value={newParticipant}
+                onChange={(e) => setNewParticipant(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="10 digit number"
+                maxLength={10}
+                style={{ flex: 1, padding: '0.35rem 0.55rem', border: 'none', outline: 'none', fontSize: '0.82rem', background: 'transparent', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <button 
+              type="submit"
+              disabled={loadingAction === 'add_participant' || newParticipant.length < 10}
+              style={{ background: 'var(--accent-color)', color: 'white', border: 'none', padding: '0 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', opacity: newParticipant.length < 10 ? 0.5 : 1 }}
+            >
+              {loadingAction === 'add_participant' ? <Loader2 size={13} className="spin" /> : <UserPlus size={13} />}
+              Dial
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Custom Premium Confirmation Modal */}

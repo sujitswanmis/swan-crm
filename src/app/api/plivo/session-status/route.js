@@ -138,6 +138,32 @@ export async function GET(req) {
       }
     }
 
+    // If session ended without customer answering, but cause is generic/missing, query Plivo customer call leg to retrieve definitive telecom cause
+    if (isEnded && !session.customer_answer_time && session.customer_call_uuid && (!session.hangup_cause || ['agent_hangup', 'failed', 'initiated'].includes(session.hangup_cause))) {
+      try {
+        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+        const custCall = await client.calls.get(session.customer_call_uuid);
+        if (custCall && (custCall.endTime || custCall.hangupCauseName || custCall.callState === 'completed' || custCall.callState === 'hangup')) {
+          const ringSec = session.agent_answer_time
+            ? Math.max(0, Math.floor((new Date(custCall.endTime || Date.now()).getTime() - new Date(session.agent_answer_time).getTime()) / 1000))
+            : (session.ringing_duration_sec || 0);
+          const trueCause = categorizeHangupCause(custCall.callState, custCall.hangupCauseName, custCall.hangupSource, ringSec, false);
+          if (trueCause && trueCause !== 'failed') {
+            session.hangup_cause = trueCause;
+            session.hangup_source = custCall.hangupSource || 'Carrier';
+            adminClient
+              .from('call_sessions')
+              .update({
+                hangup_cause: trueCause,
+                hangup_source: session.hangup_source
+              })
+              .eq('id', session.id)
+              .then(() => {});
+          }
+        }
+      } catch (_e) {}
+    }
+
     return NextResponse.json({
       activeSession: session,
       isConnected,

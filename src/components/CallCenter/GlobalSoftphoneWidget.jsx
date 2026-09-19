@@ -142,6 +142,20 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
+const SOFTPHONE_VERSION = 'v1.0.604';
+
+// Pre-warm SpeechSynthesis voices on page load
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  try {
+    window.speechSynthesis.getVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        try { window.speechSynthesis.getVoices(); } catch (e) {}
+      };
+    }
+  } catch (e) {}
+}
+
 // Web Audio API tone generator for instant audio cues
 function playAudioTone(type) {
   if (typeof window === 'undefined') return;
@@ -149,29 +163,32 @@ function playAudioTone(type) {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
 
     if (type === 'rejected') {
-      [0, 0.15, 0.3].forEach((delay, idx) => {
+      [0, 0.14, 0.28].forEach((delay, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(480 - idx * 70, ctx.currentTime + delay);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime + delay);
+        osc.frequency.setValueAtTime(520 - idx * 80, ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime + delay);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.12);
         osc.start(ctx.currentTime + delay);
         osc.stop(ctx.currentTime + delay + 0.12);
       });
     } else if (type === 'busy') {
-      [0, 0.2, 0.4].forEach((delay) => {
+      [0, 0.18, 0.36].forEach((delay) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'square';
         osc.frequency.setValueAtTime(480, ctx.currentTime + delay);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.12);
         osc.start(ctx.currentTime + delay);
         osc.stop(ctx.currentTime + delay + 0.12);
@@ -183,11 +200,11 @@ function playAudioTone(type) {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(360 - idx * 45, ctx.currentTime + delay);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.13);
+        osc.frequency.setValueAtTime(380 - idx * 50, ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.14);
         osc.start(ctx.currentTime + delay);
-        osc.stop(ctx.currentTime + delay + 0.13);
+        osc.stop(ctx.currentTime + delay + 0.14);
       });
     } else if (type === 'disconnect') {
       const osc = ctx.createOscillator();
@@ -195,12 +212,12 @@ function playAudioTone(type) {
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(320, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.18);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.frequency.setValueAtTime(340, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.22);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.2);
+      osc.stop(ctx.currentTime + 0.22);
     }
   } catch (e) {
     console.warn("AudioContext tone error:", e);
@@ -208,41 +225,70 @@ function playAudioTone(type) {
 }
 
 // Web Speech API Voice Announcer for Hindi / Indian English voice announcement
-function speakOutcome(text) {
+function speakOutcome(hindiText, englishText) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   try {
-    window.speechSynthesis.cancel();
     if (window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
     }
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+
     setTimeout(() => {
       try {
         if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
         }
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
+
         const voices = window.speechSynthesis.getVoices() || [];
         const hindiVoice = voices.find(v => v.lang === 'hi-IN' || v.lang.startsWith('hi'));
         const indianVoice = voices.find(v => v.lang === 'en-IN');
         const fallbackVoice = voices.length > 0 ? voices[0] : null;
 
+        let selectedVoice = null;
+        let selectedLang = 'en-US';
+        let textToSpeak = englishText || hindiText;
+
         if (hindiVoice) {
-          utterance.voice = hindiVoice;
-          utterance.lang = 'hi-IN';
+          selectedVoice = hindiVoice;
+          selectedLang = 'hi-IN';
+          textToSpeak = hindiText || englishText;
         } else if (indianVoice) {
-          utterance.voice = indianVoice;
-          utterance.lang = 'en-IN';
+          selectedVoice = indianVoice;
+          selectedLang = 'en-IN';
+          textToSpeak = hindiText || englishText;
         } else {
-          if (fallbackVoice) utterance.voice = fallbackVoice;
-          utterance.lang = fallbackVoice?.lang || 'en-US';
+          // On Windows with standard English voices (Microsoft David, Mark, Zira, etc.),
+          // setting lang: 'hi-IN' throws language-unavailable error and silences the audio.
+          // Using fallbackVoice.lang and clear English phrasing ensures loud, 100% reliable voice output.
+          selectedVoice = fallbackVoice;
+          selectedLang = fallbackVoice?.lang || 'en-US';
+          textToSpeak = englishText || hindiText;
         }
+
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        if (selectedVoice) utterance.voice = selectedVoice;
+        utterance.lang = selectedLang;
+
+        // Prevent V8 Garbage Collection bug in Chrome
+        window.__crm_speech_utterance = utterance;
+        utterance.onend = () => {
+          window.__crm_speech_utterance = null;
+        };
+        utterance.onerror = (e) => {
+          console.warn("SpeechSynthesis error:", e?.error || e);
+          window.__crm_speech_utterance = null;
+        };
+
         window.speechSynthesis.speak(utterance);
       } catch (innerErr) {
         console.warn("SpeechSynthesis inner speak error:", innerErr);
       }
-    }, 120);
+    }, 200);
   } catch (e) {
     console.warn("Speech synthesis error:", e);
   }
@@ -313,7 +359,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, []);
 
-  const triggerAnnouncement = useCallback(({ type, title, subtitle, speech, customerNumber }) => {
+  const triggerAnnouncement = useCallback(({ type, title, subtitle, speech, speechEnglish, customerNumber }) => {
     setIsHidden(false);
     stopRingingAudio();
 
@@ -323,8 +369,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
     else if (type === 'no_answer') playAudioTone('rejected');
     else playAudioTone('disconnect');
 
-    if (speech) {
-      speakOutcome(speech);
+    if (speech || speechEnglish) {
+      speakOutcome(speech, speechEnglish);
     }
 
     setCallAnnouncement({
@@ -610,6 +656,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           title: 'Customer ने Phone नहीं उठाया',
           subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
           speech: 'Customer ne phone nahi uthaya.',
+          speechEnglish: 'Customer did not answer the phone.',
           customerNumber: cleanNum
         });
       }
@@ -623,6 +670,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Customer ने Call Disconnect कर दिया',
         subtitle: 'Customer ne call end kar diya.',
         speech: 'Customer ne call disconnect kar diya.',
+        speechEnglish: 'Customer disconnected the call.',
         customerNumber: cleanNum
       });
       return;
@@ -635,6 +683,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Customer का Phone Switched Off है',
         subtitle: 'Customer ka phone switched off ya out of network coverage hai.',
         speech: 'Customer ka phone switched off ya network se bahar hai.',
+        speechEnglish: 'Customer phone is switched off or unreachable.',
         customerNumber: cleanNum
       });
       return;
@@ -647,6 +696,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Customer ने Call Cut कर दिया',
         subtitle: 'Customer ne call disconnect ya reject kar diya.',
         speech: 'Customer ne call cut kar diya hai.',
+        speechEnglish: 'Customer declined the call.',
         customerNumber: cleanNum
       });
     } else if (cause === 'busy' || cause.includes('busy')) {
@@ -655,6 +705,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Customer Busy है',
         subtitle: 'Customer doosri call par vyast hai.',
         speech: 'Customer doosri call par vyast hai.',
+        speechEnglish: 'Customer is busy on another call.',
         customerNumber: cleanNum
       });
     } else if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
@@ -663,6 +714,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Customer ने Phone नहीं उठाया',
         subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
         speech: 'Customer ne phone nahi uthaya.',
+        speechEnglish: 'Customer did not answer the phone.',
         customerNumber: cleanNum
       });
     } else {
@@ -671,6 +723,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         title: 'Call Connect नहीं हो सका',
         subtitle: 'Network issue ya disconnected call.',
         speech: 'Call connect nahi ho paya.',
+        speechEnglish: 'Call could not connect.',
         customerNumber: cleanNum
       });
     }
@@ -1023,21 +1076,31 @@ export default function GlobalSoftphoneWidget({ userId }) {
           optimisticCallRef.current = null;
 
           if (endedRoom) {
-            setTimeout(async () => {
+            let attempts = 0;
+            const pollEndedCause = async () => {
+              attempts++;
               try {
                 const res = await fetch(`/api/plivo/session-status?room=${encodeURIComponent(endedRoom)}&agent_id=${agentDataRef.current?.id}`, { cache: 'no-store' });
                 const statusData = await res.json();
-                if (statusData?.activeSession?.hangup_cause) {
-                  handleSessionTerminationAnnouncementRef.current?.(statusData.activeSession);
-                } else if (currentSession) {
-                  handleSessionTerminationAnnouncementRef.current?.(statusData?.activeSession || currentSession);
+                const sessionResult = statusData?.activeSession;
+                const cause = sessionResult?.hangup_cause;
+                // If a definitive customer cause arrived (rejected, switched_off, busy, no_answer, customer_hangup), announce immediately!
+                if (cause && !['initiated', 'ringing', 'agent_answered'].includes(cause)) {
+                  handleSessionTerminationAnnouncementRef.current?.(sessionResult);
+                } else if (attempts < 5) {
+                  setTimeout(pollEndedCause, attempts * 400);
+                } else {
+                  handleSessionTerminationAnnouncementRef.current?.(sessionResult || currentSession);
                 }
               } catch (e) {
-                if (currentSession) {
+                if (attempts < 5) {
+                  setTimeout(pollEndedCause, attempts * 400);
+                } else if (currentSession) {
                   handleSessionTerminationAnnouncementRef.current?.(currentSession);
                 }
               }
-            }, 250);
+            };
+            setTimeout(pollEndedCause, 200);
           }
         });
 
@@ -1341,6 +1404,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
           <span style={{ fontWeight: 600, fontSize: '0.92rem', color: isMinimized && callAnnouncement ? (callAnnouncement.type === 'rejected' ? '#ef4444' : '#f59e0b') : 'inherit' }}>
             {isMinimized && callAnnouncement ? callAnnouncement.title : 'CRM Softphone'}
           </span>
+          <span style={{ 
+            fontSize: '0.68rem', 
+            fontWeight: 600, 
+            background: 'var(--bg-surface)', 
+            padding: '1px 5px', 
+            borderRadius: '6px', 
+            border: '1px solid var(--border-light)', 
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.2px'
+          }}>
+            {SOFTPHONE_VERSION}
+          </span>
           <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connectionState === 'online' ? '#10b981' : connectionState === 'error' ? '#ef4444' : connectionState === 'connecting' ? '#f59e0b' : 'var(--text-secondary)' }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -1591,8 +1666,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
             </div>
           )}
 
-          {/* Active Call Status & Controls */}
-          {((activeSession && activeSession.status !== 'ended') || optimisticCall || (activeCall && activeCall.direction === 'inbound')) && (
+          {/* Active Call Status & Controls (Only rendered when there is no ActiveCallPanel activeSession, e.g. optimistic outbound connecting or direct inbound call) */}
+          {(!activeSession || activeSession.status === 'ended') && (optimisticCall || (activeCall && activeCall.direction === 'inbound')) && (
             <div style={{ background: 'var(--bg-primary)', padding: '1.25rem 1rem', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem', border: '1px solid var(--border-light)' }}>
               <div style={{
                 display: 'flex',
