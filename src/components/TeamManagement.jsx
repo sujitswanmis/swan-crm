@@ -22,7 +22,7 @@ const DEFAULT_DEPARTMENTS = [
 
 const LEAD_STAGES = [
   'lead_dashboard', 'hourly_work', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
-  '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'
+  '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'
 ];
 
 const DESIGNATIONS = [

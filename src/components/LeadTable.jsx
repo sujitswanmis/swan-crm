@@ -343,15 +343,17 @@ const LeadStatusCell = React.memo(({ info }) => {
     
     const getStageFromStatus = (st) => {
       if (!st) return '01 - New Stage';
-      if (st.startsWith('1;')) return '01 - New Stage';
-      if (st.startsWith('2;')) return '02 - Contact Stage';
-      if (st.startsWith('3;')) return '03 - Qualification Stage';
-      if (st.startsWith('4;')) return '04 - Follow Up Stage';
-      if (st.startsWith('5;')) return '05 - Sales Process Stage';
-      if (st.startsWith('6;')) return '06 - Conversion Stage';
-      if (st.startsWith('7;')) return '07 - Final Stage';
-      if (['New', 'Pending'].includes(st)) return '01 - New Stage';
-      if (['Converted', 'Order Received', 'Closed'].includes(st)) return '07 - Final Stage';
+      const s = String(st).trim();
+      if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
+      if (s.startsWith('1;')) return '01 - New Stage';
+      if (s.startsWith('2;')) return '02 - Contact Stage';
+      if (s.startsWith('3;')) return '03 - Qualification Stage';
+      if (s.startsWith('4;')) return '04 - Follow Up Stage';
+      if (s.startsWith('5;')) return '05 - Sales Process Stage';
+      if (s.startsWith('6;')) return '06 - Conversion Stage';
+      if (s.startsWith('7;')) return '07 - Final Stage';
+      if (['New', 'Pending'].includes(s)) return '01 - New Stage';
+      if (['Converted', 'Order Received', 'Closed'].includes(s)) return '07 - Final Stage';
       return '01 - New Stage';
     };
 
@@ -1856,15 +1858,17 @@ export default function LeadTable({
     
     const getStageFromStatus = (st) => {
       if (!st) return '01 - New Stage';
-      if (st.startsWith('1;')) return '01 - New Stage';
-      if (st.startsWith('2;')) return '02 - Contact Stage';
-      if (st.startsWith('3;')) return '03 - Qualification Stage';
-      if (st.startsWith('4;')) return '04 - Follow Up Stage';
-      if (st.startsWith('5;')) return '05 - Sales Process Stage';
-      if (st.startsWith('6;')) return '06 - Conversion Stage';
-      if (st.startsWith('7;')) return '07 - Final Stage';
-      if (['New', 'Pending'].includes(st)) return '01 - New Stage';
-      if (['Converted', 'Order Received', 'Closed'].includes(st)) return '07 - Final Stage';
+      const s = String(st).trim();
+      if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
+      if (s.startsWith('1;')) return '01 - New Stage';
+      if (s.startsWith('2;')) return '02 - Contact Stage';
+      if (s.startsWith('3;')) return '03 - Qualification Stage';
+      if (s.startsWith('4;')) return '04 - Follow Up Stage';
+      if (s.startsWith('5;')) return '05 - Sales Process Stage';
+      if (s.startsWith('6;')) return '06 - Conversion Stage';
+      if (s.startsWith('7;')) return '07 - Final Stage';
+      if (['New', 'Pending'].includes(s)) return '01 - New Stage';
+      if (['Converted', 'Order Received', 'Closed'].includes(s)) return '07 - Final Stage';
       return '01 - New Stage';
     };
 
@@ -2407,6 +2411,7 @@ export default function LeadTable({
               const cleanClass = (lead.status || '').toLowerCase().replace(/\s+/g, '');
               const cleanLastClass = (lead.last_status || '').toLowerCase().replace(/\s+/g, '');
               const phoneNumbers = getLeadPhoneNumbers(lead);
+              const isLeadFrozen = Boolean(lead.status && (lead.status.startsWith('8;') || lead.status.startsWith('08') || lead.status.toLowerCase().includes('transfer to party')));
 
               return (
                 <div 
@@ -2600,85 +2605,129 @@ export default function LeadTable({
                     </div>
                   </div>
 
-                  {/* Lead Status Dropdown (Positioned directly above Notes / Remark) */}
+                  {/* Lead Status Dropdown or Frozen Badge */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }} onClick={e => e.stopPropagation()}>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>
-                      Lead Status
-                    </span>
-                    <select
-                      value={lead.status || 'New'}
-                      onChange={(e) => {
-                        const newStatus = e.target.value;
-                        const savedConfig = localStorage.getItem('crm_config');
-                        let confirmChange = true;
-                        if (savedConfig) {
-                          try {
-                            const parsed = JSON.parse(savedConfig);
-                            if (parsed.confirmStageChange !== undefined) {
-                              confirmChange = parsed.confirmStageChange;
-                            }
-                          } catch (err) {}
-                        }
-                        if (confirmChange) {
-                          const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
-                          setPendingStatusChange({
-                            leadName: lead.company || lead.name || 'this lead',
-                            shortName,
-                            commit: () => {
-                              handleDirectStatusChange(lead, newStatus);
-                              setPendingStatusChange(null);
-                            },
-                            cancel: () => {
-                              e.target.value = lead.status || 'New';
-                              setPendingStatusChange(null);
-                            }
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>
+                        Lead Status
+                      </span>
+                      {isLeadFrozen && (
+                        <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                          🔒 Frozen in S08
+                        </span>
+                      )}
+                    </div>
+                    {isLeadFrozen ? (
+                      <div
+                        style={{
+                          width: '100%',
+                          padding: '0.42rem 0.6rem',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                          color: '#059669',
+                          border: '1.5px solid rgba(16, 185, 129, 0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.4rem',
+                          cursor: 'default'
+                        }}
+                        title="Sales stage is frozen because this lead was transferred to Party Master. Click ✏️ Edit above to update profile."
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          🔒 {lead.status?.includes('>') ? lead.status.split('>').pop() : '08 - Transfer to Party Master'}
+                        </span>
+                        <span style={{ 
+                          fontSize: '0.66rem', 
+                          padding: '0.1rem 0.4rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: '#059669', 
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          letterSpacing: '0.03em',
+                          flexShrink: 0
+                        }}>
+                          FROZEN
+                        </span>
+                      </div>
+                    ) : (
+                      <select
+                        value={lead.status || 'New'}
+                        onChange={(e) => {
+                          const newStatus = e.target.value;
+                          const savedConfig = localStorage.getItem('crm_config');
+                          let confirmChange = true;
+                          if (savedConfig) {
+                            try {
+                              const parsed = JSON.parse(savedConfig);
+                              if (parsed.confirmStageChange !== undefined) {
+                                confirmChange = parsed.confirmStageChange;
+                              }
+                            } catch (err) {}
+                          }
+                          if (confirmChange) {
+                            const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
+                            setPendingStatusChange({
+                              leadName: lead.company || lead.name || 'this lead',
+                              shortName,
+                              commit: () => {
+                                handleDirectStatusChange(lead, newStatus);
+                                setPendingStatusChange(null);
+                              },
+                              cancel: () => {
+                                e.target.value = lead.status || 'New';
+                                setPendingStatusChange(null);
+                              }
+                            });
+                            return;
+                          }
+                          handleDirectStatusChange(lead, newStatus);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '0.4rem 0.6rem',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`,
+                          color: `var(--status-${cleanClass}-text, #334155)`,
+                          border: '1px solid rgba(0,0,0,0.15)',
+                          cursor: 'pointer',
+                          outline: 'none'
+                        }}
+                        title="Change Lead Status"
+                      >
+                        {(() => {
+                          const leadStagePrefix = (lead.status && lead.status.includes(';')) ? lead.status.split(';')[0] + ';' : '1;';
+                          const activeFilters = table.getColumn('status')?.getFilterValue();
+                          const isAllLeads = (!activeFilters || activeFilters.length === 0) && (!stageFilter || stageFilter === 'all' || stageFilter === 'lead_dashboard');
+
+                          return stages.map((stageObj, i) => {
+                            const stageNum = i + 1;
+                            const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                            const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
+                            if (!isVisible) return null;
+
+                            return (
+                              <optgroup key={`tile-stage-${i}`} label={stageObj.name}>
+                                {stageObj.substages.map((sub, j) => {
+                                  const subNum = String(j + 1).padStart(2, '0');
+                                  const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                                  const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                                  return (
+                                    <option key={val} value={val} style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
+                                      {val}
+                                    </option>
+                                  );
+                                })}
+                              </optgroup>
+                            );
                           });
-                          return;
-                        }
-                        handleDirectStatusChange(lead, newStatus);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '0.4rem 0.6rem',
-                        borderRadius: '6px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        backgroundColor: `var(--status-${cleanClass}-bg, #e2e8f0)`,
-                        color: `var(--status-${cleanClass}-text, #334155)`,
-                        border: '1px solid rgba(0,0,0,0.15)',
-                        cursor: 'pointer',
-                        outline: 'none'
-                      }}
-                      title="Change Lead Status"
-                    >
-                      {(() => {
-                        const leadStagePrefix = (lead.status && lead.status.includes(';')) ? lead.status.split(';')[0] + ';' : '1;';
-                        const activeFilters = table.getColumn('status')?.getFilterValue();
-                        const isAllLeads = (!activeFilters || activeFilters.length === 0) && (!stageFilter || stageFilter === 'all' || stageFilter === 'lead_dashboard');
-
-                        return stages.map((stageObj, i) => {
-                          const stageNum = i + 1;
-                          const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                          const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
-                          if (!isVisible) return null;
-
-                          return (
-                            <optgroup key={`tile-stage-${i}`} label={stageObj.name}>
-                              {stageObj.substages.map((sub, j) => {
-                                const subNum = String(j + 1).padStart(2, '0');
-                                const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                                const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                                return (
-                                  <option key={val} value={val} style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
-                                    {val}
-                                  </option>
-                                );
-                              })}
-                            </optgroup>
-                          );
-                        });
-                      })()}
-                    </select>
+                        })()}
+                      </select>
+                    )}
                   </div>
 
                   {/* Latest Remark / Note */}
@@ -2741,8 +2790,36 @@ export default function LeadTable({
                     </button>
                   </div>
 
-                  {/* Stage 07 Quick Transfer to Party Master */}
-                  {Boolean(lead.status && (lead.status.startsWith('07') || lead.status.startsWith('7;') || lead.status.toLowerCase().includes('final stage'))) && (
+                  {/* Stage 07 & 08 Quick Transfer / Synced Status */}
+                  {isLeadFrozen ? (
+                    <div
+                      style={{
+                        width: '100%',
+                        marginTop: '0.35rem',
+                        padding: '0.38rem 0.5rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                        color: '#059669',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem'
+                      }}
+                      title="This lead is synced with Party Master S00. Profile details can be updated via ✏️ Edit."
+                    >
+                      🏢 Synced with Party Master (S00)
+                    </div>
+                  ) : Boolean(lead.status && (
+                    lead.status.startsWith('07') || 
+                    lead.status.startsWith('7;') || 
+                    lead.status.startsWith('08') || 
+                    lead.status.startsWith('8;') || 
+                    lead.status.toLowerCase().includes('final stage') ||
+                    lead.status.toLowerCase().includes('transfer to party')
+                  )) && (
                     <button
                       type="button"
                       onClick={async (e) => {
@@ -2753,7 +2830,13 @@ export default function LeadTable({
                             if (typeof window !== 'undefined') {
                               window.dispatchEvent(new CustomEvent('party_transferred_updated'));
                             }
-                            alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now waiting in S00 for confirmation.`);
+                            if (info.table?.options?.meta?.updateLeadInState) {
+                              info.table.options.meta.updateLeadInState({ 
+                                ...lead, 
+                                status: res.newStatus || '8;01>Transfer to Party>Transfer to Party Master' 
+                              });
+                            }
+                            alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen in 08 - Transfer to Party.`);
                           }
                         } catch (err) {
                           alert(err?.message || 'Failed to transfer lead to Party Master');

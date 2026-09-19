@@ -34,7 +34,8 @@ const STAGE_COLORS = {
   '04 - Follow Up Stage': '#f59e0b',
   '05 - Sales Process Stage': '#ec4899',
   '06 - Conversion Stage': '#10b981',
-  '07 - Final Stage': '#6366f1'
+  '07 - Final Stage': '#6366f1',
+  '08 - Transfer to Party': '#0d9488'
 };
 
 export const PIPELINE_STAGES = [
@@ -45,6 +46,7 @@ export const PIPELINE_STAGES = [
   { num: 5, name: 'Stage 5', label: 'Sales Process', fullName: '05 - Sales Process Stage', color: '#ec4899', bg: '#fdf2f8' },
   { num: 6, name: 'Stage 6', label: 'Conversion', fullName: '06 - Conversion Stage', color: '#10b981', bg: '#ecfdf5' },
   { num: 7, name: 'Stage 7', label: 'Final Stage', fullName: '07 - Final Stage', color: '#6366f1', bg: '#eef2ff' },
+  { num: 8, name: 'Stage 8', label: 'Transfer to Party', fullName: '08 - Transfer to Party', color: '#0d9488', bg: '#f0fdfa' },
 ];
 
 export const HOURLY_SLOTS = [
@@ -192,10 +194,11 @@ function extractEmpId(str) {
   return match ? match[1] : null;
 }
 
-// Maps lead status string to numeric stage 1 through 7
+// Maps lead status string to numeric stage 1 through 8
 function getStageNumber(status) {
   if (!status) return 1;
   const st = String(status).trim();
+  if (st.startsWith('8;') || st.startsWith('08') || st.toLowerCase().includes('transfer to party')) return 8;
   if (st.startsWith('1;') || st.startsWith('01') || st === 'New' || st === 'Pending') return 1;
   if (st.startsWith('2;') || st.startsWith('02')) return 2;
   if (st.startsWith('3;') || st.startsWith('03')) return 3;
@@ -204,7 +207,7 @@ function getStageNumber(status) {
   if (st.startsWith('6;') || st.startsWith('06')) return 6;
   if (st.startsWith('7;') || st.startsWith('07') || ['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => st.toLowerCase().includes(k.toLowerCase()))) return 7;
   
-  const match = st.match(/^0?([1-7])/);
+  const match = st.match(/^0?([1-8])/);
   if (match) return parseInt(match[1], 10);
   return 1;
 }
@@ -565,13 +568,13 @@ export default function LeadDashboard({
       const fDate = l.follow_up_date ? l.follow_up_date.split('T')[0] : null;
       if (fDate) {
         if (fDate === todayStr) dueToday++;
-        else if (fDate < todayStr && !['Won', 'Lost', 'Closed', '07 - Final Stage'].includes(l.status)) overdue++;
+        else if (fDate < todayStr && !['Won', 'Lost', 'Closed', '07 - Final Stage', '08 - Transfer to Party'].includes(l.status)) overdue++;
       }
 
       const st = l.status || '';
       if (!st || st.startsWith('01') || st === 'New') newLeads++;
       else if (st.startsWith('02') || st.startsWith('03') || st.startsWith('04') || st.startsWith('05')) inProgress++;
-      else if (st.startsWith('06') || st.startsWith('07') || st === 'Won') conversion++;
+      else if (st.startsWith('06') || st.startsWith('07') || st.startsWith('08') || st.startsWith('8;') || st === 'Won') conversion++;
     }
 
     const winRate = total > 0 ? ((conversion / total) * 100).toFixed(1) : 0;
@@ -588,7 +591,8 @@ export default function LeadDashboard({
       '04 - Follow Up Stage',
       '05 - Sales Process Stage',
       '06 - Conversion Stage',
-      '07 - Final Stage'
+      '07 - Final Stage',
+      '08 - Transfer to Party'
     ];
 
     const stageMap = {
@@ -599,6 +603,7 @@ export default function LeadDashboard({
       5: { fullStage: '05 - Sales Process Stage', count: 0, subMap: {} },
       6: { fullStage: '06 - Conversion Stage', count: 0, subMap: {} },
       7: { fullStage: '07 - Final Stage', count: 0, subMap: {} },
+      8: { fullStage: '08 - Transfer to Party', count: 0, subMap: {} },
     };
 
     relevantLeads.forEach(l => {

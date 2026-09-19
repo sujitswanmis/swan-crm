@@ -1499,10 +1499,10 @@ export default function PartyMasterModule({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.78rem', fontWeight: 800, padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(239,68,68,0.2)', color: '#f87171' }}>STAGE S00</span>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Transfered to Party Master (Leads from Stage 07)</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Transfered to Party Master (Leads from Stage 08)</h2>
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', margin: '0.35rem 0 0 0' }}>
-                Converted leads transferred from <strong>Lead Data &gt; 07 - Final Stage</strong>. Review, confirm and advance directly to <strong>S01 Party Master Creation</strong>.
+                Converted leads transferred from <strong>Lead Data &gt; 08 - Transfer to Party</strong>. Review, confirm and advance directly to <strong>S01 Party Master Creation</strong>.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1573,10 +1573,10 @@ export default function PartyMasterModule({
                   <tr>
                     <td colSpan="8" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
                       <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
-                        No leads transferred from Stage 07 yet.
+                        No leads transferred from Stage 08 yet.
                       </div>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '520px', margin: '0 auto 1.25rem auto' }}>
-                        When an executive marks a deal as won in <strong>Lead Data &gt; 07 - Final Stage</strong>, click the <strong>&quot;Transfer to Party Master (S00)&quot;</strong> button to send it here.
+                        When an executive marks a deal as won or ready to transfer in <strong>Lead Data &gt; 08 - Transfer to Party</strong> (or Stage 07), click the <strong>&quot;Transfer to Party Master (S00)&quot;</strong> button to send it here.
                       </p>
                       <button onClick={startNewPartyWizard} style={{ padding: '0.6rem 1.2rem', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                         + Create Party Master Directly

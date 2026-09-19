@@ -91,15 +91,17 @@ const SETTINGS_MODULE_ITEMS = [
 // Helper to map DB status to Team Management Stage format
 export const getStageFromStatus = (status) => {
   if (!status) return '01 - New Stage';
-  if (status.startsWith('1;')) return '01 - New Stage';
-  if (status.startsWith('2;')) return '02 - Contact Stage';
-  if (status.startsWith('3;')) return '03 - Qualification Stage';
-  if (status.startsWith('4;')) return '04 - Follow Up Stage';
-  if (status.startsWith('5;')) return '05 - Sales Process Stage';
-  if (status.startsWith('6;')) return '06 - Conversion Stage';
-  if (status.startsWith('7;')) return '07 - Final Stage';
-  if (['New', 'Pending'].includes(status)) return '01 - New Stage';
-  if (['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => (status || '').toLowerCase().includes(k.toLowerCase()))) return '07 - Final Stage';
+  const st = String(status).trim();
+  if (st.startsWith('8;') || st.startsWith('08') || st.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
+  if (st.startsWith('1;')) return '01 - New Stage';
+  if (st.startsWith('2;')) return '02 - Contact Stage';
+  if (st.startsWith('3;')) return '03 - Qualification Stage';
+  if (st.startsWith('4;')) return '04 - Follow Up Stage';
+  if (st.startsWith('5;')) return '05 - Sales Process Stage';
+  if (st.startsWith('6;')) return '06 - Conversion Stage';
+  if (st.startsWith('7;')) return '07 - Final Stage';
+  if (['New', 'Pending'].includes(st)) return '01 - New Stage';
+  if (['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => (st || '').toLowerCase().includes(k.toLowerCase()))) return '07 - Final Stage';
   return '01 - New Stage';
 };
 
@@ -672,7 +674,8 @@ export default function CRMContainer({
       { name: '04 - Follow Up Stage', substages: ['Catalog Shared', 'Follow Up Required', 'Next Follow Up Set', 'Follow Up Done', 'Call not connected', 'No Response', 'ReSchedule'] },
       { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
       { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
-      { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] }
+      { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
+      { name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] }
     ];
 
     const saved = localStorage.getItem('crm_config');
@@ -681,6 +684,10 @@ export default function CRMContainer({
     // If stages are completely missing, initialize with defaultStages
     if (!config.stages || !Array.isArray(config.stages) || config.stages.length === 0) {
       config.stages = defaultStages;
+      localStorage.setItem('crm_config', JSON.stringify(config));
+      window.dispatchEvent(new Event('crm_config_updated'));
+    } else if (!config.stages.some(s => s.name?.includes('08 - Transfer to Party'))) {
+      config.stages.push({ name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] });
       localStorage.setItem('crm_config', JSON.stringify(config));
       window.dispatchEvent(new Event('crm_config_updated'));
     }
@@ -3522,7 +3529,7 @@ export default function CRMContainer({
                                 All Leads
                               </button>
 
-                              {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage'].map(stage => {
+                              {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'].map(stage => {
                                 const stagePerms = getSubItemPermissions(moduleAccess, userRole, 'leads', stage);
                                 if (!stagePerms.view) {
                                   return null;

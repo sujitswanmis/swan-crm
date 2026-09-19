@@ -18,7 +18,8 @@ const DEFAULT_STAGES = [
   { name: '04 - Follow Up Stage', substages: ['Catalog Shared', 'Follow Up Required', 'Next Follow Up Set', 'Follow Up Done', 'Call not connected', 'No Response', 'ReSchedule'] },
   { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
   { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
-  { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] }
+  { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] }
 ];
 
 const DEFAULT_CLIENT_STATUSES = ['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress'];
@@ -441,6 +442,11 @@ export default function LeadProfilePanel({
 
   // Status management states
   const [currentStatus, setCurrentStatus] = useState(formatStatusWithNumbers(lead?.status, propStages || DEFAULT_STAGES));
+  const isLeadFrozen = Boolean(currentStatus && (
+    currentStatus.startsWith('8;') || 
+    currentStatus.startsWith('08') || 
+    currentStatus.toLowerCase().includes('transfer to party')
+  ));
   const [statusForNewNote, setStatusForNewNote] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
@@ -468,10 +474,13 @@ export default function LeadProfilePanel({
       const res = await sendLeadToParty(lead.id, userId);
       if (res && res.success) {
         setTransferredPartyCode(res.partyCode);
+        const newSt = res.newStatus || '8;01>Transfer to Party>Transfer to Party Master';
+        setCurrentStatus(newSt);
+        notifyLeadUpdate({ ...lead, status: newSt });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('party_transferred_updated'));
         }
-        alert(`Lead successfully transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now available in S00 for confirmation.`);
+        alert(`Lead successfully transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen in 08 - Transfer to Party.`);
       }
     } catch (err) {
       alert(err?.message || 'Failed to transfer lead to Party Master');
@@ -1703,28 +1712,33 @@ export default function LeadProfilePanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
               <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', fontWeight: 600 }}>
                 📊 Lead Status:
+                {isLeadFrozen && (
+                  <span style={{ color: '#059669', fontSize: '0.68rem', fontWeight: 800 }}>
+                    🔒 Stage Frozen (S08)
+                  </span>
+                )}
                 {isUpdatingStatus && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
                 {statusUpdateSuccess && <Check size={12} color="#10b981" title="Status updated!" />}
               </span>
               <select
                 value={currentStatus}
-                disabled={isUpdatingStatus}
+                disabled={isLeadFrozen || isUpdatingStatus}
                 onChange={(e) => handleStatusUpdate(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '0.35rem 0.5rem',
                   borderRadius: '6px',
-                  border: '1px solid var(--border-light, #e2e8f0)',
-                  backgroundColor: 'var(--bg-surface, #ffffff)',
-                  color: 'var(--text-primary, #0f172a)',
+                  border: isLeadFrozen ? '1.5px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: isLeadFrozen ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface, #ffffff)',
+                  color: isLeadFrozen ? '#059669' : 'var(--text-primary, #0f172a)',
                   fontSize: '0.76rem',
                   fontWeight: 600,
-                  cursor: isUpdatingStatus ? 'wait' : 'pointer',
+                  cursor: isLeadFrozen ? 'not-allowed' : (isUpdatingStatus ? 'wait' : 'pointer'),
                   outline: 'none',
                   whiteSpace: 'nowrap',
                   textOverflow: 'ellipsis'
                 }}
-                title={currentStatus}
+                title={isLeadFrozen ? "Sales stage is locked because this lead is transferred to Party Master. Profile details remain editable." : currentStatus}
               >
                 {!stages.some(s => s.substages?.some(sub => sub === currentStatus || sub.includes(currentStatus) || currentStatus.includes(sub))) && (
                   <option value={currentStatus}>
@@ -1936,8 +1950,56 @@ export default function LeadProfilePanel({
             </div>
           </div>
 
-          {/* Stage 07 Action: Transfer to Party Master */}
-          {Boolean(currentStatus && (currentStatus.startsWith('07') || currentStatus.startsWith('7;') || currentStatus.toLowerCase().includes('final stage'))) && (
+          {/* Stage 08 Frozen Banner or Stage 07/08 Transfer to Party Master Action */}
+          {isLeadFrozen ? (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.14), rgba(5,150,105,0.06))',
+              border: '1.5px solid rgba(16,185,129,0.4)',
+              borderRadius: '8px',
+              padding: '0.65rem 0.85rem',
+              marginBottom: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building2 size={15} color="#059669" /> 🔒 Stage 08: Transferred to Party Master (Locked)
+                  {transferredPartyCode && (
+                    <span style={{ fontSize: '0.72rem', backgroundColor: '#059669', color: '#fff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                      {transferredPartyCode}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Sales stage is locked. You can freely edit and update client profile details, contacts, address, and GST.
+                </div>
+              </div>
+              <span style={{
+                padding: '0.35rem 0.65rem',
+                backgroundColor: 'rgba(16,185,129,0.15)',
+                color: '#059669',
+                border: '1px solid rgba(16,185,129,0.3)',
+                borderRadius: '6px',
+                fontSize: '0.74rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem'
+              }}>
+                ✅ S00 SYNCED
+              </span>
+            </div>
+          ) : Boolean(currentStatus && (
+            currentStatus.startsWith('07') || 
+            currentStatus.startsWith('7;') || 
+            currentStatus.startsWith('08') || 
+            currentStatus.startsWith('8;') || 
+            currentStatus.toLowerCase().includes('final stage') ||
+            currentStatus.toLowerCase().includes('transfer to party')
+          )) && (
             <div style={{
               background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(16,185,129,0.12))',
               border: '1.5px solid rgba(59,130,246,0.35)',
@@ -1952,10 +2014,10 @@ export default function LeadProfilePanel({
             }}>
               <div>
                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Building2 size={15} color="#38bdf8" /> Stage 07 Final Lead: Channel Partner Onboarding
+                  <Building2 size={15} color="#38bdf8" /> Stage 08 Onboarding: Transfer to Party Master
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                  Transfer this won / final stage lead into S00 Party Master Queue for confirmation.
+                  Transfer this won deal into S00 Party Master Queue. Lead will be frozen and advanced to S08.
                 </div>
               </div>
               <button
@@ -2360,19 +2422,21 @@ export default function LeadProfilePanel({
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Status:</span>
                   <select
                     value={statusForNewNote}
+                    disabled={isLeadFrozen}
                     onChange={e => setStatusForNewNote(e.target.value)}
                     style={{
                       fontSize: '0.72rem',
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      border: '1px solid var(--border-light)',
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
+                      border: isLeadFrozen ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-light)',
+                      backgroundColor: isLeadFrozen ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface)',
+                      color: isLeadFrozen ? '#059669' : 'var(--text-primary)',
                       maxWidth: '170px',
-                      cursor: 'pointer'
+                      cursor: isLeadFrozen ? 'not-allowed' : 'pointer'
                     }}
+                    title={isLeadFrozen ? "Status locked for transferred party" : "Change status with remark"}
                   >
-                    <option value="">Keep current ({formatStatusWithNumbers(currentStatus, stages)})</option>
+                    <option value="">{isLeadFrozen ? 'Locked (Transferred to Party)' : `Keep current (${formatStatusWithNumbers(currentStatus, stages)})`}</option>
                     {stages.map((stageObj, i) => {
                       const stageNum = i + 1;
                       const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');

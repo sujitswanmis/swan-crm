@@ -252,6 +252,8 @@ export default function AnalyticsDashboard({
 
   const getStageFromStatus = (status) => {
     if (!status) return '01 - New Stage';
+    const s = String(status || '').trim();
+    if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
     if (status.startsWith('1;')) return '01 - New Stage';
     if (status.startsWith('2;')) return '02 - Contact Stage';
     if (status.startsWith('3;')) return '03 - Qualification Stage';
@@ -267,6 +269,7 @@ export default function AnalyticsDashboard({
   const getStageNumber = (status) => {
     if (!status) return 1;
     const st = String(status).trim();
+    if (st.startsWith('8;') || st.startsWith('08') || st.toLowerCase().includes('transfer to party')) return 8;
     if (st.startsWith('1;') || st.startsWith('01') || st.startsWith('1')) return 1;
     if (st.startsWith('2;') || st.startsWith('02') || st.startsWith('2')) return 2;
     if (st.startsWith('3;') || st.startsWith('03') || st.startsWith('3')) return 3;
@@ -274,7 +277,7 @@ export default function AnalyticsDashboard({
     if (st.startsWith('5;') || st.startsWith('05') || st.startsWith('5')) return 5;
     if (st.startsWith('6;') || st.startsWith('06') || st.startsWith('6')) return 6;
     if (st.startsWith('7;') || st.startsWith('07') || st.startsWith('7') || ['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => st.toLowerCase().includes(k.toLowerCase()))) return 7;
-    const m = st.match(/^0?([1-7])/);
+    const m = st.match(/^0?([1-8])/);
     if (m) return parseInt(m[1], 10);
     return 1;
   };
@@ -352,6 +355,7 @@ export default function AnalyticsDashboard({
       5: { fullStage: '05 - Sales Process Stage', shortName: 'Sales Process Stage', color: '#ec4899', count: 0, subMap: {} },
       6: { fullStage: '06 - Conversion Stage', shortName: 'Conversion Stage', color: '#10b981', count: 0, subMap: {} },
       7: { fullStage: '07 - Final Stage', shortName: 'Final Stage', color: '#6366f1', count: 0, subMap: {} },
+      8: { fullStage: '08 - Transfer to Party', shortName: 'Transfer to Party', color: '#0d9488', count: 0, subMap: {} }
     };
 
     filteredLeadsSync.forEach(l => {

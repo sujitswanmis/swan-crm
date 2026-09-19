@@ -68,7 +68,8 @@ export const MODULES_CONFIG = [
       { id: '04 - Follow Up Stage', label: '04 - Follow Up Stage' },
       { id: '05 - Sales Process Stage', label: '05 - Sales Process Stage' },
       { id: '06 - Conversion Stage', label: '06 - Conversion Stage' },
-      { id: '07 - Final Stage', label: '07 - Final Stage' }
+      { id: '07 - Final Stage', label: '07 - Final Stage' },
+      { id: '08 - Transfer to Party', label: '08 - Transfer to Party' }
     ]
   },
   { 

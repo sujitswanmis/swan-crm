@@ -212,11 +212,26 @@ export async function sendLeadToParty(leadId, userId) {
     }
   }
 
-  // 5. Update lead note without deleting lead
+  // 5. Move lead status to Stage 08 (Frozen in Lead Data)
+  const frozenStatus = '8;01>Transfer to Party>Transfer to Party Master';
+  try {
+    await adminClient
+      .from('leads')
+      .update({
+        status: frozenStatus,
+        last_status: lead.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', lead.id);
+  } catch (stErr) {
+    console.warn('Lead status update warning in handoff:', stErr.message);
+  }
+
+  // 6. Update lead note without deleting lead
   try {
     await adminClient.from('lead_notes').insert([{
       lead_id: lead.id,
-      note_text: `Lead transferred to Party Master S00 (${party.party_universal_code || party.id} - ${party.firm_name}). Lead preserved in Stage 07.`,
+      note_text: `Lead transferred to Party Master S00 (${party.party_universal_code || party.id} - ${party.firm_name}). Moved to 08 - Transfer to Party (Sales status locked, profile editable).`,
       created_by: 'System Handoff'
     }]);
   } catch (noteErr) {
@@ -227,6 +242,7 @@ export async function sendLeadToParty(leadId, userId) {
     success: true,
     partyCode: party.party_universal_code,
     partyId: party.id,
+    newStatus: frozenStatus,
     transferType,
     handoffId
   };
@@ -320,7 +336,7 @@ export async function getTransferredLeads() {
           phone: lead.phone || party.primary_mobile,
           primary_mobile: lead.phone || party.primary_mobile,
           email: lead.email || party.official_email,
-          lead_status: lead.status || '07 - Final Stage',
+          lead_status: lead.status || '08 - Transfer to Party',
           lead_source: lead.source,
           city: lead.city_name || lead.city || '',
           state: lead.state_name || lead.state || 'Punjab',
@@ -379,7 +395,7 @@ export async function getTransferredLeads() {
         phone: lead.phone || p.primary_mobile,
         primary_mobile: lead.phone || p.primary_mobile,
         email: lead.email || p.official_email,
-        lead_status: lead.status || '07 - Final Stage',
+        lead_status: lead.status || '08 - Transfer to Party',
         lead_source: lead.source || p.acquisition_source,
         city: lead.city_name || lead.city || '',
         state: lead.state_name || lead.state || 'Punjab',
