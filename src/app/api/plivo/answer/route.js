@@ -67,15 +67,18 @@ export async function POST(req) {
 
     // Pass customer_number in agent leg's callbackUrl so conference-callback can auto-dial customer
     // when ConferenceFirstMember=true fires. For customer/guest legs it's not needed.
+    // CRITICAL: In XML attributes, '&' must be escaped as '&amp;' or Plivo throws 'Invalid Answer XML (8011)'!
     const custParam = (role === 'agent' && customerNumber)
-      ? `&customer_number=${encodeURIComponent(customerNumber)}`
+      ? `&amp;customer_number=${encodeURIComponent(customerNumber)}`
       : '';
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${custParam}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${encodeURIComponent(cleanRoom)}`;
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">${cleanRoom}</Conference>
+    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">
+        ${cleanRoom}
+    </Conference>
 </Response>`;
 
     return new NextResponse(xml, {
