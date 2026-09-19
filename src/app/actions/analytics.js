@@ -2,8 +2,21 @@
 
 import { createClient } from '@/utils/supabase/server';
 
-export async function getDashboardMetrics(leadIds, dateFilter = 'Today') {
-  if (!leadIds || leadIds.length === 0) {
+export async function getDashboardMetrics(input, dateFilter = 'Today') {
+  let leadIds = [];
+  let filter = dateFilter;
+  let isGlobal = false;
+
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    leadIds = Array.isArray(input.leadIds) ? input.leadIds : [];
+    filter = input.dateFilter || dateFilter;
+    isGlobal = !!input.isGlobal;
+  } else if (Array.isArray(input)) {
+    leadIds = input;
+    filter = dateFilter;
+  }
+
+  if (!isGlobal && (!leadIds || leadIds.length === 0)) {
     return { success: true, data: { employeeActivity: [], whatsappStats: { period: 0, total: 0 } } };
   }
 
@@ -12,11 +25,11 @@ export async function getDashboardMetrics(leadIds, dateFilter = 'Today') {
     
     let startDate = null;
     const now = new Date();
-    if (dateFilter === 'Today') {
+    if (filter === 'Today') {
       startDate = new Date(now.setHours(0,0,0,0)).toISOString();
-    } else if (dateFilter === 'Last 7 Days') {
+    } else if (filter === 'Last 7 Days') {
       startDate = new Date(now.setDate(now.getDate() - 7)).toISOString();
-    } else if (dateFilter === 'This Month') {
+    } else if (filter === 'This Month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     } // 'All Time' leaves startDate as null
 
@@ -28,8 +41,8 @@ export async function getDashboardMetrics(leadIds, dateFilter = 'Today') {
     let periodWaCount = 0;
     const chunkSize = 200; // Small chunk to be super safe with URL length
 
-    // Optimization: If querying across practically all leads (>3000), execute single direct queries instead of 60+ chunked loops
-    if (leadIds.length > 3000) {
+    // Optimization: If isGlobal is set or querying across practically all leads (>1000), execute single direct queries instead of 60+ chunked loops
+    if (isGlobal || leadIds.length > 1000) {
       try {
         const { count: tCount, error: err1 } = await supabase
           .from('whatsapp_message_logs')

@@ -422,8 +422,10 @@ export default function AnalyticsDashboard({
   useEffect(() => {
     async function loadMetrics() {
       setLoading(true);
-      const leadIds = filteredLeadsSync.map(l => l.id);
-      if (leadIds.length > 0) {
+      const totalLeadsCount = (filteredLeadsSync || []).length;
+      const isGlobalQuery = totalLeadsCount > 500;
+      const leadIds = isGlobalQuery ? [] : filteredLeadsSync.map(l => l.id);
+      if (totalLeadsCount > 0) {
         let startTimestamp = null;
         let endTimestamp = null;
         if (startDate) startTimestamp = new Date(`${startDate}T00:00:00.000Z`).getTime();
@@ -461,8 +463,12 @@ export default function AnalyticsDashboard({
         })).sort((a, b) => b.uniqueLeads - a.uniqueLeads);
 
         const periodLabel = datePreset === 'today' ? 'Today' : (datePreset?.includes('week') ? 'Last 7 Days' : 'This Month');
-        const res = await getDashboardMetrics(leadIds, periodLabel);
-        if (res.success) {
+        const res = await getDashboardMetrics({
+          leadIds,
+          isGlobal: isGlobalQuery,
+          dateFilter: periodLabel
+        }, periodLabel);
+        if (res?.success && res?.data) {
           setMetrics({ employeeActivity: localEmployeeActivity, whatsappStats: res.data.whatsappStats });
         }
       } else {
