@@ -91,7 +91,6 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       )) {
         console.log('Customer call already exists, skipping duplicate dial:', existingSession.status);
       } else {
-        const ringCallbackUrl = `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`;
         const dialResponse = await client.calls.create(
           fromNumber,
           customerNumber,
@@ -101,8 +100,6 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
             fallbackMethod: 'POST',
             hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=customer`,
             hangupMethod: 'POST',
-            ringUrl: ringCallbackUrl,
-            ringMethod: 'POST',
             ringTimeout: 35,
           }
         );
@@ -261,15 +258,22 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
       let hangupCause = session.hangup_cause;
       let hangupSource = session.hangup_source;
       if (!hangupCause) {
-        if (isAgentExit) {
-          hangupCause = 'agent_hangup';
-          hangupSource = 'agent';
-        } else if (session.status === 'connected' || session.customer_answer_time) {
-          hangupCause = 'customer_hangup';
-          hangupSource = 'customer';
+        if (session.status === 'connected' || session.customer_answer_time) {
+          if (isAgentExit) {
+            hangupCause = 'agent_hangup';
+            hangupSource = 'agent';
+          } else {
+            hangupCause = 'customer_hangup';
+            hangupSource = 'customer';
+          }
         } else {
-          hangupCause = 'customer_abandoned';
-          hangupSource = 'customer';
+          if (isAgentExit) {
+            hangupCause = 'agent_hangup';
+            hangupSource = 'agent';
+          } else {
+            hangupCause = 'rejected';
+            hangupSource = 'customer';
+          }
         }
       }
 
