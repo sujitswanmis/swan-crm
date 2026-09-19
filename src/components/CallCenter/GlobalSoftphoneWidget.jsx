@@ -637,7 +637,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         const s = statusData.activeSession;
         if (statusData.isConnected || statusData.customerAnswered || s.status === 'connected' || s.customer_answer_time) {
           stopRingingAudio(s.room_name);
-        } else if (s.status === 'customer_ringing') {
+        } else if (s.status === 'customer_ringing' || s.status === 'agent_answered') {
           if (!s.customer_answer_time) {
             startRingingAudio(s.room_name);
           }
@@ -683,7 +683,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
             if (active) {
               if (active.status === 'connected' || active.customer_answer_time) {
                 stopRingingAudio(active.room_name);
-              } else if (active.status === 'customer_ringing') {
+              } else if (active.status === 'customer_ringing' || active.status === 'agent_answered') {
                 if (!active.customer_answer_time) {
                   startRingingAudio(active.room_name);
                 }
@@ -751,7 +751,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (isStatusActive && isRecent) {
           if (updated.status === 'connected' || updated.customer_answer_time) {
             stopRingingAudio();
-          } else if (updated.status === 'customer_ringing') {
+          } else if (updated.status === 'customer_ringing' || updated.status === 'agent_answered') {
             startRingingAudio(updated.room_name);
           } else {
             stopRingingAudio();
@@ -1518,9 +1518,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 }} />
                 {(activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound'))
                   ? 'Call Connected'
-                  : (activeSession?.status === 'customer_ringing'
+                  : (activeSession?.status === 'customer_ringing' || activeSession?.status === 'agent_answered'
                       ? 'Ringing Customer...'
-                      : (optimisticCall || activeSession?.status === 'initiated' || activeSession?.status === 'agent_answered' ? 'Connecting to Line...' : 'Ringing Customer...'))}
+                      : (optimisticCall || activeSession?.status === 'initiated' ? 'Connecting to Line...' : 'Ringing Customer...'))}
               </div>
 
               {/* Target Number */}

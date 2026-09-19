@@ -191,13 +191,17 @@ async function processConferenceEvent(roomName, event, originUrl, customerNumber
 
     if (isAgent) {
       // Agent joined
-      await adminClient.from('call_sessions').update({
+      const agentUpdate = {
         agent_call_uuid: callUuid,
         agent_member_id: memberId,
         conference_name: conferenceName,
         agent_answer_time: new Date().toISOString(),
-        status: 'agent_answered'
-      }).eq('id', session.id);
+      };
+      // Only set agent_answered if customer has not yet been dialed
+      if (session.status !== 'customer_ringing' && !session.customer_call_uuid) {
+        agentUpdate.status = 'agent_answered';
+      }
+      await adminClient.from('call_sessions').update(agentUpdate).eq('id', session.id);
 
     } else if (isCustomer) {
       // Customer joined — stop any lingering audio and mark connected
