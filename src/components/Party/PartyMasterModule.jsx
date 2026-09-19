@@ -612,7 +612,10 @@ export default function PartyMasterModule({
       const matchesType = typeFilter === 'ALL' || p.party_type === typeFilter;
       const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'Active' ? p.final_status === 'Active' : p.final_status !== 'Active');
       const matchesBilling = billingFilter === 'ALL' || p.billing_route_type === billingFilter;
-      const matchesCompany = companyFilter === 'ALL' || (p.our_company || 'NSMLR') === companyFilter;
+      const matchesCompany = companyFilter === 'ALL' || 
+        (companyFilter === 'NSTL' 
+          ? (p.our_company === 'NSTL' || p.our_company === 'NSTLP')
+          : (p.our_company || 'NSMLR') === companyFilter);
 
       return matchesSearch && matchesType && matchesStatus && matchesBilling && matchesCompany;
     });
@@ -1594,11 +1597,11 @@ export default function PartyMasterModule({
                             fontWeight: 800,
                             padding: '0.2rem 0.55rem',
                             borderRadius: '5px',
-                            background: (lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                            color: (lead.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
-                            border: `1px solid ${(lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                            background: (lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: (lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                            border: `1px solid ${(lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                           }}>
-                            {lead.our_company || 'NSMLR'}
+                            {lead.our_company === 'NSTLP' ? 'NSTL' : (lead.our_company || 'NSMLR')}
                           </span>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -1872,7 +1875,7 @@ export default function PartyMasterModule({
               >
                 <option value="ALL">All Companies (Our Company)</option>
                 <option value="NSMLR">NSMLR</option>
-                <option value="NSTLP">NSTLP</option>
+                <option value="NSTL">NSTL</option>
               </select>
 
               <select
@@ -1960,11 +1963,11 @@ export default function PartyMasterModule({
                               fontWeight: 800,
                               padding: '0.12rem 0.45rem',
                               borderRadius: '4px',
-                              background: (p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                              color: (p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
-                              border: `1px solid ${(p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
-                            }} title={`Our Company: ${p.our_company || 'NSMLR'}`}>
-                              {p.our_company || 'NSMLR'}
+                              background: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                              color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                              border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                            }} title={`Our Company: ${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}`}>
+                              {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
                             </span>
                           </div>
                         </td>

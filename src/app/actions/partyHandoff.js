@@ -300,7 +300,8 @@ export async function getTransferredLeads() {
         const isConfirmed = h.handoff_status === 'APPROVED' || h.handoff_status === 'ACTIVATED' || (party.party_status && party.party_status !== 'Draft_From_Lead');
 
         const partyMeta = parsePartyMeta(party.business_nature);
-        const effectiveCompany = lead.our_company || party.our_company || partyMeta.our_company || 'NSMLR';
+        const rawComp = lead.our_company || party.our_company || partyMeta.our_company || 'NSMLR';
+        const effectiveCompany = rawComp === 'NSTLP' ? 'NSTL' : rawComp;
 
         return {
           id: h.id,
@@ -358,7 +359,8 @@ export async function getTransferredLeads() {
       const lead = leadMap.get(p.source_lead_id) || {};
       const isConfirmed = p.party_status !== 'Draft_From_Lead';
       const partyMeta = parsePartyMeta(p.business_nature);
-      const effectiveCompany = lead.our_company || p.our_company || partyMeta.our_company || 'NSMLR';
+      const rawComp = lead.our_company || p.our_company || partyMeta.our_company || 'NSMLR';
+      const effectiveCompany = rawComp === 'NSTLP' ? 'NSTL' : rawComp;
 
       return {
         id: p.id,

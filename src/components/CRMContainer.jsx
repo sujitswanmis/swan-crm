@@ -1184,7 +1184,11 @@ export default function CRMContainer({
           .select('*', { count: 'exact', head: true });
         // Apply company filter server-side for agents
         if (_agentCompanyFilter) {
-          countQuery = countQuery.eq('our_company', _agentCompanyFilter);
+          if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+            countQuery = countQuery.in('our_company', ['NSTL', 'NSTLP']);
+          } else {
+            countQuery = countQuery.eq('our_company', _agentCompanyFilter);
+          }
         }
         const { count, error: countError } = await countQuery;
         if (!countError && count) {
@@ -1230,7 +1234,11 @@ export default function CRMContainer({
               .order('id');
             // ⚡ PERF FIX: Apply company filter server-side for agents to avoid downloading all 12,430 leads
             if (_agentCompanyFilter) {
-              query = query.eq('our_company', _agentCompanyFilter);
+              if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                query = query.in('our_company', ['NSTL', 'NSTLP']);
+              } else {
+                query = query.eq('our_company', _agentCompanyFilter);
+              }
             }
             query = query.range(p * queryPageSize, (p + 1) * queryPageSize - 1);
 
@@ -1321,7 +1329,11 @@ export default function CRMContainer({
                 .gt('created_at', maxLeadCreatedAt)
                 .order('created_at', { ascending: false });
               if (_agentCompanyFilter) {
-                deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
+                if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                  deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
+                } else {
+                  deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
+                }
               }
               const { data: deltaLeads, error: dLeadErr } = await deltaQuery.limit(2000);
               if (!dLeadErr && Array.isArray(deltaLeads)) {
@@ -1649,12 +1661,22 @@ export default function CRMContainer({
     // 1. Apply Company Filter
     if (userRole === 'admin' || userRole === 'Admin') {
       if (adminCompanyFilter !== 'All') {
-        preFilteredLeads = rawLeads.filter(l => l.our_company === adminCompanyFilter);
+        preFilteredLeads = rawLeads.filter(l => {
+          if (adminCompanyFilter === 'NSTL') {
+            return l.our_company === 'NSTL' || l.our_company === 'NSTLP';
+          }
+          return l.our_company === adminCompanyFilter;
+        });
       }
     } else {
       // Regular Agents only see their assigned company's leads OR leads assigned directly to them
       if (userCompany) {
-         preFilteredLeads = rawLeads.filter(l => l.our_company === userCompany || (userId && l.assigned_to === userId));
+         preFilteredLeads = rawLeads.filter(l => {
+           const matchComp = (userCompany === 'NSTL' || userCompany === 'NSTLP')
+             ? (l.our_company === 'NSTL' || l.our_company === 'NSTLP')
+             : l.our_company === userCompany;
+           return matchComp || (userId && l.assigned_to === userId);
+         });
       }
     }
     
@@ -4263,7 +4285,7 @@ export default function CRMContainer({
                 >
                   <option value="All">All Companies</option>
                   <option value="NSMLR">NSMLR</option>
-                  <option value="NSTLP">NSTLP</option>
+                  <option value="NSTL">NSTL</option>
                 </select>
               </div>
             )}

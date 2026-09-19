@@ -166,7 +166,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         ...item,
         lead: lead,
         party_type: pType,
-        our_company: item.our_company || meta.our_company || lead?.our_company || 'NSMLR',
+        our_company: (item.our_company || meta.our_company || lead?.our_company || 'NSMLR') === 'NSTLP' ? 'NSTL' : (item.our_company || meta.our_company || lead?.our_company || 'NSMLR'),
         final_status: item.party_status === 'Draft_From_Lead' ? 'Draft' : (item.party_status || 'Draft'),
         workflow_status: item.party_status === 'Draft_From_Lead' ? 'S00_TRANSFERRED' : (item.onboarding_stage || 'S01_Approved'),
         state_name: item.state_name || primaryAddress?.state_name || lead?.state_name || lead?.state || 'Punjab',

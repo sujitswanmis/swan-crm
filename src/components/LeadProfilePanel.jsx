@@ -2146,10 +2146,10 @@ export default function LeadProfilePanel({
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>Company:</span>
-                <select name="our_company" value={editForm.our_company || ''} onChange={handleEditChange} style={{ padding: '0.25rem', fontSize: '0.76rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                <select name="our_company" value={editForm.our_company === 'NSTLP' ? 'NSTL' : (editForm.our_company || '')} onChange={handleEditChange} style={{ padding: '0.25rem', fontSize: '0.76rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
                   <option value="">None</option>
                   <option value="NSMLR">NSMLR</option>
-                  <option value="NSTLP">NSTLP</option>
+                  <option value="NSTL">NSTL</option>
                 </select>
               </div>
             </div>

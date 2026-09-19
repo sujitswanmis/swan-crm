@@ -549,7 +549,7 @@ export default function StageDataTable({
           >
             <option value="ALL">All Companies (Our Company)</option>
             <option value="NSMLR">NSMLR</option>
-            <option value="NSTLP">NSTLP</option>
+            <option value="NSTL">NSTL</option>
           </select>
         </div>
       </div>
@@ -649,11 +649,11 @@ export default function StageDataTable({
                         fontWeight: 800,
                         padding: '0.2rem 0.55rem',
                         borderRadius: '5px',
-                        background: (party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                        color: (party.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
-                        border: `1px solid ${(party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                        background: (party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: (party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                        border: `1px solid ${(party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                       }}>
-                        {party.our_company || 'NSMLR'}
+                        {party.our_company === 'NSTLP' ? 'NSTL' : (party.our_company || 'NSMLR')}
                       </span>
                     </td>
 

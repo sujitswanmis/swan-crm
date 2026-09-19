@@ -1200,7 +1200,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       sheet.dataValidations.add('B2:B500', {
         type: 'list',
         allowBlank: true,
-        formulae: ['"NSMLR,NSTLP"']
+        formulae: ['"NSMLR,NSTL"']
       });
 
       // Lead Source (Column 3 -> C)
@@ -1776,10 +1776,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 {renderInput('Lead Date', 'lead_date', 'date', true)}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Our Company Name <span style={{color: 'red'}}>*</span></label>
-                  <select name="our_company" value={formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                  <select name="our_company" value={formData.our_company === 'NSTLP' ? 'NSTL' : formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
                     <option value="">Select Company</option>
                     <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
+                    <option value="NSTL">NSTL</option>
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
