@@ -686,8 +686,6 @@ export default function PartyMasterModule({
       'Security Deposit (INR)',
       'Security Mode',
       'Receipt No',
-      'Credit Limit (INR)',
-      'Credit Days',
       '1st Billing Date',
       '1st Billing Amount (INR)',
       '1st Billing Status',
@@ -724,8 +722,6 @@ export default function PartyMasterModule({
         `"${p.security_deposit_amount || (p.party_commercial_terms?.[0]?.security_deposit_amount) || 0}"`,
         `"${p.security_mode || 'Cheque'}"`,
         `"${p.receipt_no || ''}"`,
-        `"${p.credit_limit || (p.party_commercial_terms?.[0]?.credit_limit) || 500000}"`,
-        `"${p.credit_days || (p.party_commercial_terms?.[0]?.credit_days) || 30}"`,
         `"${p.billing_first_date || ''}"`,
         `"${p.billing_first_amount || ''}"`,
         `"${p.billing_first_status || ''}"`,
@@ -971,7 +967,7 @@ export default function PartyMasterModule({
     let dealerCount = 0;
     let subDealerCount = 0;
     let activeCount = 0;
-    let totalCredit = 0;
+    let totalSecurityDeposit = 0;
 
     filteredParties.forEach(p => {
       if (p.party_type === 'Distributor') distCount++;
@@ -982,8 +978,8 @@ export default function PartyMasterModule({
         activeCount++;
       }
 
-      const cred = Number(p.credit_limit || p.party_commercial_terms?.[0]?.credit_limit || 0);
-      if (!isNaN(cred) && cred > 0) totalCredit += cred;
+      const secDep = Number(p.security_deposit_amount || p.party_commercial_terms?.[0]?.security_deposit_amount || 0);
+      if (!isNaN(secDep) && secDep > 0) totalSecurityDeposit += secDep;
     });
 
     return {
@@ -993,7 +989,7 @@ export default function PartyMasterModule({
       subDealerCount,
       activeCount,
       pendingCount: total - activeCount,
-      totalCredit
+      totalSecurityDeposit
     };
   }, [filteredParties]);
 
@@ -2280,7 +2276,7 @@ export default function PartyMasterModule({
               </div>
             </div>
 
-            {/* Card 6: Total Credit Allocated */}
+            {/* Card 6: Total Security Deposit */}
             <div style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border-light)',
@@ -2290,15 +2286,17 @@ export default function PartyMasterModule({
               alignItems: 'center',
               gap: '0.75rem'
             }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(234,179,8,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#eab308' }}>
-                <DollarSign size={20} />
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                <ShieldCheck size={20} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Credit Line</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fbbf24' }}>
-                  ₹{reportMetrics.totalCredit >= 10000000
-                    ? `${(reportMetrics.totalCredit / 10000000).toFixed(2)} Cr`
-                    : `${(reportMetrics.totalCredit / 100000).toFixed(1)} L`}
+                <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Sec. Deposit</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
+                  ₹{reportMetrics.totalSecurityDeposit >= 10000000
+                    ? `${(reportMetrics.totalSecurityDeposit / 10000000).toFixed(2)} Cr`
+                    : reportMetrics.totalSecurityDeposit >= 100000
+                    ? `${(reportMetrics.totalSecurityDeposit / 100000).toFixed(1)} L`
+                    : Number(reportMetrics.totalSecurityDeposit).toLocaleString('en-IN')}
                 </div>
               </div>
             </div>
@@ -2466,7 +2464,7 @@ export default function PartyMasterModule({
                   <th style={{ padding: '0.85rem 1rem' }}>Channel Hierarchy (Who Under Whom)</th>
                   <th style={{ padding: '0.85rem 1rem' }}>State, District & Products</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Billing Route & Security</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Credit Limit & Stage Progress</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Onboarding Stage & Status</th>
                   <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
@@ -2509,10 +2507,8 @@ export default function PartyMasterModule({
                     const parentDistName = p.parent_distributor?.firm_name || p.parent_distributor_name;
                     const parentDlrName = p.parent_dealer?.firm_name || p.parent_dealer_name;
 
-                    // Commercial & Credit Terms
+                    // Commercial & Security Terms
                     const commTerms = (p.party_commercial_terms && p.party_commercial_terms[0]) || {};
-                    const creditLimitVal = p.credit_limit ?? commTerms.credit_limit ?? 500000;
-                    const creditDaysVal = p.credit_days ?? commTerms.credit_days ?? 30;
                     const secDepositVal = p.security_deposit_amount ?? commTerms.security_deposit_amount;
                     const secModeVal = p.security_mode || commTerms.security_mode || 'Cheque';
 
@@ -2710,33 +2706,27 @@ export default function PartyMasterModule({
                           ) : null}
                         </td>
 
-                        {/* 6. Credit Limit & Stage Progress */}
+                        {/* 6. Onboarding Stage & Status */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.88rem' }}>
-                            ₹{Number(creditLimitVal).toLocaleString('en-IN')}
-                            <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500, marginLeft: '0.3rem' }}>
-                              ({creditDaysVal}d)
-                            </span>
-                          </div>
-
                           {/* Stage Progress Badge */}
-                          <div style={{ marginTop: '0.3rem' }}>
+                          <div>
                             <span style={{
                               display: 'inline-block',
-                              fontSize: '0.72rem',
+                              fontSize: '0.74rem',
                               fontWeight: 700,
-                              padding: '0.15rem 0.5rem',
-                              borderRadius: '4px',
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '6px',
                               background: badgeInfo.bg,
                               color: badgeInfo.color,
-                              border: `1px solid ${badgeInfo.color}40`
+                              border: `1px solid ${badgeInfo.color}40`,
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                             }}>
                               {badgeInfo.label}
                             </span>
                           </div>
 
                           {/* Active / Draft Status Badge */}
-                          <div style={{ marginTop: '0.25rem' }}>
+                          <div style={{ marginTop: '0.35rem' }}>
                             <span style={{
                               display: 'inline-block',
                               fontSize: '0.7rem',
@@ -2746,7 +2736,7 @@ export default function PartyMasterModule({
                               background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
                               color: isActive ? '#34d399' : '#fbbf24'
                             }}>
-                              {p.final_status || p.party_status || 'Draft'}
+                              {isActive ? '● Verified Active' : '○ Draft In-Progress'}
                             </span>
                           </div>
                         </td>
