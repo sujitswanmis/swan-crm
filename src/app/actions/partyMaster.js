@@ -988,15 +988,59 @@ export async function getParty360Details(partyId) {
   const rawParty = partyRes?.data || null;
   const meta = parsePartyMeta(rawParty?.business_nature);
 
+  let parentDist = null;
+  let parentDlr = null;
+  const distId = rawParty?.parent_distributor_id || meta?.parent_distributor_id;
+  const dlrId = rawParty?.parent_dealer_id || meta?.parent_dealer_id;
+
+  if (distId) {
+    try {
+      const { data: dData } = await adminClient.from('party_master').select('id, firm_name, party_universal_code, primary_mobile').eq('id', distId).maybeSingle();
+      if (dData) parentDist = dData;
+    } catch (_) {}
+  }
+  if (dlrId) {
+    try {
+      const { data: dlData } = await adminClient.from('party_master').select('id, firm_name, party_universal_code, primary_mobile').eq('id', dlrId).maybeSingle();
+      if (dlData) parentDlr = dlData;
+    } catch (_) {}
+  }
+
+  const primaryAddress = (addressesRes?.data || []).find(a => a.is_primary) || (addressesRes?.data || [])[0];
+
   const mergedParty = rawParty ? {
     ...rawParty,
-    parent_distributor_id: rawParty.parent_distributor_id || meta.parent_distributor_id || null,
-    parent_dealer_id: rawParty.parent_dealer_id || meta.parent_dealer_id || null,
-    zone: rawParty.zone || meta.zone || meta.territory?.zone || null,
+    parent_distributor_id: distId || null,
+    parent_dealer_id: dlrId || null,
+    parent_distributor: parentDist,
+    parent_dealer: parentDlr,
+    parent_distributor_name: parentDist?.firm_name || meta.parent_distributor_name || null,
+    parent_dealer_name: parentDlr?.firm_name || meta.parent_dealer_name || null,
+    our_company: (rawParty.our_company || meta.our_company || 'NSMLR') === 'NSTLP' ? 'NSTL' : (rawParty.our_company || meta.our_company || 'NSMLR'),
+    state_name: rawParty.state_name || meta.state_name || primaryAddress?.state_name || 'Punjab',
+    district_name: rawParty.district_name || meta.district_name || primaryAddress?.district_name || '',
+    address: rawParty.address || meta.address || primaryAddress?.address_line_1 || '',
+    pincode: rawParty.pincode || meta.pincode || primaryAddress?.pincode || '',
+    tehsil: rawParty.tehsil || meta.tehsil || '',
+    block_name: rawParty.block_name || meta.block_name || '',
+    city_village: rawParty.city_village || meta.city_village || '',
+    order_category: rawParty.order_category || meta.order_category || 'Rotavator',
+    product_category: (authsRes?.data && authsRes.data[0]?.product_category) || rawParty.product_category || meta.product_category || 'Both',
+    zone: rawParty.zone || meta.zone || meta.territory?.zone || 'North Zone',
     dealership_type: rawParty.dealership_type || meta.dealership_type || 'EXCLUSIVE_SWAN',
     showroom_area_sqft: rawParty.showroom_area_sqft || meta.showroom_area_sqft || 2500,
     billing_route_type: rawParty.billing_route_type || meta.billing_route_type || 'DIRECT_COMPANY_BILLING',
     commercial_status: rawParty.commercial_status || meta.commercial_status || (commercialRes?.data ? 'Completed' : null),
+    security_deposit_amount: rawParty.security_deposit_amount ?? commercialRes?.data?.security_deposit_amount ?? meta.security_deposit_amount ?? 0,
+    security_deposit_date: rawParty.security_deposit_date || meta.security_deposit_date || null,
+    security_mode: rawParty.security_mode || meta.security_mode || 'Cheque',
+    receipt_no: rawParty.receipt_no || meta.receipt_no || '',
+    distributor_commission_percent: rawParty.distributor_commission_percent ?? meta.distributor_commission_percent ?? 2.5,
+    billing_first_date: rawParty.billing_first_date || meta.billing_first_date || null,
+    billing_first_amount: rawParty.billing_first_amount ?? meta.billing_first_amount ?? null,
+    billing_first_status: rawParty.billing_first_status || meta.billing_first_status || 'Pending',
+    assigned_districts: meta.assigned_districts || meta.headquarter_districts || (rawParty.district_name ? rawParty.district_name.split(',').map(s => s.trim()).filter(Boolean) : []),
+    headquarter_districts: meta.headquarter_districts || meta.assigned_districts || (rawParty.district_name ? rawParty.district_name.split(',').map(s => s.trim()).filter(Boolean) : []),
     contact_person_name_1: rawParty.contact_person_name_1 || meta.contact_person_name_1 || null,
     contact_mobile_1_1: rawParty.contact_mobile_1_1 || meta.contact_mobile_1_1 || null,
     contact_mobile_1_2: rawParty.contact_mobile_1_2 || meta.contact_mobile_1_2 || null,
@@ -1036,7 +1080,7 @@ export async function getParty360Details(partyId) {
     contacts: contactsRes?.data || [],
     addresses: addressesRes?.data || [],
     relationship_history: historyRes?.data || [],
-    commercial: commercialRes?.data || (meta.credit_limit !== undefined ? { credit_limit: meta.credit_limit, credit_days: meta.credit_days || 30 } : null),
+    commercial: commercialRes?.data || null,
     product_authorizations: (authsRes?.data && authsRes.data.length > 0) ? authsRes.data : (meta.product_authorizations || []),
     territory_allocations: (territoriesRes?.data && territoriesRes.data.length > 0) ? territoriesRes.data : (meta.territory ? [meta.territory] : []),
     team_assignments: (teamsRes?.data && teamsRes.data.length > 0) ? teamsRes.data : (meta.team_assignments || [])

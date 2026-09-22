@@ -1586,6 +1586,9 @@ export default function PartyMasterModule({
     try {
       const details = await getParty360Details(party.id);
       setParty360Data(details);
+      if (details?.party) {
+        setView360Party(prev => ({ ...(prev || {}), ...details.party }));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -3169,93 +3172,594 @@ export default function PartyMasterModule({
       {/* ========================================================= */}
       {/* 360 DEGREE PROFILE & RELATIONSHIP AUDIT MODAL */}
       {/* ========================================================= */}
-      {view360Party && party360Data && (
+      {view360Party && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '850px', maxHeight: '90vh', overflowY: 'auto', color: '#ffffff' }}>
+          <div style={{ background: '#0b1329', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '960px', maxHeight: '92vh', overflowY: 'auto', color: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.9)' }}>
+            
+            {/* 1. MODAL HEADER WITH BADGES & CLOSE */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 800, padding: '0.2rem 0.6rem', background: 'rgba(16,185,129,0.25)', color: '#34d399', borderRadius: '4px' }}>
-                    {view360Party.distributor_code || view360Party.dealer_code || view360Party.sub_dealer_code || view360Party.party_universal_code}
+                <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+                  {/* Channel / Universal Code */}
+                  <span style={{ fontSize: '0.8rem', fontWeight: 800, padding: '0.2rem 0.65rem', background: 'rgba(16,185,129,0.25)', color: '#34d399', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)', fontFamily: 'monospace' }}>
+                    {view360Party.distributor_code || view360Party.dealer_code || view360Party.sub_dealer_code || view360Party.party_universal_code || 'UNASSIGNED'}
                   </span>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700, padding: '0.2rem 0.6rem', background: 'rgba(59,130,246,0.25)', color: '#60a5fa', borderRadius: '4px' }}>
-                    {view360Party.party_type}
+                  
+                  {/* Party Tier */}
+                  <span style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 800,
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '6px',
+                    background: view360Party.party_type === 'Distributor' ? 'rgba(56,189,248,0.25)' : view360Party.party_type === 'Dealer' ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
+                    color: view360Party.party_type === 'Distributor' ? '#38bdf8' : view360Party.party_type === 'Dealer' ? '#34d399' : '#fbbf24',
+                    border: `1px solid ${view360Party.party_type === 'Distributor' ? '#38bdf840' : view360Party.party_type === 'Dealer' ? '#34d39940' : '#fbbf2440'}`
+                  }}>
+                    {view360Party.party_type === 'Distributor' ? '👑 Level 1: Distributor' : view360Party.party_type === 'Dealer' ? '🏪 Level 2: Dealer' : '🛒 Level 3: Sub-Dealer'}
                   </span>
+
+                  {/* Our Company Badge */}
+                  <span style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    padding: '0.18rem 0.55rem',
+                    borderRadius: '6px',
+                    background: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.2)' : 'rgba(245,158,11,0.2)',
+                    color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24',
+                    border: `1px solid ${(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b640' : '#fbbf2440'}`
+                  }}>
+                    {view360Party.our_company === 'NSTLP' ? 'NSTL' : (view360Party.our_company || 'NSMLR')}
+                  </span>
+
+                  {/* Operational Status */}
+                  <span style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    padding: '0.18rem 0.55rem',
+                    borderRadius: '6px',
+                    background: (view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                    color: (view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? '#34d399' : '#fbbf24',
+                    border: `1px solid ${(view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? '#34d39940' : '#fbbf2440'}`
+                  }}>
+                    ● {view360Party.final_status || view360Party.party_status || 'Draft'}
+                  </span>
+
+                  {/* Onboarding Stage */}
+                  {view360Party.onboarding_stage && (
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.18rem 0.5rem', background: 'rgba(148,163,184,0.15)', color: '#94a3b8', borderRadius: '6px' }}>
+                      Stage: {view360Party.onboarding_stage}
+                    </span>
+                  )}
                 </div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0.4rem 0 0 0' }}>{view360Party.firm_name}</h2>
-                <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Contact: <strong>{view360Party.contact_person_name_1 || view360Party.owner_name}</strong> • Phone: <strong>{view360Party.contact_mobile_1_1 || view360Party.primary_mobile}</strong></div>
+
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0.2rem 0', color: '#f8fafc' }}>
+                  {view360Party.firm_name}
+                </h2>
+                {view360Party.legal_name && view360Party.legal_name !== view360Party.firm_name && (
+                  <div style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
+                    Legal Registered Name: <strong style={{ color: '#cbd5e1' }}>{view360Party.legal_name}</strong>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setView360Party(null)} style={{ padding: '0.5rem 1.2rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Close</button>
+
+              <button
+                onClick={() => { setView360Party(null); setParty360Data(null); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.5rem 1.1rem',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={16} /> Close
+              </button>
             </div>
 
-            {/* Complete Channel Breadcrumb */}
-            <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Channel Hierarchy Chain (Who Under Whom)</div>
-              <div style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#38bdf8' }}>👑 {view360Party.parent_distributor ? view360Party.parent_distributor.firm_name : (view360Party.party_type === 'Distributor' ? view360Party.firm_name : 'No Tagged Distributor')}</span>
-                {view360Party.party_type !== 'Distributor' && (
+            {/* 2. STRICT CHANNEL HIERARCHY CHAIN */}
+            <div style={{ background: '#131e36', padding: '1rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(56,189,248,0.25)' }}>
+              <div style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
+                Channel Hierarchy Chain (Who Under Whom)
+              </div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {view360Party.party_type === 'Distributor' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8' }}>
+                    <span style={{ fontSize: '1.2rem' }}>👑</span>
+                    <span>{view360Party.firm_name}</span>
+                    <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 500 }}>(Master Regional Hub)</span>
+                  </div>
+                ) : view360Party.party_type === 'Dealer' ? (
                   <>
-                    <ArrowRight size={14} className="text-gray-400" />
-                    <span style={{ color: '#34d399' }}>🏪 {view360Party.party_type === 'Dealer' ? view360Party.firm_name : (view360Party.parent_dealer?.firm_name || 'Dealer')}</span>
+                    <span style={{ color: '#60a5fa' }}>
+                      👑 {view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name || 'Swan Direct / Open Territory'}
+                    </span>
+                    <ArrowRight size={14} style={{ color: '#94a3b8' }} />
+                    <span style={{ color: '#34d399' }}>🏪 {view360Party.firm_name}</span>
                   </>
-                )}
-                {view360Party.party_type === 'Sub-Dealer' && (
+                ) : (
                   <>
-                    <ArrowRight size={14} className="text-gray-400" />
+                    {(view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name) && (
+                      <>
+                        <span style={{ color: '#60a5fa' }} title="Master Distributor">
+                          👑 {view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name}
+                        </span>
+                        <ArrowRight size={14} style={{ color: '#94a3b8' }} />
+                      </>
+                    )}
+                    <span style={{ color: '#34d399' }} title="Parent Dealer">
+                      🏪 {view360Party.parent_dealer?.firm_name || view360Party.parent_dealer_name || 'Parent Dealer'}
+                    </span>
+                    <ArrowRight size={14} style={{ color: '#94a3b8' }} />
                     <span style={{ color: '#fbbf24' }}>🛒 {view360Party.firm_name}</span>
                   </>
                 )}
               </div>
             </div>
 
-            {/* Relationship History Audit Log */}
-            <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#60a5fa', marginBottom: '0.5rem' }}>📜 Parent Relationship History (Never Overwritten)</div>
-              {party360Data.relationship_history.length === 0 ? (
-                <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>Original parent relationship active since onboarding. No transfers recorded.</div>
-              ) : (
-                <table style={{ width: '100%', fontSize: '0.82rem', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ color: '#94a3b8' }}>
-                      <th>Parent Type</th>
-                      <th>Effective From</th>
-                      <th>Effective To</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {party360Data.relationship_history.map((h, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        <td style={{ padding: '0.4rem 0' }}>{h.parent_type}</td>
-                        <td>{h.effective_from}</td>
-                        <td>{h.effective_to || 'Current'}</td>
-                        <td>
-                          <span style={{ color: h.status === 'ACTIVE' ? '#34d399' : '#94a3b8', fontWeight: 700 }}>
-                            {h.status}
+            {/* 3. FIRM & TAX IDENTIFICATION + REGISTERED LOCATION */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              {/* Firm Master Details */}
+              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Building2 size={16} /> Firm & Tax Identification
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', fontSize: '0.83rem' }}>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Constitution Type</span>
+                    <strong style={{ color: '#e2e8f0' }}>{view360Party.constitution_type || 'PROPRIETORSHIP'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Operating Company</span>
+                    <strong style={{ color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24' }}>
+                      {view360Party.our_company === 'NSTLP' ? 'NSTL' : (view360Party.our_company || 'NSMLR')}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>GSTIN</span>
+                    <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>
+                      {view360Party.gstin || 'NOT REGISTERED'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>PAN Number</span>
+                    <span style={{ color: '#fbbf24', fontFamily: 'monospace', fontWeight: 700 }}>
+                      {view360Party.pan || '-'}
+                    </span>
+                  </div>
+                  {view360Party.cin && (
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>CIN</span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{view360Party.cin}</span>
+                    </div>
+                  )}
+                  {view360Party.udyam_number && (
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Udyam No</span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{view360Party.udyam_number}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Source of Origin</span>
+                    <span style={{ color: '#94a3b8' }}>{view360Party.acquisition_source || 'Direct Onboarding'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Created Date (IST)</span>
+                    <span style={{ color: '#94a3b8' }}>
+                      {view360Party.created_at ? new Date(view360Party.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Registered Address & Location Master */}
+              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#34d399', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <MapPin size={16} /> Registered Address & Geography
+                </div>
+                <div style={{ fontSize: '0.83rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div>
+                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Premises / Street Address</span>
+                    <strong style={{ color: '#e2e8f0' }}>{view360Party.address || 'Address on file'}</strong>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.2rem' }}>
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>State</span>
+                      <strong style={{ color: '#38bdf8' }}>{view360Party.state_name || 'Punjab'}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Primary District</span>
+                      <strong style={{ color: '#e2e8f0' }}>{view360Party.district_name || '-'}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Tehsil / Taluka</span>
+                      <span style={{ color: '#cbd5e1' }}>{view360Party.tehsil || '-'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>City / Village & Pin</span>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {view360Party.city_village || '-'} {view360Party.pincode ? `(${view360Party.pincode})` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. COMPLETE CONTACT CHANNELS ("Firm & Contact Details sara data aaye") */}
+            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#fbbf24', marginBottom: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Phone size={16} /> Complete Contact Channels & Personnel Records
+              </div>
+
+              {/* Grid with 4 Cards: Official Channels + Contact Persons 1, 2, 3 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.9rem' }}>
+                
+                {/* Card A: Official Business Channels */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    🏢 Official Business Channels
+                  </div>
+                  <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <div>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact No 1:</span>{' '}
+                      <strong style={{ color: '#e2e8f0' }}>{view360Party.biz_contact_no_1 || view360Party.primary_mobile || '-'}</strong>
+                    </div>
+                    {view360Party.biz_contact_no_2 && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact No 2:</span>{' '}
+                        <span style={{ color: '#cbd5e1' }}>{view360Party.biz_contact_no_2}</span>
+                      </div>
+                    )}
+                    {(view360Party.biz_alt_no_1 || view360Party.biz_alt_no_2) && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Alt Phone(s):</span>{' '}
+                        <span style={{ color: '#cbd5e1' }}>{[view360Party.biz_alt_no_1, view360Party.biz_alt_no_2].filter(Boolean).join(', ')}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Official Email 1:</span>{' '}
+                      <span style={{ color: '#38bdf8' }}>{view360Party.biz_email_1 || view360Party.official_email || '-'}</span>
+                    </div>
+                    {view360Party.biz_email_2 && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Official Email 2:</span>{' '}
+                        <span style={{ color: '#38bdf8' }}>{view360Party.biz_email_2}</span>
+                      </div>
+                    )}
+                    {(view360Party.biz_alt_email_1 || view360Party.biz_alt_email_2) && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Biz Email(s):</span>{' '}
+                        <span style={{ color: '#94a3b8' }}>{[view360Party.biz_alt_email_1, view360Party.biz_alt_email_2].filter(Boolean).join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card B: Contact Person 1 (Primary Key Person / Owner) */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    👤 Contact Person 1 (Primary / Owner)
+                  </div>
+                  <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <div>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
+                      <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_1 || view360Party.owner_name || 'Principal'}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Primary Mobile:</span>{' '}
+                      <strong style={{ color: '#34d399' }}>{view360Party.contact_mobile_1_1 || view360Party.primary_mobile || '-'}</strong>
+                    </div>
+                    {view360Party.contact_mobile_1_2 && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Secondary Mobile:</span>{' '}
+                        <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_1_2}</span>
+                      </div>
+                    )}
+                    {(view360Party.contact_alt_mobile_1_1 || view360Party.contact_alt_mobile_1_2) && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile(s):</span>{' '}
+                        <span style={{ color: '#cbd5e1' }}>{[view360Party.contact_alt_mobile_1_1, view360Party.contact_alt_mobile_1_2].filter(Boolean).join(', ')}</span>
+                      </div>
+                    )}
+                    {(view360Party.contact_email_1_2 || view360Party.contact_alt_email_1_1) && (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
+                        <span style={{ color: '#38bdf8' }}>{[view360Party.contact_email_1_2, view360Party.contact_alt_email_1_1].filter(Boolean).join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card C: Contact Person 2 (Partner / General Manager) */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    👤 Contact Person 2 (Partner / Manager)
+                  </div>
+                  {view360Party.contact_person_name_2 || view360Party.contact_mobile_2_1 ? (
+                    <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
+                        <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_2 || '-'}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>{' '}
+                        <strong style={{ color: '#fbbf24' }}>{view360Party.contact_mobile_2_1 || '-'}</strong>
+                      </div>
+                      {view360Party.contact_mobile_2_2 && (
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile:</span>{' '}
+                          <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_2_2}</span>
+                        </div>
+                      )}
+                      {(view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1) && (
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
+                          <span style={{ color: '#38bdf8' }}>{view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                      No secondary contact person recorded.
+                    </div>
+                  )}
+                </div>
+
+                {/* Card D: Contact Person 3 (Accountant / Operations) */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    👤 Contact Person 3 (Accounts / Ops)
+                  </div>
+                  {view360Party.contact_person_name_3 || view360Party.contact_mobile_3_1 ? (
+                    <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
+                        <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_3 || '-'}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>{' '}
+                        <strong style={{ color: '#c084fc' }}>{view360Party.contact_mobile_3_1 || '-'}</strong>
+                      </div>
+                      {view360Party.contact_mobile_3_2 && (
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile:</span>{' '}
+                          <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_3_2}</span>
+                        </div>
+                      )}
+                      {(view360Party.contact_email_3_1 || view360Party.contact_email_3_2) && (
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
+                          <span style={{ color: '#38bdf8' }}>{view360Party.contact_email_3_1 || view360Party.contact_email_3_2}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                      No tertiary contact person recorded.
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
+            {/* 5. COMMERCIAL SECURITY TERMS & BILLING (NO CREDIT LIMIT / SANCTIONED LIMIT AS REQUESTED) */}
+            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#10b981', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <DollarSign size={16} /> Commercial Terms, Security Deposit & Billing Route
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.83rem' }}>
+                {/* Billing Route */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Configured Billing Route</span>
+                  <strong style={{
+                    color: view360Party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#34d399' : view360Party.billing_route_type === 'DEALER_BILLED' ? '#f59e0b' : '#60a5fa',
+                    fontSize: '0.9rem',
+                    display: 'block',
+                    marginTop: '0.2rem'
+                  }}>
+                    {view360Party.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                      ? '🏢 Direct Company Billing'
+                      : view360Party.billing_route_type === 'DEALER_BILLED'
+                      ? '🏬 Dealer Billed'
+                      : '👑 Distributor Billed'}
+                  </strong>
+                </div>
+
+                {/* Security Deposit Amount */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Security Deposit Amount</span>
+                  <strong style={{ color: '#34d399', fontSize: '1.05rem', display: 'block', marginTop: '0.2rem' }}>
+                    ₹{Number(view360Party.security_deposit_amount || 0).toLocaleString('en-IN')}
+                  </strong>
+                </div>
+
+                {/* Security Mode & Receipt */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Payment Mode & Voucher</span>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    <strong style={{ color: '#e2e8f0' }}>{view360Party.security_mode || 'Cheque'}</strong>
+                    {view360Party.receipt_no && (
+                      <span style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'block' }}>
+                        Receipt: <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{view360Party.receipt_no}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deposit Date */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Security Deposit Date</span>
+                  <strong style={{ color: '#e2e8f0', display: 'block', marginTop: '0.2rem' }}>
+                    {view360Party.security_deposit_date || '-'}
+                  </strong>
+                </div>
+
+                {/* Distributor Margin */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Distributor Commission %</span>
+                  <strong style={{ color: '#fbbf24', fontSize: '0.95rem', display: 'block', marginTop: '0.2rem' }}>
+                    {view360Party.distributor_commission_percent ?? 2.5}%
+                  </strong>
+                </div>
+
+                {/* 1st Billing Milestone */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>1st Billing Milestone</span>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    {view360Party.billing_first_amount ? (
+                      <div>
+                        <strong style={{ color: '#38bdf8' }}>₹{Number(view360Party.billing_first_amount).toLocaleString('en-IN')}</strong>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: '0.3rem' }}>
+                          ({view360Party.billing_first_status || 'Pending'})
+                        </span>
+                        {view360Party.billing_first_date && (
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Date: {view360Party.billing_first_date}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span style={{ color: '#64748b' }}>Pending 1st Order Dispatch</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. PRODUCTS AUTHORIZATION & TERRITORY JURISDICTION */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              
+              {/* Product Authorization */}
+              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#c084fc', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Package size={16} /> Authorized Product Machinery
+                </div>
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '0.74rem' }}>Product Category: </span>
+                  <strong style={{ color: '#e2e8f0', fontSize: '0.84rem' }}>
+                    {view360Party.product_category || 'Implement & Spare Parts'}
+                  </strong>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.4rem' }}>
+                  {(() => {
+                    const authList = (party360Data?.product_authorizations && party360Data.product_authorizations.length > 0)
+                      ? party360Data.product_authorizations.map(a => a.product_name || a.order_category)
+                      : (Array.isArray(view360Party.product_authorizations) && view360Party.product_authorizations.length > 0)
+                      ? view360Party.product_authorizations.map(a => a.product_name || a)
+                      : ['ROTAVATOR', 'SPARE_PARTS'];
+
+                    return authList.map((pName, i) => (
+                      <span key={i} style={{
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        padding: '0.2rem 0.6rem',
+                        background: 'rgba(167,139,250,0.15)',
+                        color: '#c084fc',
+                        border: '1px solid rgba(167,139,250,0.3)',
+                        borderRadius: '6px'
+                      }}>
+                        ⚙️ {pName}
+                      </span>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Territory Allocation & Area Jurisdiction */}
+              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <MapPin size={16} /> Territory Jurisdiction & Area Coverage
+                </div>
+                <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.74rem' }}>Jurisdiction Zone: </span>
+                    <strong style={{ color: '#e2e8f0' }}>{view360Party.zone || 'North Zone'}</strong>
+                  </div>
+
+                  {/* Assigned districts chips for distributors */}
+                  {(() => {
+                    const rawDists = view360Party.assigned_districts || view360Party.headquarter_districts;
+                    const distList = Array.isArray(rawDists)
+                      ? rawDists
+                      : (typeof rawDists === 'string' && rawDists ? rawDists.split(',').map(s => s.trim()).filter(Boolean) : []);
+
+                    if (distList.length > 0) {
+                      return (
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '0.74rem', display: 'block', marginBottom: '0.25rem' }}>
+                            Assigned Headquarter Districts:
                           </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                            {distList.map((d, i) => (
+                              <span key={i} style={{ fontSize: '0.72rem', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '0.12rem 0.45rem', borderRadius: '4px', border: '1px solid rgba(56,189,248,0.3)' }}>
+                                📍 {d}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
-            {/* Commercial Details */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.88rem' }}>
-              <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px' }}>
-                <div style={{ color: '#fbbf24', fontWeight: 700, marginBottom: '0.4rem' }}>Commercial Terms</div>
-                <div>Sanctioned Limit: <strong>₹{view360Party.party_commercial_terms?.[0]?.credit_limit?.toLocaleString('en-IN') || '5,00,000'}</strong></div>
-                <div>Credit Days: <strong>{view360Party.party_commercial_terms?.[0]?.credit_days || 30} Days</strong></div>
-                <div>Billing Route: <strong style={{ color: '#34d399' }}>{view360Party.billing_route_type}</strong></div>
+                  {/* Market Coverage Area for Dealers */}
+                  {view360Party.party_type === 'Dealer' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.2rem' }}>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Showroom Area</span>
+                        <strong style={{ color: '#e2e8f0', display: 'block' }}>{view360Party.showroom_area_sqft || 2500} sq.ft.</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Dealership Type</span>
+                        <strong style={{ color: '#34d399', display: 'block' }}>{view360Party.dealership_type || 'EXCLUSIVE_SWAN'}</strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '10px' }}>
-                <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.4rem' }}>Authorized Range & Team</div>
-                <div>Products: <strong>{party360Data.product_authorizations?.length || 'Standard Range'} Authorized</strong></div>
-                <div>Territory: <strong>{view360Party.state_name || 'Punjab'} ({view360Party.district_name || 'District'})</strong></div>
+            </div>
+
+            {/* 7. DEDICATED SWAN SALES & SUPPORT TEAM (ALL 7 ROLES) */}
+            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#a78bfa', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Users size={16} /> Dedicated Swan Company Personnel (7 Assigned Roles)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                {ALL_CLIENT_TEAM_ROLES.map(role => {
+                  // Find assigned employee names for this role
+                  const assigned = (party360Data?.team_assignments || view360Party.team_assignments || [])
+                    .filter(a => a.role_in_party === role.id)
+                    .map(a => a.employee_name);
+
+                  return (
+                    <div key={role.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '0.7rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.73rem', display: 'block', fontWeight: 600 }}>
+                        {role.id}
+                      </span>
+                      <div style={{ marginTop: '0.25rem' }}>
+                        {assigned.length > 0 ? (
+                          assigned.map((name, i) => (
+                            <span key={i} style={{ display: 'inline-block', fontSize: '0.76rem', color: '#f8fafc', fontWeight: 700 }}>
+                              {name}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ fontSize: '0.74rem', color: '#64748b', fontStyle: 'italic' }}>Unassigned</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
+
           </div>
         </div>
       )}
