@@ -227,6 +227,12 @@ export default function StageDataTable({
     }
 
     if (stageId === 's02') {
+      const assignedDistricts = Array.isArray(party.assigned_districts) && party.assigned_districts.length > 0
+        ? party.assigned_districts
+        : (typeof party.assigned_districts === 'string' && party.assigned_districts
+            ? party.assigned_districts.split(',').map(s => s.trim()).filter(Boolean)
+            : (party.district_name ? party.district_name.split(',').map(s => s.trim()).filter(Boolean) : []));
+
       return (
         <div>
           <div style={{ fontWeight: 700, color: party.zone ? '#60a5fa' : '#fbbf24' }}>
@@ -239,6 +245,20 @@ export default function StageDataTable({
               ? '🏬 Dealer Billed'
               : '👑 Distributor Billed'}
           </div>
+          {assignedDistricts.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+              {assignedDistricts.slice(0, 3).map((d, i) => (
+                <span key={i} style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', fontWeight: 600 }}>
+                  📍 {d}
+                </span>
+              ))}
+              {assignedDistricts.length > 3 && (
+                <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>
+                  +{assignedDistricts.length - 3} more
+                </span>
+              )}
+            </div>
+          )}
         </div>
       );
     }

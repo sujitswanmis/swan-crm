@@ -11,7 +11,7 @@ import {
   Users,
   Search
 } from 'lucide-react';
-import { ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
+import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 export { PRODUCT_GROUPS };
 
@@ -139,9 +139,9 @@ export function ChipInput({ chips = [], onChange, placeholder = 'Type and press 
     onChange(chips.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const filteredSuggestions = suggestions.filter(
-    s => s.toLowerCase().includes(inputVal.toLowerCase()) && !chips.includes(s)
-  );
+  const activeSuggestions = inputVal
+    ? suggestions.filter(s => s.toLowerCase().includes(inputVal.toLowerCase()) && !chips.includes(s))
+    : suggestions.filter(s => !chips.includes(s)).slice(0, 10);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -188,6 +188,7 @@ export function ChipInput({ chips = [], onChange, placeholder = 'Type and press 
             setShowDropdown(true);
           }}
           onFocus={() => setShowDropdown(true)}
+          onBlur={() => setShowDropdown(false)}
           onKeyDown={handleKeyDown}
           placeholder={chips.length === 0 ? placeholder : ''}
           style={{
@@ -202,7 +203,7 @@ export function ChipInput({ chips = [], onChange, placeholder = 'Type and press 
         />
       </div>
 
-      {showDropdown && inputVal && filteredSuggestions.length > 0 && (
+      {showDropdown && activeSuggestions.length > 0 && (
         <div style={{
           position: 'absolute',
           top: '100%',
@@ -213,14 +214,17 @@ export function ChipInput({ chips = [], onChange, placeholder = 'Type and press 
           border: '1px solid var(--border-light, #cbd5e1)',
           borderRadius: '6px',
           marginTop: '0.2rem',
-          maxHeight: '140px',
+          maxHeight: '160px',
           overflowY: 'auto',
           boxShadow: 'var(--shadow-lg, 0 10px 18px -3px rgba(15, 23, 42, 0.15))'
         }}>
-          {filteredSuggestions.map((s, i) => (
+          {activeSuggestions.map((s, i) => (
             <div
               key={i}
-              onClick={() => addChip(s)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addChip(s);
+              }}
               style={{
                 padding: '0.45rem 0.75rem',
                 fontSize: '0.82rem',
@@ -1121,15 +1125,95 @@ export default function StageConfigModal({
                         </select>
                       </div>
 
-                      <div>
-                        <label style={labelStyle}>Assigned Headquarter / Primary District</label>
-                        <input
-                          type="text"
-                          value={s01DistForm.district || modalParty?.district_name || ''}
-                          onChange={e => setS01DistForm({ ...s01DistForm, district: e.target.value })}
-                          placeholder="e.g. Ludhiana, Bathinda, Karnal"
-                          style={inputStyle}
-                        />
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        {(() => {
+                          const currentDistState = s01DistForm.state || modalParty?.state_name || 'Punjab';
+                          const availableDistricts = INDIAN_STATE_DISTRICTS[currentDistState] || [];
+                          const chips = Array.isArray(s01DistForm.districts)
+                            ? s01DistForm.districts
+                            : (s01DistForm.district
+                                ? (typeof s01DistForm.district === 'string' ? s01DistForm.district.split(',').map(s => s.trim()).filter(Boolean) : [])
+                                : (modalParty?.district_name ? modalParty.district_name.split(',').map(s => s.trim()).filter(Boolean) : []));
+
+                          const handleChipsChange = (newChips) => {
+                            setS01DistForm({
+                              ...s01DistForm,
+                              districts: newChips,
+                              district: newChips.join(', ')
+                            });
+                          };
+
+                          return (
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
+                                <label style={{ ...labelStyle, marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                  <span>Assigned Headquarter / Primary District(s) *</span>
+                                  <span style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    padding: '0.1rem 0.45rem',
+                                    borderRadius: '4px',
+                                    background: chips.length > 0 ? 'rgba(56,189,248,0.15)' : 'rgba(239,68,68,0.15)',
+                                    color: chips.length > 0 ? '#38bdf8' : '#ef4444'
+                                  }}>
+                                    {chips.length > 0 ? `${chips.length} District${chips.length > 1 ? 's' : ''} Selected` : 'No District Added'}
+                                  </span>
+                                </label>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  Type district &amp; press Enter, or click suggested chips
+                                </span>
+                              </div>
+
+                              <ChipInput
+                                chips={chips}
+                                onChange={handleChipsChange}
+                                placeholder="Type district / HQ name and press Enter (e.g. Ludhiana, Bathinda, Karnal)..."
+                                suggestions={availableDistricts}
+                              />
+
+                              {/* Quick pick popular districts for selected state */}
+                              {availableDistricts.length > 0 && (
+                                <div style={{ marginTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                    Suggested for {currentDistState}:
+                                  </span>
+                                  {availableDistricts.slice(0, 12).map(distName => {
+                                    const isSelected = chips.includes(distName);
+                                    return (
+                                      <button
+                                        key={distName}
+                                        type="button"
+                                        onClick={() => {
+                                          if (isSelected) {
+                                            handleChipsChange(chips.filter(c => c !== distName));
+                                          } else {
+                                            handleChipsChange([...chips, distName]);
+                                          }
+                                        }}
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          padding: '0.15rem 0.55rem',
+                                          borderRadius: '12px',
+                                          border: isSelected ? '1px solid #10b981' : '1px solid var(--border-light, #cbd5e1)',
+                                          background: isSelected ? 'rgba(16,185,129,0.15)' : 'var(--bg-primary, #f8fafc)',
+                                          color: isSelected ? '#10b981' : 'var(--text-primary, #0f172a)',
+                                          cursor: 'pointer',
+                                          fontWeight: isSelected ? 700 : 500,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.2rem',
+                                          transition: 'all 0.15s'
+                                        }}
+                                      >
+                                        {isSelected ? '✓ ' : '+ '}{distName}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

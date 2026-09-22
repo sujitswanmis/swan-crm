@@ -238,6 +238,8 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         billing_first_date: item.billing_first_date || meta.billing_first_date || null,
         billing_first_amount: item.billing_first_amount ?? meta.billing_first_amount ?? null,
         billing_first_status: item.billing_first_status || meta.billing_first_status || 'Pending',
+        assigned_districts: meta.assigned_districts || meta.headquarter_districts || (item.district_name ? item.district_name.split(',').map(s => s.trim()).filter(Boolean) : []),
+        headquarter_districts: meta.headquarter_districts || meta.assigned_districts || (item.district_name ? item.district_name.split(',').map(s => s.trim()).filter(Boolean) : []),
         credit_limit: item.credit_limit ?? primaryComm?.credit_limit ?? meta.credit_limit ?? 0,
         credit_days: item.credit_days ?? primaryComm?.credit_days ?? meta.credit_days ?? 30,
         product_category: (prodAuths[0]?.product_category) || item.product_category || meta.product_category || null,
@@ -460,6 +462,7 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
     'state_name', 'district_name', 'tehsil', 'block_name', 'city_village', 'pincode', 'order_category',
     'parent_distributor_id', 'parent_dealer_id', 'dealership_type', 'showroom_area_sqft', 'billing_route_type',
     'billing_first_date', 'billing_first_amount', 'billing_first_status',
+    'assigned_districts', 'headquarter_districts',
     'security_deposit_amount', 'security_deposit_date', 'security_mode', 'receipt_no', 'distributor_commission_percent'
   ];
   metaKeys.forEach(k => {
@@ -750,6 +753,8 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   if (stepData.billing_first_date !== undefined) metaUpdates.billing_first_date = stepData.billing_first_date;
   if (stepData.billing_first_amount !== undefined) metaUpdates.billing_first_amount = stepData.billing_first_amount;
   if (stepData.billing_first_status !== undefined) metaUpdates.billing_first_status = stepData.billing_first_status;
+  if (stepData.assigned_districts !== undefined) metaUpdates.assigned_districts = stepData.assigned_districts;
+  if (stepData.headquarter_districts !== undefined) metaUpdates.headquarter_districts = stepData.headquarter_districts;
   if (stepData.zone !== undefined) metaUpdates.zone = stepData.zone;
   if (stepData.product_category !== undefined) metaUpdates.product_category = stepData.product_category;
 

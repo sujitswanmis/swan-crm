@@ -295,7 +295,10 @@ export default function PartyMasterModule({
 
   // Step Data States (Territory Coverage exclusively moved to S05)
   const [s01DistForm, setS01DistForm] = useState({
-    zone: 'North Zone'
+    zone: 'North Zone',
+    state: 'Punjab',
+    district: '',
+    districts: []
   });
 
   const [s02DealerForm, setS02DealerForm] = useState({
@@ -776,9 +779,18 @@ export default function PartyMasterModule({
       billing_first_status: party.billing_first_status || party.meta?.billing_first_status || 'Pending'
     }));
 
-    if (party.zone) {
-      setS01DistForm(prev => ({ ...prev, zone: party.zone }));
-    }
+    const rawDistricts = party.assigned_districts || party.headquarter_districts || party.meta?.assigned_districts || party.meta?.headquarter_districts || party.district_name || '';
+    const parsedDistricts = Array.isArray(rawDistricts)
+      ? rawDistricts
+      : (typeof rawDistricts === 'string' && rawDistricts ? rawDistricts.split(',').map(s => s.trim()).filter(Boolean) : []);
+
+    setS01DistForm(prev => ({
+      ...prev,
+      zone: party.zone || prev.zone || 'North Zone',
+      state: party.state_name || prev.state || 'Punjab',
+      district: Array.isArray(rawDistricts) ? rawDistricts.join(', ') : (rawDistricts || prev.district || ''),
+      districts: parsedDistricts.length > 0 ? parsedDistricts : (prev.districts || [])
+    }));
     if (party.party_status || party.final_status) {
       setS08ActivationStatus(party.party_status || party.final_status || 'Active');
     }
@@ -930,10 +942,18 @@ export default function PartyMasterModule({
   const handleS01DistSubmit = async (e) => {
     e.preventDefault();
     try {
+      const distChips = Array.isArray(s01DistForm.districts) && s01DistForm.districts.length > 0
+        ? s01DistForm.districts
+        : (s01DistForm.district ? (typeof s01DistForm.district === 'string' ? s01DistForm.district.split(',').map(s => s.trim()).filter(Boolean) : []) : []);
+      const distString = distChips.join(', ');
+
       await updatePartyStep(activePartyId, 'S01_Distributor_Registration', {
         zone: s01DistForm.zone,
         state: s01DistForm.state,
-        district: s01DistForm.district,
+        district: distString,
+        district_name: distString,
+        assigned_districts: distChips,
+        headquarter_districts: distChips,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
       });
