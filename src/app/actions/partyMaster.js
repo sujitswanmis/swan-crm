@@ -461,7 +461,12 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
   if (!initialMeta.our_company) {
     initialMeta.our_company = cleanPartyData.our_company || 'NSMLR';
   }
-  initialMeta.stages = { s01: true };
+  const isUnconfirmedHandoff = cleanPartyData.party_status === 'Draft_From_Lead' || 
+                               cleanPartyData.onboarding_stage === 'S00_Party_Entry' || 
+                               Boolean(cleanPartyData.source_lead_id);
+  initialMeta.stages = isUnconfirmedHandoff 
+    ? { s00: false, s01: false } 
+    : { s00: true, s01: false };
   await updatePartyMeta(adminClient, party.id, initialMeta);
 
   return party;
@@ -493,21 +498,46 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     }
   });
 
-  // Map step names to valid onboarding_stage check constraint values
+  // Map step names to NEXT valid onboarding_stage check constraint values
   if (stepName) {
+    const effectiveType = stepData.party_type || currentParty.party_type || 'Dealer';
     const stageMapping = {
-      'S00_Party_Master': 'S01_Registration',
-      'S01_Distributor_Registration': 'S02_Party_Classification',
-      'S02_Dealer_Registration': 'S03_Dealer_Distributor_Mapping',
-      'S03_Sub_Dealer_Registration': 'S03_Dealer_Distributor_Mapping',
-      'S04_Commercial': 'S04_KYC_Commercial_Verification',
-      'S05_Product_Territory': 'S05_Product_Authorization',
-      'S05_Product_Authorization_Territory': 'S06_Territory_Allocation',
-      'S06_Team_Assignment': 'S07_Employee_Assignment',
+      'S00_Party_Master': effectiveType === 'Distributor' 
+        ? 'S02_Party_Classification' 
+        : 'S03_Dealer_Distributor_Mapping',
+      'S01_Distributor_Registration': 'S04_KYC_Commercial_Verification',
+      'S02_Dealer_Registration': 'S04_KYC_Commercial_Verification',
+      'S03_Sub_Dealer_Registration': 'S04_KYC_Commercial_Verification',
+      'S04_Commercial': 'S05_Product_Authorization',
+      'S05_Product_Territory': 'S06_Territory_Allocation',
+      'S05_Product_Authorization_Territory': 'S07_Employee_Assignment',
+      'S06_Team_Assignment': 'S08_Party_Activation',
       'S07_Activation': 'S08_Party_Activation'
     };
     if (stageMapping[stepName]) {
       updateFields.onboarding_stage = stageMapping[stepName];
+    }
+
+    // Persist confirmed stage flags in business_nature JSON metadata
+    const stepStageMap = {
+      'S00_Party_Master': { s00: true, s01: true },
+      'S01_Distributor_Registration': { s00: true, s01: true, s02: true },
+      'S02_Dealer_Registration': { s00: true, s01: true, s03: true },
+      'S03_Sub_Dealer_Registration': { s00: true, s01: true, s04: true },
+      'S04_Commercial': { s00: true, s01: true, tier: true, s05: true },
+      'S05_Product_Authorization_Territory': { s00: true, s01: true, tier: true, s05: true, s06: true },
+      'S05_Product_Territory': { s00: true, s01: true, tier: true, s05: true, s06: true },
+      'S06_Team_Assignment': { s00: true, s01: true, tier: true, s05: true, s06: true, s07: true },
+      'S07_Activation': { s00: true, s01: true, tier: true, s05: true, s06: true, s07: true, s08: true }
+    };
+    if (stepStageMap[stepName]) {
+      try {
+        const existingMeta = parsePartyMeta(currentParty.business_nature);
+        const mergedStages = { ...(existingMeta.stages || {}), ...stepStageMap[stepName] };
+        await updatePartyMeta(adminClient, partyId, { stages: mergedStages });
+      } catch (err) {
+        console.warn('Could not persist stages meta in updatePartyStep:', err.message);
+      }
     }
   }
 

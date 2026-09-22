@@ -15,6 +15,7 @@ const STAGE_CONFIGS = {
     title: 'S01 Party Master Creation — Channel Partner Pipeline',
     desc: 'Incoming and on-file channel partners. Verify legal firm identity, constitution, GSTIN, and primary contact channels.',
     filterTiers: null,
+    isEligible: (app) => Boolean(app.s00),
     checkApproval: (app) => app.s01,
     col5Title: 'GSTIN & Source Origin'
   },
@@ -25,6 +26,7 @@ const STAGE_CONFIGS = {
     title: 'S02 Distributor Registration — Master Channel Hubs',
     desc: 'Level 1 Super Stockists and Master Regional Hubs. Allocate jurisdiction zones and logistics territories.',
     filterTiers: ['Distributor'],
+    isEligible: (app) => Boolean(app.s01),
     checkApproval: (app) => app.s02,
     col5Title: 'Jurisdiction Zone & Route'
   },
@@ -35,6 +37,7 @@ const STAGE_CONFIGS = {
     title: 'S03 Dealer Registration — Authorized Showrooms',
     desc: 'Level 2 Authorized Showroom Dealerships. Mandatory mapping to an active Parent Distributor.',
     filterTiers: ['Dealer'],
+    isEligible: (app) => Boolean(app.s01),
     checkApproval: (app) => app.s03,
     col5Title: 'Parent Distributor & Showroom'
   },
@@ -45,6 +48,7 @@ const STAGE_CONFIGS = {
     title: 'S04 Sub-Dealer Registration — Retail Counters',
     desc: 'Level 3 Retail Counters. Mandatory mapping to an active Parent Dealer and auto-linked Distributor.',
     filterTiers: ['Sub-Dealer'],
+    isEligible: (app) => Boolean(app.s01),
     checkApproval: (app) => app.s04,
     col5Title: 'Parent Dealer & Derived Distributor'
   },
@@ -55,6 +59,7 @@ const STAGE_CONFIGS = {
     title: 'S05 Commercial Security Details & Billing Route Pipeline',
     desc: 'Configure Direct Company Billing vs Distributor Billed, Security Deposit Amount, and Security Cheque/PDC.',
     filterTiers: null,
+    isEligible: (app) => Boolean(app.tier),
     checkApproval: (app) => app.s05,
     col5Title: 'Billing Route & Security Terms'
   },
@@ -65,6 +70,7 @@ const STAGE_CONFIGS = {
     title: 'S06 Product Authorization & Territory Allocation Pipeline',
     desc: 'Authorize implement machinery categories (Rotavator, Mulcher, etc.) and assign geographic districts.',
     filterTiers: null,
+    isEligible: (app) => Boolean(app.s05),
     checkApproval: (app) => app.s06,
     col5Title: 'Category, Products & Territory'
   },
@@ -75,6 +81,7 @@ const STAGE_CONFIGS = {
     title: 'S07 Sales Team Assignment Pipeline (7 Dedicated Roles)',
     desc: 'Assign dedicated company personnel across 7 roles (NSM, RSM, ASM, Telecaller, Order Booking, CRM).',
     filterTiers: null,
+    isEligible: (app) => Boolean(app.s06),
     checkApproval: (app) => app.s07,
     col5Title: 'Assigned Sales Staff & Roles'
   },
@@ -85,6 +92,7 @@ const STAGE_CONFIGS = {
     title: 'S08 Partner Activation & Operational Status Desk',
     desc: 'Validate 5-gate pre-flight readiness checklist and assign live operational status (Active, Hold, Payment Issues).',
     filterTiers: null,
+    isEligible: (app) => Boolean(app.s07),
     checkApproval: (app) => app.s08,
     col5Title: 'Pre-Flight Readiness & Status'
   }
@@ -114,14 +122,22 @@ export default function StageDataTable({
     return map;
   }, [parties, getStageApprovalStatus]);
 
-  // Filter parties by tier if applicable
+  // Filter parties that are eligible for this stage (previous stage confirmed) and tier filter
   const tierFilteredParties = useMemo(() => {
     if (!parties) return [];
-    if (meta.filterTiers && onlyStageTier) {
-      return parties.filter(p => meta.filterTiers.includes(p.party_type));
-    }
-    return parties;
-  }, [parties, meta.filterTiers, onlyStageTier]);
+    return parties.filter(p => {
+      const app = partyApprovalMap.get(p.id) || {};
+      // 1. Stage eligibility: previous stage MUST be confirmed before party shows here
+      if (meta.isEligible && !meta.isEligible(app)) {
+        return false;
+      }
+      // 2. Tier filter if applicable
+      if (meta.filterTiers && onlyStageTier) {
+        return meta.filterTiers.includes(p.party_type);
+      }
+      return true;
+    });
+  }, [parties, partyApprovalMap, meta, onlyStageTier]);
 
   // Summary counts
   const { totalCount, pendingCount, approvedCount } = useMemo(() => {

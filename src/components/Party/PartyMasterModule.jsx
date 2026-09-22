@@ -1266,7 +1266,7 @@ export default function PartyMasterModule({
     if (!party) return { s00: false, s01: false, s02: false, s03: false, s04: false, tier: false, s05: false, s06: false, s07: false, s08: false };
     const pId = party.id;
     const local = stageConfirmedMap[pId] || {};
-    const metaStages = party.meta_stages || {};
+    const metaStages = party.meta_stages || party.meta?.stages || {};
 
     const isDist = party.party_type === 'Distributor';
     const isDealer = party.party_type === 'Dealer';
@@ -1289,94 +1289,125 @@ export default function PartyMasterModule({
     ];
     const currentStageIdx = STAGE_ORDER.indexOf(party.onboarding_stage);
 
-    const s00Approved = Boolean(
+    // 1. S00 Approval: Lead handoff confirmed into Party Master (not stuck in S00 queue)
+    const isUnconfirmedLeadInS00 = Boolean(
+      party.source_lead_id && (
+        party.party_status === 'Draft_From_Lead' || 
+        party.party_status === 'Pending Confirmation' ||
+        party.onboarding_stage === 'S00_Party_Entry' ||
+        party.workflow_status === 'S00_TRANSFERRED'
+      ) && !local.s00 && !metaStages.s00
+    );
+
+    const s00Approved = !isUnconfirmedLeadInS00 && Boolean(
       isPartyActive ||
-      currentStageIdx >= 1 ||
       local.s00 ||
       metaStages.s00 ||
-      (party.source_lead_id ? (party.workflow_status !== 'S00_TRANSFERRED' && party.party_status !== 'Pending Confirmation' && party.party_status !== 'Draft_From_Lead' && party.onboarding_stage !== 'S00_Party_Entry') : true)
+      currentStageIdx >= 1 ||
+      (party.workflow_status && !party.workflow_status.includes('S00')) ||
+      !party.source_lead_id
     );
 
-    const s01Approved = Boolean(
+    // 2. S01 Approval: Party Master Creation verified (legal details, GST, PAN, primary contacts)
+    const s01Approved = s00Approved && Boolean(
       isPartyActive ||
-      currentStageIdx >= 1 ||
       local.s01 ||
       metaStages.s01 ||
-      (party.firm_name && (party.primary_mobile || party.biz_contact_no_1))
+      currentStageIdx >= 2 ||
+      party.workflow_status === 'S01_Approved' ||
+      party.workflow_status?.includes('S02') ||
+      party.workflow_status?.includes('S03') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S02_Party_Classification', 'S03_Dealer_Distributor_Mapping', 'S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage))
     );
 
-    const s02Approved = isDist
-      ? Boolean(
-          isPartyActive ||
-          currentStageIdx >= 2 ||
-          local.s02 ||
-          metaStages.s02 ||
-          party.zone ||
-          party.workflow_status?.includes('S01_Completed') ||
-          party.workflow_status?.includes('S02_Completed') ||
-          party.workflow_status?.includes('S04') ||
-          party.workflow_status?.includes('S05')
-        )
-      : true;
-
-    const s03Approved = isDealer
-      ? Boolean(
-          isPartyActive ||
-          currentStageIdx >= 3 ||
-          local.s03 ||
-          metaStages.s03 ||
-          party.parent_distributor_id ||
-          party.workflow_status?.includes('S03_Completed')
-        )
-      : true;
-
-    const s04Approved = isSubDealer
-      ? Boolean(
-          isPartyActive ||
-          currentStageIdx >= 3 ||
-          local.s04 ||
-          metaStages.s04 ||
-          party.parent_dealer_id ||
-          party.workflow_status?.includes('S04_Completed')
-        )
-      : true;
-
-    const tierApproved = isDist ? s02Approved : (isDealer ? s03Approved : s04Approved);
-
-    const s05Approved = Boolean(
+    // 3. Tier Approvals (S02 for Dist, S03 for Dealer, S04 for Sub-Dealer)
+    const s02Approved = s01Approved && (isDist ? Boolean(
       isPartyActive ||
+      local.s02 ||
+      metaStages.s02 ||
       currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S02_Completed') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.zone && (party.state_name || party.state))
+    ) : true);
+
+    const s03Approved = s01Approved && (isDealer ? Boolean(
+      isPartyActive ||
+      local.s03 ||
+      metaStages.s03 ||
+      currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S03_Completed') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      Boolean(party.parent_distributor_id)
+    ) : true);
+
+    const s04Approved = s01Approved && (isSubDealer ? Boolean(
+      isPartyActive ||
+      local.s04 ||
+      metaStages.s04 ||
+      currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S04_Completed') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      Boolean(party.parent_dealer_id)
+    ) : true);
+
+    const tierApproved = s01Approved && (isDist ? s02Approved : (isDealer ? s03Approved : s04Approved));
+
+    // 4. S05 Approval: Commercial Security Details & Billing Route
+    const s05Approved = tierApproved && Boolean(
+      isPartyActive ||
       local.s05 ||
       metaStages.s05 ||
-      party.billing_route_type ||
+      currentStageIdx >= 5 ||
       party.commercial_status === 'Completed' ||
       party.workflow_status?.includes('S05_Completed') ||
-      (party.party_commercial_terms && party.party_commercial_terms.length > 0)
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.party_commercial_terms && party.party_commercial_terms.length > 0 && party.billing_route_type)
     );
 
-    const s06Approved = Boolean(
+    // 5. S06 Approval: Product Authorization & Territory Allocation
+    const s06Approved = s05Approved && Boolean(
       isPartyActive ||
-      currentStageIdx >= 6 ||
       local.s06 ||
       metaStages.s06 ||
-      (party.product_authorizations && party.product_authorizations.length > 0) ||
-      (party.territory_allocations && party.territory_allocations.length > 0) ||
+      currentStageIdx >= 7 ||
       party.workflow_status?.includes('S06_Completed') ||
-      party.district_name
+      party.workflow_status?.includes('S07') ||
+      (['S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      ((party.product_authorizations && party.product_authorizations.length > 0) && (party.territory_allocations && party.territory_allocations.length > 0))
     );
 
-    const s07Approved = Boolean(
+    // 6. S07 Approval: Sales Team Assignment
+    const s07Approved = s06Approved && Boolean(
       isPartyActive ||
-      currentStageIdx >= 7 ||
       local.s07 ||
       metaStages.s07 ||
-      (party.team_assignments && party.team_assignments.length > 0) ||
-      party.workflow_status?.includes('S07_Completed')
+      currentStageIdx >= 8 ||
+      party.workflow_status?.includes('S07_Completed') ||
+      (['S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.team_assignments && party.team_assignments.length > 0)
     );
 
-    const s08Approved = Boolean(
+    // 7. S08 Approval: Partner Activation
+    const s08Approved = s07Approved && Boolean(
       isPartyActive ||
-      currentStageIdx >= 8 ||
       local.s08 ||
       metaStages.s08 ||
       ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.party_status) ||
@@ -1441,30 +1472,32 @@ export default function PartyMasterModule({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Channel Partners</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>{parties.length}</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+            {parties.filter(p => p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+          </div>
         </div>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
           <div style={{ fontSize: '0.78rem', color: '#60a5fa', fontWeight: 700 }}>👑 Level 1: Distributors</div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#38bdf8', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Distributor').length}
+            {parties.filter(p => p.party_type === 'Distributor' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
           </div>
         </div>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
           <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 700 }}>🏪 Level 2: Dealers</div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Dealer').length}
+            {parties.filter(p => p.party_type === 'Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
           </div>
         </div>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
           <div style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700 }}>🛒 Level 3: Sub-Dealers</div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Sub-Dealer').length}
+            {parties.filter(p => p.party_type === 'Sub-Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
           </div>
         </div>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
           <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 700 }}>⚡ Direct Billing</div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34d399', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.billing_route_type === 'DIRECT_COMPANY_BILLING').length}
+            {parties.filter(p => p.billing_route_type === 'DIRECT_COMPANY_BILLING' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
           </div>
         </div>
         <div

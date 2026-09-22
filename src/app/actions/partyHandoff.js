@@ -453,6 +453,15 @@ export async function confirmLeadTransfer(handoffId, partyId, userId) {
     if (error) {
       console.warn('party_master update warning:', error.message);
     }
+
+    try {
+      await updatePartyMeta(adminClient, partyId, {
+        stages: { s00: true, s01: false }
+      });
+    } catch (metaErr) {
+      console.warn('Could not update stages meta in confirmLeadTransfer:', metaErr.message);
+    }
+
     return { success: true, party: updatedParty };
   }
 
