@@ -19,7 +19,7 @@ const DEFAULT_STAGES = [
   { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
   { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
   { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
-  { name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] }
+  { name: '08 - Transfer to Party', substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'] }
 ];
 
 const DEFAULT_CLIENT_STATUSES = ['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress'];
@@ -442,19 +442,21 @@ export default function LeadProfilePanel({
 
   // Status management states
   const [currentStatus, setCurrentStatus] = useState(formatStatusWithNumbers(lead?.status, propStages || DEFAULT_STAGES));
-  const isLeadFrozen = Boolean(currentStatus && (
+  const isLeadInS08 = Boolean(currentStatus && (
     currentStatus.startsWith('8;') || 
     currentStatus.startsWith('08') || 
     currentStatus.toLowerCase().includes('transfer to party')
   ));
+  const isLeadPendingTransfer = Boolean(isLeadInS08 && currentStatus.toLowerCase().includes('pending'));
+  const isLeadFrozen = Boolean(isLeadInS08 && !isLeadPendingTransfer);
   const [statusForNewNote, setStatusForNewNote] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
   const [stages, setStages] = useState(propStages || DEFAULT_STAGES);
 
   // Client & Lead Attributes states
+  const [currentPriority, setCurrentPriority] = useState(lead?.lead_priority || lead?.priority || 'LP00: None');
   const [currentClientStatus, setCurrentClientStatus] = useState(lead?.client_status || lead?.clientStatus || 'None');
-  const [currentPriority, setCurrentPriority] = useState(lead?.priority || 'LP00: None');
   const [currentBusinessType, setCurrentBusinessType] = useState(lead?.business_type || '');
   const [currentRequirement, setCurrentRequirement] = useState(lead?.requirement || '');
   const [currentInvestment, setCurrentInvestment] = useState(lead?.investment || '');
@@ -469,18 +471,23 @@ export default function LeadProfilePanel({
 
   const handleTransferToPartyMaster = async () => {
     if (!lead || isTransferringParty) return;
+    const ok = window.confirm(
+      `Kya aap "${lead.company || lead.name}" ko Party Master (S00) me confirm & transfer karna chahte hain?\n\nConfirm hone ke baad Party Master S00 me draft ban jayega aur lead freeze ho jayegi.`
+    );
+    if (!ok) return;
+
     setIsTransferringParty(true);
     try {
       const res = await sendLeadToParty(lead.id, userId);
       if (res && res.success) {
         setTransferredPartyCode(res.partyCode);
-        const newSt = res.newStatus || '8;01>Transfer to Party>Transfer to Party Master';
+        const newSt = res.newStatus || '8;02>Transfer to Party>Transferred to Party Master';
         setCurrentStatus(newSt);
         notifyLeadUpdate({ ...lead, status: newSt });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('party_transferred_updated'));
         }
-        alert(`Lead successfully transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen in 08 - Transfer to Party.`);
+        alert(`Lead successfully confirmed & transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen in 08 - Transfer to Party.`);
       }
     } catch (err) {
       alert(err?.message || 'Failed to transfer lead to Party Master');
@@ -755,7 +762,24 @@ export default function LeadProfilePanel({
   const handleStatusUpdate = async (newStatus) => {
     if (!newStatus || isUpdatingStatus || !lead?.id) return;
 
-    const formattedNewStatus = formatStatusWithNumbers(newStatus, stages);
+    let targetStatus = newStatus;
+    const isWonSelected = (
+      targetStatus.toLowerCase().endsWith('>won') || 
+      targetStatus.trim().toLowerCase() === 'won' || 
+      targetStatus.toLowerCase().includes('>won') ||
+      targetStatus.toLowerCase().includes('final stage>won')
+    );
+
+    if (isWonSelected) {
+      const moveToS08 = window.confirm(
+        `🎉 Deal Won!\n\nKya aap is lead ko "08 - Transfer to Party" stage me move karna chahte hain?\n\n- Click OK (Haan): Lead "08 - Transfer to Party (Pending Confirmation)" me chali jayegi.\n- Click Cancel (Nahi): Lead "07 - Final Stage (Won)" me hi rahegi.`
+      );
+      if (moveToS08) {
+        targetStatus = '8;01>Transfer to Party>Pending Confirmation';
+      }
+    }
+
+    const formattedNewStatus = formatStatusWithNumbers(targetStatus, stages);
     if (formattedNewStatus === currentStatus) return;
 
     const oldStatus = currentStatus || formatStatusWithNumbers(currentLead.status, stages) || '01 - New Stage';
@@ -817,9 +841,9 @@ export default function LeadProfilePanel({
         triggerWhatsappAutomationForStage(lead.id, formattedNewStatus);
       } catch (e) {}
 
-      // Automatic Transfer to Party Master S00 when status is "Transfer to Party Master"
-      const isTransferStatus = (formattedNewStatus || '').toLowerCase().includes('transfer to party master') || 
-                               (formattedNewStatus || '').toLowerCase().includes('party master');
+      // Automatic Transfer to Party Master S00 only when status explicitly indicates transfer (not pending)
+      const isTransferStatus = (formattedNewStatus || '').toLowerCase().includes('transferred to party master') || 
+                               (formattedNewStatus || '').toLowerCase().includes('transfer to party master');
       if (isTransferStatus) {
         try {
           const transferRes = await sendLeadToParty(lead.id, userId);
@@ -1238,7 +1262,23 @@ export default function LeadProfilePanel({
     const actor = normalizeEmployeeName(userName || 'Agent');
     const nowIso = new Date().toISOString();
     const noteContent = newNote.trim();
-    const statusToUpdate = (statusForNewNote && statusForNewNote !== currentStatus) ? statusForNewNote : null;
+    let statusToUpdate = (statusForNewNote && statusForNewNote !== currentStatus) ? statusForNewNote : null;
+    if (statusToUpdate) {
+      const isWonSelected = (
+        statusToUpdate.toLowerCase().endsWith('>won') || 
+        statusToUpdate.trim().toLowerCase() === 'won' || 
+        statusToUpdate.toLowerCase().includes('>won') ||
+        statusToUpdate.toLowerCase().includes('final stage>won')
+      );
+      if (isWonSelected) {
+        const moveToS08 = window.confirm(
+          `🎉 Deal Won!\n\nKya aap is lead ko "08 - Transfer to Party" stage me move karna chahte hain?\n\n- Click OK (Haan): Lead "08 - Transfer to Party (Pending Confirmation)" me chali jayegi.\n- Click Cancel (Nahi): Lead "07 - Final Stage (Won)" me hi rahegi.`
+        );
+        if (moveToS08) {
+          statusToUpdate = '8;01>Transfer to Party>Pending Confirmation';
+        }
+      }
+    }
 
     let localNotesToAdd = [];
     let createdNote = null;
@@ -1327,9 +1367,9 @@ export default function LeadProfilePanel({
           triggerWhatsappAutomationForStage(lead.id, statusToUpdate);
         } catch (e) {}
 
-        // Automatic Transfer to Party Master S00 when status is "Transfer to Party Master"
-        const isTransferStatus = (statusToUpdate || '').toLowerCase().includes('transfer to party master') || 
-                                 (statusToUpdate || '').toLowerCase().includes('party master');
+        // Automatic Transfer to Party Master S00 only when status explicitly indicates transfer (not pending)
+        const isTransferStatus = (statusToUpdate || '').toLowerCase().includes('transferred to party master') || 
+                                 (statusToUpdate || '').toLowerCase().includes('transfer to party master');
         if (isTransferStatus) {
           try {
             const transferRes = await sendLeadToParty(lead.id, userId);
@@ -1717,6 +1757,11 @@ export default function LeadProfilePanel({
                     🔒 Stage Frozen (S08)
                   </span>
                 )}
+                {isLeadPendingTransfer && (
+                  <span style={{ color: '#d97706', fontSize: '0.68rem', fontWeight: 800 }}>
+                    ⏳ S08 Pending Confirmation
+                  </span>
+                )}
                 {isUpdatingStatus && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
                 {statusUpdateSuccess && <Check size={12} color="#10b981" title="Status updated!" />}
               </span>
@@ -1728,9 +1773,21 @@ export default function LeadProfilePanel({
                   width: '100%',
                   padding: '0.35rem 0.5rem',
                   borderRadius: '6px',
-                  border: isLeadFrozen ? '1.5px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-light, #e2e8f0)',
-                  backgroundColor: isLeadFrozen ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface, #ffffff)',
-                  color: isLeadFrozen ? '#059669' : 'var(--text-primary, #0f172a)',
+                  border: isLeadFrozen 
+                    ? '1.5px solid rgba(16, 185, 129, 0.4)' 
+                    : isLeadPendingTransfer 
+                      ? '1.5px solid rgba(245, 158, 11, 0.4)' 
+                      : '1px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: isLeadFrozen 
+                    ? 'rgba(16, 185, 129, 0.08)' 
+                    : isLeadPendingTransfer 
+                      ? 'rgba(245, 158, 11, 0.08)' 
+                      : 'var(--bg-surface, #ffffff)',
+                  color: isLeadFrozen 
+                    ? '#059669' 
+                    : isLeadPendingTransfer 
+                      ? '#d97706' 
+                      : 'var(--text-primary, #0f172a)',
                   fontSize: '0.76rem',
                   fontWeight: 600,
                   cursor: isLeadFrozen ? 'not-allowed' : (isUpdatingStatus ? 'wait' : 'pointer'),
@@ -1738,7 +1795,7 @@ export default function LeadProfilePanel({
                   whiteSpace: 'nowrap',
                   textOverflow: 'ellipsis'
                 }}
-                title={isLeadFrozen ? "Sales stage is locked because this lead is transferred to Party Master. Profile details remain editable." : currentStatus}
+                title={isLeadFrozen ? "Sales stage is locked because this lead is transferred to Party Master. Profile details remain editable." : isLeadPendingTransfer ? "Lead Won. Waiting for Party Master confirmation below." : currentStatus}
               >
                 {!stages.some(s => s.substages?.some(sub => sub === currentStatus || sub.includes(currentStatus) || currentStatus.includes(sub))) && (
                   <option value={currentStatus}>
@@ -1991,6 +2048,55 @@ export default function LeadProfilePanel({
               }}>
                 ✅ S00 SYNCED
               </span>
+            </div>
+          ) : isLeadPendingTransfer ? (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(217,119,6,0.08))',
+              border: '1.5px solid rgba(245,158,11,0.4)',
+              borderRadius: '8px',
+              padding: '0.65rem 0.85rem',
+              marginBottom: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building2 size={15} color="#d97706" /> ⏳ Stage 08: Pending Confirmation
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Review profile details. Click confirm below to create draft in Party Master S00 and freeze lead.
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isTransferringParty}
+                onClick={handleTransferToPartyMaster}
+                style={{
+                  padding: '0.45rem 0.9rem',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: isTransferringParty ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                }}
+              >
+                {isTransferringParty ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Transferring...
+                  </>
+                ) : (
+                  <>🚀 Confirm & Transfer to Party Master (S00)</>
+                )}
+              </button>
             </div>
           ) : Boolean(currentStatus && (
             currentStatus.startsWith('07') || 

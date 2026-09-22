@@ -2411,7 +2411,9 @@ export default function LeadTable({
               const cleanClass = (lead.status || '').toLowerCase().replace(/\s+/g, '');
               const cleanLastClass = (lead.last_status || '').toLowerCase().replace(/\s+/g, '');
               const phoneNumbers = getLeadPhoneNumbers(lead);
-              const isLeadFrozen = Boolean(lead.status && (lead.status.startsWith('8;') || lead.status.startsWith('08') || lead.status.toLowerCase().includes('transfer to party')));
+              const isLeadInS08 = Boolean(lead.status && (lead.status.startsWith('8;') || lead.status.startsWith('08') || lead.status.toLowerCase().includes('transfer to party')));
+              const isLeadPendingTransfer = Boolean(isLeadInS08 && lead.status.toLowerCase().includes('pending'));
+              const isLeadFrozen = Boolean(isLeadInS08 && !isLeadPendingTransfer);
 
               return (
                 <div 
@@ -2637,7 +2639,7 @@ export default function LeadTable({
                         title="Sales stage is frozen because this lead was transferred to Party Master. Click ✏️ Edit above to update profile."
                       >
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          🔒 {lead.status?.includes('>') ? lead.status.split('>').pop() : '08 - Transfer to Party Master'}
+                          🔒 {lead.status?.includes('>') ? lead.status.split('>').pop() : '08 - Transferred to Party Master'}
                         </span>
                         <span style={{ 
                           fontSize: '0.66rem', 
@@ -2652,11 +2654,71 @@ export default function LeadTable({
                           FROZEN
                         </span>
                       </div>
+                    ) : isLeadPendingTransfer ? (
+                      <div
+                        style={{
+                          width: '100%',
+                          padding: '0.42rem 0.6rem',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                          color: '#d97706',
+                          border: '1.5px solid rgba(245, 158, 11, 0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.4rem',
+                          cursor: 'default'
+                        }}
+                        title="Lead Won. Waiting for Party Master confirmation below."
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          ⏳ {lead.status?.includes('>') ? lead.status.split('>').pop() : 'Pending Confirmation'}
+                        </span>
+                        <span style={{ 
+                          fontSize: '0.66rem', 
+                          padding: '0.1rem 0.4rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: '#f59e0b', 
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          letterSpacing: '0.03em',
+                          flexShrink: 0
+                        }}>
+                          S08 PENDING
+                        </span>
+                      </div>
                     ) : (
                       <select
                         value={lead.status || 'New'}
                         onChange={(e) => {
                           const newStatus = e.target.value;
+                          const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
+                          const isWonAction = (shortName.toLowerCase().includes('won') || newStatus.toLowerCase().includes('won')) && !newStatus.toLowerCase().includes('transferred');
+
+                          if (isWonAction) {
+                            setPendingStatusChange({
+                              leadName: lead.company || lead.name || 'this lead',
+                              shortName,
+                              newStatus,
+                              isWonAction: true,
+                              moveToS08: () => {
+                                handleDirectStatusChange(lead, '8;01>Transfer to Party>Pending Confirmation');
+                                setPendingStatusChange(null);
+                              },
+                              keepInS07: () => {
+                                handleDirectStatusChange(lead, newStatus);
+                                setPendingStatusChange(null);
+                              },
+                              cancel: () => {
+                                e.target.value = lead.status || 'New';
+                                setPendingStatusChange(null);
+                              }
+                            });
+                            return;
+                          }
+
                           const savedConfig = localStorage.getItem('crm_config');
                           let confirmChange = true;
                           if (savedConfig) {
@@ -2668,7 +2730,6 @@ export default function LeadTable({
                             } catch (err) {}
                           }
                           if (confirmChange) {
-                            const shortName = newStatus.includes('>') ? newStatus.split('>').pop() : newStatus;
                             setPendingStatusChange({
                               leadName: lead.company || lead.name || 'this lead',
                               shortName,
@@ -2824,19 +2885,27 @@ export default function LeadTable({
                       type="button"
                       onClick={async (e) => {
                         e.stopPropagation();
+                        const isS08Pending = isLeadPendingTransfer || Boolean(lead.status && lead.status.startsWith('8;'));
+                        const confirmMsg = isS08Pending 
+                          ? `Kya aap "${lead.company || lead.name}" ko Party Master (S00) me confirm & transfer karna chahte hain?\n\nConfirm hone ke baad Party Master S00 me draft ban jayega aur lead freeze ho jayegi.`
+                          : `Kya aap "${lead.company || lead.name}" ko Party Master (S00) me transfer karna chahte hain?`;
+                        const ok = window.confirm(confirmMsg);
+                        if (!ok) return;
+
                         try {
                           const res = await sendLeadToParty(lead.id, userId);
                           if (res && res.success) {
                             if (typeof window !== 'undefined') {
                               window.dispatchEvent(new CustomEvent('party_transferred_updated'));
                             }
+                            const updatedStatus = res.newStatus || '8;02>Transfer to Party>Transferred to Party Master';
                             if (info.table?.options?.meta?.updateLeadInState) {
                               info.table.options.meta.updateLeadInState({ 
                                 ...lead, 
-                                status: res.newStatus || '8;01>Transfer to Party>Transfer to Party Master' 
+                                status: updatedStatus 
                               });
                             }
-                            alert(`Lead transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen in 08 - Transfer to Party.`);
+                            alert(`Lead successfully confirmed & transferred to Party Master (S00) with Code: ${res.partyCode || 'PTY'}! It is now frozen.`);
                           }
                         } catch (err) {
                           alert(err?.message || 'Failed to transfer lead to Party Master');
@@ -2845,11 +2914,11 @@ export default function LeadTable({
                       style={{
                         width: '100%',
                         marginTop: '0.35rem',
-                        padding: '0.4rem',
+                        padding: '0.42rem',
                         borderRadius: '6px',
-                        backgroundColor: 'rgba(37,99,235,0.15)',
-                        color: '#38bdf8',
-                        border: '1px solid rgba(56,189,248,0.4)',
+                        backgroundColor: (isLeadPendingTransfer || Boolean(lead.status && lead.status.startsWith('8;'))) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(37,99,235,0.15)',
+                        color: (isLeadPendingTransfer || Boolean(lead.status && lead.status.startsWith('8;'))) ? '#10b981' : '#38bdf8',
+                        border: (isLeadPendingTransfer || Boolean(lead.status && lead.status.startsWith('8;'))) ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(56,189,248,0.4)',
                         cursor: 'pointer',
                         fontSize: '0.76rem',
                         fontWeight: 700,
@@ -2859,7 +2928,9 @@ export default function LeadTable({
                         gap: '0.3rem'
                       }}
                     >
-                      🚀 Transfer to Party Master (S00)
+                      {(isLeadPendingTransfer || Boolean(lead.status && lead.status.startsWith('8;'))) 
+                        ? '🚀 Confirm & Transfer to Party Master (S00)' 
+                        : '🚀 Transfer to Party Master (S00)'}
                     </button>
                   )}
                 </div>
@@ -3174,25 +3245,62 @@ export default function LeadTable({
             textAlign: 'center',
             animation: 'scaleUp 0.2s ease-out forwards'
           }}>
-            <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Confirm Status Change</div>
-            <div style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
-              Are you sure you want to change the status of <strong>{pendingStatusChange.leadName}</strong> to <strong style={{color: 'var(--accent-color)'}}>{pendingStatusChange.shortName}</strong>?
-            </div>
-            
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button 
-                onClick={pendingStatusChange.cancel}
-                style={{ flex: 1, padding: '0.6rem 1rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={pendingStatusChange.commit}
-                style={{ flex: 1, padding: '0.6rem 1rem', background: 'var(--accent-color)', border: 'none', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
-              >
-                Confirm Change
-              </button>
-            </div>
+            {pendingStatusChange.isWonAction ? (
+              <>
+                <div style={{ fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.4rem', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                  🎉 Deal Won!
+                </div>
+                <div style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.5' }}>
+                  Lead <strong>{pendingStatusChange.leadName}</strong> ko Won mark kar diya gaya hai.<br/><br/>
+                  Kya aap is lead ko <strong>"08 - Transfer to Party"</strong> stage me move karna chahte hain? Wahan review karke Party Master (S00) confirm kar sakte hain.
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <button 
+                    onClick={pendingStatusChange.moveToS08}
+                    style={{ width: '100%', padding: '0.65rem 1rem', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.86rem', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+                  >
+                    🚀 Haan, S08 me Move Karein
+                  </button>
+                  <div style={{ display: 'flex', gap: '0.6rem' }}>
+                    <button 
+                      onClick={pendingStatusChange.keepInS07}
+                      style={{ flex: 1, padding: '0.55rem 0.8rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                    >
+                      Nahi, S07 me hi rakhein
+                    </button>
+                    <button 
+                      onClick={pendingStatusChange.cancel}
+                      style={{ padding: '0.55rem 0.8rem', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500, fontSize: '0.8rem' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Confirm Status Change</div>
+                <div style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                  Are you sure you want to change the status of <strong>{pendingStatusChange.leadName}</strong> to <strong style={{color: 'var(--accent-color)'}}>{pendingStatusChange.shortName}</strong>?
+                </div>
+                
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                  <button 
+                    onClick={pendingStatusChange.cancel}
+                    style={{ flex: 1, padding: '0.6rem 1rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={pendingStatusChange.commit}
+                    style={{ flex: 1, padding: '0.6rem 1rem', background: 'var(--accent-color)', border: 'none', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Confirm Change
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           <style>{`
             @keyframes fadeIn {

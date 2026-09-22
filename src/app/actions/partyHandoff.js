@@ -213,7 +213,7 @@ export async function sendLeadToParty(leadId, userId) {
   }
 
   // 5. Move lead status to Stage 08 (Frozen in Lead Data)
-  const frozenStatus = '8;01>Transfer to Party>Transfer to Party Master';
+  const frozenStatus = '8;02>Transfer to Party>Transferred to Party Master';
   try {
     await adminClient
       .from('leads')

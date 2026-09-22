@@ -675,7 +675,7 @@ export default function CRMContainer({
       { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
       { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
       { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
-      { name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] }
+      { name: '08 - Transfer to Party', substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'] }
     ];
 
     const saved = localStorage.getItem('crm_config');
@@ -686,10 +686,17 @@ export default function CRMContainer({
       config.stages = defaultStages;
       localStorage.setItem('crm_config', JSON.stringify(config));
       window.dispatchEvent(new Event('crm_config_updated'));
-    } else if (!config.stages.some(s => s.name?.includes('08 - Transfer to Party'))) {
-      config.stages.push({ name: '08 - Transfer to Party', substages: ['Transfer to Party Master', 'Party Onboarding', 'Won - Transferred'] });
-      localStorage.setItem('crm_config', JSON.stringify(config));
-      window.dispatchEvent(new Event('crm_config_updated'));
+    } else {
+      const s08Index = config.stages.findIndex(s => s.name?.includes('08 - Transfer to Party'));
+      if (s08Index === -1) {
+        config.stages.push({ name: '08 - Transfer to Party', substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'] });
+        localStorage.setItem('crm_config', JSON.stringify(config));
+        window.dispatchEvent(new Event('crm_config_updated'));
+      } else if (!config.stages[s08Index].substages?.includes('Pending Confirmation')) {
+        config.stages[s08Index].substages = ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'];
+        localStorage.setItem('crm_config', JSON.stringify(config));
+        window.dispatchEvent(new Event('crm_config_updated'));
+      }
     }
 
     // Sync CRM & Lead Configurations from Supabase Database
