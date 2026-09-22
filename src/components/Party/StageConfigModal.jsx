@@ -1344,11 +1344,31 @@ export default function StageConfigModal({
                         />
                         <span style={{ fontWeight: 600 }}>Distributor Billed (via Tagged Distributor Godown)</span>
                       </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                        <input
+                          type="radio"
+                          name="billing_route"
+                          value="DEALER_BILLED"
+                          checked={s04CommForm.billing_route_type === 'DEALER_BILLED'}
+                          onChange={() => setS04CommForm({ ...s04CommForm, billing_route_type: 'DEALER_BILLED' })}
+                        />
+                        <span style={{ fontWeight: 600 }}>Dealer Billed (via Tagged Dealer)</span>
+                      </label>
                     </div>
 
                     {s04CommForm.billing_route_type === 'DIRECT_COMPANY_BILLING' && (
                       <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: '#059669', fontWeight: 600 }}>
-                        ℹ️ Direct Billing selected: Tagged Distributor will automatically receive a <strong>{s04CommForm.distributor_commission_percent}%</strong> Territory Override Commission.
+                        ℹ️ Direct Billing selected: Tagged Distributor will automatically receive a <strong>{s04CommForm.distributor_commission_percent || 2.5}%</strong> Territory Override Commission.
+                      </div>
+                    )}
+                    {s04CommForm.billing_route_type === 'DISTRIBUTOR_BILLED' && (
+                      <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: '#0284c7', fontWeight: 600 }}>
+                        ℹ️ Distributor Billing selected: Tagged Distributor fulfills orders and bills directly from their godown.
+                      </div>
+                    )}
+                    {s04CommForm.billing_route_type === 'DEALER_BILLED' && (
+                      <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: '#d97706', fontWeight: 600 }}>
+                        ℹ️ Dealer Billing selected: Tagged Dealer supplies and bills this Sub-Dealer counter directly.
                       </div>
                     )}
                   </div>
@@ -1396,6 +1416,49 @@ export default function StageConfigModal({
                           placeholder="e.g. CHQ-402911"
                           style={inputStyle}
                         />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* First Billing Milestone */}
+                  <div style={{ ...cardStyle, marginTop: '1.25rem' }}>
+                    <div style={{ ...sectionHeaderStyle, color: '#10b981' }}>
+                      📦 First Billing Milestone (Billing 1st Date, Amount &amp; Status)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
+                      <div>
+                        <label style={labelStyle}>Billing 1st Date</label>
+                        <input
+                          type="date"
+                          value={s04CommForm.billing_first_date || ''}
+                          onChange={e => setS04CommForm({ ...s04CommForm, billing_first_date: e.target.value })}
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Billing 1st Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={s04CommForm.billing_first_amount ?? ''}
+                          onChange={e => setS04CommForm({ ...s04CommForm, billing_first_amount: e.target.value === '' ? '' : Number(e.target.value) })}
+                          placeholder="e.g. 250000"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Billing 1st Status</label>
+                        <select
+                          value={s04CommForm.billing_first_status || 'Pending'}
+                          onChange={e => setS04CommForm({ ...s04CommForm, billing_first_status: e.target.value })}
+                          style={inputStyle}
+                        >
+                          <option value="Pending">⏳ Pending (Order / Billing Awaited)</option>
+                          <option value="Billed">📄 Billed (Invoice Generated)</option>
+                          <option value="Dispatched">🚚 Dispatched (Goods in Transit)</option>
+                          <option value="Delivered">📦 Delivered (Stock Received by Partner)</option>
+                          <option value="Paid">✅ Paid (Payment Received / Settled)</option>
+                          <option value="On Hold">⏸️ On Hold (Credit / Commercial Review)</option>
+                        </select>
                       </div>
                     </div>
                   </div>

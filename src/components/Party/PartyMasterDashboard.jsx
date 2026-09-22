@@ -82,6 +82,10 @@ export default function PartyMasterDashboard({
     return activePartners.filter(p => p.billing_route_type === 'DISTRIBUTOR_BILLED');
   }, [activePartners]);
 
+  const dealerBilledPartners = useMemo(() => {
+    return activePartners.filter(p => p.billing_route_type === 'DEALER_BILLED');
+  }, [activePartners]);
+
   // Security deposit & Credit total
   const financialTotals = useMemo(() => {
     let totalDeposit = 0;
@@ -516,7 +520,7 @@ export default function PartyMasterDashboard({
             </div>
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
-            <span style={{ color: '#10b981' }}>{directBillingPartners.length}</span> <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Direct</span> / <span style={{ color: '#38bdf8' }}>{distributorBilledPartners.length}</span> <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Dist</span>
+            <span style={{ color: '#10b981' }}>{directBillingPartners.length}</span> <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Direct</span> / <span style={{ color: '#38bdf8' }}>{distributorBilledPartners.length}</span> <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Dist</span> / <span style={{ color: '#f59e0b' }}>{dealerBilledPartners.length}</span> <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Dealer</span>
           </div>
           <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Commercial routes</span>
@@ -1324,11 +1328,28 @@ export default function PartyMasterDashboard({
                           fontWeight: 700,
                           padding: '0.15rem 0.5rem',
                           borderRadius: '4px',
-                          background: p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'rgba(16,185,129,0.15)' : 'rgba(56,189,248,0.15)',
-                          color: p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#10b981' : '#38bdf8'
+                          background: p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                            ? 'rgba(16,185,129,0.15)'
+                            : p.billing_route_type === 'DEALER_BILLED'
+                            ? 'rgba(245,158,11,0.15)'
+                            : 'rgba(56,189,248,0.15)',
+                          color: p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                            ? '#10b981'
+                            : p.billing_route_type === 'DEALER_BILLED'
+                            ? '#f59e0b'
+                            : '#38bdf8'
                         }}>
-                          {p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '⚡ Direct Billing' : '📦 Dist Billed'}
+                          {p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                            ? '⚡ Direct Billing'
+                            : p.billing_route_type === 'DEALER_BILLED'
+                            ? '🏬 Dealer Billed'
+                            : '📦 Dist Billed'}
                         </span>
+                        {p.billing_first_amount ? (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                            1st: ₹{Number(p.billing_first_amount).toLocaleString('en-IN')}
+                          </div>
+                        ) : null}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         <button

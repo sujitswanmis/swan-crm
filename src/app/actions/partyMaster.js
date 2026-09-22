@@ -231,6 +231,13 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         billing_route_type: item.billing_route_type || meta.billing_route_type || 'DIRECT_COMPANY_BILLING',
         commercial_status: item.commercial_status || meta.commercial_status || (commercialTerms.length > 0 ? 'Completed' : null),
         security_deposit_amount: item.security_deposit_amount ?? primaryComm?.security_deposit_amount ?? meta.security_deposit_amount ?? 0,
+        security_deposit_date: item.security_deposit_date || meta.security_deposit_date || null,
+        security_mode: item.security_mode || meta.security_mode || 'Cheque',
+        receipt_no: item.receipt_no || meta.receipt_no || '',
+        distributor_commission_percent: item.distributor_commission_percent ?? meta.distributor_commission_percent ?? 2.5,
+        billing_first_date: item.billing_first_date || meta.billing_first_date || null,
+        billing_first_amount: item.billing_first_amount ?? meta.billing_first_amount ?? null,
+        billing_first_status: item.billing_first_status || meta.billing_first_status || 'Pending',
         credit_limit: item.credit_limit ?? primaryComm?.credit_limit ?? meta.credit_limit ?? 0,
         credit_days: item.credit_days ?? primaryComm?.credit_days ?? meta.credit_days ?? 30,
         product_category: (prodAuths[0]?.product_category) || item.product_category || meta.product_category || null,
@@ -451,7 +458,9 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
     'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
     'biz_contact_no_1', 'biz_contact_no_2', 'biz_alt_no_1', 'biz_alt_no_2', 'biz_email_1', 'biz_email_2', 'biz_alt_email_1', 'biz_alt_email_2',
     'state_name', 'district_name', 'tehsil', 'block_name', 'city_village', 'pincode', 'order_category',
-    'parent_distributor_id', 'parent_dealer_id', 'dealership_type', 'showroom_area_sqft', 'billing_route_type'
+    'parent_distributor_id', 'parent_dealer_id', 'dealership_type', 'showroom_area_sqft', 'billing_route_type',
+    'billing_first_date', 'billing_first_amount', 'billing_first_status',
+    'security_deposit_amount', 'security_deposit_date', 'security_mode', 'receipt_no', 'distributor_commission_percent'
   ];
   metaKeys.forEach(k => {
     if (cleanPartyData[k] !== undefined && cleanPartyData[k] !== null && cleanPartyData[k] !== '') {
@@ -734,6 +743,13 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   if (stepData.credit_limit !== undefined) metaUpdates.credit_limit = stepData.credit_limit;
   if (stepData.credit_days !== undefined) metaUpdates.credit_days = stepData.credit_days;
   if (stepData.security_deposit_amount !== undefined) metaUpdates.security_deposit_amount = stepData.security_deposit_amount;
+  if (stepData.security_deposit_date !== undefined) metaUpdates.security_deposit_date = stepData.security_deposit_date;
+  if (stepData.security_mode !== undefined) metaUpdates.security_mode = stepData.security_mode;
+  if (stepData.receipt_no !== undefined) metaUpdates.receipt_no = stepData.receipt_no;
+  if (stepData.distributor_commission_percent !== undefined) metaUpdates.distributor_commission_percent = stepData.distributor_commission_percent;
+  if (stepData.billing_first_date !== undefined) metaUpdates.billing_first_date = stepData.billing_first_date;
+  if (stepData.billing_first_amount !== undefined) metaUpdates.billing_first_amount = stepData.billing_first_amount;
+  if (stepData.billing_first_status !== undefined) metaUpdates.billing_first_status = stepData.billing_first_status;
   if (stepData.zone !== undefined) metaUpdates.zone = stepData.zone;
   if (stepData.product_category !== undefined) metaUpdates.product_category = stepData.product_category;
 

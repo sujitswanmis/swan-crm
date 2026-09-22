@@ -233,7 +233,11 @@ export default function StageDataTable({
             {party.zone || '⚠️ Zone Unassigned'}
           </div>
           <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-            {party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '🏢 Direct Company' : '👑 Distributor Billed'}
+            {party.billing_route_type === 'DIRECT_COMPANY_BILLING'
+              ? '🏢 Direct Company'
+              : party.billing_route_type === 'DEALER_BILLED'
+              ? '🏬 Dealer Billed'
+              : '👑 Distributor Billed'}
           </div>
         </div>
       );
@@ -267,15 +271,33 @@ export default function StageDataTable({
 
     if (stageId === 's05') {
       const depositAmt = party.security_deposit_amount || party.party_commercial_terms?.[0]?.security_deposit_amount;
+      const billingLabel = party.billing_route_type === 'DIRECT_COMPANY_BILLING'
+        ? '🏢 Direct Company'
+        : party.billing_route_type === 'DEALER_BILLED'
+        ? '🏬 Dealer Billed'
+        : '👑 Distributor Billed';
+      const billingColor = party.billing_route_type === 'DIRECT_COMPANY_BILLING'
+        ? '#34d399'
+        : party.billing_route_type === 'DEALER_BILLED'
+        ? '#f59e0b'
+        : '#60a5fa';
+
       return (
         <div>
-          <div style={{ fontWeight: 700, color: party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#34d399' : '#fbbf24' }}>
-            {party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '🏢 Direct Company' : '👑 Distributor Billed'}
+          <div style={{ fontWeight: 700, color: billingColor }}>
+            {billingLabel}
           </div>
           <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
             Deposit: {depositAmt ? `₹${Number(depositAmt).toLocaleString('en-IN')}` : '₹0 / Nil'}
             {party.commercial_status === 'Completed' && ' • Verified'}
           </div>
+          {party.billing_first_amount ? (
+            <div style={{ fontSize: '0.71rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+              1st Bill: <strong style={{ color: '#38bdf8' }}>₹{Number(party.billing_first_amount).toLocaleString('en-IN')}</strong>
+              {party.billing_first_status ? ` (${party.billing_first_status})` : ''}
+              {party.billing_first_date ? ` • ${party.billing_first_date}` : ''}
+            </div>
+          ) : null}
         </div>
       );
     }

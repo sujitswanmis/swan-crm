@@ -316,7 +316,10 @@ export default function PartyMasterModule({
     security_mode: 'Cheque',
     receipt_no: '',
     billing_route_type: 'DIRECT_COMPANY_BILLING',
-    distributor_commission_percent: 2.5
+    distributor_commission_percent: 2.5,
+    billing_first_date: '',
+    billing_first_amount: '',
+    billing_first_status: 'Pending'
   });
 
   // Combined S05 Product Authorization & Territory Allocation
@@ -763,7 +766,14 @@ export default function PartyMasterModule({
       billing_route_type: party.billing_route_type || prev.billing_route_type || 'DIRECT_COMPANY_BILLING',
       security_deposit_amount: party.security_deposit_amount ?? commTerms.security_deposit_amount ?? prev.security_deposit_amount,
       credit_limit: party.credit_limit ?? commTerms.credit_limit ?? prev.credit_limit,
-      credit_days: party.credit_days ?? commTerms.credit_days ?? prev.credit_days
+      credit_days: party.credit_days ?? commTerms.credit_days ?? prev.credit_days,
+      security_deposit_date: party.security_deposit_date || party.meta?.security_deposit_date || prev.security_deposit_date,
+      security_mode: party.security_mode || party.meta?.security_mode || prev.security_mode,
+      receipt_no: party.receipt_no || party.meta?.receipt_no || prev.receipt_no,
+      distributor_commission_percent: party.distributor_commission_percent ?? party.meta?.distributor_commission_percent ?? prev.distributor_commission_percent,
+      billing_first_date: party.billing_first_date || party.meta?.billing_first_date || '',
+      billing_first_amount: party.billing_first_amount ?? party.meta?.billing_first_amount ?? '',
+      billing_first_status: party.billing_first_status || party.meta?.billing_first_status || 'Pending'
     }));
 
     if (party.zone) {
@@ -1996,6 +2006,7 @@ export default function PartyMasterModule({
                 <option value="ALL">All Billing Routes</option>
                 <option value="DIRECT_COMPANY_BILLING">Direct Company Billing</option>
                 <option value="DISTRIBUTOR_BILLED">Distributor Billed</option>
+                <option value="DEALER_BILLED">Dealer Billed</option>
               </select>
 
               <select
@@ -2128,11 +2139,30 @@ export default function PartyMasterModule({
                             fontWeight: 700,
                             padding: '0.2rem 0.6rem',
                             borderRadius: '4px',
-                            background: p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',
-                            color: p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#34d399' : '#60a5fa'
+                            background: p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                              ? 'rgba(16,185,129,0.15)'
+                              : p.billing_route_type === 'DEALER_BILLED'
+                              ? 'rgba(245,158,11,0.15)'
+                              : 'rgba(59,130,246,0.15)',
+                            color: p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                              ? '#34d399'
+                              : p.billing_route_type === 'DEALER_BILLED'
+                              ? '#f59e0b'
+                              : '#60a5fa'
                           }}>
-                            {p.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '🏢 Direct Company' : '👑 Distributor Billed'}
+                            {p.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                              ? '🏢 Direct Company'
+                              : p.billing_route_type === 'DEALER_BILLED'
+                              ? '🏬 Dealer Billed'
+                              : '👑 Distributor Billed'}
                           </span>
+                          {p.billing_first_amount ? (
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                              1st: <strong style={{ color: '#38bdf8' }}>₹{Number(p.billing_first_amount).toLocaleString('en-IN')}</strong>
+                              {p.billing_first_status ? ` • ${p.billing_first_status}` : ''}
+                              {p.billing_first_date ? ` (${p.billing_first_date})` : ''}
+                            </div>
+                          ) : null}
                         </td>
 
                         {/* Credit & Status */}
@@ -2262,8 +2292,23 @@ export default function PartyMasterModule({
                                         {dlr.dealer_code || dlr.party_universal_code}
                                       </span>
                                       <span style={{ fontWeight: 700, fontSize: '0.96rem', color: '#ffffff' }}>{dlr.firm_name}</span>
-                                      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.1rem 0.4rem', borderRadius: '4px', background: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'rgba(59,130,246,0.2)' : 'rgba(245,158,11,0.2)', color: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#60a5fa' : '#fbbf24' }}>
-                                        {dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : 'Distributor Billed'}
+                                      <span style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        padding: '0.1rem 0.4rem',
+                                        borderRadius: '4px',
+                                        background: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                                          ? 'rgba(59,130,246,0.2)'
+                                          : dlr.billing_route_type === 'DEALER_BILLED'
+                                          ? 'rgba(245,158,11,0.2)'
+                                          : 'rgba(16,185,129,0.2)',
+                                        color: dlr.billing_route_type === 'DIRECT_COMPANY_BILLING'
+                                          ? '#60a5fa'
+                                          : dlr.billing_route_type === 'DEALER_BILLED'
+                                          ? '#fbbf24'
+                                          : '#34d399'
+                                      }}>
+                                        {dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : (dlr.billing_route_type === 'DEALER_BILLED' ? 'Dealer Billed' : 'Distributor Billed')}
                                       </span>
                                     </div>
                                     <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
@@ -2344,7 +2389,9 @@ export default function PartyMasterModule({
                   </div>
                   <div>
                     <div style={{ color: 'var(--text-secondary)' }}>Billing Mode</div>
-                    <div style={{ fontWeight: 700, color: '#60a5fa' }}>{party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : 'Distributor'}</div>
+                    <div style={{ fontWeight: 700, color: party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#60a5fa' : party.billing_route_type === 'DEALER_BILLED' ? '#fbbf24' : '#34d399' }}>
+                      {party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : party.billing_route_type === 'DEALER_BILLED' ? 'Dealer Billed' : 'Distributor'}
+                    </div>
                   </div>
                 </div>
 
