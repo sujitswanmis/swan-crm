@@ -361,11 +361,11 @@
       "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
       "email": "sujitswanmis@gmail.com",
       "empName": "Sujit Gupta",
-      "activeSeconds": 532,
-      "idleSeconds": 1083,
+      "activeSeconds": 3409,
+      "idleSeconds": 6881,
       "firstSeen": "2026-09-22T18:30:59.513805+00:00",
-      "lastSeen": "2026-09-22T18:47:30.032Z",
-      "status": "away",
+      "lastSeen": "2026-09-22T20:10:01.780Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
     }
   }

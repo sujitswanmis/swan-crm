@@ -8,7 +8,7 @@ import {
   DollarSign, Calendar, ChevronRight, Search, Filter, Clock, Star,
   MessageSquare, Truck, Package, Shield, ExternalLink, ThumbsUp,
   AlertCircle, FileText, Check, Lock, ChevronDown, CheckSquare, Sparkles,
-  UserCheck, Layers, GitFork, UserPlus, Tag
+  UserCheck, Layers, GitFork, UserPlus, Tag, Download, RotateCcw
 } from 'lucide-react';
 import {
   getPartyList,
@@ -225,9 +225,11 @@ export default function PartyMasterModule({
   // Filters & Search for R03 Report
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'Distributor' | 'Dealer' | 'Sub-Dealer'
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Draft'
-  const [billingFilter, setBillingFilter] = useState('ALL'); // 'ALL' | 'DIRECT_COMPANY_BILLING' | 'DISTRIBUTOR_BILLED'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Draft' | 'S00' | 'EVERYTHING'
+  const [billingFilter, setBillingFilter] = useState('ALL'); // 'ALL' | 'DIRECT_COMPANY_BILLING' | 'DISTRIBUTOR_BILLED' | 'DEALER_BILLED'
   const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
+  const [stateFilter, setStateFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState('ALL');
 
   // Wizard States (S00 to S07)
   const [showWizard, setShowWizard] = useState(false);
@@ -604,29 +606,396 @@ export default function PartyMasterModule({
   // Filtered R03 Report List
   const filteredParties = useMemo(() => {
     return parties.filter(p => {
-      const matchesSearch = !searchTerm || (
-        (p.firm_name && p.firm_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (p.party_universal_code && p.party_universal_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (p.distributor_code && p.distributor_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (p.dealer_code && p.dealer_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (p.sub_dealer_code && p.sub_dealer_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (p.primary_mobile && p.primary_mobile.includes(searchTerm)) ||
-        (p.biz_contact_no_1 && p.biz_contact_no_1.includes(searchTerm)) ||
-        (p.contact_mobile_1_1 && p.contact_mobile_1_1.includes(searchTerm)) ||
-        (p.owner_name && p.owner_name.toLowerCase().includes(searchTerm.toLowerCase()))
+      const term = searchTerm.trim().toLowerCase();
+      const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+
+      const matchesSearch = !term || (
+        (p.firm_name && p.firm_name.toLowerCase().includes(term)) ||
+        (p.legal_name && p.legal_name.toLowerCase().includes(term)) ||
+        (p.party_universal_code && p.party_universal_code.toLowerCase().includes(term)) ||
+        (p.distributor_code && p.distributor_code.toLowerCase().includes(term)) ||
+        (p.dealer_code && p.dealer_code.toLowerCase().includes(term)) ||
+        (p.sub_dealer_code && p.sub_dealer_code.toLowerCase().includes(term)) ||
+        (p.primary_mobile && p.primary_mobile.includes(term)) ||
+        (p.biz_contact_no_1 && p.biz_contact_no_1.includes(term)) ||
+        (p.contact_mobile_1_1 && p.contact_mobile_1_1.includes(term)) ||
+        (p.owner_name && p.owner_name.toLowerCase().includes(term)) ||
+        (p.contact_person_name_1 && p.contact_person_name_1.toLowerCase().includes(term)) ||
+        (p.gstin && p.gstin.toLowerCase().includes(term)) ||
+        (p.pan && p.pan.toLowerCase().includes(term)) ||
+        (p.state_name && p.state_name.toLowerCase().includes(term)) ||
+        (p.district_name && p.district_name.toLowerCase().includes(term)) ||
+        (p.parent_distributor_name && p.parent_distributor_name.toLowerCase().includes(term)) ||
+        (p.parent_dealer_name && p.parent_dealer_name.toLowerCase().includes(term))
       );
 
       const matchesType = typeFilter === 'ALL' || p.party_type === typeFilter;
-      const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'Active' ? p.final_status === 'Active' : p.final_status !== 'Active');
       const matchesBilling = billingFilter === 'ALL' || p.billing_route_type === billingFilter;
       const matchesCompany = companyFilter === 'ALL' || 
         (companyFilter === 'NSTL' 
           ? (p.our_company === 'NSTL' || p.our_company === 'NSTLP')
           : (p.our_company || 'NSMLR') === companyFilter);
+      
+      const matchesState = stateFilter === 'ALL' || (p.state_name || '').toLowerCase() === stateFilter.toLowerCase();
+      const matchesStage = stageFilter === 'ALL' || (p.onboarding_stage || '').toLowerCase().includes(stageFilter.toLowerCase());
 
-      return matchesSearch && matchesType && matchesStatus && matchesBilling && matchesCompany;
+      let matchesStatus = true;
+      if (statusFilter === 'ALL') {
+        // By default show all official channel partners (exclude raw unconfirmed S00 handoffs)
+        matchesStatus = !isUnconfirmedHandoff;
+      } else if (statusFilter === 'Active') {
+        matchesStatus = (p.final_status === 'Active' || p.party_status === 'Active') && !isUnconfirmedHandoff;
+      } else if (statusFilter === 'Draft') {
+        matchesStatus = (p.final_status !== 'Active' && p.party_status !== 'Active') && !isUnconfirmedHandoff;
+      } else if (statusFilter === 'S00') {
+        matchesStatus = isUnconfirmedHandoff;
+      } else if (statusFilter === 'EVERYTHING') {
+        matchesStatus = true;
+      }
+
+      return matchesSearch && matchesType && matchesStatus && matchesBilling && matchesCompany && matchesState && matchesStage;
     });
-  }, [parties, searchTerm, typeFilter, statusFilter, billingFilter, companyFilter]);
+  }, [parties, searchTerm, typeFilter, statusFilter, billingFilter, companyFilter, stateFilter, stageFilter]);
+
+  // Export Filtered Party Master Report to CSV / Excel
+  const exportPartyReportCSV = () => {
+    if (!filteredParties || filteredParties.length === 0) {
+      alert('No party records available to export.');
+      return;
+    }
+
+    const headers = [
+      'Party Universal Code',
+      'Channel Code',
+      'Party Tier',
+      'Our Company',
+      'Firm Name',
+      'Legal Name',
+      'GSTIN',
+      'PAN',
+      'Owner / Contact Person',
+      'Primary Mobile',
+      'Alt Contact No',
+      'Email',
+      'State',
+      'District / Headquarters',
+      'Assigned Territories',
+      'Parent Distributor Firm',
+      'Parent Dealer Firm',
+      'Billing Route Type',
+      'Security Deposit (INR)',
+      'Security Mode',
+      'Receipt No',
+      'Credit Limit (INR)',
+      'Credit Days',
+      '1st Billing Date',
+      '1st Billing Amount (INR)',
+      '1st Billing Status',
+      'Current Onboarding Stage',
+      'Verification Status',
+      'Created Date (IST)'
+    ];
+
+    const rows = filteredParties.map(p => {
+      const parentDist = p.parent_distributor?.firm_name || p.parent_distributor_name || (p.parent_distributor_id ? 'Assigned Distributor' : 'Direct Swan');
+      const parentDlr = p.parent_dealer?.firm_name || p.parent_dealer_name || '-';
+      const assignedDists = Array.isArray(p.assigned_districts) ? p.assigned_districts.join('; ') : (p.district_name || '');
+      const createdDateIST = p.created_at ? new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-';
+
+      return [
+        `"${p.party_universal_code || ''}"`,
+        `"${p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || ''}"`,
+        `"${p.party_type || ''}"`,
+        `"${p.our_company || 'NSMLR'}"`,
+        `"${(p.firm_name || '').replace(/"/g, '""')}"`,
+        `"${(p.legal_name || '').replace(/"/g, '""')}"`,
+        `"${p.gstin || ''}"`,
+        `"${p.pan || ''}"`,
+        `"${(p.contact_person_name_1 || p.owner_name || '').replace(/"/g, '""')}"`,
+        `"${p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || ''}"`,
+        `"${p.biz_contact_no_2 || p.contact_mobile_1_2 || ''}"`,
+        `"${p.biz_email_1 || p.official_email || ''}"`,
+        `"${p.state_name || ''}"`,
+        `"${p.district_name || ''}"`,
+        `"${assignedDists.replace(/"/g, '""')}"`,
+        `"${parentDist.replace(/"/g, '""')}"`,
+        `"${parentDlr.replace(/"/g, '""')}"`,
+        `"${p.billing_route_type || ''}"`,
+        `"${p.security_deposit_amount || (p.party_commercial_terms?.[0]?.security_deposit_amount) || 0}"`,
+        `"${p.security_mode || 'Cheque'}"`,
+        `"${p.receipt_no || ''}"`,
+        `"${p.credit_limit || (p.party_commercial_terms?.[0]?.credit_limit) || 500000}"`,
+        `"${p.credit_days || (p.party_commercial_terms?.[0]?.credit_days) || 30}"`,
+        `"${p.billing_first_date || ''}"`,
+        `"${p.billing_first_amount || ''}"`,
+        `"${p.billing_first_status || ''}"`,
+        `"${p.onboarding_stage || 'S01_Registration'}"`,
+        `"${p.final_status || p.party_status || 'Draft'}"`,
+        `"${createdDateIST}"`
+      ].join(',');
+    });
+
+    const csvData = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    link.href = url;
+    link.setAttribute('download', `Swan_Party_Master_Report_${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Reset all R03 Report Search & Filter criteria
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setCompanyFilter('ALL');
+    setTypeFilter('ALL');
+    setBillingFilter('ALL');
+    setStatusFilter('ALL');
+    setStateFilter('ALL');
+    setStageFilter('ALL');
+  };
+
+  // Unique States list for filter dropdown (Combines DB records + Standard Indian States)
+  const availableReportStates = useMemo(() => {
+    const fromParties = parties.map(p => p.state_name).filter(Boolean);
+    const combined = Array.from(new Set([...fromParties, ...ALL_INDIAN_STATES])).sort();
+    return combined;
+  }, [parties]);
+
+  // Stage Verification and Gate Status Inspector
+  const getStageApprovalStatus = useCallback((party) => {
+    if (!party) return { s00: false, s01: false, s02: false, s03: false, s04: false, tier: false, s05: false, s06: false, s07: false, s08: false };
+    const pId = party.id;
+    const local = stageConfirmedMap[pId] || {};
+    const metaStages = party.meta_stages || party.meta?.stages || {};
+
+    const isDist = party.party_type === 'Distributor';
+    const isDealer = party.party_type === 'Dealer';
+    const isSubDealer = party.party_type === 'Sub-Dealer';
+
+    // If partner is already Active in DB or final_status is Active, all stages are verified
+    const isPartyActive = party.party_status === 'Active' || party.final_status === 'Active';
+
+    // Check stage hierarchy in onboarding_stage
+    const STAGE_ORDER = [
+      'S00_Party_Entry',
+      'S01_Registration',
+      'S02_Party_Classification',
+      'S03_Dealer_Distributor_Mapping',
+      'S04_KYC_Commercial_Verification',
+      'S05_Product_Authorization',
+      'S06_Territory_Allocation',
+      'S07_Employee_Assignment',
+      'S08_Party_Activation'
+    ];
+    const currentStageIdx = STAGE_ORDER.indexOf(party.onboarding_stage);
+
+    // 1. S00 Approval: Lead handoff confirmed into Party Master (not stuck in S00 queue)
+    const isUnconfirmedLeadInS00 = Boolean(
+      party.source_lead_id && (
+        party.party_status === 'Draft_From_Lead' || 
+        party.party_status === 'Pending Confirmation' ||
+        party.onboarding_stage === 'S00_Party_Entry' ||
+        party.workflow_status === 'S00_TRANSFERRED'
+      ) && !local.s00 && !metaStages.s00
+    );
+
+    const s00Approved = !isUnconfirmedLeadInS00 && Boolean(
+      isPartyActive ||
+      local.s00 ||
+      metaStages.s00 ||
+      currentStageIdx >= 1 ||
+      (party.workflow_status && !party.workflow_status.includes('S00')) ||
+      !party.source_lead_id
+    );
+
+    // 2. S01 Approval: Party Master Creation verified (legal details, GST, PAN, primary contacts)
+    const s01Approved = s00Approved && Boolean(
+      isPartyActive ||
+      local.s01 ||
+      metaStages.s01 ||
+      currentStageIdx >= 2 ||
+      party.workflow_status === 'S01_Approved' ||
+      party.workflow_status?.includes('S02') ||
+      party.workflow_status?.includes('S03') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S02_Party_Classification', 'S03_Dealer_Distributor_Mapping', 'S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage))
+    );
+
+    // 3. Tier Approvals (S02 for Dist, S03 for Dealer, S04 for Sub-Dealer)
+    const s02Approved = s01Approved && (isDist ? Boolean(
+      isPartyActive ||
+      local.s02 ||
+      metaStages.s02 ||
+      currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S02_Completed') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.zone && (party.state_name || party.state))
+    ) : true);
+
+    const s03Approved = s01Approved && (isDealer ? Boolean(
+      isPartyActive ||
+      local.s03 ||
+      metaStages.s03 ||
+      currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S03_Completed') ||
+      party.workflow_status?.includes('S04') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      Boolean(party.parent_distributor_id)
+    ) : true);
+
+    const s04Approved = s01Approved && (isSubDealer ? Boolean(
+      isPartyActive ||
+      local.s04 ||
+      metaStages.s04 ||
+      currentStageIdx >= 4 ||
+      party.workflow_status?.includes('S04_Completed') ||
+      party.workflow_status?.includes('S05') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      Boolean(party.parent_dealer_id)
+    ) : true);
+
+    const tierApproved = s01Approved && (isDist ? s02Approved : (isDealer ? s03Approved : s04Approved));
+
+    // 4. S05 Approval: Commercial Security Details & Billing Route
+    const s05Approved = tierApproved && Boolean(
+      isPartyActive ||
+      local.s05 ||
+      metaStages.s05 ||
+      currentStageIdx >= 5 ||
+      party.commercial_status === 'Completed' ||
+      party.workflow_status?.includes('S05_Completed') ||
+      party.workflow_status?.includes('S06') ||
+      party.workflow_status?.includes('S07') ||
+      (['S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.party_commercial_terms && party.party_commercial_terms.length > 0 && party.billing_route_type)
+    );
+
+    // 5. S06 Approval: Product Authorization & Territory Allocation
+    const s06Approved = s05Approved && Boolean(
+      isPartyActive ||
+      local.s06 ||
+      metaStages.s06 ||
+      currentStageIdx >= 7 ||
+      party.workflow_status?.includes('S06_Completed') ||
+      party.workflow_status?.includes('S07') ||
+      (['S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      ((party.product_authorizations && party.product_authorizations.length > 0) && (party.territory_allocations && party.territory_allocations.length > 0))
+    );
+
+    // 6. S07 Approval: Sales Team Assignment
+    const s07Approved = s06Approved && Boolean(
+      isPartyActive ||
+      local.s07 ||
+      metaStages.s07 ||
+      currentStageIdx >= 8 ||
+      party.workflow_status?.includes('S07_Completed') ||
+      (['S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
+      (party.team_assignments && party.team_assignments.length > 0)
+    );
+
+    // 7. S08 Approval: Partner Activation
+    const s08Approved = s07Approved && Boolean(
+      isPartyActive ||
+      local.s08 ||
+      metaStages.s08 ||
+      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.party_status) ||
+      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.final_status)
+    );
+
+    return {
+      s00: s00Approved,
+      s01: s01Approved,
+      s02: s02Approved,
+      s03: s03Approved,
+      s04: s04Approved,
+      tier: tierApproved,
+      s05: s05Approved,
+      s06: s06Approved,
+      s07: s07Approved,
+      s08: s08Approved
+    };
+  }, [stageConfirmedMap]);
+
+  // Determine next pending stage requiring attention
+  const getNextPendingStage = useCallback((party) => {
+    if (!party) return 's01';
+    const app = getStageApprovalStatus(party);
+    if (!app.s01) return 's01';
+    if (party.party_type === 'Distributor' && !app.s02) return 's02';
+    if (party.party_type === 'Dealer' && !app.s03) return 's03';
+    if (party.party_type === 'Sub-Dealer' && !app.s04) return 's04';
+    if (!app.s05) return 's05';
+    if (!app.s06) return 's06';
+    if (!app.s07) return 's07';
+    if (!app.s08) return 's08';
+    return 's08';
+  }, [getStageApprovalStatus]);
+
+  // Stage Badge Configuration for Table Rows
+  const getStageBadgeInfo = useCallback((party) => {
+    if (!party) return { label: 'S01 Registration', color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' };
+    const app = getStageApprovalStatus(party);
+    if (app.s08 || party.final_status === 'Active' || party.party_status === 'Active') {
+      return { label: 'S08 Verified Active', color: '#10b981', bg: 'rgba(16,185,129,0.15)' };
+    }
+    if (!app.s01) return { label: 'S01 Profile Pending', color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' };
+    if (party.party_type === 'Distributor' && !app.s02) return { label: 'S02 Hub Config Pending', color: '#60a5fa', bg: 'rgba(96,165,250,0.15)' };
+    if (party.party_type === 'Dealer' && !app.s03) return { label: 'S03 Parent DIS Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' };
+    if (party.party_type === 'Sub-Dealer' && !app.s04) return { label: 'S04 Parent DLR Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' };
+    if (!app.s05) return { label: 'S05 Commercial Terms', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' };
+    if (!app.s06) return { label: 'S06 Territory & Products', color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' };
+    if (!app.s07) return { label: 'S07 Team Mapping', color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' };
+    return { label: 'S08 Activation Desk', color: '#10b981', bg: 'rgba(16,185,129,0.15)' };
+  }, [getStageApprovalStatus]);
+
+  // Aggregate KPI Metrics for Summary Ribbon
+  const reportMetrics = useMemo(() => {
+    const total = filteredParties.length;
+    let distCount = 0;
+    let dealerCount = 0;
+    let subDealerCount = 0;
+    let activeCount = 0;
+    let totalCredit = 0;
+
+    filteredParties.forEach(p => {
+      if (p.party_type === 'Distributor') distCount++;
+      else if (p.party_type === 'Dealer') dealerCount++;
+      else if (p.party_type === 'Sub-Dealer') subDealerCount++;
+
+      if (p.final_status === 'Active' || p.party_status === 'Active') {
+        activeCount++;
+      }
+
+      const cred = Number(p.credit_limit || p.party_commercial_terms?.[0]?.credit_limit || 0);
+      if (!isNaN(cred) && cred > 0) totalCredit += cred;
+    });
+
+    return {
+      total,
+      distCount,
+      dealerCount,
+      subDealerCount,
+      activeCount,
+      pendingCount: total - activeCount,
+      totalCredit
+    };
+  }, [filteredParties]);
 
   // Wizard Launch Handler
   const startNewPartyWizard = () => {
@@ -861,29 +1230,10 @@ export default function PartyMasterModule({
         } catch (_) {}
       })();
     }
-
-    const targetSubmenu = {
-      'S00': 's01',
-      'S01': party.party_type === 'Distributor' ? 's02' : (party.party_type === 'Dealer' ? 's03' : 's04'),
-      'S02': 's03',
-      'S03': 's04',
-      'S04': 's05',
-      'S05': 's06',
-      'S05_1': 's06',
-      'S06': 's07',
-      'S07': 's08',
-      'R03': 'report',
-      'report': 'report'
-    }[step] || 's01';
-
-    if (targetTab) {
-      if (targetTab !== activeTab) {
-        switchTab(targetTab, true);
-      }
-    } else if (!activeTab || activeTab === 's00' || activeTab === 'overview') {
-      switchTab(targetSubmenu, true);
-    }
+    const targetSubmenu = targetTab || getNextPendingStage(party);
+    switchTab(targetSubmenu, true);
     setShowWizard(false);
+    setIsStageModalOpen(true);
   };
 
   const stageFormRef = useRef(null);
@@ -1292,172 +1642,7 @@ export default function PartyMasterModule({
       setLoadingTransfers(false);
     }
   };
-
-  const getStageApprovalStatus = (party) => {
-    if (!party) return { s00: false, s01: false, s02: false, s03: false, s04: false, tier: false, s05: false, s06: false, s07: false, s08: false };
-    const pId = party.id;
-    const local = stageConfirmedMap[pId] || {};
-    const metaStages = party.meta_stages || party.meta?.stages || {};
-
-    const isDist = party.party_type === 'Distributor';
-    const isDealer = party.party_type === 'Dealer';
-    const isSubDealer = party.party_type === 'Sub-Dealer';
-
-    // If partner is already Active in DB or final_status is Active, all stages are verified
-    const isPartyActive = party.party_status === 'Active' || party.final_status === 'Active';
-
-    // Check stage hierarchy in onboarding_stage
-    const STAGE_ORDER = [
-      'S00_Party_Entry',
-      'S01_Registration',
-      'S02_Party_Classification',
-      'S03_Dealer_Distributor_Mapping',
-      'S04_KYC_Commercial_Verification',
-      'S05_Product_Authorization',
-      'S06_Territory_Allocation',
-      'S07_Employee_Assignment',
-      'S08_Party_Activation'
-    ];
-    const currentStageIdx = STAGE_ORDER.indexOf(party.onboarding_stage);
-
-    // 1. S00 Approval: Lead handoff confirmed into Party Master (not stuck in S00 queue)
-    const isUnconfirmedLeadInS00 = Boolean(
-      party.source_lead_id && (
-        party.party_status === 'Draft_From_Lead' || 
-        party.party_status === 'Pending Confirmation' ||
-        party.onboarding_stage === 'S00_Party_Entry' ||
-        party.workflow_status === 'S00_TRANSFERRED'
-      ) && !local.s00 && !metaStages.s00
-    );
-
-    const s00Approved = !isUnconfirmedLeadInS00 && Boolean(
-      isPartyActive ||
-      local.s00 ||
-      metaStages.s00 ||
-      currentStageIdx >= 1 ||
-      (party.workflow_status && !party.workflow_status.includes('S00')) ||
-      !party.source_lead_id
-    );
-
-    // 2. S01 Approval: Party Master Creation verified (legal details, GST, PAN, primary contacts)
-    const s01Approved = s00Approved && Boolean(
-      isPartyActive ||
-      local.s01 ||
-      metaStages.s01 ||
-      currentStageIdx >= 2 ||
-      party.workflow_status === 'S01_Approved' ||
-      party.workflow_status?.includes('S02') ||
-      party.workflow_status?.includes('S03') ||
-      party.workflow_status?.includes('S04') ||
-      party.workflow_status?.includes('S05') ||
-      party.workflow_status?.includes('S06') ||
-      party.workflow_status?.includes('S07') ||
-      (['S02_Party_Classification', 'S03_Dealer_Distributor_Mapping', 'S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage))
-    );
-
-    // 3. Tier Approvals (S02 for Dist, S03 for Dealer, S04 for Sub-Dealer)
-    const s02Approved = s01Approved && (isDist ? Boolean(
-      isPartyActive ||
-      local.s02 ||
-      metaStages.s02 ||
-      currentStageIdx >= 4 ||
-      party.workflow_status?.includes('S02_Completed') ||
-      party.workflow_status?.includes('S04') ||
-      party.workflow_status?.includes('S05') ||
-      party.workflow_status?.includes('S06') ||
-      party.workflow_status?.includes('S07') ||
-      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      (party.zone && (party.state_name || party.state))
-    ) : true);
-
-    const s03Approved = s01Approved && (isDealer ? Boolean(
-      isPartyActive ||
-      local.s03 ||
-      metaStages.s03 ||
-      currentStageIdx >= 4 ||
-      party.workflow_status?.includes('S03_Completed') ||
-      party.workflow_status?.includes('S04') ||
-      party.workflow_status?.includes('S05') ||
-      party.workflow_status?.includes('S06') ||
-      party.workflow_status?.includes('S07') ||
-      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      Boolean(party.parent_distributor_id)
-    ) : true);
-
-    const s04Approved = s01Approved && (isSubDealer ? Boolean(
-      isPartyActive ||
-      local.s04 ||
-      metaStages.s04 ||
-      currentStageIdx >= 4 ||
-      party.workflow_status?.includes('S04_Completed') ||
-      party.workflow_status?.includes('S05') ||
-      party.workflow_status?.includes('S06') ||
-      party.workflow_status?.includes('S07') ||
-      (['S04_KYC_Commercial_Verification', 'S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      Boolean(party.parent_dealer_id)
-    ) : true);
-
-    const tierApproved = s01Approved && (isDist ? s02Approved : (isDealer ? s03Approved : s04Approved));
-
-    // 4. S05 Approval: Commercial Security Details & Billing Route
-    const s05Approved = tierApproved && Boolean(
-      isPartyActive ||
-      local.s05 ||
-      metaStages.s05 ||
-      currentStageIdx >= 5 ||
-      party.commercial_status === 'Completed' ||
-      party.workflow_status?.includes('S05_Completed') ||
-      party.workflow_status?.includes('S06') ||
-      party.workflow_status?.includes('S07') ||
-      (['S05_Product_Authorization', 'S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      (party.party_commercial_terms && party.party_commercial_terms.length > 0 && party.billing_route_type)
-    );
-
-    // 5. S06 Approval: Product Authorization & Territory Allocation
-    const s06Approved = s05Approved && Boolean(
-      isPartyActive ||
-      local.s06 ||
-      metaStages.s06 ||
-      currentStageIdx >= 7 ||
-      party.workflow_status?.includes('S06_Completed') ||
-      party.workflow_status?.includes('S07') ||
-      (['S06_Territory_Allocation', 'S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      ((party.product_authorizations && party.product_authorizations.length > 0) && (party.territory_allocations && party.territory_allocations.length > 0))
-    );
-
-    // 6. S07 Approval: Sales Team Assignment
-    const s07Approved = s06Approved && Boolean(
-      isPartyActive ||
-      local.s07 ||
-      metaStages.s07 ||
-      currentStageIdx >= 8 ||
-      party.workflow_status?.includes('S07_Completed') ||
-      (['S07_Employee_Assignment', 'S08_Party_Activation'].includes(party.onboarding_stage)) ||
-      (party.team_assignments && party.team_assignments.length > 0)
-    );
-
-    // 7. S08 Approval: Partner Activation
-    const s08Approved = s07Approved && Boolean(
-      isPartyActive ||
-      local.s08 ||
-      metaStages.s08 ||
-      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.party_status) ||
-      ['Active', 'Inactive', 'Hold', 'Payment Issues'].includes(party.final_status)
-    );
-
-    return {
-      s00: s00Approved,
-      s01: s01Approved,
-      s02: s02Approved,
-      s03: s03Approved,
-      s04: s04Approved,
-      tier: tierApproved,
-      s05: s05Approved,
-      s06: s06Approved,
-      s07: s07Approved,
-      s08: s08Approved
-    };
-  };
+  // Note: getStageApprovalStatus moved above resumeWizard for consistent stage routing
 
   return (
     <div style={{ padding: '1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100vh' }}>
@@ -1981,36 +2166,228 @@ export default function PartyMasterModule({
       {/* ========================================================= */}
       {(activeTab === 'report' || activeTab === 'r03') && (
         <div>
-          {/* Controls Bar */}
-          <div style={{ background: 'var(--bg-surface)', padding: '1rem', borderRadius: '12px', marginBottom: '1rem', border: '1px solid var(--border-light)', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: '280px' }}>
-              <div style={{ position: 'relative', width: '100%', maxWidth: '380px' }}>
+          {/* ========================================================= */}
+          {/* KPI SUMMARY METRICS RIBBON */}
+          {/* ========================================================= */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+            gap: '0.75rem',
+            marginBottom: '1rem'
+          }}>
+            {/* Card 1: Total Partners */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(56,189,248,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+                <Building2 size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Filtered</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{reportMetrics.total}</div>
+              </div>
+            </div>
+
+            {/* Card 2: Distributors */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(56,189,248,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                👑
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Distributors</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#38bdf8' }}>{reportMetrics.distCount}</div>
+              </div>
+            </div>
+
+            {/* Card 3: Dealers */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                🏪
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dealers</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399' }}>{reportMetrics.dealerCount}</div>
+              </div>
+            </div>
+
+            {/* Card 4: Sub-Dealers */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                🛒
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sub-Dealers</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fbbf24' }}>{reportMetrics.subDealerCount}</div>
+              </div>
+            </div>
+
+            {/* Card 5: Active Verified */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Verified</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>
+                  {reportMetrics.activeCount}
+                  {reportMetrics.pendingCount > 0 && (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500, marginLeft: '0.35rem' }}>
+                      ({reportMetrics.pendingCount} draft)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 6: Total Credit Allocated */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(234,179,8,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#eab308' }}>
+                <DollarSign size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Credit Line</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fbbf24' }}>
+                  ₹{reportMetrics.totalCredit >= 10000000
+                    ? `${(reportMetrics.totalCredit / 10000000).toFixed(2)} Cr`
+                    : `${(reportMetrics.totalCredit / 100000).toFixed(1)} L`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ========================================================= */}
+          {/* CONTROLS BAR: SEARCH, EXPORT, FILTERS */}
+          {/* ========================================================= */}
+          <div style={{
+            background: 'var(--bg-surface)',
+            padding: '1rem',
+            borderRadius: '12px',
+            marginBottom: '1rem',
+            border: '1px solid var(--border-light)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem'
+          }}>
+            {/* Top Row: Search and Action Buttons */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ position: 'relative', flex: '1 1 320px', maxWidth: '460px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  placeholder="Search by Firm, Code, Mobile, or Parent..."
+                  placeholder="Search Firm, Code, Mobile, GSTIN, PAN, State, District..."
                   style={{ width: '100%', padding: '0.55rem 0.65rem 0.55rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
                 />
               </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button
+                  onClick={exportPartyReportCSV}
+                  title="Download filtered report as CSV / Excel"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.55rem 0.95rem',
+                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    boxShadow: '0 2px 8px rgba(16,185,129,0.25)'
+                  }}
+                >
+                  <Download size={15} /> Export CSV
+                </button>
+
+                <button
+                  onClick={handleResetFilters}
+                  title="Reset all search filters"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.55rem 0.8rem',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.84rem'
+                  }}
+                >
+                  <RotateCcw size={14} /> Reset
+                </button>
+              </div>
             </div>
 
+            {/* Bottom Row: Filters Grid */}
             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Company Filter */}
               <select
                 value={companyFilter}
                 onChange={e => setCompanyFilter(e.target.value)}
-                style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
-                <option value="ALL">All Companies (Our Company)</option>
+                <option value="ALL">All Companies</option>
                 <option value="NSMLR">NSMLR</option>
                 <option value="NSTL">NSTL</option>
               </select>
 
+              {/* Tier Filter */}
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value)}
-                style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
                 <option value="ALL">All Party Tiers</option>
                 <option value="Distributor">Level 1: Distributor</option>
@@ -2018,10 +2395,23 @@ export default function PartyMasterModule({
                 <option value="Sub-Dealer">Level 3: Sub-Dealer</option>
               </select>
 
+              {/* State Filter */}
+              <select
+                value={stateFilter}
+                onChange={e => setStateFilter(e.target.value)}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All States ({availableReportStates.length})</option>
+                {availableReportStates.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+
+              {/* Billing Filter */}
               <select
                 value={billingFilter}
                 onChange={e => setBillingFilter(e.target.value)}
-                style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
                 <option value="ALL">All Billing Routes</option>
                 <option value="DIRECT_COMPANY_BILLING">Direct Company Billing</option>
@@ -2029,37 +2419,79 @@ export default function PartyMasterModule({
                 <option value="DEALER_BILLED">Dealer Billed</option>
               </select>
 
+              {/* Stage Filter */}
+              <select
+                value={stageFilter}
+                onChange={e => setStageFilter(e.target.value)}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All Stages (S01 - S08)</option>
+                <option value="S01">Stage S01: Profile / Creation</option>
+                <option value="S02">Stage S02: Distributor Hub</option>
+                <option value="S03">Stage S03: Dealer Parent Link</option>
+                <option value="S04">Stage S04: Sub-Dealer Parent Link</option>
+                <option value="S05">Stage S05: Commercial & Billing</option>
+                <option value="S06">Stage S06: Products & Territory</option>
+                <option value="S07">Stage S07: Team Mapping</option>
+                <option value="S08">Stage S08: Final Activation</option>
+              </select>
+
+              {/* Status Filter */}
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                style={{ padding: '0.55rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
-                <option value="ALL">All Status</option>
-                <option value="Active">Active Only</option>
-                <option value="Draft">Incomplete / Draft</option>
+                <option value="ALL">All Onboarded Partners (Excludes Raw S00 Leads)</option>
+                <option value="Active">Active Partners Only</option>
+                <option value="Draft">Incomplete / In-Progress (S01-S07)</option>
+                <option value="S00">S00 Transferred Leads Only</option>
+                <option value="EVERYTHING">All Records (Including S00 Leads)</option>
               </select>
             </div>
           </div>
 
-          {/* R03 Table */}
+          {/* ========================================================= */}
+          {/* R03 REPORT & HIERARCHY TABLE */}
+          {/* ========================================================= */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem' }}>Party Code & Tier</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Firm & Contact Details</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Strict Channel Hierarchy (Who Under Whom)</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>State / Territory</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Billing Route</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Credit & Status</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Channel Hierarchy (Who Under Whom)</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>State, District & Products</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Billing Route & Security</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Credit Limit & Stage Progress</th>
                   <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredParties.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      No Channel Partners match the selected filters.
+                    <td colSpan="7" style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                        No Channel Partners match the selected filters
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                        Try adjusting your search query, state, tier, or stage filters.
+                      </div>
+                      <button
+                        onClick={handleResetFilters}
+                        style={{
+                          padding: '0.45rem 1rem',
+                          background: 'rgba(56,189,248,0.15)',
+                          color: '#38bdf8',
+                          border: '1px solid rgba(56,189,248,0.3)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.82rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        Reset All Filters
+                      </button>
                     </td>
                   </tr>
                 ) : (
@@ -2067,13 +2499,35 @@ export default function PartyMasterModule({
                     const isDist = p.party_type === 'Distributor';
                     const isDealer = p.party_type === 'Dealer';
                     const isSubDealer = p.party_type === 'Sub-Dealer';
+                    const badgeInfo = getStageBadgeInfo(p);
+                    const isActive = p.final_status === 'Active' || p.party_status === 'Active';
+
+                    // Safe parent resolution
+                    const parentDistName = p.parent_distributor?.firm_name || p.parent_distributor_name;
+                    const parentDlrName = p.parent_dealer?.firm_name || p.parent_dealer_name;
+
+                    // Commercial & Credit Terms
+                    const commTerms = (p.party_commercial_terms && p.party_commercial_terms[0]) || {};
+                    const creditLimitVal = p.credit_limit ?? commTerms.credit_limit ?? 500000;
+                    const creditDaysVal = p.credit_days ?? commTerms.credit_days ?? 30;
+                    const secDepositVal = p.security_deposit_amount ?? commTerms.security_deposit_amount;
+                    const secModeVal = p.security_mode || commTerms.security_mode || 'Cheque';
+
+                    // Assigned districts chips for distributors
+                    const rawDistricts = p.assigned_districts || p.headquarter_districts || p.meta?.assigned_districts;
+                    const parsedDistricts = Array.isArray(rawDistricts)
+                      ? rawDistricts
+                      : (typeof rawDistricts === 'string' && rawDistricts ? rawDistricts.split(',').map(s => s.trim()).filter(Boolean) : []);
+
+                    // Authorized Product / Category
+                    const productCategoryVal = p.product_category || p.product_authorizations?.[0]?.product_category || p.order_category;
 
                     return (
                       <tr key={p.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        {/* Party Code & Tier */}
+                        {/* 1. Party Code & Tier */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24' }}>
-                            {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code}
+                          <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24', fontSize: '0.92rem' }}>
+                            {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'UNASSIGNED'}
                           </div>
                           <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                             <span style={{
@@ -2100,61 +2554,120 @@ export default function PartyMasterModule({
                               {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
                             </span>
                           </div>
+
+                          {/* GSTIN / PAN */}
+                          {p.gstin && (
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.25rem', fontFamily: 'monospace' }}>
+                              GST: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{p.gstin}</span>
+                            </div>
+                          )}
+                          {p.pan && (!p.gstin || !p.gstin.includes(p.pan)) && (
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.1rem', fontFamily: 'monospace' }}>
+                              PAN: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{p.pan}</span>
+                            </div>
+                          )}
                         </td>
 
-                        {/* Firm & Contact Details */}
+                        {/* 2. Firm & Contact Details */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem' }}>{p.firm_name}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1}
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.94rem' }}>{p.firm_name}</div>
+                          {p.legal_name && p.legal_name !== p.firm_name && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>({p.legal_name})</div>
+                          )}
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
                           </div>
                           {(p.biz_email_1 || p.official_email) && (
                             <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>{p.biz_email_1 || p.official_email}</div>
                           )}
                         </td>
 
-                        {/* Strict Channel Hierarchy Breadcrumb */}
+                        {/* 3. Strict Channel Hierarchy Breadcrumb */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           {isDist && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
-                              👑 {p.firm_name} <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>(Top-Level Master Hub)</span>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
+                                👑 {p.firm_name}
+                              </div>
+                              <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+                                Top-Level Master Regional Hub
+                              </div>
                             </div>
                           )}
 
                           {isDealer && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                              <span style={{ color: '#60a5fa', fontWeight: 600 }}>
-                                👑 {p.parent_distributor ? p.parent_distributor.firm_name : <span style={{ color: '#ef4444' }}>Missing Parent DIS!</span>}
+                              <span style={{ color: '#60a5fa', fontWeight: 600 }} title="Parent Distributor">
+                                👑 {parentDistName || (p.parent_distributor_id ? 'Assigned Distributor' : 'Direct Swan / Open Territory')}
                               </span>
-                              <ArrowRight size={12} className="text-gray-400" />
+                              <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
                               <span style={{ color: '#34d399', fontWeight: 700 }}>🏪 {p.firm_name}</span>
                             </div>
                           )}
 
                           {isSubDealer && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                              <span style={{ color: '#60a5fa', fontWeight: 600 }}>
-                                👑 {p.parent_distributor ? p.parent_distributor.firm_name : 'Parent DIS'}
+                              {parentDistName && (
+                                <>
+                                  <span style={{ color: '#60a5fa', fontWeight: 600 }} title="Derived Master Distributor">
+                                    👑 {parentDistName}
+                                  </span>
+                                  <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
+                                </>
+                              )}
+                              <span style={{ color: '#34d399', fontWeight: 600 }} title="Parent Dealer">
+                                🏪 {parentDlrName || (p.parent_dealer_id ? 'Assigned Dealer' : 'Parent Dealer')}
                               </span>
-                              <ArrowRight size={12} className="text-gray-400" />
-                              <span style={{ color: '#34d399', fontWeight: 600 }}>
-                                🏪 {p.parent_dealer ? p.parent_dealer.firm_name : 'Parent DLR'}
-                              </span>
-                              <ArrowRight size={12} className="text-gray-400" />
+                              <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
                               <span style={{ color: '#fbbf24', fontWeight: 700 }}>🛒 {p.firm_name}</span>
                             </div>
                           )}
                         </td>
 
-                        {/* State / Territory */}
+                        {/* 4. State / Territory & Products */}
                         <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
-                          <div style={{ fontWeight: 600 }}>{p.state_name || 'Punjab'}</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.state_name || 'Punjab'}</div>
                           <div style={{ color: 'var(--text-secondary)' }}>{p.district_name || p.city_village || 'District'}</div>
+
+                          {/* Assigned districts chips for distributors */}
+                          {parsedDistricts.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
+                              {parsedDistricts.slice(0, 2).map((d, i) => (
+                                <span key={i} style={{ fontSize: '0.68rem', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(56,189,248,0.3)' }}>
+                                  {d}
+                                </span>
+                              ))}
+                              {parsedDistricts.length > 2 && (
+                                <span style={{ fontSize: '0.68rem', color: '#94a3b8', alignSelf: 'center' }}>
+                                  +{parsedDistricts.length - 2} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Authorized Product Category Badge */}
+                          {productCategoryVal && (
+                            <div style={{ marginTop: '0.3rem' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: '0.68rem',
+                                fontWeight: 600,
+                                padding: '0.1rem 0.4rem',
+                                borderRadius: '4px',
+                                background: 'rgba(167,139,250,0.15)',
+                                color: '#c084fc',
+                                border: '1px solid rgba(167,139,250,0.3)'
+                              }}>
+                                📦 {productCategoryVal}
+                              </span>
+                            </div>
+                          )}
                         </td>
 
-                        {/* Billing Route */}
+                        {/* 5. Billing Route & Security */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <span style={{
+                            display: 'inline-block',
                             fontSize: '0.74rem',
                             fontWeight: 700,
                             padding: '0.2rem 0.6rem',
@@ -2176,8 +2689,17 @@ export default function PartyMasterModule({
                               ? '🏬 Dealer Billed'
                               : '👑 Distributor Billed'}
                           </span>
+
+                          {/* Security Deposit */}
+                          {secDepositVal !== undefined && secDepositVal !== null && secDepositVal !== '' && (
+                            <div style={{ fontSize: '0.73rem', color: '#cbd5e1', marginTop: '0.25rem' }}>
+                              Sec. Dep: <strong style={{ color: '#34d399' }}>₹{Number(secDepositVal).toLocaleString('en-IN')}</strong> ({secModeVal})
+                            </div>
+                          )}
+
+                          {/* 1st Billing Milestone */}
                           {p.billing_first_amount ? (
-                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.2rem' }}>
                               1st: <strong style={{ color: '#38bdf8' }}>₹{Number(p.billing_first_amount).toLocaleString('en-IN')}</strong>
                               {p.billing_first_status ? ` • ${p.billing_first_status}` : ''}
                               {p.billing_first_date ? ` (${p.billing_first_date})` : ''}
@@ -2185,24 +2707,48 @@ export default function PartyMasterModule({
                           ) : null}
                         </td>
 
-                        {/* Credit & Status */}
+                        {/* 6. Credit Limit & Stage Progress */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: '#fbbf24' }}>
-                            ₹{p.party_commercial_terms?.[0]?.credit_limit ? p.party_commercial_terms[0].credit_limit.toLocaleString('en-IN') : '5,00,000'}
+                          <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.88rem' }}>
+                            ₹{Number(creditLimitVal).toLocaleString('en-IN')}
+                            <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500, marginLeft: '0.3rem' }}>
+                              ({creditDaysVal}d)
+                            </span>
                           </div>
-                          <span style={{
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '4px',
-                            background: p.final_status === 'Active' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                            color: p.final_status === 'Active' ? '#34d399' : '#fbbf24'
-                          }}>
-                            {p.final_status || 'Draft'}
-                          </span>
+
+                          {/* Stage Progress Badge */}
+                          <div style={{ marginTop: '0.3rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '4px',
+                              background: badgeInfo.bg,
+                              color: badgeInfo.color,
+                              border: `1px solid ${badgeInfo.color}40`
+                            }}>
+                              {badgeInfo.label}
+                            </span>
+                          </div>
+
+                          {/* Active / Draft Status Badge */}
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                              color: isActive ? '#34d399' : '#fbbf24'
+                            }}>
+                              {p.final_status || p.party_status || 'Draft'}
+                            </span>
+                          </div>
                         </td>
 
-                        {/* Actions */}
+                        {/* 7. Actions */}
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
                             <button
@@ -2213,10 +2759,10 @@ export default function PartyMasterModule({
                               <Eye size={13} /> 360°
                             </button>
 
-                            {p.final_status !== 'Active' ? (
+                            {!isActive ? (
                               <button
                                 onClick={() => resumeWizard(p)}
-                                title="Resume Onboarding Steps S00-S07"
+                                title="Resume Onboarding Steps (Opens Incomplete Stage)"
                                 style={{ padding: '0.4rem 0.65rem', background: '#10b981', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                               >
                                 <Sparkles size={13} /> Resume
