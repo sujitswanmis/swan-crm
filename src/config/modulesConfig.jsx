@@ -80,6 +80,7 @@ export const MODULES_CONFIG = [
     icon: <Building2 size={20} />,
     subItemsType: 'tabs',
     subItems: [
+      { id: 'dashboard', label: '📊 Party Master Dashboard' },
       { id: 's00', label: 'S00 Transfered to Party Master' },
       { id: 's01', label: 'S01 Party Master Creation' },
       { id: 's02', label: 'S02 Distributor Registration' },

@@ -198,6 +198,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
 }
 
 export const PARTY_SUBTAB_TITLES = {
+  dashboard: 'Party Master Dashboard',
   s00: 'S00 Transfered to Party Master',
   s01: 'S01 Party Master Creation',
   s02: 'S02 Distributor Registration',
@@ -433,7 +434,7 @@ export default function CRMContainer({
     }
     if (queryTab === 'r03' || queryTab === 'party-master-report') queryTab = 'report';
     if (queryTab) return queryTab;
-    return 's00';
+    return 'dashboard';
   });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
@@ -511,6 +512,8 @@ export default function CRMContainer({
           sub = path.split('/')[1];
         } else if (partyTab) {
           sub = partyTab;
+        } else {
+          sub = 'dashboard';
         }
         if (sub) {
           let cleanSub = sub.toLowerCase();
@@ -2308,7 +2311,7 @@ export default function CRMContainer({
   };
 
   const handlePartySubTabChange = (subTabId) => {
-    let cleanSub = (subTabId || 's00').toLowerCase();
+    let cleanSub = (subTabId || 'dashboard').toLowerCase();
     if (cleanSub === 'r03' || cleanSub === 'party-master-report') cleanSub = 'report';
     setPartySubTab(cleanSub);
     if (activeTab !== 'party') {
@@ -3610,6 +3613,15 @@ export default function CRMContainer({
                               <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                 Channel Partner Pipeline
                               </div>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('dashboard')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'dashboard'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'dashboard') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'dashboard') ? 'var(--accent-color)' : undefined }}
+                              >
+                                <span>📊 Party Master Dashboard</span>
+                              </button>
 
                               <button
                                 onClick={() => handlePartySubTabChange('s00')}

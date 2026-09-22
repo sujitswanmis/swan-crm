@@ -35,6 +35,7 @@ import { getTransferredLeads, confirmLeadTransfer } from '@/app/actions/partyHan
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 import StageDataTable from './StageDataTable';
 import StageConfigModal from './StageConfigModal';
+import PartyMasterDashboard from './PartyMasterDashboard';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 const INDIAN_STATES = ALL_INDIAN_STATES;
 
@@ -182,13 +183,13 @@ function ChipInput({ chips = [], onChange, placeholder = 'Type and press Enter..
 }
 
 export default function PartyMasterModule({
-  initialSubTab = 's00',
+  initialSubTab = 'dashboard',
   activeSubTab = null,
   onSubTabChange = null,
   userRole = '',
   moduleAccess = {}
 }) {
-  const [activeTab, setActiveTab] = useState(activeSubTab || initialSubTab || 's00');
+  const [activeTab, setActiveTab] = useState(activeSubTab || initialSubTab || 'dashboard');
   // Stage Configuration Modal State (S01 to S08 popup on table action)
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
 
@@ -1431,97 +1432,162 @@ export default function PartyMasterModule({
   return (
     <div style={{ padding: '1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100vh' }}>
       
-      {/* Top Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Building2 className="text-emerald-500" size={30} />
-            Client Management & Channel Partner Portal
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
-            Strict 3-Tier Hierarchy (Distributor ➔ Dealer ➔ Sub-Dealer), Direct vs Distributor Billing & 4 Operational Follow-up Engines
-          </p>
-        </div>
+      {/* ========================================================= */}
+      {/* SUBMENU TAB DASHBOARD: PARTY MASTER DASHBOARD */}
+      {/* ========================================================= */}
+      {activeTab === 'dashboard' && (
+        <PartyMasterDashboard
+          parties={parties}
+          transferredLeads={transferredLeads}
+          loadingTransfers={loadingTransfers}
+          onSwitchTab={switchTab}
+          onNewParty={startNewPartyWizard}
+          getStageApprovalStatus={getStageApprovalStatus}
+          onConfirmHandoffLead={handleConfirmHandoffLead}
+          resumeWizard={resumeWizard}
+          setIsStageModalOpen={setIsStageModalOpen}
+          refreshData={loadInitialData}
+          refreshTransferredLeads={refreshTransferredLeads}
+          orderFollowups={orderFollowups}
+          orderFeedbacks={orderFeedbacks}
+          monthlyFeedbacks={monthlyFeedbacks}
+          complaints={complaints}
+        />
+      )}
 
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <button onClick={loadInitialData} className="btn-action-secondary" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
-          </button>
-          <button
-            onClick={startNewPartyWizard}
-            style={{
-              padding: '0.65rem 1.4rem',
-              background: 'linear-gradient(135deg, #10b981, #059669)',
-              border: 'none',
-              color: '#ffffff',
-              fontWeight: 700,
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              boxShadow: '0 4px 14px rgba(16,185,129,0.35)'
-            }}
-          >
-            <Plus size={18} /> + Onboard New Channel Partner (S01)
-          </button>
-        </div>
-      </div>
+      {/* Top Header & Quick KPI Bar for non-dashboard tabs */}
+      {activeTab !== 'dashboard' && (
+        <>
+          {/* Top Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h1 style={{ fontSize: '1.65rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Building2 className="text-emerald-500" size={30} />
+                Client Management &amp; Channel Partner Portal
+              </h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
+                Strict 3-Tier Hierarchy (Distributor ➔ Dealer ➔ Sub-Dealer), Direct vs Distributor Billing &amp; 4 Operational Follow-up Engines
+              </p>
+            </div>
 
-      {/* KPI Stats Bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Channel Partners</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => switchTab('dashboard')}
+                style={{
+                  padding: '0.6rem 1.1rem',
+                  background: 'var(--bg-surface)',
+                  border: '1.5px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--accent-color)',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem'
+                }}
+              >
+                📊 Dashboard
+              </button>
+              <button onClick={loadInitialData} className="btn-action-secondary" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
+              </button>
+              <button
+                onClick={startNewPartyWizard}
+                style={{
+                  padding: '0.65rem 1.4rem',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxShadow: '0 4px 14px rgba(16,185,129,0.35)'
+                }}
+              >
+                <Plus size={18} /> + Onboard New Channel Partner (S01)
+              </button>
+            </div>
           </div>
-        </div>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.78rem', color: '#60a5fa', fontWeight: 700 }}>👑 Level 1: Distributors</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#38bdf8', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Distributor' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+
+          {/* KPI Stats Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+            <div
+              onClick={() => switchTab('dashboard')}
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1.5px solid var(--accent-color)',
+                borderRadius: '12px',
+                padding: '0.9rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              <div style={{ fontSize: '0.78rem', color: 'var(--accent-color)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>📊 Dashboard</span>
+                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'var(--nav-active-bg)', fontWeight: 800 }}>Hub</span>
+              </div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
+                Executive View ➔
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Channel Partners</div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                {parties.filter(p => p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: '#60a5fa', fontWeight: 700 }}>👑 Level 1: Distributors</div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#38bdf8', marginTop: '0.15rem' }}>
+                {parties.filter(p => p.party_type === 'Distributor' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 700 }}>🏪 Level 2: Dealers</div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', marginTop: '0.15rem' }}>
+                {parties.filter(p => p.party_type === 'Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700 }}>🛒 Level 3: Sub-Dealers</div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.15rem' }}>
+                {parties.filter(p => p.party_type === 'Sub-Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 700 }}>⚡ Direct Billing</div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34d399', marginTop: '0.15rem' }}>
+                {parties.filter(p => p.billing_route_type === 'DIRECT_COMPANY_BILLING' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
+              </div>
+            </div>
+            <div
+              onClick={() => switchTab('s00')}
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1.5px solid rgba(239,68,68,0.35)',
+                borderRadius: '12px',
+                padding: '0.9rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#ef4444'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(239,68,68,0.35)'}
+            >
+              <div style={{ fontSize: '0.78rem', color: '#f87171', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>🚀 Stage 07 Transfers</span>
+                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', fontWeight: 800 }}>S00</span>
+              </div>
+              <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#ef4444', marginTop: '0.15rem' }}>
+                {transferredLeads.filter(l => l.transfer_status === 'PENDING_CONFIRMATION').length} <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Pending</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 700 }}>🏪 Level 2: Dealers</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700 }}>🛒 Level 3: Sub-Dealers</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.party_type === 'Sub-Dealer' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 700 }}>⚡ Direct Billing</div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34d399', marginTop: '0.15rem' }}>
-            {parties.filter(p => p.billing_route_type === 'DIRECT_COMPANY_BILLING' && p.party_status !== 'Draft_From_Lead' && p.onboarding_stage !== 'S00_Party_Entry').length}
-          </div>
-        </div>
-        <div
-          onClick={() => switchTab('s00')}
-          style={{
-            background: 'var(--bg-surface)',
-            border: '1.5px solid rgba(239,68,68,0.35)',
-            borderRadius: '12px',
-            padding: '0.9rem 1rem',
-            cursor: 'pointer',
-            transition: 'all 0.15s'
-          }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = '#ef4444'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(239,68,68,0.35)'}
-        >
-          <div style={{ fontSize: '0.78rem', color: '#f87171', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>🚀 Stage 07 Transfers</span>
-            <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', fontWeight: 800 }}>S00</span>
-          </div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#ef4444', marginTop: '0.15rem' }}>
-            {transferredLeads.filter(l => l.transfer_status === 'PENDING_CONFIRMATION').length} <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Pending</span>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* ========================================================= */}
       {/* SUBMENU TAB S00: TRANSFERED TO PARTY MASTER (FROM STAGE 07) */}
