@@ -8,10 +8,11 @@ import {
 import { 
   Users, UserCheck, AlertCircle, Clock, CheckCircle2, TrendingUp, 
   PhoneCall, MessageSquare, Shield, Layers, ArrowRight, Sparkles, Filter, Calendar, X, ChevronDown, Check,
-  Search, ArrowUpDown, Timer, Activity, Eye, ExternalLink, FileText, Building2, User
+  Search, ArrowUpDown, Timer, Activity, Eye, ExternalLink, FileText, Building2, User, RefreshCw
 } from 'lucide-react';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import DateRangePicker from '@/components/common/DateRangePicker';
+import { createClient } from '@/utils/supabase/client';
 
 const formatActionTimestamp = (ts) => {
   if (!ts) return '—';
@@ -385,6 +386,82 @@ export default function LeadDashboard({
   // Interactive Drilldown Popup state
   const [hourlyDrilldown, setHourlyDrilldown] = useState(null);
   const [drilldownSearch, setDrilldownSearch] = useState('');
+
+  // Live Hourly on-demand sync states (prevents missing data on live production)
+  const [liveHourlyNotes, setLiveHourlyNotes] = useState([]);
+  const [liveHourlyLeads, setLiveHourlyLeads] = useState([]);
+  const [isHourlySyncing, setIsHourlySyncing] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState(null);
+
+  const fetchLiveHourlyData = async () => {
+    setIsHourlySyncing(true);
+    try {
+      const supabase = createClient();
+      let startIso = null;
+      let endIso = null;
+
+      if (!dateBounds.isAll && dateBounds.start && dateBounds.end) {
+        const [sy, sm, sd] = (dateBounds.start || '').split('-').map(Number);
+        const [ey, em, ed] = (dateBounds.end || '').split('-').map(Number);
+        if (sy && sm && sd) {
+          const sDate = new Date(Date.UTC(sy, sm - 1, sd, 0, 0, 0));
+          sDate.setMinutes(sDate.getMinutes() - 330);
+          startIso = sDate.toISOString();
+        }
+        if (ey && em && ed) {
+          const eDate = new Date(Date.UTC(ey, em - 1, ed, 23, 59, 59, 999));
+          eDate.setMinutes(eDate.getMinutes() - 330);
+          endIso = eDate.toISOString();
+        }
+      } else {
+        startIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        endIso = new Date().toISOString();
+      }
+
+      // 1. Fetch notes for range with pagination
+      let notesQuery = supabase
+        .from('lead_notes')
+        .select('id, lead_id, created_at, note_text, created_by')
+        .order('created_at', { ascending: false });
+      if (startIso) notesQuery = notesQuery.gte('created_at', startIso);
+      if (endIso) notesQuery = notesQuery.lte('created_at', endIso);
+
+      let fetchedNotes = [];
+      let notePage = 0;
+      while (notePage < 10) {
+        const { data: chunk, error } = await notesQuery.range(notePage * 1000, (notePage + 1) * 1000 - 1);
+        if (error || !chunk || chunk.length === 0) break;
+        fetchedNotes = fetchedNotes.concat(chunk);
+        if (chunk.length < 1000) break;
+        notePage++;
+      }
+
+      // 2. Fetch leads created in range
+      let leadsQuery = supabase
+        .from('leads')
+        .select('id, created_at, created_by, entry_by, user_id, status, assigned_to, company, name, phone, our_company')
+        .order('created_at', { ascending: false });
+      if (startIso) leadsQuery = leadsQuery.gte('created_at', startIso);
+      if (endIso) leadsQuery = leadsQuery.lte('created_at', endIso);
+
+      const { data: fetchedLeads } = await leadsQuery.limit(2000);
+
+      setLiveHourlyNotes(fetchedNotes);
+      setLiveHourlyLeads(fetchedLeads || []);
+      setLastSyncedTime(new Date());
+    } catch (err) {
+      console.warn("Failed to fetch live hourly data:", err);
+    } finally {
+      setIsHourlySyncing(false);
+    }
+  };
+
+  // Automatically fetch live hourly actions when entering Hourly tab or changing date
+  useEffect(() => {
+    if (activeDashboardTab === 'hourly' && canViewHourlyWork) {
+      fetchLiveHourlyData();
+    }
+  }, [activeDashboardTab, dateRangeFilter, customStartDate, customEndDate, canViewHourlyWork]);
 
   // Close drilldown on Escape key
   useEffect(() => {
@@ -923,7 +1000,39 @@ export default function LeadDashboard({
       return item;
     };
 
-    leads.forEach(lead => {
+    // Merge cached leads with any newly fetched live leads and notes
+    const combinedLeadsMap = new Map();
+    (leads || []).forEach(l => {
+      if (l && l.id) combinedLeadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
+    });
+    (liveHourlyLeads || []).forEach(hl => {
+      if (hl && hl.id) {
+        const existing = combinedLeadsMap.get(hl.id);
+        if (existing) {
+          combinedLeadsMap.set(hl.id, { ...existing, ...hl });
+        } else {
+          combinedLeadsMap.set(hl.id, { ...hl, lead_notes: [] });
+        }
+      }
+    });
+
+    if (liveHourlyNotes && liveHourlyNotes.length > 0) {
+      liveHourlyNotes.forEach(hn => {
+        if (!hn || !hn.lead_id) return;
+        let target = combinedLeadsMap.get(hn.lead_id);
+        if (!target) {
+          target = { id: hn.lead_id, lead_notes: [] };
+          combinedLeadsMap.set(hn.lead_id, target);
+        }
+        if (!target.lead_notes.some(en => en.id === hn.id)) {
+          target.lead_notes.push(hn);
+        }
+      });
+    }
+
+    const effectiveLeads = Array.from(combinedLeadsMap.values());
+
+    effectiveLeads.forEach(lead => {
       // 1. Leads Created
       const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
       const leadDate = lead.created_at || lead.lead_date;
@@ -1071,7 +1180,7 @@ export default function LeadDashboard({
     const totalDayActions = hourlyChartData.reduce((acc, curr) => acc + curr.totalActions, 0);
 
     return { slotsMap, hourlyChartData, totalDayActions };
-  }, [leads, memberIndex, dateBounds]);
+  }, [leads, liveHourlyNotes, liveHourlyLeads, memberIndex, dateBounds]);
 
   // Grouped Timeline Slots (Hour by Hour)
   const timelineSlots = useMemo(() => {
@@ -1619,6 +1728,33 @@ export default function LeadDashboard({
               }}
             />
 
+            {activeDashboardTab === 'hourly' && (
+              <button
+                type="button"
+                onClick={fetchLiveHourlyData}
+                disabled={isHourlySyncing}
+                title="Sync latest live hourly actions directly from cloud"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.42rem 0.8rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: isHourlySyncing ? 'var(--nav-active-bg)' : 'var(--bg-surface)',
+                  color: isHourlySyncing ? 'var(--accent-color)' : 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: isHourlySyncing ? 'wait' : 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: 'var(--shadow-xs)'
+                }}
+              >
+                <RefreshCw size={14} style={{ animation: isHourlySyncing ? 'spin 1s linear infinite' : 'none' }} />
+                <span>{isHourlySyncing ? 'Syncing...' : 'Live Sync'}</span>
+              </button>
+            )}
+
           </div>
         </div>
 
@@ -1720,6 +1856,13 @@ export default function LeadDashboard({
                 </span>
               )}
             </button>
+          )}
+
+          {lastSyncedTime && activeDashboardTab === 'hourly' && (
+            <span style={{ marginLeft: 'auto', fontSize: '0.74rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+              Live Synced ({formatActionTimestamp(lastSyncedTime)})
+            </span>
           )}
         </div>
 
