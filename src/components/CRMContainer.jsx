@@ -208,6 +208,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
 
 export const PARTY_SUBTAB_TITLES = {
   dashboard: 'Party Master Dashboard',
+  all_party_stage: 'All Party Stage',
   s00: 'S00 Transfered to Party Master',
   s01: 'S01 Party Master Creation',
   s02: 'S02 Distributor Registration',
@@ -3647,6 +3648,15 @@ export default function CRMContainer({
                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'dashboard') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'dashboard') ? 'var(--accent-color)' : undefined }}
                               >
                                 <span>📊 Party Master Dashboard</span>
+                              </button>
+
+                              <button
+                                onClick={() => handlePartySubTabChange('all_party_stage')}
+                                className="submenu-item"
+                                data-active={activeTab === 'party' && partySubTab === 'all_party_stage'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 'var(--accent-color)' : undefined }}
+                              >
+                                <span>📋 All Party Stage</span>
                               </button>
 
                               <button

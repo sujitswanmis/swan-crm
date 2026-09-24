@@ -81,6 +81,7 @@ export const MODULES_CONFIG = [
     subItemsType: 'tabs',
     subItems: [
       { id: 'dashboard', label: '📊 Party Master Dashboard' },
+      { id: 'all_party_stage', label: '📋 All Party Stage' },
       { id: 's00', label: 'S00 Transfered to Party Master' },
       { id: 's01', label: 'S01 Party Master Creation' },
       { id: 's02', label: 'S02 Distributor Registration' },

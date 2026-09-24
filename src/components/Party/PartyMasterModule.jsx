@@ -450,18 +450,45 @@ export default function PartyMasterModule({
   const [s00PageSize, setS00PageSize] = useState(15);
   const [s00CurrentPage, setS00CurrentPage] = useState(1);
 
+  // All Party Stage States
+  const [allStageFilter, setAllStageFilter] = useState('ALL'); // 'ALL' | 'S00' | 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08'
+  const [allStageSearch, setAllStageSearch] = useState('');
+  const [allStageTierFilter, setAllStageTierFilter] = useState('ALL');
+  const [allStageCompanyFilter, setAllStageCompanyFilter] = useState('ALL');
+  const [allStageStateFilter, setAllStageStateFilter] = useState('ALL');
+  const [allStageStatusFilter, setAllStageStatusFilter] = useState('ALL');
+  const [allStagePageSize, setAllStagePageSize] = useState(15);
+  const [allStageCurrentPage, setAllStageCurrentPage] = useState(1);
+  const [selectedAllStageIds, setSelectedAllStageIds] = useState([]);
+
   // R03 Report Row Selection, Column Visibility and Pagination states
   const [reportPageSize, setReportPageSize] = useState(15);
   const [reportCurrentPage, setReportCurrentPage] = useState(1);
   const [selectedPartyIds, setSelectedPartyIds] = useState([]);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState({
-    codeTier: true,
-    firmContact: true,
-    hierarchy: true,
-    locationProducts: true,
-    billingSecurity: true,
-    stageStatus: true,
+    serialNo: true,
+    partyCode: true,
+    firmName: true,
+    legalName: false,
+    tier: true,
+    company: true,
+    parentFirm: true,
+    constitution: false,
+    contactPerson: true,
+    mobile: true,
+    email: false,
+    state: true,
+    district: true,
+    tehsilCity: false,
+    gstin: true,
+    pan: false,
+    billingRoute: true,
+    securityDeposit: true,
+    productCategory: true,
+    onboardingStage: true,
+    accountStatus: true,
+    createdDate: false,
     actions: true
   });
 
@@ -812,66 +839,74 @@ export default function PartyMasterModule({
     }
 
     const headers = [
+      'S.No',
       'Party Universal Code',
       'Channel Code',
-      'Party Tier',
-      'Our Company',
       'Firm Name',
       'Legal Name',
-      'GSTIN',
-      'PAN',
-      'Owner / Contact Person',
+      'Party Tier',
+      'Operating Company',
+      'Parent Distributor / Dealer',
+      'Constitution Type',
+      'Contact Person',
       'Primary Mobile',
-      'Alt Contact No',
+      'Alt Mobile',
       'Email',
       'State',
-      'District / Headquarters',
-      'Assigned Territories',
-      'Parent Distributor Firm',
-      'Parent Dealer Firm',
-      'Billing Route Type',
+      'District',
+      'Tehsil / City',
+      'Pincode',
+      'GSTIN',
+      'PAN',
+      'Billing Route',
       'Security Deposit (INR)',
       'Security Mode',
       'Receipt No',
       '1st Billing Date',
       '1st Billing Amount (INR)',
       '1st Billing Status',
-      'Current Onboarding Stage',
-      'Verification Status',
+      'Authorized Category',
+      'Onboarding Stage',
+      'Account Status',
       'Created Date (IST)'
     ];
 
-    const rows = listToExport.map(p => {
+    const rows = listToExport.map((p, idx) => {
       const parentDist = p.parent_distributor?.firm_name || p.parent_distributor_name || (p.parent_distributor_id ? 'Assigned Distributor' : 'Direct Swan');
-      const parentDlr = p.parent_dealer?.firm_name || p.parent_dealer_name || '-';
-      const assignedDists = Array.isArray(p.assigned_districts) ? p.assigned_districts.join('; ') : (p.district_name || '');
+      const parentDlr = p.parent_dealer?.firm_name || p.parent_dealer_name || '';
+      const parentCombined = [parentDist, parentDlr].filter(Boolean).join(' -> ') || 'Direct Swan';
       const createdDateIST = p.created_at ? new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-';
+      const secDep = p.security_deposit_amount || (p.party_commercial_terms?.[0]?.security_deposit_amount) || 0;
+      const prodCategory = p.product_category || p.product_authorizations?.[0]?.product_category || p.order_category || 'All Implements';
 
       return [
+        `"${idx + 1}"`,
         `"${p.party_universal_code || ''}"`,
         `"${p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || ''}"`,
-        `"${p.party_type || ''}"`,
-        `"${p.our_company || 'NSMLR'}"`,
         `"${(p.firm_name || '').replace(/"/g, '""')}"`,
         `"${(p.legal_name || '').replace(/"/g, '""')}"`,
-        `"${p.gstin || ''}"`,
-        `"${p.pan || ''}"`,
+        `"${p.party_type || ''}"`,
+        `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}"`,
+        `"${parentCombined.replace(/"/g, '""')}"`,
+        `"${p.constitution_type || 'PROPRIETORSHIP'}"`,
         `"${(p.contact_person_name_1 || p.owner_name || '').replace(/"/g, '""')}"`,
         `"${p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || ''}"`,
         `"${p.biz_contact_no_2 || p.contact_mobile_1_2 || ''}"`,
         `"${p.biz_email_1 || p.official_email || ''}"`,
         `"${p.state_name || ''}"`,
         `"${p.district_name || ''}"`,
-        `"${assignedDists.replace(/"/g, '""')}"`,
-        `"${parentDist.replace(/"/g, '""')}"`,
-        `"${parentDlr.replace(/"/g, '""')}"`,
-        `"${p.billing_route_type || ''}"`,
-        `"${p.security_deposit_amount || (p.party_commercial_terms?.[0]?.security_deposit_amount) || 0}"`,
-        `"${p.security_mode || 'Cheque'}"`,
-        `"${p.receipt_no || ''}"`,
+        `"${p.tehsil || p.city_village || ''}"`,
+        `"${p.pincode || ''}"`,
+        `"${p.gstin || ''}"`,
+        `"${p.pan || ''}"`,
+        `"${p.billing_route_type || 'DIRECT_COMPANY_BILLING'}"`,
+        `"${secDep}"`,
+        `"${p.security_mode || (p.party_commercial_terms?.[0]?.security_mode) || 'Cheque'}"`,
+        `"${p.receipt_no || (p.party_commercial_terms?.[0]?.receipt_no) || ''}"`,
         `"${p.billing_first_date || ''}"`,
         `"${p.billing_first_amount || ''}"`,
         `"${p.billing_first_status || ''}"`,
+        `"${prodCategory}"`,
         `"${p.onboarding_stage || 'S01_Registration'}"`,
         `"${p.final_status || p.party_status || 'Draft'}"`,
         `"${createdDateIST}"`
@@ -1120,6 +1155,158 @@ export default function PartyMasterModule({
     return { label: 'S08 Activation Desk', color: '#10b981', bg: 'rgba(16,185,129,0.15)' };
   }, [getStageApprovalStatus]);
 
+  // Stage counts for All Party Stage quick filter pills
+  const stageCounts = useMemo(() => {
+    const s00 = transferredLeads.filter(l => l.transfer_status === 'PENDING_CONFIRMATION').length;
+    let s01 = 0, s02 = 0, s03 = 0, s04 = 0, s05 = 0, s06 = 0, s07 = 0, s08 = 0;
+
+    parties.forEach(p => {
+      const nextStage = getNextPendingStage(p);
+      const isActive = p.final_status === 'Active' || p.party_status === 'Active';
+      if (isActive) {
+        s08++;
+      } else if (nextStage === 's01') {
+        s01++;
+      } else if (nextStage === 's02') {
+        s02++;
+      } else if (nextStage === 's03') {
+        s03++;
+      } else if (nextStage === 's04') {
+        s04++;
+      } else if (nextStage === 's05') {
+        s05++;
+      } else if (nextStage === 's06') {
+        s06++;
+      } else if (nextStage === 's07') {
+        s07++;
+      } else {
+        s08++;
+      }
+    });
+
+    return {
+      all: parties.length,
+      s00,
+      s01,
+      s02,
+      s03,
+      s04,
+      s05,
+      s06,
+      s07,
+      s08
+    };
+  }, [parties, transferredLeads, getNextPendingStage]);
+
+  // All Party Stage filtering
+  const filteredAllStageParties = useMemo(() => {
+    return parties.filter(p => {
+      // Stage filter
+      if (allStageFilter !== 'ALL') {
+        const nextStage = getNextPendingStage(p);
+        const isActive = p.final_status === 'Active' || p.party_status === 'Active';
+        if (allStageFilter === 'S08' && !isActive) return false;
+        if (allStageFilter === 'S01' && (isActive || nextStage !== 's01')) return false;
+        if (allStageFilter === 'S02' && (isActive || nextStage !== 's02')) return false;
+        if (allStageFilter === 'S03' && (isActive || nextStage !== 's03')) return false;
+        if (allStageFilter === 'S04' && (isActive || nextStage !== 's04')) return false;
+        if (allStageFilter === 'S05' && (isActive || nextStage !== 's05')) return false;
+        if (allStageFilter === 'S06' && (isActive || nextStage !== 's06')) return false;
+        if (allStageFilter === 'S07' && (isActive || nextStage !== 's07')) return false;
+      }
+
+      // Tier filter
+      if (allStageTierFilter !== 'ALL' && p.party_type !== allStageTierFilter) return false;
+
+      // Company filter
+      if (allStageCompanyFilter !== 'ALL') {
+        const comp = p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR');
+        if (comp !== allStageCompanyFilter) return false;
+      }
+
+      // State filter
+      if (allStageStateFilter !== 'ALL' && (p.state_name || '').toLowerCase() !== allStageStateFilter.toLowerCase()) return false;
+
+      // Status filter
+      if (allStageStatusFilter !== 'ALL') {
+        const isActive = p.final_status === 'Active' || p.party_status === 'Active';
+        if (allStageStatusFilter === 'Active' && !isActive) return false;
+        if (allStageStatusFilter === 'Draft' && isActive) return false;
+      }
+
+      // Search query
+      if (!allStageSearch) return true;
+      const term = allStageSearch.trim().toLowerCase();
+      const code = (p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || '').toLowerCase();
+      const firm = (p.firm_name || '').toLowerCase();
+      const legal = (p.legal_name || '').toLowerCase();
+      const person = (p.contact_person_name_1 || p.owner_name || '').toLowerCase();
+      const phone = (p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '').toLowerCase();
+      const dist = (p.district_name || '').toLowerCase();
+      const state = (p.state_name || '').toLowerCase();
+
+      return code.includes(term) || firm.includes(term) || legal.includes(term) || person.includes(term) || phone.includes(term) || dist.includes(term) || state.includes(term);
+    });
+  }, [parties, allStageFilter, allStageTierFilter, allStageCompanyFilter, allStageStateFilter, allStageStatusFilter, allStageSearch, getNextPendingStage]);
+
+  const totalAllStageRecords = filteredAllStageParties.length;
+  const effectiveAllStagePageSize = allStagePageSize === 'All' ? totalAllStageRecords : Number(allStagePageSize);
+  const totalAllStagePages = effectiveAllStagePageSize > 0 ? Math.ceil(totalAllStageRecords / effectiveAllStagePageSize) : 1;
+  const validAllStageCurrentPage = Math.min(Math.max(1, allStageCurrentPage), Math.max(1, totalAllStagePages));
+
+  const paginatedAllStageParties = useMemo(() => {
+    if (allStagePageSize === 'All') return filteredAllStageParties;
+    const start = (validAllStageCurrentPage - 1) * effectiveAllStagePageSize;
+    return filteredAllStageParties.slice(start, start + effectiveAllStagePageSize);
+  }, [filteredAllStageParties, validAllStageCurrentPage, effectiveAllStagePageSize, allStagePageSize]);
+
+  const isAllAllStageSelected = useMemo(() => {
+    if (paginatedAllStageParties.length === 0) return false;
+    return paginatedAllStageParties.every(p => selectedAllStageIds.includes(p.id));
+  }, [paginatedAllStageParties, selectedAllStageIds]);
+
+  const handleToggleSelectAllAllStage = () => {
+    if (isAllAllStageSelected) {
+      const pageIds = new Set(paginatedAllStageParties.map(p => p.id));
+      setSelectedAllStageIds(prev => prev.filter(id => !pageIds.has(id)));
+    } else {
+      const pageIds = paginatedAllStageParties.map(p => p.id);
+      setSelectedAllStageIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleToggleSelectAllStageParty = (partyId) => {
+    setSelectedAllStageIds(prev => {
+      if (prev.includes(partyId)) {
+        return prev.filter(id => id !== partyId);
+      } else {
+        return [...prev, partyId];
+      }
+    });
+  };
+
+  const handleResetAllStageFilters = () => {
+    setAllStageSearch('');
+    setAllStageFilter('ALL');
+    setAllStageTierFilter('ALL');
+    setAllStageCompanyFilter('ALL');
+    setAllStageStateFilter('ALL');
+    setAllStageStatusFilter('ALL');
+    setAllStageCurrentPage(1);
+  };
+
+  const allStageActiveFilterCount = useMemo(() => {
+    let count = 0;
+    if (allStageSearch) count++;
+    if (allStageFilter !== 'ALL') count++;
+    if (allStageTierFilter !== 'ALL') count++;
+    if (allStageCompanyFilter !== 'ALL') count++;
+    if (allStageStateFilter !== 'ALL') count++;
+    if (allStageStatusFilter !== 'ALL') count++;
+    return count;
+  }, [allStageSearch, allStageFilter, allStageTierFilter, allStageCompanyFilter, allStageStateFilter, allStageStatusFilter]);
+
+
   // Aggregate KPI Metrics for Summary Ribbon
   const reportMetrics = useMemo(() => {
     const total = filteredParties.length;
@@ -1127,6 +1314,8 @@ export default function PartyMasterModule({
     let dealerCount = 0;
     let subDealerCount = 0;
     let activeCount = 0;
+    let nstlCount = 0;
+    let nsmlrCount = 0;
     let totalSecurityDeposit = 0;
 
     filteredParties.forEach(p => {
@@ -1137,6 +1326,10 @@ export default function PartyMasterModule({
       if (p.final_status === 'Active' || p.party_status === 'Active') {
         activeCount++;
       }
+
+      const comp = p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR');
+      if (comp === 'NSTL') nstlCount++;
+      else nsmlrCount++;
 
       const secDep = Number(p.security_deposit_amount || p.party_commercial_terms?.[0]?.security_deposit_amount || 0);
       if (!isNaN(secDep) && secDep > 0) totalSecurityDeposit += secDep;
@@ -1149,6 +1342,8 @@ export default function PartyMasterModule({
       subDealerCount,
       activeCount,
       pendingCount: total - activeCount,
+      nstlCount,
+      nsmlrCount,
       totalSecurityDeposit
     };
   }, [filteredParties]);
@@ -1947,17 +2142,19 @@ export default function PartyMasterModule({
           </div>
 
           {/* KPI Stats Bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
             <div
               onClick={() => switchTab('dashboard')}
               style={{
                 background: 'var(--bg-surface)',
-                border: '1.5px solid var(--accent-color)',
+                border: activeTab === 'dashboard' ? '1.5px solid var(--accent-color)' : '1px solid var(--border-light)',
                 borderRadius: '12px',
                 padding: '0.9rem 1rem',
                 cursor: 'pointer',
                 transition: 'all 0.15s'
               }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-color)'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = activeTab === 'dashboard' ? 'var(--accent-color)' : 'var(--border-light)'}
             >
               <div style={{ fontSize: '0.78rem', color: 'var(--accent-color)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>📊 Dashboard</span>
@@ -1965,6 +2162,27 @@ export default function PartyMasterModule({
               </div>
               <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
                 Executive View ➔
+              </div>
+            </div>
+            <div
+              onClick={() => switchTab('all_party_stage')}
+              style={{
+                background: 'var(--bg-surface)',
+                border: activeTab === 'all_party_stage' ? '1.5px solid #8b5cf6' : '1px solid var(--border-light)',
+                borderRadius: '12px',
+                padding: '0.9rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#8b5cf6'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = activeTab === 'all_party_stage' ? '#8b5cf6' : 'var(--border-light)'}
+            >
+              <div style={{ fontSize: '0.78rem', color: '#8b5cf6', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>📋 All Party Stage</span>
+                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(139,92,246,0.18)', color: '#a78bfa', fontWeight: 800 }}>Pipeline</span>
+              </div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.35rem' }}>
+                Stage Tracker ➔
               </div>
             </div>
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
@@ -2023,8 +2241,690 @@ export default function PartyMasterModule({
       )}
 
       {/* ========================================================= */}
+      {/* SUBMENU TAB ALL_PARTY_STAGE: ALL PARTY STAGE PIPELINE */}
+      {/* ========================================================= */}
+      {activeTab === 'all_party_stage' && (
+        <div>
+          {/* Header Banner */}
+          <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 800, padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(139,92,246,0.2)', color: '#a78bfa' }}>STAGE PIPELINE MATRIX</span>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>📋 All Party Stage Pipeline</h2>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', margin: '0.35rem 0 0 0' }}>
+                End-to-end stage tracker across all onboarding phases (S00 to S08). Monitor progress, identify bottlenecks, and resume pending stages directly.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={startNewPartyWizard}
+                style={{
+                  padding: '0.6rem 1.15rem',
+                  background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '0.86rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                }}
+              >
+                <Plus size={16} /> New Channel Partner
+              </button>
+              <button
+                type="button"
+                onClick={() => switchTab('report')}
+                style={{
+                  padding: '0.6rem 1rem',
+                  background: 'var(--bg-surface)',
+                  border: '1.5px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                Party Master Report ➔
+              </button>
+            </div>
+          </div>
+
+          {/* Stage Filter Navigation Pills */}
+          <div style={{
+            display: 'flex',
+            gap: '0.5rem',
+            overflowX: 'auto',
+            paddingBottom: '0.5rem',
+            marginBottom: '1rem'
+          }}>
+            {[
+              { id: 'ALL', label: 'All Parties', count: stageCounts.all, color: '#38bdf8' },
+              { id: 'S00', label: 'S00 Transferred', count: stageCounts.s00, color: '#ef4444' },
+              { id: 'S01', label: 'S01 Profile', count: stageCounts.s01, color: '#3b82f6' },
+              { id: 'S02', label: 'S02 Dist Hub', count: stageCounts.s02, color: '#60a5fa' },
+              { id: 'S03', label: 'S03 Dealer Link', count: stageCounts.s03, color: '#34d399' },
+              { id: 'S04', label: 'S04 Sub-Dealer Link', count: stageCounts.s04, color: '#f59e0b' },
+              { id: 'S05', label: 'S05 Commercial', count: stageCounts.s05, color: '#eab308' },
+              { id: 'S06', label: 'S06 Territory & Prod', count: stageCounts.s06, color: '#a855f7' },
+              { id: 'S07', label: 'S07 Team Map', count: stageCounts.s07, color: '#ec4899' },
+              { id: 'S08', label: 'S08 Activated', count: stageCounts.s08, color: '#10b981' }
+            ].map(stage => {
+              const isSelected = allStageFilter === stage.id;
+              return (
+                <button
+                  key={stage.id}
+                  type="button"
+                  onClick={() => {
+                    if (stage.id === 'S00') {
+                      switchTab('s00');
+                    } else {
+                      setAllStageFilter(stage.id);
+                      setAllStageCurrentPage(1);
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.55rem 0.9rem',
+                    borderRadius: '8px',
+                    border: isSelected ? `2px solid ${stage.color}` : '1px solid var(--border-light)',
+                    background: isSelected ? `${stage.color}22` : 'var(--bg-surface)',
+                    color: isSelected ? stage.color : 'var(--text-secondary)',
+                    fontWeight: isSelected ? 800 : 600,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <span>{stage.label}</span>
+                  <span style={{
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: '12px',
+                    background: isSelected ? stage.color : 'var(--bg-primary)',
+                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}>
+                    {stage.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Filters & Search Controls Bar */}
+          <div style={{
+            background: 'var(--bg-surface)',
+            padding: '1rem',
+            borderRadius: '12px',
+            marginBottom: '1rem',
+            border: '1px solid var(--border-light)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem'
+          }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ position: 'relative', flex: '1 1 320px', maxWidth: '480px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  value={allStageSearch}
+                  onChange={e => { setAllStageSearch(e.target.value); setAllStageCurrentPage(1); }}
+                  placeholder="Search Firm, Code, Person, Mobile, District, State..."
+                  style={{ width: '100%', padding: '0.55rem 0.65rem 0.55rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleResetAllStageFilters}
+                  title="Clear all active filters"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.55rem 0.85rem',
+                    background: allStageActiveFilterCount > 0 ? 'rgba(239,68,68,0.15)' : 'transparent',
+                    color: allStageActiveFilterCount > 0 ? '#f87171' : 'var(--text-secondary)',
+                    border: `1px solid ${allStageActiveFilterCount > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border-light)'}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '0.84rem'
+                  }}
+                >
+                  <RotateCcw size={14} /> Clear Filters {allStageActiveFilterCount > 0 ? `(${allStageActiveFilterCount})` : ''}
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Dropdowns */}
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={allStageCompanyFilter}
+                onChange={e => { setAllStageCompanyFilter(e.target.value); setAllStageCurrentPage(1); }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All Companies</option>
+                <option value="NSMLR">NSMLR</option>
+                <option value="NSTL">NSTL</option>
+              </select>
+
+              <select
+                value={allStageTierFilter}
+                onChange={e => { setAllStageTierFilter(e.target.value); setAllStageCurrentPage(1); }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All Party Tiers</option>
+                <option value="Distributor">Level 1: Distributor</option>
+                <option value="Dealer">Level 2: Dealer</option>
+                <option value="Sub-Dealer">Level 3: Sub-Dealer</option>
+              </select>
+
+              <select
+                value={allStageStateFilter}
+                onChange={e => { setAllStageStateFilter(e.target.value); setAllStageCurrentPage(1); }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All States ({availableReportStates.length})</option>
+                {availableReportStates.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+
+              <select
+                value={allStageStatusFilter}
+                onChange={e => { setAllStageStatusFilter(e.target.value); setAllStageCurrentPage(1); }}
+                style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+              >
+                <option value="ALL">All Statuses (Active &amp; Draft)</option>
+                <option value="Active">Active Verified Only</option>
+                <option value="Draft">In-Progress Drafts Only</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+              <thead>
+                <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: '0.85rem 0.75rem', width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllAllStageSelected}
+                      onChange={handleToggleSelectAllAllStage}
+                      title="Select all on this page"
+                      style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                    />
+                  </th>
+                  <th style={{ padding: '0.85rem 0.6rem', width: '50px', textAlign: 'center' }}>#</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Party Code &amp; Tier</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Firm Name &amp; Contact</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Company / State</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Current Stage</th>
+                  <th style={{ padding: '0.85rem 1rem', minWidth: '320px' }}>8-Stage Onboarding Progress Pipeline</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '0.85rem 0.6rem', textAlign: 'center', width: '110px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedAllStageParties.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                        No Channel Partners match the selected stage filter
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                        Try clearing search filters or selecting another stage.
+                      </div>
+                      <button
+                        onClick={handleResetAllStageFilters}
+                        style={{
+                          padding: '0.45rem 1rem',
+                          background: 'rgba(56,189,248,0.15)',
+                          color: '#38bdf8',
+                          border: '1px solid rgba(56,189,248,0.3)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.82rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        Reset Stage Filters
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedAllStageParties.map((p, idx) => {
+                    const isDist = p.party_type === 'Distributor';
+                    const isDealer = p.party_type === 'Dealer';
+                    const badgeInfo = getStageBadgeInfo(p);
+                    const isActive = p.final_status === 'Active' || p.party_status === 'Active';
+                    const isSelected = selectedAllStageIds.includes(p.id);
+                    const app = getStageApprovalStatus(p);
+                    const nextStage = getNextPendingStage(p);
+                    const sNo = (validAllStageCurrentPage - 1) * effectiveAllStagePageSize + idx + 1;
+
+                    // Stage pipeline steps configuration
+                    const stagesList = [
+                      { id: 's01', label: 'S01', title: 'Party Creation & Profile', done: app.s01 },
+                      {
+                        id: isDist ? 's02' : isDealer ? 's03' : 's04',
+                        label: isDist ? 'S02' : isDealer ? 'S03' : 'S04',
+                        title: isDist ? 'Distributor Hub Config' : isDealer ? 'Dealer Parent Distributor Link' : 'Sub-Dealer Parent Dealer Link',
+                        done: isDist ? app.s02 : isDealer ? app.s03 : app.s04
+                      },
+                      { id: 's05', label: 'S05', title: 'Commercial & Security Terms', done: app.s05 },
+                      { id: 's06', label: 'S06', title: 'Product & Territory Allocation', done: app.s06 },
+                      { id: 's07', label: 'S07', title: 'Sales Team Assignment', done: app.s07 },
+                      { id: 's08', label: 'S08', title: 'Final Partner Activation', done: app.s08 }
+                    ];
+
+                    return (
+                      <tr
+                        key={p.id}
+                        style={{
+                          borderBottom: '1px solid var(--border-light)',
+                          background: isSelected ? 'rgba(59,130,246,0.08)' : 'transparent',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectAllStageParty(p.id)}
+                            style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                          />
+                        </td>
+
+                        {/* S.No */}
+                        <td style={{ padding: '0.85rem 0.6rem', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          {sNo}
+                        </td>
+
+                        {/* Code & Tier */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24', fontSize: '0.92rem' }}>
+                            {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'UNASSIGNED'}
+                          </div>
+                          <div style={{ marginTop: '0.2rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              background: isDist ? 'rgba(56,189,248,0.2)' : isDealer ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                              color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24'
+                            }}>
+                              {isDist ? '👑 Distributor' : isDealer ? '🏪 Dealer' : '🛒 Sub-Dealer'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Firm & Contact */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem' }}>{p.firm_name}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
+                          </div>
+                        </td>
+
+                        {/* Company & Territory */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            background: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                            border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                          }}>
+                            {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
+                          </span>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            {p.state_name || 'Punjab'}{p.district_name ? ` • ${p.district_name}` : ''}
+                          </div>
+                        </td>
+
+                        {/* Current Stage Badge */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '6px',
+                            background: badgeInfo.bg,
+                            color: badgeInfo.color,
+                            border: `1px solid ${badgeInfo.color}40`
+                          }}>
+                            {badgeInfo.label}
+                          </span>
+                        </td>
+
+                        {/* 8-Stage Onboarding Progress Pipeline Stepper */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            {stagesList.map((stg) => {
+                              const isNextPending = !isActive && nextStage === stg.id;
+                              return (
+                                <button
+                                  key={stg.id}
+                                  type="button"
+                                  onClick={() => resumeWizard(p, stg.id)}
+                                  title={`${stg.title} (${stg.done ? 'Completed' : isNextPending ? 'Next Pending Action' : 'Upcoming'}) - Click to Open`}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem',
+                                    padding: '0.2rem 0.45rem',
+                                    borderRadius: '5px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    border: stg.done
+                                      ? '1px solid rgba(16,185,129,0.5)'
+                                      : isNextPending
+                                      ? '1.5px solid #f59e0b'
+                                      : '1px solid var(--border-light)',
+                                    background: stg.done
+                                      ? 'rgba(16,185,129,0.18)'
+                                      : isNextPending
+                                      ? 'rgba(245,158,11,0.22)'
+                                      : 'var(--bg-primary)',
+                                    color: stg.done
+                                      ? '#10b981'
+                                      : isNextPending
+                                      ? '#f59e0b'
+                                      : 'var(--text-secondary)',
+                                    boxShadow: isNextPending ? '0 0 6px rgba(245,158,11,0.35)' : 'none'
+                                  }}
+                                >
+                                  {stg.done ? '✓' : isNextPending ? '⚡' : '○'} {stg.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '4px',
+                            background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                            color: isActive ? '#34d399' : '#fbbf24'
+                          }}>
+                            {isActive ? '● Active' : '○ Draft'}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td style={{ padding: '0.5rem 0.6rem', textAlign: 'center', width: '110px' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => open360Modal(p)}
+                              title={`Full 360° Profile: ${p.firm_name}`}
+                              style={{
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '6px',
+                                background: '#2563eb',
+                                border: 'none',
+                                color: '#fff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Eye size={14} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => resumeWizard(p, nextStage)}
+                              title={isActive ? `Edit / Configure: ${p.firm_name}` : `Resume Stage ${nextStage.toUpperCase()}: ${p.firm_name}`}
+                              style={{
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '6px',
+                                background: isActive ? '#059669' : '#f59e0b',
+                                border: 'none',
+                                color: '#fff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Sparkles size={14} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteParty(p)}
+                              title={`Delete ${p.firm_name}`}
+                              style={{
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '6px',
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: '#ef4444',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#ef4444';
+                                e.currentTarget.style.color = '#ffffff';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+                                e.currentTarget.style.color = '#ef4444';
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+
+            {/* Pagination Bar Matching Lead Data */}
+            <div style={{
+              padding: '0.75rem 1.25rem',
+              borderTop: '1px solid var(--border-light)',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '0.84rem',
+              color: 'var(--text-secondary)'
+            }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
+                <span>
+                  {totalAllStageRecords === 0
+                    ? 'Showing 0 to 0 of 0 channel partners'
+                    : `Showing ${(validAllStageCurrentPage - 1) * effectiveAllStagePageSize + 1} to ${Math.min(validAllStageCurrentPage * effectiveAllStagePageSize, totalAllStageRecords)} of ${totalAllStageRecords} channel partners`}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
+                  <select
+                    value={allStagePageSize}
+                    onChange={e => {
+                      setAllStagePageSize(e.target.value === 'All' ? 'All' : Number(e.target.value));
+                      setAllStageCurrentPage(1);
+                    }}
+                    style={{
+                      padding: '0.3rem 0.55rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {[10, 15, 20, 50, 100].map(s => (
+                      <option key={s} value={s}>Show {s}</option>
+                    ))}
+                    <option value="All">All</option>
+                  </select>
+                </div>
+              </div>
+
+              {allStagePageSize !== 'All' && totalAllStagePages > 1 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAllStageCurrentPage(1)}
+                    disabled={validAllStageCurrentPage <= 1}
+                    title="First Page"
+                    style={{
+                      padding: '0.3rem 0.6rem',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      borderRadius: '5px',
+                      cursor: validAllStageCurrentPage <= 1 ? 'not-allowed' : 'pointer',
+                      opacity: validAllStageCurrentPage <= 1 ? 0.45 : 1,
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    « First
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllStageCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={validAllStageCurrentPage <= 1}
+                    title="Previous Page"
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      borderRadius: '5px',
+                      cursor: validAllStageCurrentPage <= 1 ? 'not-allowed' : 'pointer',
+                      opacity: validAllStageCurrentPage <= 1 ? 0.45 : 1,
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    ‹ Prev
+                  </button>
+
+                  {/* Page Numbers */}
+                  {(() => {
+                    const pages = [];
+                    let start = Math.max(1, validAllStageCurrentPage - 2);
+                    let end = Math.min(totalAllStagePages, validAllStageCurrentPage + 2);
+                    if (validAllStageCurrentPage <= 3) end = Math.min(5, totalAllStagePages);
+                    if (validAllStageCurrentPage >= totalAllStagePages - 2) start = Math.max(1, totalAllStagePages - 4);
+
+                    for (let i = start; i <= end; i++) {
+                      pages.push(
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setAllStageCurrentPage(i)}
+                          style={{
+                            minWidth: '30px',
+                            height: '30px',
+                            padding: '0 0.4rem',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: '5px',
+                            background: validAllStageCurrentPage === i ? '#8b5cf6' : 'var(--bg-surface)',
+                            color: validAllStageCurrentPage === i ? '#ffffff' : 'var(--text-primary)',
+                            fontWeight: validAllStageCurrentPage === i ? 700 : 500,
+                            cursor: 'pointer',
+                            fontSize: '0.78rem'
+                          }}
+                        >
+                          {i}
+                        </button>
+                      );
+                    }
+                    return pages;
+                  })()}
+
+                  <button
+                    type="button"
+                    onClick={() => setAllStageCurrentPage(prev => Math.min(totalAllStagePages, prev + 1))}
+                    disabled={validAllStageCurrentPage >= totalAllStagePages}
+                    title="Next Page"
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      borderRadius: '5px',
+                      cursor: validAllStageCurrentPage >= totalAllStagePages ? 'not-allowed' : 'pointer',
+                      opacity: validAllStageCurrentPage >= totalAllStagePages ? 0.45 : 1,
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllStageCurrentPage(totalAllStagePages)}
+                    disabled={validAllStageCurrentPage >= totalAllStagePages}
+                    title="Last Page"
+                    style={{
+                      padding: '0.3rem 0.6rem',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      borderRadius: '5px',
+                      cursor: validAllStageCurrentPage >= totalAllStagePages ? 'not-allowed' : 'pointer',
+                      opacity: validAllStageCurrentPage >= totalAllStagePages ? 0.45 : 1,
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    Last »
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
       {/* SUBMENU TAB S00: TRANSFERED TO PARTY MASTER (FROM STAGE 07) */}
       {/* ========================================================= */}
+
       {activeTab === 's00' && (
         <div>
           <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -2642,7 +3542,7 @@ export default function PartyMasterModule({
           {/* ========================================================= */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
             gap: '0.75rem',
             marginBottom: '1rem'
           }}>
@@ -2775,7 +3675,7 @@ export default function PartyMasterModule({
           </div>
 
           {/* ========================================================= */}
-          {/* CONTROLS BAR: SEARCH, EXPORT, FILTERS */}
+          {/* CONTROLS BAR: SEARCH, EXPORT, COLUMN SELECTOR, FILTERS */}
           {/* ========================================================= */}
           <div style={{
             background: 'var(--bg-surface)',
@@ -2789,24 +3689,24 @@ export default function PartyMasterModule({
           }}>
             {/* Top Row: Search and Action Buttons */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ position: 'relative', flex: '1 1 320px', maxWidth: '460px' }}>
+              <div style={{ position: 'relative', flex: '1 1 320px', maxWidth: '480px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={e => { setSearchTerm(e.target.value); setReportCurrentPage(1); }}
-                  placeholder="Search Firm, Code, Mobile, GSTIN, PAN, State, District..."
+                  placeholder="Search Firm, Legal Name, Code, Mobile, GSTIN, PAN, State, District..."
                   style={{ width: '100%', padding: '0.55rem 0.65rem 0.55rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
                 />
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                {/* Column Visibility Selector Dropdown */}
+                {/* 22-Column Visibility Selector Dropdown */}
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
                     onClick={() => setShowColumnSelector(prev => !prev)}
-                    title="Toggle Visible Columns"
+                    title="Customize visible report columns"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -2821,7 +3721,7 @@ export default function PartyMasterModule({
                       fontSize: '0.84rem'
                     }}
                   >
-                    <Filter size={14} /> Columns <ChevronDown size={14} />
+                    <Filter size={14} /> Columns ({Object.values(visibleColumns).filter(Boolean).length}/22) <ChevronDown size={14} />
                   </button>
 
                   {showColumnSelector && (
@@ -2830,38 +3730,93 @@ export default function PartyMasterModule({
                       right: 0,
                       top: 'calc(100% + 6px)',
                       background: '#0f172a',
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      borderRadius: '10px',
-                      boxShadow: '0 10px 28px rgba(0,0,0,0.65)',
-                      padding: '0.65rem 0.85rem',
-                      minWidth: '220px',
+                      border: '1.5px solid rgba(255,255,255,0.2)',
+                      borderRadius: '12px',
+                      boxShadow: '0 12px 35px rgba(0,0,0,0.7)',
+                      padding: '0.85rem 1rem',
+                      minWidth: '320px',
+                      maxWidth: '380px',
                       zIndex: 100,
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '0.45rem'
+                      gap: '0.6rem'
                     }}>
-                      <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.2rem', letterSpacing: '0.5px' }}>
-                        Visible Columns
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Select Visible Columns
+                        </span>
+                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVisibleColumns({
+                                serialNo: true, partyCode: true, firmName: true, legalName: true,
+                                tier: true, company: true, parentFirm: true, constitution: true,
+                                contactPerson: true, mobile: true, email: true, state: true,
+                                district: true, tehsilCity: true, gstin: true, pan: true,
+                                billingRoute: true, securityDeposit: true, productCategory: true,
+                                onboardingStage: true, accountStatus: true, createdDate: true, actions: true
+                              });
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(59,130,246,0.2)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', fontWeight: 700 }}
+                          >
+                            Show All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVisibleColumns({
+                                serialNo: true, partyCode: true, firmName: true, legalName: false,
+                                tier: true, company: true, parentFirm: true, constitution: false,
+                                contactPerson: true, mobile: true, email: false, state: true,
+                                district: true, tehsilCity: false, gstin: true, pan: false,
+                                billingRoute: true, securityDeposit: true, productCategory: true,
+                                onboardingStage: true, accountStatus: true, createdDate: false, actions: true
+                              });
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(16,185,129,0.2)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)', cursor: 'pointer', fontWeight: 700 }}
+                          >
+                            Defaults
+                          </button>
+                        </div>
                       </div>
-                      {[
-                        { key: 'codeTier', label: 'Party Code & Tier' },
-                        { key: 'firmContact', label: 'Firm & Contact Details' },
-                        { key: 'hierarchy', label: 'Channel Hierarchy' },
-                        { key: 'locationProducts', label: 'State, District & Products' },
-                        { key: 'billingSecurity', label: 'Billing Route & Security' },
-                        { key: 'stageStatus', label: 'Onboarding Stage & Status' },
-                        { key: 'actions', label: 'Action Column' }
-                      ].map(col => (
-                        <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#e2e8f0', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={visibleColumns[col.key] !== false}
-                            onChange={e => setVisibleColumns(prev => ({ ...prev, [col.key]: e.target.checked }))}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {col.label}
-                        </label>
-                      ))}
+
+                      <div style={{ maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingRight: '0.2rem' }}>
+                        {[
+                          { key: 'serialNo', label: '# S.No' },
+                          { key: 'partyCode', label: 'Party Universal Code' },
+                          { key: 'firmName', label: 'Firm Name' },
+                          { key: 'legalName', label: 'Legal / Trade Name' },
+                          { key: 'tier', label: 'Party Tier' },
+                          { key: 'company', label: 'Operating Company' },
+                          { key: 'parentFirm', label: 'Parent Distributor / Dealer' },
+                          { key: 'constitution', label: 'Constitution Type' },
+                          { key: 'contactPerson', label: 'Contact Person' },
+                          { key: 'mobile', label: 'Primary Mobile' },
+                          { key: 'email', label: 'Official Business Email' },
+                          { key: 'state', label: 'State' },
+                          { key: 'district', label: 'District' },
+                          { key: 'tehsilCity', label: 'Tehsil / City / Village' },
+                          { key: 'gstin', label: 'GSTIN' },
+                          { key: 'pan', label: 'PAN' },
+                          { key: 'billingRoute', label: 'Billing Route Type' },
+                          { key: 'securityDeposit', label: 'Security Deposit (₹ & Mode)' },
+                          { key: 'productCategory', label: 'Product Category' },
+                          { key: 'onboardingStage', label: 'Onboarding Stage' },
+                          { key: 'accountStatus', label: 'Account Status' },
+                          { key: 'actions', label: 'Action Column' }
+                        ].map(col => (
+                          <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.82rem', color: '#e2e8f0', cursor: 'pointer', padding: '0.2rem 0.3rem', borderRadius: '4px', background: visibleColumns[col.key] !== false ? 'rgba(255,255,255,0.04)' : 'transparent' }}>
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns[col.key] !== false}
+                              onChange={e => setVisibleColumns(prev => ({ ...prev, [col.key]: e.target.checked }))}
+                              style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
+                            />
+                            <span>{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2869,7 +3824,7 @@ export default function PartyMasterModule({
                 {/* Export CSV */}
                 <button
                   onClick={() => exportPartyReportCSV(false)}
-                  title="Download filtered report as CSV / Excel"
+                  title="Download all filtered records as CSV / Excel"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2983,7 +3938,7 @@ export default function PartyMasterModule({
                 onChange={e => { setStatusFilter(e.target.value); setReportCurrentPage(1); }}
                 style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
-                <option value="ALL">All Onboarded Partners (Excludes Raw S00 Leads)</option>
+                <option value="ALL">All Onboarded Partners (Excludes S00 Leads)</option>
                 <option value="Active">Active Partners Only</option>
                 <option value="Draft">Incomplete / In-Progress (S01-S07)</option>
                 <option value="S00">S00 Transferred Leads Only</option>
@@ -2993,14 +3948,14 @@ export default function PartyMasterModule({
           </div>
 
           {/* ========================================================= */}
-          {/* R03 REPORT & HIERARCHY TABLE */}
+          {/* DISCRETE INDIVIDUAL COLUMN ENTERPRISE REPORT TABLE */}
           {/* ========================================================= */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  {/* Selection Column Header */}
-                  <th style={{ padding: '0.85rem 0.75rem', width: '40px', textAlign: 'center' }}>
+                  {/* Selection Checkbox */}
+                  <th style={{ padding: '0.8rem 0.65rem', width: '38px', textAlign: 'center' }}>
                     <input
                       type="checkbox"
                       checked={isAllReportSelected}
@@ -3009,13 +3964,72 @@ export default function PartyMasterModule({
                       style={{ cursor: 'pointer', width: '15px', height: '15px' }}
                     />
                   </th>
-                  {visibleColumns.codeTier !== false && <th style={{ padding: '0.85rem 1rem' }}>Party Code &amp; Tier</th>}
-                  {visibleColumns.firmContact !== false && <th style={{ padding: '0.85rem 1rem' }}>Firm &amp; Contact Details</th>}
-                  {visibleColumns.hierarchy !== false && <th style={{ padding: '0.85rem 1rem' }}>Channel Hierarchy (Who Under Whom)</th>}
-                  {visibleColumns.locationProducts !== false && <th style={{ padding: '0.85rem 1rem' }}>State, District &amp; Products</th>}
-                  {visibleColumns.billingSecurity !== false && <th style={{ padding: '0.85rem 1rem' }}>Billing Route &amp; Security</th>}
-                  {visibleColumns.stageStatus !== false && <th style={{ padding: '0.85rem 1rem' }}>Onboarding Stage &amp; Status</th>}
-                  {visibleColumns.actions !== false && <th style={{ padding: '0.85rem 0.6rem', textAlign: 'center', width: '110px' }}>Actions</th>}
+
+                  {/* 1. S.No */}
+                  {visibleColumns.serialNo !== false && <th style={{ padding: '0.8rem 0.6rem', textAlign: 'center', width: '45px' }}>#</th>}
+
+                  {/* 2. Party Code */}
+                  {visibleColumns.partyCode !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Party Code</th>}
+
+                  {/* 3. Firm Name */}
+                  {visibleColumns.firmName !== false && <th style={{ padding: '0.8rem 1rem' }}>Firm Name</th>}
+
+                  {/* 4. Legal Name */}
+                  {visibleColumns.legalName !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Legal Name</th>}
+
+                  {/* 5. Tier */}
+                  {visibleColumns.tier !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Tier</th>}
+
+                  {/* 6. Company */}
+                  {visibleColumns.company !== false && <th style={{ padding: '0.8rem 0.75rem', textAlign: 'center' }}>Company</th>}
+
+                  {/* 7. Parent Hub */}
+                  {visibleColumns.parentFirm !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Parent Hub</th>}
+
+                  {/* 8. Constitution */}
+                  {visibleColumns.constitution !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Constitution</th>}
+
+                  {/* 9. Contact Person */}
+                  {visibleColumns.contactPerson !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Contact Person</th>}
+
+                  {/* 10. Mobile */}
+                  {visibleColumns.mobile !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Mobile</th>}
+
+                  {/* 11. Email */}
+                  {visibleColumns.email !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Email</th>}
+
+                  {/* 12. State */}
+                  {visibleColumns.state !== false && <th style={{ padding: '0.8rem 0.85rem' }}>State</th>}
+
+                  {/* 13. District */}
+                  {visibleColumns.district !== false && <th style={{ padding: '0.8rem 0.85rem' }}>District</th>}
+
+                  {/* 14. Tehsil / City */}
+                  {visibleColumns.tehsilCity !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Tehsil / City</th>}
+
+                  {/* 15. GSTIN */}
+                  {visibleColumns.gstin !== false && <th style={{ padding: '0.8rem 0.85rem' }}>GSTIN</th>}
+
+                  {/* 16. PAN */}
+                  {visibleColumns.pan !== false && <th style={{ padding: '0.8rem 0.85rem' }}>PAN</th>}
+
+                  {/* 17. Billing Route */}
+                  {visibleColumns.billingRoute !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Billing Route</th>}
+
+                  {/* 18. Security Deposit */}
+                  {visibleColumns.securityDeposit !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Security Deposit</th>}
+
+                  {/* 19. Product Category */}
+                  {visibleColumns.productCategory !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Product Category</th>}
+
+                  {/* 20. Onboarding Stage */}
+                  {visibleColumns.onboardingStage !== false && <th style={{ padding: '0.8rem 0.85rem' }}>Stage</th>}
+
+                  {/* 21. Account Status */}
+                  {visibleColumns.accountStatus !== false && <th style={{ padding: '0.8rem 0.85rem', textAlign: 'center' }}>Status</th>}
+
+                  {/* 22. Actions */}
+                  {visibleColumns.actions !== false && <th style={{ padding: '0.8rem 0.6rem', textAlign: 'center', width: '110px' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -3046,31 +4060,34 @@ export default function PartyMasterModule({
                     </td>
                   </tr>
                 ) : (
-                  paginatedReportParties.map(p => {
+                  paginatedReportParties.map((p, idx) => {
                     const isDist = p.party_type === 'Distributor';
                     const isDealer = p.party_type === 'Dealer';
                     const isSubDealer = p.party_type === 'Sub-Dealer';
                     const badgeInfo = getStageBadgeInfo(p);
                     const isActive = p.final_status === 'Active' || p.party_status === 'Active';
                     const isSelected = selectedPartyIds.includes(p.id);
+                    const sNo = (validReportCurrentPage - 1) * effectiveReportPageSize + idx + 1;
 
-                    // Safe parent resolution
+                    // Parent Hub Name
                     const parentDistName = p.parent_distributor?.firm_name || p.parent_distributor_name;
                     const parentDlrName = p.parent_dealer?.firm_name || p.parent_dealer_name;
+                    const parentCombined = isDist
+                      ? 'Top Regional Hub'
+                      : isDealer
+                      ? (parentDistName || 'Direct Swan Territory')
+                      : (parentDlrName || parentDistName || 'Assigned Dealer');
 
-                    // Commercial & Security Terms
+                    // Commercial & Security Deposit
                     const commTerms = (p.party_commercial_terms && p.party_commercial_terms[0]) || {};
                     const secDepositVal = p.security_deposit_amount ?? commTerms.security_deposit_amount;
                     const secModeVal = p.security_mode || commTerms.security_mode || 'Cheque';
 
-                    // Assigned districts chips for distributors
-                    const rawDistricts = p.assigned_districts || p.headquarter_districts || p.meta?.assigned_districts;
-                    const parsedDistricts = Array.isArray(rawDistricts)
-                      ? rawDistricts
-                      : (typeof rawDistricts === 'string' && rawDistricts ? rawDistricts.split(',').map(s => s.trim()).filter(Boolean) : []);
+                    // Product Category
+                    const productCategoryVal = p.product_category || p.product_authorizations?.[0]?.product_category || p.order_category || 'All Implements';
 
-                    // Authorized Product / Category
-                    const productCategoryVal = p.product_category || p.product_authorizations?.[0]?.product_category || p.order_category;
+                    // Party Code
+                    const code = p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'UNASSIGNED';
 
                     return (
                       <tr
@@ -3081,8 +4098,8 @@ export default function PartyMasterModule({
                           transition: 'background 0.15s'
                         }}
                       >
-                        {/* Row Selection Checkbox */}
-                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', width: '40px' }}>
+                        {/* Checkbox */}
+                        <td style={{ padding: '0.65rem 0.65rem', textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -3091,162 +4108,147 @@ export default function PartyMasterModule({
                           />
                         </td>
 
-                        {/* 1. Party Code & Tier */}
-                        {visibleColumns.codeTier !== false && (
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24', fontSize: '0.92rem' }}>
-                              {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'UNASSIGNED'}
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
-                                padding: '0.15rem 0.5rem',
-                                borderRadius: '4px',
-                                background: isDist ? 'rgba(56,189,248,0.2)' : isDealer ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                                color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24'
-                              }}>
-                                {isDist ? '👑 Level 1: Distributor' : isDealer ? '🏪 Level 2: Dealer' : '🛒 Level 3: Sub-Dealer'}
-                              </span>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                padding: '0.12rem 0.45rem',
-                                borderRadius: '4px',
-                                background: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                                color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
-                                border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
-                              }} title={`Our Company: ${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}`}>
-                                {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
-                              </span>
-                            </div>
-
-                            {/* GSTIN / PAN */}
-                            {p.gstin && (
-                              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.25rem', fontFamily: 'monospace' }}>
-                                GST: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{p.gstin}</span>
-                              </div>
-                            )}
-                            {p.pan && (!p.gstin || !p.gstin.includes(p.pan)) && (
-                              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.1rem', fontFamily: 'monospace' }}>
-                                PAN: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{p.pan}</span>
-                              </div>
-                            )}
+                        {/* 1. S.No */}
+                        {visibleColumns.serialNo !== false && (
+                          <td style={{ padding: '0.65rem 0.6rem', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            {sNo}
                           </td>
                         )}
 
-                        {/* 2. Firm & Contact Details */}
-                        {visibleColumns.firmContact !== false && (
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.94rem' }}>{p.firm_name}</div>
-                            {p.legal_name && p.legal_name !== p.firm_name && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>({p.legal_name})</div>
-                            )}
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                              {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
-                            </div>
-                            {(p.biz_email_1 || p.official_email) && (
-                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>{p.biz_email_1 || p.official_email}</div>
-                            )}
+                        {/* 2. Party Code */}
+                        {visibleColumns.partyCode !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', fontFamily: 'monospace', fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24' }}>
+                            {code}
                           </td>
                         )}
 
-                        {/* 3. Strict Channel Hierarchy Breadcrumb */}
-                        {visibleColumns.hierarchy !== false && (
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            {isDist && (
-                              <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#38bdf8', fontWeight: 700 }}>
-                                  👑 {p.firm_name}
-                                </div>
-                                <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '0.15rem' }}>
-                                  Top-Level Master Regional Hub
-                                </div>
-                              </div>
-                            )}
-
-                            {isDealer && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                <span style={{ color: '#60a5fa', fontWeight: 600 }} title="Parent Distributor">
-                                  👑 {parentDistName || (p.parent_distributor_id ? 'Assigned Distributor' : 'Direct Swan / Open Territory')}
-                                </span>
-                                <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
-                                <span style={{ color: '#34d399', fontWeight: 700 }}>🏪 {p.firm_name}</span>
-                              </div>
-                            )}
-
-                            {isSubDealer && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                {parentDistName && (
-                                  <>
-                                    <span style={{ color: '#60a5fa', fontWeight: 600 }} title="Derived Master Distributor">
-                                      👑 {parentDistName}
-                                    </span>
-                                    <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
-                                  </>
-                                )}
-                                <span style={{ color: '#34d399', fontWeight: 600 }} title="Parent Dealer">
-                                  🏪 {parentDlrName || (p.parent_dealer_id ? 'Assigned Dealer' : 'Parent Dealer')}
-                                </span>
-                                <ArrowRight size={12} style={{ color: 'var(--text-secondary)' }} />
-                                <span style={{ color: '#fbbf24', fontWeight: 700 }}>🛒 {p.firm_name}</span>
-                              </div>
-                            )}
+                        {/* 3. Firm Name */}
+                        {visibleColumns.firmName !== false && (
+                          <td style={{ padding: '0.65rem 1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {p.firm_name}
                           </td>
                         )}
 
-                        {/* 4. State / Territory & Products */}
-                        {visibleColumns.locationProducts !== false && (
-                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.state_name || 'Punjab'}</div>
-                            <div style={{ color: 'var(--text-secondary)' }}>{p.district_name || p.city_village || 'District'}</div>
-
-                            {/* Assigned districts chips for distributors */}
-                            {parsedDistricts.length > 0 && (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
-                                {parsedDistricts.slice(0, 2).map((d, i) => (
-                                  <span key={i} style={{ fontSize: '0.68rem', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(56,189,248,0.3)' }}>
-                                    {d}
-                                  </span>
-                                ))}
-                                {parsedDistricts.length > 2 && (
-                                  <span style={{ fontSize: '0.68rem', color: '#94a3b8', alignSelf: 'center' }}>
-                                    +{parsedDistricts.length - 2} more
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Authorized Product Category Badge */}
-                            {productCategoryVal && (
-                              <div style={{ marginTop: '0.3rem' }}>
-                                <span style={{
-                                  display: 'inline-block',
-                                  fontSize: '0.68rem',
-                                  fontWeight: 600,
-                                  padding: '0.1rem 0.4rem',
-                                  borderRadius: '4px',
-                                  background: 'rgba(167,139,250,0.15)',
-                                  color: '#c084fc',
-                                  border: '1px solid rgba(167,139,250,0.3)'
-                                }}>
-                                  📦 {productCategoryVal}
-                                </span>
-                              </div>
-                            )}
+                        {/* 4. Legal Name */}
+                        {visibleColumns.legalName !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {p.legal_name || '-'}
                           </td>
                         )}
 
-                        {/* 5. Billing Route & Security */}
-                        {visibleColumns.billingSecurity !== false && (
-                          <td style={{ padding: '0.85rem 1rem' }}>
+                        {/* 5. Tier */}
+                        {visibleColumns.tier !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
                             <span style={{
                               display: 'inline-block',
-                              fontSize: '0.74rem',
+                              fontSize: '0.72rem',
                               fontWeight: 700,
-                              padding: '0.2rem 0.6rem',
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              background: isDist ? 'rgba(56,189,248,0.18)' : isDealer ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)',
+                              color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24'
+                            }}>
+                              {isDist ? '👑 Distributor' : isDealer ? '🏪 Dealer' : '🛒 Sub-Dealer'}
+                            </span>
+                          </td>
+                        )}
+
+                        {/* 6. Company */}
+                        {visibleColumns.company !== false && (
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.7rem',
+                              fontWeight: 800,
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              background: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                              color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
+                              border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
+                            }}>
+                              {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
+                            </span>
+                          </td>
+                        )}
+
+                        {/* 7. Parent Hub */}
+                        {visibleColumns.parentFirm !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: isDist ? '#38bdf8' : 'var(--text-secondary)' }}>
+                            {parentCombined}
+                          </td>
+                        )}
+
+                        {/* 8. Constitution */}
+                        {visibleColumns.constitution !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                            {p.constitution_type || 'PROPRIETORSHIP'}
+                          </td>
+                        )}
+
+                        {/* 9. Contact Person */}
+                        {visibleColumns.contactPerson !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-primary)' }}>
+                            {p.contact_person_name_1 || p.owner_name || '-'}
+                          </td>
+                        )}
+
+                        {/* 10. Mobile */}
+                        {visibleColumns.mobile !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                            {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
+                          </td>
+                        )}
+
+                        {/* 11. Email */}
+                        {visibleColumns.email !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                            {p.biz_email_1 || p.official_email || '-'}
+                          </td>
+                        )}
+
+                        {/* 12. State */}
+                        {visibleColumns.state !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-primary)' }}>
+                            {p.state_name || 'Punjab'}
+                          </td>
+                        )}
+
+                        {/* 13. District */}
+                        {visibleColumns.district !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {p.district_name || '-'}
+                          </td>
+                        )}
+
+                        {/* 14. Tehsil / City */}
+                        {visibleColumns.tehsilCity !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {p.tehsil || p.city_village || '-'}
+                          </td>
+                        )}
+
+                        {/* 15. GSTIN */}
+                        {visibleColumns.gstin !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', fontFamily: 'monospace', color: p.gstin ? '#cbd5e1' : '#64748b' }}>
+                            {p.gstin || '-'}
+                          </td>
+                        )}
+
+                        {/* 16. PAN */}
+                        {visibleColumns.pan !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', fontFamily: 'monospace', color: p.pan ? '#cbd5e1' : '#64748b' }}>
+                            {p.pan || '-'}
+                          </td>
+                        )}
+
+                        {/* 17. Billing Route */}
+                        {visibleColumns.billingRoute !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.12rem 0.45rem',
                               borderRadius: '4px',
                               background: p.billing_route_type === 'DIRECT_COMPANY_BILLING'
                                 ? 'rgba(16,185,129,0.15)'
@@ -3263,65 +4265,78 @@ export default function PartyMasterModule({
                                 ? '🏢 Direct Company'
                                 : p.billing_route_type === 'DEALER_BILLED'
                                 ? '🏬 Dealer Billed'
-                                : '👑 Distributor Billed'}
+                                : '👑 Dist Billed'}
                             </span>
+                          </td>
+                        )}
 
-                            {/* Security Deposit */}
-                            {secDepositVal !== undefined && secDepositVal !== null && secDepositVal !== '' && (
-                              <div style={{ fontSize: '0.73rem', color: '#cbd5e1', marginTop: '0.25rem' }}>
-                                Sec. Dep: <strong style={{ color: '#34d399' }}>₹{Number(secDepositVal).toLocaleString('en-IN')}</strong> ({secModeVal})
-                              </div>
+                        {/* 18. Security Deposit */}
+                        {visibleColumns.securityDeposit !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            {secDepositVal !== undefined && secDepositVal !== null && secDepositVal !== '' && Number(secDepositVal) > 0 ? (
+                              <span style={{ color: '#34d399', fontWeight: 700 }}>
+                                ₹{Number(secDepositVal).toLocaleString('en-IN')}{secModeVal ? ` (${secModeVal})` : ''}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#64748b' }}>-</span>
                             )}
-
-                            {/* 1st Billing Milestone */}
-                            {p.billing_first_amount ? (
-                              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                                1st: <strong style={{ color: '#38bdf8' }}>₹{Number(p.billing_first_amount).toLocaleString('en-IN')}</strong>
-                                {p.billing_first_status ? ` • ${p.billing_first_status}` : ''}
-                                {p.billing_first_date ? ` (${p.billing_first_date})` : ''}
-                              </div>
-                            ) : null}
                           </td>
                         )}
 
-                        {/* 6. Onboarding Stage & Status */}
-                        {visibleColumns.stageStatus !== false && (
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            {/* Stage Progress Badge */}
-                            <div>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '0.74rem',
-                                fontWeight: 700,
-                                padding: '0.2rem 0.55rem',
-                                borderRadius: '6px',
-                                background: badgeInfo.bg,
-                                color: badgeInfo.color,
-                                border: `1px solid ${badgeInfo.color}40`,
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                              }}>
-                                {badgeInfo.label}
-                              </span>
-                            </div>
-
-                            {/* Active / Draft Status Badge */}
-                            <div style={{ marginTop: '0.35rem' }}>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                padding: '0.12rem 0.45rem',
-                                borderRadius: '4px',
-                                background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                                color: isActive ? '#34d399' : '#fbbf24'
-                              }}>
-                                {isActive ? '● Verified Active' : '○ Draft In-Progress'}
-                              </span>
-                            </div>
+                        {/* 19. Product Category */}
+                        {visibleColumns.productCategory !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              background: 'rgba(167,139,250,0.15)',
+                              color: '#c084fc',
+                              border: '1px solid rgba(167,139,250,0.3)'
+                            }}>
+                              📦 {productCategoryVal}
+                            </span>
                           </td>
                         )}
 
-                        {/* 7. Compact Icon Actions */}
+                        {/* 20. Onboarding Stage */}
+                        {visibleColumns.onboardingStage !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '5px',
+                              background: badgeInfo.bg,
+                              color: badgeInfo.color,
+                              border: `1px solid ${badgeInfo.color}40`
+                            }}>
+                              {badgeInfo.label}
+                            </span>
+                          </td>
+                        )}
+
+                        {/* 21. Account Status */}
+                        {visibleColumns.accountStatus !== false && (
+                          <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+                              color: isActive ? '#34d399' : '#fbbf24'
+                            }}>
+                              {isActive ? '● Active' : '○ Draft'}
+                            </span>
+                          </td>
+                        )}
+
+                        {/* 22. Compact Action Buttons */}
                         {visibleColumns.actions !== false && (
                           <td style={{ padding: '0.5rem 0.6rem', textAlign: 'center', width: '110px' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
@@ -3330,20 +4345,19 @@ export default function PartyMasterModule({
                                 onClick={() => open360Modal(p)}
                                 title={`Full 360° Profile: ${p.firm_name}`}
                                 style={{
-                                  width: '32px',
-                                  height: '32px',
-                                  borderRadius: '7px',
+                                  width: '30px',
+                                  height: '30px',
+                                  borderRadius: '6px',
                                   background: '#2563eb',
                                   border: 'none',
                                   color: '#fff',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s'
+                                  cursor: 'pointer'
                                 }}
                               >
-                                <Eye size={15} />
+                                <Eye size={14} />
                               </button>
 
                               {!isActive ? (
@@ -3352,20 +4366,19 @@ export default function PartyMasterModule({
                                   onClick={() => resumeWizard(p)}
                                   title={`Resume Onboarding: ${p.firm_name}`}
                                   style={{
-                                    width: '32px',
-                                    height: '32px',
-                                    borderRadius: '7px',
+                                    width: '30px',
+                                    height: '30px',
+                                    borderRadius: '6px',
                                     background: '#10b981',
                                     border: 'none',
                                     color: '#fff',
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s'
+                                    cursor: 'pointer'
                                   }}
                                 >
-                                  <Sparkles size={15} />
+                                  <Sparkles size={14} />
                                 </button>
                               ) : (
                                 <button
@@ -3373,20 +4386,19 @@ export default function PartyMasterModule({
                                   onClick={() => { setSelectedPartyForOrder(p); setShowOrderModal(true); }}
                                   title={`Log Daily Order: ${p.firm_name}`}
                                   style={{
-                                    width: '32px',
-                                    height: '32px',
-                                    borderRadius: '7px',
+                                    width: '30px',
+                                    height: '30px',
+                                    borderRadius: '6px',
                                     background: '#059669',
                                     border: 'none',
                                     color: '#fff',
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s'
+                                    cursor: 'pointer'
                                   }}
                                 >
-                                  <Phone size={15} />
+                                  <Phone size={14} />
                                 </button>
                               )}
 
@@ -3395,17 +4407,16 @@ export default function PartyMasterModule({
                                 onClick={() => handleDeleteParty(p)}
                                 title={`Delete ${p.firm_name}`}
                                 style={{
-                                  width: '32px',
-                                  height: '32px',
-                                  borderRadius: '7px',
+                                  width: '30px',
+                                  height: '30px',
+                                  borderRadius: '6px',
                                   background: 'rgba(239, 68, 68, 0.12)',
                                   border: '1px solid rgba(239, 68, 68, 0.35)',
                                   color: '#ef4444',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s'
+                                  cursor: 'pointer'
                                 }}
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.background = '#ef4444';
@@ -3416,7 +4427,7 @@ export default function PartyMasterModule({
                                   e.currentTarget.style.color = '#ef4444';
                                 }}
                               >
-                                <Trash2 size={15} />
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           </td>
@@ -3510,7 +4521,7 @@ export default function PartyMasterModule({
                 <span>
                   {totalReportRecords === 0
                     ? 'Showing 0 to 0 of 0 channel partners'
-                    : `Showing ${(validReportCurrentPage - 1) * (reportPageSize === 'All' ? totalReportRecords : Number(reportPageSize)) + 1} to ${Math.min(validReportCurrentPage * (reportPageSize === 'All' ? totalReportRecords : Number(reportPageSize)), totalReportRecords)} of ${totalReportRecords} channel partners`}
+                    : `Showing ${(validReportCurrentPage - 1) * effectiveReportPageSize + 1} to ${Math.min(validReportCurrentPage * effectiveReportPageSize, totalReportRecords)} of ${totalReportRecords} channel partners`}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
