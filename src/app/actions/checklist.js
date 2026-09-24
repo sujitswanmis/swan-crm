@@ -499,14 +499,36 @@ export async function getEmployeeChecklistDashboard({
       subQuery = subQuery.eq('employee_email', emailClean);
     }
 
-    const year = targetObj.getFullYear();
-    const month = String(targetObj.getMonth() + 1).padStart(2, '0');
-    const day = String(targetObj.getDate()).padStart(2, '0');
-    const targetDateStr = `${year}-${month}-${day}`;
+    const { dateStr } = getISTDateParts(targetObj);
+    const targetDateStr = dateStr;
+    const weeklyKey = getCurrentPeriodKey('WEEKLY', targetObj);
+    const fortnightlyKey = getCurrentPeriodKey('FORTNIGHTLY', targetObj);
+    const monthlyKey = getCurrentPeriodKey('MONTHLY', targetObj);
+    const quarterlyKey = getCurrentPeriodKey('QUARTERLY', targetObj);
+    const halfYearlyKey = getCurrentPeriodKey('HALF_YEARLY', targetObj);
+    const yearlyKey = getCurrentPeriodKey('YEARLY', targetObj);
 
     if (frequency === 'DAILY') {
       subQuery = subQuery.like('period_key', `${targetDateStr}%`);
+    } else if (frequency === 'WEEKLY') {
+      subQuery = subQuery.eq('period_key', weeklyKey);
+    } else if (frequency === 'FORTNIGHTLY') {
+      subQuery = subQuery.eq('period_key', fortnightlyKey);
+    } else if (frequency === 'MONTHLY') {
+      subQuery = subQuery.eq('period_key', monthlyKey);
+    } else if (frequency === 'QUARTERLY') {
+      subQuery = subQuery.eq('period_key', quarterlyKey);
+    } else if (frequency === 'HALF_YEARLY') {
+      subQuery = subQuery.eq('period_key', halfYearlyKey);
+    } else if (frequency === 'YEARLY') {
+      subQuery = subQuery.eq('period_key', yearlyKey);
+    } else {
+      // frequency === 'ALL' or multi-frequency dashboard: match today's daily slots OR current recurrence period keys
+      const relevantKeys = [weeklyKey, fortnightlyKey, monthlyKey, quarterlyKey, halfYearlyKey, yearlyKey];
+      subQuery = subQuery.or(`period_key.like.${targetDateStr}%,period_key.in.(${relevantKeys.join(',')})`);
     }
+
+    subQuery = subQuery.order('submitted_at', { ascending: false });
 
     const { data: submissions, error: subErr } = await subQuery;
     if (subErr) throw subErr;
@@ -514,7 +536,9 @@ export async function getEmployeeChecklistDashboard({
     const submissionMap = new Map();
     (submissions || []).forEach(sub => {
       const key = `${sub.template_id}_${sub.period_key}`;
-      submissionMap.set(key, sub);
+      if (!submissionMap.has(key)) {
+        submissionMap.set(key, sub);
+      }
     });
 
     // 3. Expand templates (e.g. Daily Multi-Slots) and merge with submission state
@@ -720,8 +744,11 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
     const stats = calculateChecklistCompletion(items, responses);
     const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
 
+    const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    const subId = (submissionData.id && isValidUUID(submissionData.id)) ? submissionData.id : crypto.randomUUID();
+
     const payload = {
-      id: submissionData.id || crypto.randomUUID(),
+      id: subId,
       tenant_id: tenantId,
       template_id,
       template_title: template_title || 'Checklist',
