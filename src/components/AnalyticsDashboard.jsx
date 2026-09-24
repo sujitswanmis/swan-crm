@@ -50,6 +50,8 @@ export default function AnalyticsDashboard({
   userName = '',
   userId = '',
   userRole = '',
+  isSyncing = false,
+  syncLoadedCount = 0,
   onNavigateTab,
   initialSubTab = ''
 }) {
@@ -1306,6 +1308,9 @@ export default function AnalyticsDashboard({
   const handleRefreshAll = () => {
     fetchAssignedWork();
     fetchDashboardSummaries();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crm_trigger_delta_sync'));
+    }
   };
 
   return (
@@ -1395,9 +1400,38 @@ export default function AnalyticsDashboard({
               }}
             />
 
+            {/* Local DB / Delta Sync Status Badge */}
+            {isSyncing ? (
+              <span 
+                title="Delta Sync in progress: Checking and merging recent changes..." 
+                style={{ 
+                  display: 'inline-flex', alignItems: 'center', gap: '0.35rem', 
+                  fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent-color, #3b82f6)', 
+                  padding: '0.35rem 0.65rem', borderRadius: '8px', 
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)' 
+                }}
+              >
+                <RefreshCw size={12} className="animate-spin" />
+                <span>Delta Syncing…</span>
+              </span>
+            ) : (
+              <span 
+                title="Analytics is fully synced with Local DB (IndexedDB) for instant 0ms analytics with zero network lag" 
+                style={{ 
+                  display: 'inline-flex', alignItems: 'center', gap: '0.35rem', 
+                  fontSize: '0.72rem', fontWeight: 600, color: '#10b981', 
+                  padding: '0.35rem 0.65rem', borderRadius: '8px', 
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' 
+                }}
+              >
+                <Database size={12} />
+                <span>Local DB Active</span>
+              </span>
+            )}
+
             <button
               onClick={handleRefreshAll}
-              title="Refresh all metrics"
+              title={isSyncing ? "Syncing delta with database..." : "Refresh all metrics and sync delta"}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '0.45rem 0.65rem', borderRadius: '8px',
@@ -1405,7 +1439,7 @@ export default function AnalyticsDashboard({
                 color: 'var(--text-primary)', cursor: 'pointer'
               }}
             >
-              <RefreshCw size={15} className={(loadingAssignedWork || loadingSummaries) ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={(loadingAssignedWork || loadingSummaries || isSyncing) ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>

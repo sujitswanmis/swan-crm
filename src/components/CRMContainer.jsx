@@ -1712,13 +1712,30 @@ export default function CRMContainer({
       }
     };
 
+    const handleTriggerDeltaSync = () => {
+      if (loadLeadsRef.current) {
+        loadLeadsRef.current(false);
+      }
+    };
+
+    // Background Periodic Delta Sync: every 3 minutes, silently pull delta updates into Local DB
+    const deltaSyncInterval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (loadLeadsRef.current) {
+        loadLeadsRef.current(false);
+      }
+    }, 3 * 60 * 1000);
+
+    window.addEventListener('crm_trigger_delta_sync', handleTriggerDeltaSync);
     window.addEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
     window.addEventListener('crm_leads_imported', handleLeadsImported);
     window.addEventListener('crm_force_full_sync', handleForceFullSync);
 
     return () => {
+      clearInterval(deltaSyncInterval);
       if (saveLeadsTimeoutRef.current) clearTimeout(saveLeadsTimeoutRef.current);
       supabase.removeChannel(channel);
+      window.removeEventListener('crm_trigger_delta_sync', handleTriggerDeltaSync);
       window.removeEventListener('supuja_offline_queue_changed', handleOfflineQueueChanged);
       window.removeEventListener('crm_leads_imported', handleLeadsImported);
       window.removeEventListener('crm_force_full_sync', handleForceFullSync);
@@ -5715,6 +5732,8 @@ export default function CRMContainer({
                     userName={userName}
                     userId={userId}
                     userRole={userRole}
+                    isSyncing={isSyncing}
+                    syncLoadedCount={syncLoadedCount}
                     initialSubTab={dashboardSubTab}
                     onNavigateTab={(tab, subTab, stage) => {
                       if (tab === 'leads' && (stage || subTab)) {
