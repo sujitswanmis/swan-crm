@@ -768,15 +768,10 @@ export default function LeadProfilePanel({
       targetStatus.trim().toLowerCase() === 'won' || 
       targetStatus.toLowerCase().includes('>won') ||
       targetStatus.toLowerCase().includes('final stage>won')
-    );
+    ) && !targetStatus.toLowerCase().includes('transferred');
 
     if (isWonSelected) {
-      const moveToS08 = window.confirm(
-        `🎉 Deal Won!\n\nKya aap is lead ko "08 - Transfer to Party" stage me move karna chahte hain?\n\n- Click OK (Haan): Lead "08 - Transfer to Party (Pending Confirmation)" me chali jayegi.\n- Click Cancel (Nahi): Lead "07 - Final Stage (Won)" me hi rahegi.`
-      );
-      if (moveToS08) {
-        targetStatus = '8;01>Transfer to Party>Pending Confirmation';
-      }
+      targetStatus = '8;01>Transfer to Party>Pending Confirmation';
     }
 
     const formattedNewStatus = formatStatusWithNumbers(targetStatus, stages);
@@ -1322,14 +1317,9 @@ export default function LeadProfilePanel({
         statusToUpdate.trim().toLowerCase() === 'won' || 
         statusToUpdate.toLowerCase().includes('>won') ||
         statusToUpdate.toLowerCase().includes('final stage>won')
-      );
+      ) && !statusToUpdate.toLowerCase().includes('transferred');
       if (isWonSelected) {
-        const moveToS08 = window.confirm(
-          `🎉 Deal Won!\n\nKya aap is lead ko "08 - Transfer to Party" stage me move karna chahte hain?\n\n- Click OK (Haan): Lead "08 - Transfer to Party (Pending Confirmation)" me chali jayegi.\n- Click Cancel (Nahi): Lead "07 - Final Stage (Won)" me hi rahegi.`
-        );
-        if (moveToS08) {
-          statusToUpdate = '8;01>Transfer to Party>Pending Confirmation';
-        }
+        statusToUpdate = '8;01>Transfer to Party>Pending Confirmation';
       }
     }
 
@@ -2151,14 +2141,7 @@ export default function LeadProfilePanel({
                 )}
               </button>
             </div>
-          ) : Boolean(currentStatus && (
-            currentStatus.startsWith('07') || 
-            currentStatus.startsWith('7;') || 
-            currentStatus.startsWith('08') || 
-            currentStatus.startsWith('8;') || 
-            currentStatus.toLowerCase().includes('final stage') ||
-            currentStatus.toLowerCase().includes('transfer to party')
-          )) && (
+          ) : Boolean(isLeadInS08 && !isLeadFrozen) && (
             <div style={{
               background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(16,185,129,0.12))',
               border: '1.5px solid rgba(59,130,246,0.35)',
