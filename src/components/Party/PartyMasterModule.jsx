@@ -5471,19 +5471,22 @@ export default function PartyMasterModule({
       {activeTab === 'monthly_feedback' && (() => {
         const activePartners = parties.filter(p => p.final_status === 'Active' || p.party_status === 'Active');
 
-        // Map latest monthly feedback by party_id
+        // Map monthly feedback by party_id respecting monthlyPeriodFilter
         const monthlyMap = new Map();
         monthlyFeedbacks.forEach(m => {
-          if (!monthlyMap.has(m.party_id)) {
-            monthlyMap.set(m.party_id, m);
+          if (monthlyPeriodFilter === 'ALL' || m.evaluation_period === monthlyPeriodFilter) {
+            if (!monthlyMap.has(m.party_id)) {
+              monthlyMap.set(m.party_id, m);
+            }
           }
         });
 
-        // Metrics calculations
+        // Filtered feedbacks for metrics
+        const relevantFeedbacks = monthlyFeedbacks.filter(m => monthlyPeriodFilter === 'ALL' || m.evaluation_period === monthlyPeriodFilter);
         const totalMonitored = activePartners.length;
-        const highSatisfactionCount = monthlyFeedbacks.filter(m => (m.rating_overall || 5) >= 4 && !m.is_dormant_risk).length;
-        const moderateCount = monthlyFeedbacks.filter(m => (m.rating_overall || 5) === 3 && !m.is_dormant_risk).length;
-        const criticalCount = monthlyFeedbacks.filter(m => (m.rating_overall && m.rating_overall <= 2) || m.is_dormant_risk).length;
+        const highSatisfactionCount = relevantFeedbacks.filter(m => (m.rating_overall || 5) >= 4 && !m.is_dormant_risk).length;
+        const moderateCount = relevantFeedbacks.filter(m => (m.rating_overall || 5) === 3 && !m.is_dormant_risk).length;
+        const criticalCount = relevantFeedbacks.filter(m => (m.rating_overall && m.rating_overall <= 2) || m.is_dormant_risk).length;
 
         // Filtered roster
         const filteredRoster = activePartners.filter(party => {
@@ -6942,20 +6945,57 @@ export default function PartyMasterModule({
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              await saveMonthlyFeedback({
-                ...monthlyForm,
-                party_id: selectedPartyForMonthly.id
-              });
-              setShowMonthlyModal(false);
-              loadOperationsData('monthly_feedback');
-              setCenterAlert({
-                isOpen: true,
-                type: 'success',
-                title: 'Monthly Review Recorded',
-                message: `Monthly health assessment and demand projection saved for ${selectedPartyForMonthly.firm_name}!`,
-                confirmText: 'Done',
-                onConfirm: null
-              });
+              try {
+                const saved = await saveMonthlyFeedback({
+                  ...monthlyForm,
+                  party_id: selectedPartyForMonthly.id
+                });
+                setShowMonthlyModal(false);
+
+                // Optimistically update table data immediately
+                if (saved) {
+                  setMonthlyFeedbacks(prev => {
+                    const withoutCurrent = (prev || []).filter(m => !(m.party_id === selectedPartyForMonthly.id && m.evaluation_period === (saved.evaluation_period || monthlyForm.evaluation_period)));
+                    return [
+                      {
+                        ...saved,
+                        party: {
+                          id: selectedPartyForMonthly.id,
+                          party_universal_code: selectedPartyForMonthly.distributor_code || selectedPartyForMonthly.dealer_code || selectedPartyForMonthly.party_universal_code,
+                          firm_name: selectedPartyForMonthly.firm_name,
+                          primary_mobile: selectedPartyForMonthly.contact_mobile_1_1 || selectedPartyForMonthly.primary_mobile,
+                          party_type: selectedPartyForMonthly.party_type,
+                          state_name: selectedPartyForMonthly.state_name,
+                          district_name: selectedPartyForMonthly.district_name
+                        }
+                      },
+                      ...withoutCurrent
+                    ];
+                  });
+                }
+
+                // Also reload from server to ensure complete sync
+                await loadOperationsData('monthly_feedback');
+
+                setCenterAlert({
+                  isOpen: true,
+                  type: 'success',
+                  title: 'Monthly Review Recorded',
+                  message: `Monthly health assessment and demand projection saved for ${selectedPartyForMonthly.firm_name}!`,
+                  confirmText: 'Done',
+                  onConfirm: null
+                });
+              } catch (err) {
+                console.error('Save review error:', err);
+                setCenterAlert({
+                  isOpen: true,
+                  type: 'error',
+                  title: 'Save Failed',
+                  message: err.message || 'Could not save monthly review. Please try again.',
+                  confirmText: 'Close',
+                  onConfirm: null
+                });
+              }
             }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.2fr', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center' }}>
                 <div>

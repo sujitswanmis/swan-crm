@@ -1216,30 +1216,36 @@ export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, month
 
   // Also read from party metadata fallback to guarantee seamless persistence
   try {
-    const { data: parties } = await adminClient
+    const { data: parties, error: pErr } = await adminClient
       .from('party_master')
-      .select('id, party_universal_code, firm_name, primary_mobile, party_type, state_name, district_name, business_nature');
+      .select('id, party_universal_code, firm_name, primary_mobile, business_nature')
+      .eq('tenant_id', tenantId);
 
-    if (parties && parties.length > 0) {
-      const existingKeys = new Set(results.map(r => r.party_id + '_' + r.evaluation_period));
+    if (!pErr && parties && parties.length > 0) {
+      const existingKeys = new Set(results.map(r => (r.party_id || '') + '_' + (r.evaluation_period || '')));
 
       parties.forEach(p => {
         const meta = parsePartyMeta(p.business_nature);
         if (meta.monthly_reviews && Array.isArray(meta.monthly_reviews)) {
           meta.monthly_reviews.forEach(r => {
-            const key = p.id + '_' + r.evaluation_period;
+            const partyId = r.party_id || p.id;
+            const periodKey = r.evaluation_period || '';
+            const key = partyId + '_' + periodKey;
             if (!existingKeys.has(key)) {
-              if (!monthStr || monthStr === 'ALL' || r.evaluation_period === monthStr) {
+              if (!monthStr || monthStr === 'ALL' || periodKey === monthStr) {
                 results.push({
                   ...r,
+                  id: r.id || `REV-${partyId}-${periodKey}`,
+                  party_id: partyId,
+                  evaluation_period: periodKey,
                   party: {
                     id: p.id,
                     party_universal_code: p.party_universal_code,
                     firm_name: p.firm_name,
                     primary_mobile: p.primary_mobile,
-                    party_type: p.party_type,
-                    state_name: p.state_name,
-                    district_name: p.district_name
+                    party_type: meta.dealership_type || meta.party_type || 'Dealer',
+                    state_name: meta.state_name || '',
+                    district_name: meta.district_name || ''
                   }
                 });
                 existingKeys.add(key);
@@ -1264,10 +1270,15 @@ export async function saveMonthlyFeedback(feedbackData, tenantId = DEFAULT_TENAN
     ...feedbackData,
     tenant_id: tenantId,
     evaluation_period: period,
-    created_at: new Date().toISOString()
+    updated_at: new Date().toISOString()
   };
 
-  // 1. Also save into party_master metadata for 100% fail-safe persistence
+  if (!payload.created_at) {
+    payload.created_at = new Date().toISOString();
+  }
+
+  // 1. Save into party_master metadata for 100% fail-safe persistence
+  let savedRecord = { id: feedbackData.id || `REV-${Date.now()}`, ...payload };
   if (feedbackData.party_id) {
     try {
       const { data: currentParty } = await adminClient
@@ -1278,11 +1289,12 @@ export async function saveMonthlyFeedback(feedbackData, tenantId = DEFAULT_TENAN
 
       const existingMeta = parsePartyMeta(currentParty?.business_nature);
       const reviews = existingMeta.monthly_reviews || [];
-      const updatedReviews = reviews.filter(r => r.evaluation_period !== period);
-      updatedReviews.unshift({
-        id: `REV-${Date.now()}`,
+      const updatedReviews = reviews.filter(r => r.evaluation_period !== period && r.id !== feedbackData.id);
+      savedRecord = {
+        id: feedbackData.id || `REV-${Date.now()}`,
         ...payload
-      });
+      };
+      updatedReviews.unshift(savedRecord);
       existingMeta.monthly_reviews = updatedReviews;
       await updatePartyMeta(adminClient, feedbackData.party_id, existingMeta);
     } catch (metaErr) {
@@ -1290,20 +1302,20 @@ export async function saveMonthlyFeedback(feedbackData, tenantId = DEFAULT_TENAN
     }
   }
 
-  // 2. Attempt table insert if party_monthly_feedback table exists in Supabase
+  // 2. Attempt table insert/upsert if party_monthly_feedback table exists in Supabase
   try {
     const { data, error } = await adminClient
       .from('party_monthly_feedback')
-      .insert([payload])
+      .upsert([payload], { onConflict: 'party_id,evaluation_period' })
       .select()
-      .single();
+      .maybeSingle();
 
     if (!error && data) return data;
   } catch (err) {
-    console.warn('party_monthly_feedback insert notice:', err.message);
+    console.warn('party_monthly_feedback upsert notice:', err.message);
   }
 
-  return { id: `REV-${Date.now()}`, ...payload };
+  return savedRecord;
 }
 
 /**
