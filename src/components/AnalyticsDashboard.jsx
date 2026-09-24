@@ -738,43 +738,18 @@ export default function AnalyticsDashboard({
                   crmActiveEmployeesMap.get(empEmail) || 
                   { actions: 0, uniqueLeads: 0, leadIdSet: new Set() };
 
-      // Leads assigned to this rep (All-time portfolio)
+      // Leads assigned to this rep (All-time full assigned portfolio)
       const empAllLeads = leads.filter(l => {
         if (!l.assigned_to) return false;
         return isEmployeeMatch(l.assigned_to, emp);
       });
 
-      // Leads in scope for this representative:
-      // When isAllTime: full assigned portfolio
-      // When !isAllTime: leads active in this period (assigned to rep + in period, OR touched by rep in period)
-      let empLeads;
-      if (isAllTime) {
-        empLeads = empAllLeads;
-      } else {
-        const periodLeadIdSet = new Set();
-        const activeLeads = [];
-        empAllLeads.forEach(l => {
-          if (isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds)) {
-            periodLeadIdSet.add(l.id);
-            activeLeads.push(l);
-          }
-        });
+      // Total Assigned MUST ALWAYS reflect the representative's full portfolio
+      const leadsAssigned = empAllLeads.length;
 
-        // Also add any leads that this rep personally touched/noted in the period (even if not strictly assigned to them)
-        if (act.leadIdSet && act.leadIdSet.size > 0) {
-          leads.forEach(l => {
-            if (act.leadIdSet.has(l.id) && !periodLeadIdSet.has(l.id)) {
-              periodLeadIdSet.add(l.id);
-              activeLeads.push(l);
-            }
-          });
-        }
-
-        empLeads = activeLeads;
-      }
-
+      // Stage breakdown (S1 to S7) reflects the employee's assigned portfolio
       const stageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
-      empLeads.forEach(l => {
+      empAllLeads.forEach(l => {
         const num = getStageNumber(l.status);
         if (stageBreakdown[num] !== undefined) stageBreakdown[num]++;
         else stageBreakdown[1]++;
@@ -783,7 +758,7 @@ export default function AnalyticsDashboard({
       // Overdue follow-ups for this rep (evaluated strictly in IST)
       let overdueFollowups = 0;
       let todayFollowups = 0;
-      empLeads.forEach(l => {
+      empAllLeads.forEach(l => {
         const fDate = l.follow_up_date || l.next_follow_up_date;
         if (fDate) {
           const dStr = toISTDate(fDate);
@@ -804,19 +779,22 @@ export default function AnalyticsDashboard({
           }
         });
       } else {
-        empLeads.forEach(l => {
-          const stNum = getStageNumber(l.status);
-          if ((act.leadIdSet && act.leadIdSet.has(l.id)) || (periodTouchedLeadIds.has(l.id) && isEmployeeMatch(l.assigned_to, emp)) || stNum > 1) {
+        empAllLeads.forEach(l => {
+          // Strictly within selected period: touched if rep made activity/note on it in period, or lead was updated in period
+          if ((act.leadIdSet && act.leadIdSet.has(l.id)) || (periodTouchedLeadIds.has(l.id) && isEmployeeMatch(l.assigned_to, emp))) {
             assignedTouchedCount++;
           }
         });
       }
 
       const effectiveTouched = Math.max(assignedTouchedCount, act.uniqueLeads || 0);
-      const effectiveAssigned = Math.max(empLeads.length, effectiveTouched);
       const leadsTouched = effectiveTouched;
-      const leadsAssigned = effectiveAssigned;
       const contactRate = leadsAssigned > 0 ? Math.min(100, Math.round((leadsTouched / leadsAssigned) * 100)) : 0;
+
+      // Outreach Score (Max 30 pts): Directly reflects Touch Rate %
+      const outreachScore = leadsAssigned > 0 
+        ? Math.min(30, Math.round((contactRate / 100) * 30))
+        : (effectiveTouched > 0 ? Math.min(30, Math.round((effectiveTouched / 15) * 30)) : 0);
 
       // Checklists done vs pending for this employee
       const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
@@ -839,7 +817,7 @@ export default function AnalyticsDashboard({
       const attRecord = attendanceRecordMap.get(empEmail) || attendanceRecordMap.get(empName.toLowerCase());
 
       // Role categorization
-      const roleCategory = getEmployeeRoleCategory(emp, empLeads.length);
+      const roleCategory = getEmployeeRoleCategory(emp, leadsAssigned);
       const roleLabel = roleCategory === 'SALES' ? 'Sales Rep' : roleCategory === 'RECRUITER' ? 'Recruiter / HR' : 'Operations';
       const roleBadgeBg = roleCategory === 'SALES' ? '#dbeafe' : roleCategory === 'RECRUITER' ? '#ede9fe' : '#f1f5f9';
       const roleBadgeColor = roleCategory === 'SALES' ? '#1d4ed8' : roleCategory === 'RECRUITER' ? '#6d28d9' : '#475569';
@@ -847,13 +825,12 @@ export default function AnalyticsDashboard({
       // ------------------------------------------------------------------
       // PROCESS 1A: CALLING & OUTREACH (Max 30 pts)
       // ------------------------------------------------------------------
-      const callingScore = Math.min(30, Math.round((effectiveTouched / 15) * 20 + (act.actions / 30) * 10));
-      const isCallerApplicable = empLeads.length > 0 || effectiveTouched > 0 || act.actions > 0 || roleCategory === 'SALES';
+      const isCallerApplicable = leadsAssigned > 0 || effectiveTouched > 0 || act.actions > 0 || roleCategory === 'SALES';
       const callingProcess = {
         name: 'Calling & Outreach',
-        score: isCallerApplicable ? callingScore : 0,
+        score: isCallerApplicable ? outreachScore : 0,
         max: 30,
-        metricText: isCallerApplicable ? `${effectiveTouched} touched · ${act.actions} updates` : 'Exempt (No leads)',
+        metricText: isCallerApplicable ? `${effectiveTouched} touched · ${contactRate}% touch rate` : 'Exempt (No leads)',
         applicable: isCallerApplicable
       };
 
@@ -897,7 +874,7 @@ export default function AnalyticsDashboard({
         score: 0,
         max: 25,
         metricText: roleCategory === 'RECRUITER' ? 'Openings tracked' : 'No leads assigned',
-        applicable: roleCategory === 'RECRUITER' ? true : empLeads.length > 0,
+        applicable: roleCategory === 'RECRUITER' ? true : leadsAssigned > 0,
         adherenceRate: 100
       };
 
@@ -911,7 +888,7 @@ export default function AnalyticsDashboard({
         followupProcess.score = myPositions.length > 0 ? 25 : 15;
         followupProcess.adherenceRate = 100;
         followupProcess.metricText = `${activeCount} active requisitions`;
-      } else if (empLeads.length > 0) {
+      } else if (leadsAssigned > 0) {
         if (overdueFollowups === 0) {
           followupProcess.score = 25;
           followupProcess.adherenceRate = 100;
@@ -1031,10 +1008,10 @@ export default function AnalyticsDashboard({
         roleCategory,
         roleLabel,
         roleBadgeBg,
-        roleBadgeColor,
-        leadsAssigned: empLeads.length,
+        leadsAssigned,
         leadsTouched,
         contactRate,
+        outreachScore,
         stageBreakdown,
         updatesCount: act.actions,
         overdueFollowups,
@@ -2837,7 +2814,7 @@ export default function AnalyticsDashboard({
                       </div>
                     </th>
                     <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
-                      {isAllTime ? 'Total Assigned' : `Active (${dateFilterLabel})`}
+                      Total Assigned
                     </th>
                     <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
                       🎯 Leads Touched
@@ -2938,13 +2915,17 @@ export default function AnalyticsDashboard({
                             {row.leadsAssigned > 0 ? `${contactRate}%` : '—'}
                           </td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
-                            <span style={{
-                              padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
-                              backgroundColor: (row.callingProcess?.score ?? row.primaryProcess?.score ?? 0) >= 15 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                              color: (row.callingProcess?.score ?? row.primaryProcess?.score ?? 0) >= 15 ? '#10b981' : '#ef4444'
-                            }}>
-                              {row.callingProcess?.score ?? row.primaryProcess?.score ?? 0} / 30 pts
-                            </span>
+                            {row.leadsAssigned > 0 ? (
+                              <span style={{
+                                padding: '0.2rem 0.55rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
+                                backgroundColor: (row.outreachScore ?? 0) >= 20 ? 'rgba(16, 185, 129, 0.15)' : (row.outreachScore ?? 0) >= 12 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: (row.outreachScore ?? 0) >= 20 ? '#10b981' : (row.outreachScore ?? 0) >= 12 ? '#d97706' : '#ef4444'
+                              }}>
+                                {row.outreachScore ?? 0} / 30 pts
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>
+                            )}
                           </td>
                         </tr>
                       );
