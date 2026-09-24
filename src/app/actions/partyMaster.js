@@ -1093,14 +1093,16 @@ export async function getParty360Details(partyId) {
  */
 export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledDate = null) {
   const adminClient = getAdminClient();
-  const dateStr = scheduledDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-
-  const { data, error } = await adminClient
+  let query = adminClient
     .from('party_order_followups')
-    .select('*, party:party_master(id, party_universal_code, firm_name, party_type, primary_mobile, owner_name)')
-    .eq('tenant_id', tenantId)
-    .eq('scheduled_date', dateStr)
-    .order('created_at', { ascending: false });
+    .select('*, party:party_master(id, party_universal_code, firm_name, party_type, primary_mobile, owner_name, district_name, state_name, billing_route_type)')
+    .eq('tenant_id', tenantId);
+
+  if (scheduledDate && scheduledDate !== 'ALL') {
+    query = query.eq('scheduled_date', scheduledDate);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching order followups:', error);
@@ -1194,14 +1196,16 @@ export async function saveOrderFeedback(feedbackData, tenantId = DEFAULT_TENANT_
  */
 export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, monthStr = null) {
   const adminClient = getAdminClient();
-  const period = monthStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
-
-  const { data, error } = await adminClient
+  let query = adminClient
     .from('party_monthly_feedback')
-    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, party_type)')
-    .eq('tenant_id', tenantId)
-    .eq('evaluation_period', period)
-    .order('created_at', { ascending: false });
+    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, party_type, state_name, district_name)')
+    .eq('tenant_id', tenantId);
+
+  if (monthStr && monthStr !== 'ALL') {
+    query = query.eq('evaluation_period', monthStr);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
 
   if (error) return [];
   return data || [];
