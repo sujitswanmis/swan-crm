@@ -463,7 +463,8 @@ export default function AnalyticsDashboard({
         const localEmployeeActivity = Object.keys(employeeActivityMap).map(emp => ({
           employee: emp,
           actions: employeeActivityMap[emp].updates,
-          uniqueLeads: employeeActivityMap[emp].uniqueLeads.size
+          uniqueLeads: employeeActivityMap[emp].uniqueLeads.size,
+          leadIdSet: employeeActivityMap[emp].uniqueLeads
         })).sort((a, b) => b.uniqueLeads - a.uniqueLeads);
 
         const periodLabel = datePreset === 'today' ? 'Today' : (datePreset?.includes('week') ? 'Last 7 Days' : 'This Month');
@@ -672,6 +673,20 @@ export default function AnalyticsDashboard({
                   crmActiveEmployeesMap.get(empEmail) || 
                   { actions: 0, uniqueLeads: 0 };
 
+      // Calculate touched leads for this representative's assigned portfolio:
+      // A lead is touched if it has progressed beyond Stage 1 (New / Fresh), has a follow-up date,
+      // has notes/interactions, or was touched by this rep in the current activity session.
+      let assignedTouchedCount = 0;
+      empLeads.forEach(l => {
+        const stNum = getStageNumber(l.status);
+        if (stNum > 1 || l.follow_up_date || l.next_follow_up_date || (Array.isArray(l.lead_notes) && l.lead_notes.length > 0) || (act.leadIdSet && act.leadIdSet.has(l.id))) {
+          assignedTouchedCount++;
+        }
+      });
+
+      const leadsTouched = empLeads.length > 0 ? assignedTouchedCount : (act.uniqueLeads || 0);
+      const contactRate = empLeads.length > 0 ? Math.round((assignedTouchedCount / empLeads.length) * 100) : 0;
+
       // Checklists done vs pending for this employee
       const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
         if (c.assigned_type === 'ALL' || !c.assigned_employee_email) return true;
@@ -701,13 +716,14 @@ export default function AnalyticsDashboard({
       // ------------------------------------------------------------------
       // PROCESS 1A: CALLING & OUTREACH (Max 30 pts)
       // ------------------------------------------------------------------
-      const callingScore = Math.min(30, Math.round((act.uniqueLeads / 15) * 20 + (act.actions / 30) * 10));
-      const isCallerApplicable = empLeads.length > 0 || act.uniqueLeads > 0 || act.actions > 0 || roleCategory === 'SALES';
+      const effectiveTouched = Math.max(leadsTouched, act.uniqueLeads || 0);
+      const callingScore = Math.min(30, Math.round((effectiveTouched / 15) * 20 + (act.actions / 30) * 10));
+      const isCallerApplicable = empLeads.length > 0 || effectiveTouched > 0 || act.actions > 0 || roleCategory === 'SALES';
       const callingProcess = {
         name: 'Calling & Outreach',
         score: isCallerApplicable ? callingScore : 0,
         max: 30,
-        metricText: isCallerApplicable ? `${act.uniqueLeads} touched · ${act.actions} updates` : 'Exempt (No leads)',
+        metricText: isCallerApplicable ? `${effectiveTouched} touched · ${act.actions} updates` : 'Exempt (No leads)',
         applicable: isCallerApplicable
       };
 
@@ -887,7 +903,8 @@ export default function AnalyticsDashboard({
         roleBadgeBg,
         roleBadgeColor,
         leadsAssigned: empLeads.length,
-        leadsTouched: act.uniqueLeads,
+        leadsTouched,
+        contactRate,
         stageBreakdown,
         updatesCount: act.actions,
         overdueFollowups,
@@ -2736,7 +2753,7 @@ export default function AnalyticsDashboard({
                     .filter(r => {
                       if (leadBreakdownFilter === 'WITH_LEADS' && r.leadsAssigned === 0) return false;
                       if (leadBreakdownFilter === 'TOP_PERFORMERS') {
-                        const contactRate = r.leadsAssigned > 0 ? (r.leadsTouched / r.leadsAssigned) * 100 : 0;
+                        const contactRate = r.contactRate !== undefined ? r.contactRate : (r.leadsAssigned > 0 ? (r.leadsTouched / r.leadsAssigned) * 100 : 0);
                         if (contactRate < 50) return false;
                       }
                       if (leadBreakdownSearch.trim()) {
@@ -2748,7 +2765,7 @@ export default function AnalyticsDashboard({
                       return true;
                     })
                     .map((row, idx) => {
-                      const contactRate = row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0;
+                      const contactRate = row.contactRate !== undefined ? row.contactRate : (row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0);
                       return (
                         <tr key={row.empEmail || idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background 0.15s' }}>
                           <td style={{ padding: '0.6rem 0.8rem', fontWeight: 600, color: 'var(--text-primary)', borderRight: '1px solid var(--border-light)' }}>
@@ -2782,10 +2799,10 @@ export default function AnalyticsDashboard({
                             📦 {row.leadsAssigned.toLocaleString('en-IN')}
                           </td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#10b981', borderRight: '1px solid var(--border-light)' }}>
-                            🎯 {row.leadsTouched.toLocaleString('en-IN')}
+                            🎯 {row.leadsAssigned > 0 ? row.leadsTouched.toLocaleString('en-IN') : '—'}
                           </td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444', borderRight: '1px solid var(--border-light)' }}>
-                            {contactRate}%
+                            {row.leadsAssigned > 0 ? `${contactRate}%` : '—'}
                           </td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
                             <span style={{
