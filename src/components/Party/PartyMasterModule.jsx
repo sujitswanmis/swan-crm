@@ -396,13 +396,15 @@ export default function PartyMasterModule({
   const [monthlyForm, setMonthlyForm] = useState({
     party_id: '',
     evaluation_period: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()),
-    days_inactive: 14,
+    days_inactive: 0,
     is_dormant_risk: false,
-    market_sentiment: 'STEADY',
-    competitor_schemes: '',
-    tse_support_rating: 5,
-    service_support_rating: 5,
+    rating_order_delivery: 5,
+    rating_product_quality: 5,
+    rating_service_quality: 5,
+    rating_account_related: 5,
+    rating_overall: 5,
     next_month_demand_plan: '',
+    competitor_schemes: '',
     dealer_suggestions: ''
   });
 
@@ -5479,19 +5481,20 @@ export default function PartyMasterModule({
 
         // Metrics calculations
         const totalMonitored = activePartners.length;
-        const healthyCount = monthlyFeedbacks.filter(m => m.market_sentiment === 'BOOMING' || m.market_sentiment === 'STEADY').length;
-        const atRiskCount = monthlyFeedbacks.filter(m => m.market_sentiment === 'SLUGGISH' || m.is_dormant_risk).length;
-        const criticalCount = monthlyFeedbacks.filter(m => m.market_sentiment === 'COMPETITOR_PRESSURE').length;
+        const highSatisfactionCount = monthlyFeedbacks.filter(m => (m.rating_overall || 5) >= 4 && !m.is_dormant_risk).length;
+        const moderateCount = monthlyFeedbacks.filter(m => (m.rating_overall || 5) === 3 && !m.is_dormant_risk).length;
+        const criticalCount = monthlyFeedbacks.filter(m => (m.rating_overall && m.rating_overall <= 2) || m.is_dormant_risk).length;
 
         // Filtered roster
         const filteredRoster = activePartners.filter(party => {
           const mRecord = monthlyMap.get(party.id);
 
-          // Risk filter
+          // Rating and risk filter
           if (monthlyRiskFilter !== 'ALL') {
-            if (monthlyRiskFilter === 'HEALTHY' && mRecord && (mRecord.is_dormant_risk || mRecord.market_sentiment === 'COMPETITOR_PRESSURE')) return false;
-            if (monthlyRiskFilter === 'AT_RISK' && (!mRecord || !mRecord.is_dormant_risk)) return false;
-            if (monthlyRiskFilter === 'DORMANT' && (!mRecord || mRecord.market_sentiment !== 'COMPETITOR_PRESSURE')) return false;
+            if (monthlyRiskFilter === 'HIGH_SATISFACTION' && (!mRecord || (mRecord.rating_overall || 5) < 4 || mRecord.is_dormant_risk)) return false;
+            if (monthlyRiskFilter === 'MODERATE' && (!mRecord || (mRecord.rating_overall || 5) !== 3 || mRecord.is_dormant_risk)) return false;
+            if (monthlyRiskFilter === 'CRITICAL' && (!mRecord || ((mRecord.rating_overall || 5) > 2 && !mRecord.is_dormant_risk))) return false;
+            if (monthlyRiskFilter === 'DORMANT' && (!mRecord || !mRecord.is_dormant_risk)) return false;
           }
 
           // Search term
@@ -5530,8 +5533,8 @@ export default function PartyMasterModule({
                   <CheckCircle2 size={20} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>Healthy Growth</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>{healthyCount}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>High Satisfaction (4-5★)</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>{highSatisfactionCount}</div>
                 </div>
               </div>
 
@@ -5540,8 +5543,8 @@ export default function PartyMasterModule({
                   <Clock size={20} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase' }}>At Risk / Slowing</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f59e0b' }}>{atRiskCount}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase' }}>Moderate / Attention (3★)</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f59e0b' }}>{moderateCount}</div>
                 </div>
               </div>
 
@@ -5550,7 +5553,7 @@ export default function PartyMasterModule({
                   <AlertTriangle size={20} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.72rem', color: '#f87171', fontWeight: 600, textTransform: 'uppercase' }}>Critical Churn Risk</div>
+                  <div style={{ fontSize: '0.72rem', color: '#f87171', fontWeight: 600, textTransform: 'uppercase' }}>Critical Grievance (1-2★)</div>
                   <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f87171' }}>{criticalCount}</div>
                 </div>
               </div>
@@ -5611,17 +5614,56 @@ export default function PartyMasterModule({
                   onChange={e => setMonthlyRiskFilter(e.target.value)}
                   style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
                 >
-                  <option value="ALL">All Health Risk Categories</option>
-                  <option value="HEALTHY">🟢 Healthy Partners</option>
-                  <option value="AT_RISK">🟡 At-Risk / Slowing</option>
-                  <option value="DORMANT">🔴 Dormant Risk</option>
+                  <option value="ALL">All Rating &amp; Risk Categories</option>
+                  <option value="HIGH_SATISFACTION">🟢 High Satisfaction (⭐ 4-5)</option>
+                  <option value="MODERATE">🟡 Moderate Attention (⭐ 3)</option>
+                  <option value="CRITICAL">🔴 Critical Grievance (⭐ 1-2)</option>
+                  <option value="DORMANT">⚠️ Dormant / Inactive Risk</option>
                 </select>
 
                 <button
                   type="button"
                   onClick={() => {
                     if (activePartners.length > 0) {
-                      setSelectedPartyForMonthly(activePartners[0]);
+                      const party = activePartners[0];
+                      const mRecord = monthlyMap.get(party.id);
+                      setSelectedPartyForMonthly(party);
+                      if (mRecord) {
+                        setMonthlyForm({
+                          id: mRecord.id,
+                          party_id: party.id,
+                          evaluation_period: mRecord.evaluation_period || currentPeriodStr,
+                          days_inactive: mRecord.days_inactive ?? 0,
+                          is_dormant_risk: !!mRecord.is_dormant_risk,
+                          rating_order_delivery: mRecord.rating_order_delivery ?? 5,
+                          rating_product_quality: mRecord.rating_product_quality ?? 5,
+                          rating_service_quality: mRecord.rating_service_quality ?? 5,
+                          rating_account_related: mRecord.rating_account_related ?? 5,
+                          rating_overall: mRecord.rating_overall ?? 5,
+                          tse_support_rating: mRecord.tse_support_rating ?? 5,
+                          service_support_rating: mRecord.service_support_rating ?? 5,
+                          next_month_demand_plan: mRecord.next_month_demand_plan || '',
+                          competitor_schemes: mRecord.competitor_schemes || '',
+                          dealer_suggestions: mRecord.dealer_suggestions || '',
+                        });
+                      } else {
+                        setMonthlyForm({
+                          party_id: party.id,
+                          evaluation_period: monthlyPeriodFilter !== 'ALL' ? monthlyPeriodFilter : currentPeriodStr,
+                          days_inactive: 0,
+                          is_dormant_risk: false,
+                          rating_order_delivery: 5,
+                          rating_product_quality: 5,
+                          rating_service_quality: 5,
+                          rating_account_related: 5,
+                          rating_overall: 5,
+                          tse_support_rating: 5,
+                          service_support_rating: 5,
+                          next_month_demand_plan: '',
+                          competitor_schemes: '',
+                          dealer_suggestions: '',
+                        });
+                      }
                       setShowMonthlyModal(true);
                     }
                   }}
@@ -5654,8 +5696,8 @@ export default function PartyMasterModule({
                     <th style={{ padding: '0.85rem 1rem' }}>Firm Name &amp; Contact</th>
                     <th style={{ padding: '0.85rem 1rem' }}>Territory</th>
                     <th style={{ padding: '0.85rem 1rem' }}>Health Status</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Market Sentiment</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Field (TSE) &amp; Service</th>
+                    <th style={{ padding: '0.85rem 1rem' }}>OverAll Rating</th>
+                    <th style={{ padding: '0.85rem 1rem' }}>Rating Breakdown</th>
                     <th style={{ padding: '0.85rem 1rem' }}>Next Month Demand</th>
                     <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Action</th>
                   </tr>
@@ -5708,26 +5750,30 @@ export default function PartyMasterModule({
                           <td style={{ padding: '0.85rem 1rem' }}>
                             {mRecord ? (
                               <span style={{
-                                padding: '0.2rem 0.6rem',
-                                borderRadius: '5px',
+                                padding: '0.22rem 0.65rem',
+                                borderRadius: '6px',
                                 fontSize: '0.74rem',
                                 fontWeight: 800,
-                                background: mRecord.market_sentiment === 'COMPETITOR_PRESSURE'
-                                  ? 'rgba(239,68,68,0.2)'
-                                  : mRecord.is_dormant_risk
-                                  ? 'rgba(245,158,11,0.2)'
-                                  : 'rgba(16,185,129,0.2)',
-                                color: mRecord.market_sentiment === 'COMPETITOR_PRESSURE'
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                background: ((mRecord.rating_overall || 5) <= 2 || mRecord.is_dormant_risk)
+                                  ? 'rgba(239,68,68,0.18)'
+                                  : (mRecord.rating_overall || 5) === 3
+                                  ? 'rgba(245,158,11,0.18)'
+                                  : 'rgba(16,185,129,0.18)',
+                                color: ((mRecord.rating_overall || 5) <= 2 || mRecord.is_dormant_risk)
                                   ? '#f87171'
-                                  : mRecord.is_dormant_risk
+                                  : (mRecord.rating_overall || 5) === 3
                                   ? '#fbbf24'
-                                  : '#34d399'
+                                  : '#34d399',
+                                border: `1px solid ${((mRecord.rating_overall || 5) <= 2 || mRecord.is_dormant_risk) ? 'rgba(239,68,68,0.3)' : (mRecord.rating_overall || 5) === 3 ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`
                               }}>
-                                {mRecord.market_sentiment === 'COMPETITOR_PRESSURE'
-                                  ? '🔴 Dormant / High Churn'
-                                  : mRecord.is_dormant_risk
-                                  ? '🟡 At Risk / Slowing'
-                                  : '🟢 Healthy Growth'}
+                                {((mRecord.rating_overall || 5) <= 2 || mRecord.is_dormant_risk)
+                                  ? '🔴 Critical / Grievance'
+                                  : (mRecord.rating_overall || 5) === 3
+                                  ? '🟡 Moderate Attention'
+                                  : '🟢 Satisfied & Active'}
                               </span>
                             ) : (
                               <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.74rem', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 600 }}>
@@ -5736,21 +5782,72 @@ export default function PartyMasterModule({
                             )}
                           </td>
 
+                          {/* OverAll Rating Column */}
                           <td style={{ padding: '0.85rem 1rem' }}>
                             {mRecord ? (
-                              <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#cbd5e1' }}>
-                                {mRecord.market_sentiment}
-                              </span>
-                            ) : '-'}
+                              <div>
+                                {(() => {
+                                  const r = Number(mRecord.rating_overall || 5);
+                                  const color = r >= 5 ? '#34d399' : r === 4 ? '#38bdf8' : r === 3 ? '#fbbf24' : r === 2 ? '#fb923c' : '#f87171';
+                                  const bg = r >= 5 ? 'rgba(16,185,129,0.16)' : r === 4 ? 'rgba(56,189,248,0.16)' : r === 3 ? 'rgba(245,158,11,0.16)' : r === 2 ? 'rgba(249,115,22,0.16)' : 'rgba(239,68,68,0.16)';
+                                  const label = r >= 5 ? '5/5 Excellent' : r === 4 ? '4/5 Good' : r === 3 ? '3/5 Average' : r === 2 ? '2/5 Poor' : '1/5 Very Poor';
+                                  const emoji = r >= 5 ? '🌟' : r === 4 ? '🙂' : r === 3 ? '😐' : r === 2 ? '🙁' : '😡';
+                                  return (
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem',
+                                      padding: '0.25rem 0.65rem',
+                                      borderRadius: '6px',
+                                      fontSize: '0.8rem',
+                                      fontWeight: 800,
+                                      background: bg,
+                                      color: color,
+                                      border: `1px solid ${color}35`
+                                    }}>
+                                      <span>{emoji}</span>
+                                      <span>{label}</span>
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>-</span>
+                            )}
                           </td>
 
-                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
+                          {/* Rating Breakdown Column: Order Delivery, Product Quality, Service Quality, Account Related */}
+                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
                             {mRecord ? (
-                              <div>
-                                <div>TSE Support: <strong style={{ color: '#fbbf24' }}>⭐ {mRecord.tse_support_rating || 5}/5</strong></div>
-                                <div style={{ color: 'var(--text-secondary)' }}>Service: <strong style={{ color: '#38bdf8' }}>⭐ {mRecord.service_support_rating || 5}/5</strong></div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.3rem 0.5rem', minWidth: '220px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Delivery:</span>
+                                  <strong style={{ color: (mRecord.rating_order_delivery || 5) >= 4 ? '#34d399' : (mRecord.rating_order_delivery || 5) === 3 ? '#fbbf24' : '#f87171' }}>
+                                    ⭐ {mRecord.rating_order_delivery || 5}/5
+                                  </strong>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Product:</span>
+                                  <strong style={{ color: (mRecord.rating_product_quality || 5) >= 4 ? '#34d399' : (mRecord.rating_product_quality || 5) === 3 ? '#fbbf24' : '#f87171' }}>
+                                    ⭐ {mRecord.rating_product_quality || 5}/5
+                                  </strong>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Service:</span>
+                                  <strong style={{ color: (mRecord.rating_service_quality || 5) >= 4 ? '#34d399' : (mRecord.rating_service_quality || 5) === 3 ? '#fbbf24' : '#f87171' }}>
+                                    ⭐ {mRecord.rating_service_quality || 5}/5
+                                  </strong>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Accounts:</span>
+                                  <strong style={{ color: (mRecord.rating_account_related || 5) >= 4 ? '#34d399' : (mRecord.rating_account_related || 5) === 3 ? '#fbbf24' : '#f87171' }}>
+                                    ⭐ {mRecord.rating_account_related || 5}/5
+                                  </strong>
+                                </div>
                               </div>
-                            ) : '-'}
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>-</span>
+                            )}
                           </td>
 
                           <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
@@ -5766,11 +5863,42 @@ export default function PartyMasterModule({
                               type="button"
                               onClick={() => {
                                 setSelectedPartyForMonthly(party);
-                                setMonthlyForm(prev => ({
-                                  ...prev,
-                                  party_id: party.id,
-                                  evaluation_period: monthlyPeriodFilter !== 'ALL' ? monthlyPeriodFilter : currentPeriodStr
-                                }));
+                                if (mRecord) {
+                                  setMonthlyForm({
+                                    id: mRecord.id,
+                                    party_id: party.id,
+                                    evaluation_period: mRecord.evaluation_period || (monthlyPeriodFilter !== 'ALL' ? monthlyPeriodFilter : currentPeriodStr),
+                                    days_inactive: mRecord.days_inactive ?? 0,
+                                    is_dormant_risk: !!mRecord.is_dormant_risk,
+                                    rating_order_delivery: mRecord.rating_order_delivery ?? 5,
+                                    rating_product_quality: mRecord.rating_product_quality ?? 5,
+                                    rating_service_quality: mRecord.rating_service_quality ?? 5,
+                                    rating_account_related: mRecord.rating_account_related ?? 5,
+                                    rating_overall: mRecord.rating_overall ?? 5,
+                                    tse_support_rating: mRecord.tse_support_rating ?? 5,
+                                    service_support_rating: mRecord.service_support_rating ?? 5,
+                                    next_month_demand_plan: mRecord.next_month_demand_plan || '',
+                                    competitor_schemes: mRecord.competitor_schemes || '',
+                                    dealer_suggestions: mRecord.dealer_suggestions || '',
+                                  });
+                                } else {
+                                  setMonthlyForm({
+                                    party_id: party.id,
+                                    evaluation_period: monthlyPeriodFilter !== 'ALL' ? monthlyPeriodFilter : currentPeriodStr,
+                                    days_inactive: 0,
+                                    is_dormant_risk: false,
+                                    rating_order_delivery: 5,
+                                    rating_product_quality: 5,
+                                    rating_service_quality: 5,
+                                    rating_account_related: 5,
+                                    rating_overall: 5,
+                                    tse_support_rating: 5,
+                                    service_support_rating: 5,
+                                    next_month_demand_plan: '',
+                                    competitor_schemes: '',
+                                    dealer_suggestions: '',
+                                  });
+                                }
                                 setShowMonthlyModal(true);
                               }}
                               style={{
@@ -6829,7 +6957,7 @@ export default function PartyMasterModule({
                 onConfirm: null
               });
             }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.2fr', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Evaluation Period (Month)</label>
                   <input
@@ -6850,67 +6978,210 @@ export default function PartyMasterModule({
                     style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
                   />
                 </div>
+                <div style={{ paddingTop: '1.2rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: monthlyForm.is_dormant_risk ? '#f87171' : '#34d399', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={monthlyForm.is_dormant_risk}
+                      onChange={e => setMonthlyForm({ ...monthlyForm, is_dormant_risk: e.target.checked })}
+                    />
+                    {monthlyForm.is_dormant_risk ? '⚠️ High Dormancy Risk' : '✓ Normal Engagement'}
+                  </label>
+                </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Territory Market Sentiment</label>
-                  <select
-                    value={monthlyForm.market_sentiment}
-                    onChange={e => setMonthlyForm({ ...monthlyForm, market_sentiment: e.target.value })}
-                    style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                  >
-                    <option value="BOOMING">🚀 Booming / High Demand</option>
-                    <option value="STEADY">⚖️ Steady / Normal Season</option>
-                    <option value="SLUGGISH">📉 Sluggish / Off-Season</option>
-                    <option value="COMPETITOR_PRESSURE">⚔️ Heavy Competitor Pressure</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Risk Status</label>
-                  <div style={{ display: 'flex', alignItems: 'center', height: '42px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: monthlyForm.is_dormant_risk ? '#f87171' : '#34d399', fontSize: '0.84rem', cursor: 'pointer', fontWeight: 600 }}>
-                      <input
-                        type="checkbox"
-                        checked={monthlyForm.is_dormant_risk}
-                        onChange={e => setMonthlyForm({ ...monthlyForm, is_dormant_risk: e.target.checked })}
-                      />
-                      {monthlyForm.is_dormant_risk ? '⚠️ High Dormancy / Churn Risk' : '✓ Normal Engagement'}
-                    </label>
+              {/* 5-DIMENSION PERFORMANCE RATING SCORES (1: Very Poor to 5: Excellent) */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '10px',
+                padding: '0.9rem',
+                marginBottom: '1rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>⭐</span>
+                    <span>Evaluation Rating Scores</span>
                   </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>TSE Field Support Score</label>
-                  <select
-                    value={monthlyForm.tse_support_rating}
-                    onChange={e => setMonthlyForm({ ...monthlyForm, tse_support_rating: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                  >
-                    <option value="5">⭐⭐⭐⭐⭐ 5 Stars (Active visits)</option>
-                    <option value="4">⭐⭐⭐⭐ 4 Stars (Good presence)</option>
-                    <option value="3">⭐⭐⭐ 3 Stars (Average support)</option>
-                    <option value="2">⭐⭐ 2 Stars (Rare visits)</option>
-                    <option value="1">⭐ 1 Star (No support received)</option>
-                  </select>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Scale: 1 (Very Poor) to 5 (Excellent)
+                  </span>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Service &amp; Warranty Score</label>
-                  <select
-                    value={monthlyForm.service_support_rating}
-                    onChange={e => setMonthlyForm({ ...monthlyForm, service_support_rating: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff' }}
-                  >
-                    <option value="5">⭐⭐⭐⭐⭐ 5 Stars (Prompt resolution)</option>
-                    <option value="4">⭐⭐⭐⭐ 4 Stars (Good support)</option>
-                    <option value="3">⭐⭐⭐ 3 Stars (Moderate delays)</option>
-                    <option value="2">⭐⭐ 2 Stars (Complaints pending)</option>
-                    <option value="1">⭐ 1 Star (Critical spare delays)</option>
-                  </select>
+                {[
+                  {
+                    key: 'rating_order_delivery',
+                    label: 'Order Delivery',
+                    desc: 'Fulfillment speed, dispatch accuracy & transit condition',
+                    icon: '🚚'
+                  },
+                  {
+                    key: 'rating_product_quality',
+                    label: 'Product Quality',
+                    desc: 'Machine performance, build quality & reliability',
+                    icon: '📦'
+                  },
+                  {
+                    key: 'rating_service_quality',
+                    label: 'Service Quality',
+                    desc: 'TSE field support, warranty claims & mechanic response',
+                    icon: '🛠️'
+                  },
+                  {
+                    key: 'rating_account_related',
+                    label: 'Account Related',
+                    desc: 'Billing accuracy, ledger reconciliation & credit notes',
+                    icon: '💳'
+                  }
+                ].map(item => {
+                  const currentVal = Number(monthlyForm[item.key] || 5);
+                  return (
+                    <div
+                      key={item.key}
+                      style={{
+                        padding: '0.65rem 0.75rem',
+                        borderRadius: '8px',
+                        background: 'rgba(15,23,42,0.6)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        marginBottom: '0.55rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.2rem' }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: '0.84rem', color: '#e2e8f0', marginRight: '0.4rem' }}>
+                            {item.icon} {item.label}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>({item.desc})</span>
+                        </div>
+                        <span style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          padding: '0.12rem 0.5rem',
+                          borderRadius: '4px',
+                          color: currentVal >= 5 ? '#34d399' : currentVal === 4 ? '#38bdf8' : currentVal === 3 ? '#fbbf24' : currentVal === 2 ? '#fb923c' : '#f87171',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: `1px solid ${currentVal >= 5 ? '#34d399' : currentVal === 4 ? '#38bdf8' : currentVal === 3 ? '#fbbf24' : currentVal === 2 ? '#fb923c' : '#f87171'}40`
+                        }}>
+                          {currentVal >= 5 ? '🌟 5 - Excellent' : currentVal === 4 ? '🙂 4 - Good' : currentVal === 3 ? '😐 3 - Average' : currentVal === 2 ? '🙁 2 - Poor' : '😡 1 - Very Poor'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.35rem' }}>
+                        {[
+                          { val: 1, label: 'Very Poor', emoji: '😡', color: '#ef4444' },
+                          { val: 2, label: 'Poor', emoji: '🙁', color: '#f97316' },
+                          { val: 3, label: 'Average', emoji: '😐', color: '#f59e0b' },
+                          { val: 4, label: 'Good', emoji: '🙂', color: '#38bdf8' },
+                          { val: 5, label: 'Excellent', emoji: '🌟', color: '#10b981' }
+                        ].map(opt => {
+                          const isSelected = currentVal === opt.val;
+                          return (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => {
+                                const newDelivery = item.key === 'rating_order_delivery' ? opt.val : (monthlyForm.rating_order_delivery || 5);
+                                const newProduct = item.key === 'rating_product_quality' ? opt.val : (monthlyForm.rating_product_quality || 5);
+                                const newService = item.key === 'rating_service_quality' ? opt.val : (monthlyForm.rating_service_quality || 5);
+                                const newAccount = item.key === 'rating_account_related' ? opt.val : (monthlyForm.rating_account_related || 5);
+                                const autoOverall = Math.round((newDelivery + newProduct + newService + newAccount) / 4);
+
+                                setMonthlyForm(prev => ({
+                                  ...prev,
+                                  [item.key]: opt.val,
+                                  ...(item.key === 'rating_service_quality' ? { service_support_rating: opt.val } : {}),
+                                  rating_overall: autoOverall
+                                }));
+                              }}
+                              style={{
+                                padding: '0.4rem 0.2rem',
+                                borderRadius: '6px',
+                                border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.1)',
+                                background: isSelected ? `${opt.color}25` : 'rgba(30,41,59,0.5)',
+                                color: isSelected ? '#fff' : '#94a3b8',
+                                fontWeight: isSelected ? 800 : 500,
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <div style={{ fontSize: '0.9rem' }}>{opt.emoji}</div>
+                              <div>{opt.val} - {opt.label}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Dimension 5: OverAll Rating */}
+                <div style={{
+                  padding: '0.75rem 0.85rem',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, rgba(37,99,235,0.15) 0%, rgba(30,58,138,0.2) 100%)',
+                  border: '1px solid rgba(59,130,246,0.35)',
+                  marginTop: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.2rem' }}>
+                    <div>
+                      <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#60a5fa', marginRight: '0.4rem' }}>
+                        🏆 OverAll Rating
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>(Composite score, click to override)</span>
+                    </div>
+                    {(() => {
+                      const ov = Number(monthlyForm.rating_overall || 5);
+                      return (
+                        <span style={{
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          padding: '0.15rem 0.6rem',
+                          borderRadius: '5px',
+                          color: ov >= 5 ? '#34d399' : ov === 4 ? '#38bdf8' : ov === 3 ? '#fbbf24' : ov === 2 ? '#fb923c' : '#f87171',
+                          background: 'rgba(0,0,0,0.4)',
+                          border: `1px solid ${ov >= 5 ? '#34d399' : ov === 4 ? '#38bdf8' : ov === 3 ? '#fbbf24' : ov === 2 ? '#fb923c' : '#f87171'}50`
+                        }}>
+                          {ov >= 5 ? '🌟 5 - Excellent' : ov === 4 ? '🙂 4 - Good' : ov === 3 ? '😐 3 - Average' : ov === 2 ? '🙁 2 - Poor' : '😡 1 - Very Poor'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.35rem' }}>
+                    {[
+                      { val: 1, label: 'Very Poor', emoji: '😡', color: '#ef4444' },
+                      { val: 2, label: 'Poor', emoji: '🙁', color: '#f97316' },
+                      { val: 3, label: 'Average', emoji: '😐', color: '#f59e0b' },
+                      { val: 4, label: 'Good', emoji: '🙂', color: '#38bdf8' },
+                      { val: 5, label: 'Excellent', emoji: '🌟', color: '#10b981' }
+                    ].map(opt => {
+                      const isSelected = Number(monthlyForm.rating_overall || 5) === opt.val;
+                      return (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => setMonthlyForm(prev => ({ ...prev, rating_overall: opt.val }))}
+                          style={{
+                            padding: '0.45rem 0.2rem',
+                            borderRadius: '6px',
+                            border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.12)',
+                            background: isSelected ? `${opt.color}30` : 'rgba(15,23,42,0.6)',
+                            color: isSelected ? '#fff' : '#94a3b8',
+                            fontWeight: isSelected ? 800 : 500,
+                            fontSize: '0.74rem',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ fontSize: '1rem' }}>{opt.emoji}</div>
+                          <div>{opt.val} - {opt.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
