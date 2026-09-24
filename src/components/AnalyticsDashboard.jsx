@@ -184,7 +184,7 @@ export default function AnalyticsDashboard({
       }));
   }, [teamMembers]);
 
-  const [selectedEmployee, setSelectedEmployee] = useState('All');
+  const [selectedEmployeeEmails, setSelectedEmployeeEmails] = useState([]);
   const [metrics, setMetrics] = useState({ employeeActivity: [], whatsappStats: { period: 0, total: 0 } });
   const [loading, setLoading] = useState(true);
   const [loadingAssignedWork, setLoadingAssignedWork] = useState(true);
@@ -261,28 +261,63 @@ export default function AnalyticsDashboard({
     return false;
   };
 
+  const selectedEmployee = useMemo(() => {
+    if (selectedEmployeeEmails.length === 0) return 'All';
+    if (selectedEmployeeEmails.length === 1) return selectedEmployeeEmails[0];
+    return selectedEmployeeEmails.join(',');
+  }, [selectedEmployeeEmails]);
+
+  const setSelectedEmployee = (val) => {
+    if (!val || val === 'All' || val === 'ALL') {
+      setSelectedEmployeeEmails([]);
+    } else if (Array.isArray(val)) {
+      setSelectedEmployeeEmails(val);
+    } else {
+      setSelectedEmployeeEmails([val]);
+    }
+  };
+
+  const selectedEmployeeObjs = useMemo(() => {
+    if (selectedEmployeeEmails.length === 0) return [];
+    return formattedEmployees.filter(emp => {
+      const email = (emp.email || '').toLowerCase().trim();
+      const id = (emp.user_id || emp.id || '').toLowerCase().trim();
+      const code = (emp.emp_code || emp.emp_id || '').toLowerCase().trim();
+      const name = (emp.emp_name || emp.name || '').toLowerCase().trim();
+      return selectedEmployeeEmails.some(sel => {
+        const s = (sel || '').toLowerCase().trim();
+        return s === email || (id && s === id) || (code && s === code) || (name && s === name);
+      });
+    });
+  }, [selectedEmployeeEmails, formattedEmployees]);
+
   const selectedEmployeeObj = useMemo(() => {
-    if (selectedEmployee === 'All') return null;
-    return teamMembers.find(t => isEmployeeMatch(selectedEmployee, t));
-  }, [selectedEmployee, teamMembers]);
+    return selectedEmployeeObjs.length === 1 ? selectedEmployeeObjs[0] : null;
+  }, [selectedEmployeeObjs]);
 
   const effectiveTargetEmail = useMemo(() => {
-    if (selectedEmployee === 'All') return '';
-    return selectedEmployeeObj?.email || selectedEmployee;
-  }, [selectedEmployee, selectedEmployeeObj]);
+    if (selectedEmployeeEmails.length === 0) return '';
+    return selectedEmployeeEmails.join(',');
+  }, [selectedEmployeeEmails]);
 
   const isMyWorkSelected = useMemo(() => {
-    if (selectedEmployee === 'All') return false;
-    if (myTeamMember && (selectedEmployee === myTeamMember.user_id || selectedEmployee === myTeamMember.email)) return true;
-    if (userEmail && selectedEmployeeObj?.email === userEmail) return true;
+    if (selectedEmployeeEmails.length !== 1) return false;
+    const sel = selectedEmployeeEmails[0].toLowerCase();
+    if (myTeamMember && (sel === (myTeamMember.email || '').toLowerCase() || sel === (myTeamMember.user_id || '').toLowerCase())) return true;
+    if (userEmail && sel === userEmail.toLowerCase()) return true;
     return false;
-  }, [selectedEmployee, myTeamMember, userEmail, selectedEmployeeObj]);
+  }, [selectedEmployeeEmails, myTeamMember, userEmail]);
 
   const viewingLabel = useMemo(() => {
-    if (selectedEmployee === 'All') return 'All Team Members';
-    if (selectedEmployeeObj?.emp_name) return selectedEmployeeObj.emp_name;
-    return selectedEmployee;
-  }, [selectedEmployee, selectedEmployeeObj]);
+    if (selectedEmployeeEmails.length === 0) return 'All Team Members';
+    if (selectedEmployeeEmails.length === 1) {
+      const emp = selectedEmployeeObjs[0];
+      return emp ? (emp.emp_name || emp.name || emp.email) : selectedEmployeeEmails[0];
+    }
+    const names = selectedEmployeeObjs.map(e => e.emp_name || e.name || e.email).filter(Boolean);
+    if (names.length <= 2) return names.join(' & ');
+    return `${names[0]}, ${names[1]} & ${names.length - 2} more (${names.length} Reps)`;
+  }, [selectedEmployeeEmails, selectedEmployeeObjs]);
 
   const getStageFromStatus = (status) => {
     if (!status) return '01 - New Stage';
@@ -404,17 +439,14 @@ export default function AnalyticsDashboard({
     };
   }, [leads, isAllTime, startDate, endDate, formattedEmployees, istDateFormatter]);
 
-  // Reactive filtered leads responding dynamically to both Employee and Date Range
+  // Reactive filtered leads responding dynamically to both Employee(s) and Date Range
   const filteredLeadsSync = useMemo(() => {
-    // 1. Employee filter (if an individual rep is selected)
+    // 1. Employee filter (if one or multiple reps are selected)
     let baseLeads = leads;
-    if (selectedEmployee !== 'All') {
+    if (selectedEmployeeEmails.length > 0) {
       baseLeads = leads.filter(l => {
         if (!l.assigned_to) return false;
-        if (selectedEmployeeObj) {
-          return isEmployeeMatch(l.assigned_to, selectedEmployeeObj);
-        }
-        return isEmployeeMatch(l.assigned_to, { user_id: selectedEmployee, email: selectedEmployee, emp_name: selectedEmployee });
+        return selectedEmployeeObjs.some(emp => isEmployeeMatch(l.assigned_to, emp));
       });
     }
 
@@ -423,7 +455,7 @@ export default function AnalyticsDashboard({
 
     // 3. Period-scoped view -> filter by active leads in [startDate, endDate]
     return baseLeads.filter(l => isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds));
-  }, [leads, selectedEmployee, selectedEmployeeObj, isAllTime, startDate, endDate, periodTouchedLeadIds]);
+  }, [leads, selectedEmployeeEmails, selectedEmployeeObjs, isAllTime, startDate, endDate, periodTouchedLeadIds]);
 
   const kpis = useMemo(() => {
     const total = filteredLeadsSync.length;
@@ -675,12 +707,15 @@ export default function AnalyticsDashboard({
   }, [formattedEmployees, dashboardSummaries.attendanceSummary, crmActiveEmployeesMap]);
 
   const filteredAttendance = useMemo(() => {
-    if (attendanceFilter === 'ALL') return enrichedAttendanceRecords;
-    if (attendanceFilter === 'PRESENT') return enrichedAttendanceRecords.filter(r => r.presenceStatus === 'PRESENT' || r.presenceStatus === 'LATE');
-    if (attendanceFilter === 'CRM_ACTIVE') return enrichedAttendanceRecords.filter(r => r.presenceStatus === 'CRM_ACTIVE');
-    if (attendanceFilter === 'ABSENT') return enrichedAttendanceRecords.filter(r => r.presenceStatus === 'ABSENT');
-    return enrichedAttendanceRecords;
-  }, [enrichedAttendanceRecords, attendanceFilter]);
+    let list = enrichedAttendanceRecords;
+    if (selectedEmployeeEmails.length > 0) {
+      list = list.filter(r => selectedEmployeeObjs.some(emp => isEmployeeMatch(r.email, emp) || isEmployeeMatch(r.empName, emp)));
+    }
+    if (attendanceFilter === 'PRESENT') return list.filter(r => r.presenceStatus === 'PRESENT' || r.presenceStatus === 'LATE');
+    if (attendanceFilter === 'CRM_ACTIVE') return list.filter(r => r.presenceStatus === 'CRM_ACTIVE');
+    if (attendanceFilter === 'ABSENT') return list.filter(r => r.presenceStatus === 'ABSENT');
+    return list;
+  }, [enrichedAttendanceRecords, attendanceFilter, selectedEmployeeEmails, selectedEmployeeObjs]);
 
   const attendanceStats = useMemo(() => {
     const total = enrichedAttendanceRecords.length;
@@ -1079,9 +1114,12 @@ export default function AnalyticsDashboard({
     });
   }, [formattedEmployees, leads, isAllTime, startDate, endDate, periodTouchedLeadIds, crmActiveEmployeesMap, dashboardSummaries.checklistSummary, dashboardSummaries.recruitmentSummary, assignedWork.delegation, attendanceRecordMap]);
 
-  // Filtered leaderboard with Role/Department filter
+  // Filtered leaderboard with Role/Department filter and selected employee(s) filter
   const filteredScorecard = useMemo(() => {
     let list = teamScorecardData;
+    if (selectedEmployeeEmails.length > 0) {
+      list = list.filter(s => selectedEmployeeObjs.some(emp => isEmployeeMatch(s.empEmail, emp) || isEmployeeMatch(s.empName, emp)));
+    }
     if (scorecardDeptFilter !== 'ALL') {
       list = list.filter(s => s.roleCategory === scorecardDeptFilter);
     }
@@ -1095,18 +1133,29 @@ export default function AnalyticsDashboard({
       );
     }
     return list;
-  }, [teamScorecardData, scorecardDeptFilter, scorecardSearch]);
+  }, [teamScorecardData, selectedEmployeeEmails, selectedEmployeeObjs, scorecardDeptFilter, scorecardSearch]);
 
   // Active Top 3 Podium Winners (Only reps with real logged performance)
   const activePodiumWinners = useMemo(() => {
-    return teamScorecardData
+    return filteredScorecard
       .filter(r => r.totalScore > 0 && r.hasActiveWork)
       .slice(0, 3);
-  }, [teamScorecardData]);
+  }, [filteredScorecard]);
 
   // Filtered Delegation tasks
   const delegationTasksList = useMemo(() => {
-    const list = assignedWork.delegation?.recentTasks || [];
+    let list = assignedWork.delegation?.recentTasks || [];
+    if (selectedEmployeeEmails.length > 0) {
+      list = list.filter(t => {
+        const tEmail = (t.assigned_to_email || '').toLowerCase();
+        const tName = (t.assigned_to_name || '').toLowerCase();
+        return selectedEmployeeObjs.some(emp => {
+          const empEmail = (emp.email || '').toLowerCase();
+          const empName = (emp.emp_name || emp.name || '').toLowerCase();
+          return (tEmail && tEmail === empEmail) || (tName && tName === empName);
+        });
+      });
+    }
     if (!taskSearch.trim()) return list;
     const q = taskSearch.toLowerCase();
     return list.filter(t =>
@@ -1186,18 +1235,25 @@ export default function AnalyticsDashboard({
   }, [formattedEmployees, dashboardSummaries.checklistSummary]);
 
   const filteredEmployeeChecklist = useMemo(() => {
-    if (!checklistSearch.trim()) return employeeChecklistMatrix;
+    let list = employeeChecklistMatrix;
+    if (selectedEmployeeEmails.length > 0) {
+      list = list.filter(m => selectedEmployeeObjs.some(emp => isEmployeeMatch(m.empEmail, emp) || isEmployeeMatch(m.empName, emp)));
+    }
+    if (!checklistSearch.trim()) return list;
     const q = checklistSearch.toLowerCase();
-    return employeeChecklistMatrix.filter(m =>
+    return list.filter(m =>
       m.empName.toLowerCase().includes(q) ||
       m.empEmail.toLowerCase().includes(q) ||
       m.department.toLowerCase().includes(q)
     );
-  }, [employeeChecklistMatrix, checklistSearch]);
+  }, [employeeChecklistMatrix, selectedEmployeeEmails, selectedEmployeeObjs, checklistSearch]);
 
   // Filtered Recruitment Candidates
   const filteredCandidatesList = useMemo(() => {
     let list = dashboardSummaries.recruitmentSummary?.candidates || [];
+    if (selectedEmployeeEmails.length > 0) {
+      list = list.filter(c => selectedEmployeeObjs.some(emp => isRecruiterMatch(c.created_by, emp)));
+    }
     if (recruiterFilter !== 'ALL') {
       if (recruiterFilter === 'REJECTED') {
         list = list.filter(c => (c.candidate_status || '').toLowerCase().includes('reject') || (c.candidate_status || '').toLowerCase().includes('dropped') || (c.candidate_status || '').toLowerCase().includes('no show'));
@@ -1223,7 +1279,29 @@ export default function AnalyticsDashboard({
       );
     }
     return list;
-  }, [dashboardSummaries.recruitmentSummary?.candidates, recruiterFilter, recruiterSearch]);
+  }, [dashboardSummaries.recruitmentSummary?.candidates, selectedEmployeeEmails, selectedEmployeeObjs, recruiterFilter, recruiterSearch]);
+
+  // Filtered Team Member Lead Matrix Data for Tab 6 (reflects selected employee(s))
+  const filteredLeadMatrixData = useMemo(() => {
+    return teamScorecardData.filter(r => {
+      if (selectedEmployeeEmails.length > 0) {
+        const isMatch = selectedEmployeeObjs.some(emp => isEmployeeMatch(r.empEmail, emp) || isEmployeeMatch(r.empName, emp));
+        if (!isMatch) return false;
+      }
+      if (leadBreakdownFilter === 'WITH_LEADS' && r.leadsAssigned === 0) return false;
+      if (leadBreakdownFilter === 'TOP_PERFORMERS') {
+        const contactRate = r.contactRate !== undefined ? r.contactRate : (r.leadsAssigned > 0 ? (r.leadsTouched / r.leadsAssigned) * 100 : 0);
+        if (contactRate < 50) return false;
+      }
+      if (leadBreakdownSearch.trim()) {
+        const q = leadBreakdownSearch.toLowerCase();
+        const matchName = r.empName?.toLowerCase().includes(q);
+        const matchDept = r.department?.toLowerCase().includes(q);
+        if (!matchName && !matchDept) return false;
+      }
+      return true;
+    });
+  }, [teamScorecardData, selectedEmployeeEmails, selectedEmployeeObjs, leadBreakdownFilter, leadBreakdownSearch]);
 
   const handleRefreshAll = () => {
     fetchAssignedWork();
@@ -1262,7 +1340,10 @@ export default function AnalyticsDashboard({
             <div style={{ display: 'flex', backgroundColor: 'var(--th-bg)', padding: '0.18rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
               {myTeamMember && (
                 <button
-                  onClick={() => setSelectedEmployee(myTeamMember.user_id)}
+                  onClick={() => {
+                    const myEmail = myTeamMember.email || userEmail;
+                    if (myEmail) setSelectedEmployeeEmails([myEmail]);
+                  }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '0.3rem',
                     padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
@@ -1276,13 +1357,13 @@ export default function AnalyticsDashboard({
                 </button>
               )}
               <button
-                onClick={() => setSelectedEmployee('All')}
+                onClick={() => setSelectedEmployeeEmails([])}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.3rem',
                   padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
                   border: 'none',
-                  backgroundColor: selectedEmployee === 'All' ? 'var(--accent-color)' : 'transparent',
-                  color: selectedEmployee === 'All' ? '#fff' : 'var(--text-primary)', cursor: 'pointer',
+                  backgroundColor: selectedEmployeeEmails.length === 0 ? 'var(--accent-color)' : 'transparent',
+                  color: selectedEmployeeEmails.length === 0 ? '#fff' : 'var(--text-primary)', cursor: 'pointer',
                   transition: 'all 0.15s'
                 }}
               >
@@ -1290,18 +1371,16 @@ export default function AnalyticsDashboard({
               </button>
             </div>
 
-            {/* Searchable Employee Selector */}
-            <div style={{ minWidth: '210px', maxWidth: '270px' }}>
+            {/* Searchable Employee Selector (Supports Single & Multi-Employee Selection) */}
+            <div style={{ minWidth: '240px', maxWidth: '360px' }}>
               <SearchableEmployeeSelect
                 employees={formattedEmployees}
-                selectedEmail={selectedEmployee === 'All' ? 'ALL' : (selectedEmployeeObj?.email || selectedEmployee)}
-                onSelect={(emp) => {
-                  if (!emp || emp.email === 'ALL') setSelectedEmployee('All');
-                  else setSelectedEmployee(emp.user_id || emp.email);
+                isMulti={true}
+                selectedEmails={selectedEmployeeEmails}
+                onMultiSelect={(selectedObjs, selectedEmailList) => {
+                  setSelectedEmployeeEmails(selectedEmailList || []);
                 }}
-                allowAllStaff={true}
-                allStaffLabel="All Employees (Team Overview)"
-                placeholder="🔍 Search employee..."
+                placeholder="👥 All Team Members (Click to filter)"
               />
             </div>
 
@@ -1775,7 +1854,7 @@ export default function AnalyticsDashboard({
                 <div
                   key={rep.empEmail}
                   className="card"
-                  onClick={() => setSelectedEmployee(rep.emp.user_id || rep.empEmail)}
+                  onClick={() => setSelectedEmployeeEmails([rep.empEmail])}
                   style={{
                     padding: '1.15rem', cursor: 'pointer', transition: 'all 0.2s',
                     borderTop: idx === 0 ? '4px solid #f59e0b' : idx === 1 ? '4px solid #94a3b8' : '4px solid #b45309',
@@ -1905,15 +1984,22 @@ export default function AnalyticsDashboard({
                     filteredScorecard.map((row, idx) => (
                       <tr
                         key={row.empEmail}
-                        onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
-                        className={selectedEmployee === (row.emp.user_id || row.empEmail) ? 'active-row' : ''}
+                        onClick={() => {
+                          const target = (row.empEmail || '').toLowerCase();
+                          if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
+                            setSelectedEmployeeEmails([]);
+                          } else {
+                            setSelectedEmployeeEmails([row.empEmail]);
+                          }
+                        }}
+                        className={selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? 'active-row' : ''}
                         style={{
                           borderBottom: '1px solid var(--border-light)', 
                           cursor: 'pointer',
-                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) 
+                          backgroundColor: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) 
                             ? 'var(--table-row-selected, var(--th-filtered-bg))' 
                             : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))'),
-                          borderLeft: selectedEmployee === (row.emp.user_id || row.empEmail) ? '3px solid var(--accent-color)' : '3px solid transparent',
+                          borderLeft: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? '3px solid var(--accent-color)' : '3px solid transparent',
                           transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
                       >
@@ -2304,10 +2390,17 @@ export default function AnalyticsDashboard({
                     {filteredEmployeeChecklist.map((row, idx) => (
                       <tr
                         key={row.empEmail}
-                        onClick={() => setSelectedEmployee(row.emp.user_id || row.empEmail)}
+                        onClick={() => {
+                          const target = (row.empEmail || '').toLowerCase();
+                          if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
+                            setSelectedEmployeeEmails([]);
+                          } else {
+                            setSelectedEmployeeEmails([row.empEmail]);
+                          }
+                        }}
                         style={{
                           borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                          backgroundColor: selectedEmployee === (row.emp.user_id || row.empEmail) ? 'var(--th-bg)' : 'transparent',
+                          backgroundColor: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? 'var(--th-bg)' : 'transparent',
                           transition: 'background 0.15s'
                         }}
                       >
@@ -2890,22 +2983,14 @@ export default function AnalyticsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {teamScorecardData
-                    .filter(r => {
-                      if (leadBreakdownFilter === 'WITH_LEADS' && r.leadsAssigned === 0) return false;
-                      if (leadBreakdownFilter === 'TOP_PERFORMERS') {
-                        const contactRate = r.contactRate !== undefined ? r.contactRate : (r.leadsAssigned > 0 ? (r.leadsTouched / r.leadsAssigned) * 100 : 0);
-                        if (contactRate < 50) return false;
-                      }
-                      if (leadBreakdownSearch.trim()) {
-                        const q = leadBreakdownSearch.toLowerCase();
-                        const matchName = r.empName?.toLowerCase().includes(q);
-                        const matchDept = r.department?.toLowerCase().includes(q);
-                        if (!matchName && !matchDept) return false;
-                      }
-                      return true;
-                    })
-                    .map((row, idx) => {
+                  {filteredLeadMatrixData.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No representatives found matching the selected filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLeadMatrixData.map((row, idx) => {
                       const contactRate = row.contactRate !== undefined ? row.contactRate : (row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0);
                       return (
                         <tr key={row.empEmail || idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background 0.15s' }}>
@@ -2960,7 +3045,7 @@ export default function AnalyticsDashboard({
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                 </tbody>
               </table>
             </div>
