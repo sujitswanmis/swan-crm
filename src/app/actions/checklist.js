@@ -423,7 +423,7 @@ export async function getEmployeeChecklistDashboard({
         ? Boolean(tmpl.allow_delayed_submission)
         : (scheduleMeta.allow_delayed_submission !== undefined
           ? Boolean(scheduleMeta.allow_delayed_submission)
-          : (tmpl.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmpl.schedule_config.allow_delayed_submission) : true));
+          : (tmpl.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmpl.schedule_config.allow_delayed_submission) : false));
 
       const scheduleConfig = {
         daily_repetition_count: repCount,
@@ -695,7 +695,7 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         ? Boolean(tmplDoc.allow_delayed_submission)
         : (scheduleMeta.allow_delayed_submission !== undefined
           ? Boolean(scheduleMeta.allow_delayed_submission)
-          : (tmplDoc.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmplDoc.schedule_config.allow_delayed_submission) : true));
+          : (tmplDoc.schedule_config?.allow_delayed_submission !== undefined ? Boolean(tmplDoc.schedule_config.allow_delayed_submission) : false));
 
       let slotDueTime = tmplDoc.due_time || '18:00';
       if (period_key && period_key.includes('_S')) {
@@ -721,16 +721,10 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
       });
 
       if (delayCheck.isExpired) {
-        // If the slot is scheduled for today, allow late submission with delay tag instead of blocking
-        const rawDate = (period_key || '').split('_')[0];
-        const istParts = getISTDateParts(new Date());
-        const isToday = rawDate === istParts.dateStr;
-        if (!isToday) {
-          return {
-            success: false,
-            error: `❌ Submission Window Closed: This checklist slot closed at ${delayCheck.formattedExpire}. Expired past checklists cannot be submitted.`
-          };
-        }
+        return {
+          success: false,
+          error: `❌ Submission Window Closed: This checklist slot closed at ${delayCheck.formattedExpire}. Expired checklists cannot be submitted.`
+        };
       }
 
       if (delayCheck.isBeforeStart) {
@@ -865,7 +859,7 @@ export async function getChecklistComplianceReport({
         bufferMins = parseInt(tmpl.buffer_minutes || scheduleMeta.buffer_minutes || 20, 10);
         allowDelayed = tmpl.allow_delayed_submission !== undefined
           ? Boolean(tmpl.allow_delayed_submission)
-          : (scheduleMeta.allow_delayed_submission !== undefined ? Boolean(scheduleMeta.allow_delayed_submission) : true);
+          : (scheduleMeta.allow_delayed_submission !== undefined ? Boolean(scheduleMeta.allow_delayed_submission) : false);
 
         dMonth = tmpl.day_of_month || scheduleMeta.day_of_month || 1;
         mYear = tmpl.month_of_year || scheduleMeta.month_of_year || 12;

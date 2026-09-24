@@ -470,7 +470,7 @@ export function calculateDelayStatus({
   halfYearlyMonth = 6,
   submittedAt = null,
   isCompleted = false,
-  allowDelayedSubmission = true,
+  allowDelayedSubmission = false,
   now = new Date()
 }) {
   const [hours, minutes] = (dueTime || '18:00').split(':').map(Number);
@@ -587,14 +587,8 @@ export function calculateDelayStatus({
   // 4. If buffer window expired:
   const overdueMs = currentTime.getTime() - expireDateTime.getTime();
 
-  // Check if slot belongs to today's date (Asia/Kolkata IST)
-  const istNowParts = getISTDateParts(currentTime);
-  const rawSlotDate = (periodKey || '').split('_')[0];
-  const isSameDaySlot = freq === 'DAILY' && rawSlotDate === istNowParts.dateStr;
-  const isDelayedPermitted = allowDelayedSubmission !== false || isSameDaySlot;
-
-  // If delayed submission is allowed for this template OR if it is within today's working day:
-  if (isDelayedPermitted) {
+  // If delayed submission is allowed for this template:
+  if (allowDelayedSubmission) {
     return {
       startDateTime,
       cutoffDate: expireDateTime,
@@ -618,7 +612,7 @@ export function calculateDelayStatus({
     };
   }
 
-  // Default: Strictly Expired / Missed (Historical past dates)
+  // Default: Strictly Expired / Missed
   return {
     startDateTime,
     cutoffDate: expireDateTime,

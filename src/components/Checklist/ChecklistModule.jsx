@@ -1217,7 +1217,7 @@ export default function ChecklistModule({
       daily_slots: generateDefaultDailySlots(1),
       due_time: '18:00',
       buffer_minutes: 20,
-      allow_delayed_submission: true,
+      allow_delayed_submission: false,
       days_of_week: ['Monday'],
       day_of_month: 1,
       quarter_month: 3,
