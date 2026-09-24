@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { logAuditAction } from '@/app/actions/audit';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -1295,3 +1296,93 @@ export async function verifyAndCloseComplaint(complaintId, otp, satisfactionRati
   if (error) throw new Error(error.message);
   return data;
 }
+
+/**
+ * Permanently delete a channel partner from Party Master and its related stage records
+ */
+export async function deletePartyMaster(partyId) {
+  const adminClient = getAdminClient();
+  try {
+    if (!partyId) throw new Error('Party ID is required for deletion');
+
+    // 1. Fetch party to ensure it exists
+    const { data: party, error: fetchErr } = await adminClient
+      .from('party_master')
+      .select('id, firm_name, party_universal_code, party_type, source_lead_id')
+      .eq('id', partyId)
+      .single();
+
+    if (fetchErr || !party) {
+      throw new Error('Party record not found or already deleted');
+    }
+
+    // 2. Check if downstream child parties depend on this party as parent
+    const { data: childParties } = await adminClient
+      .from('party_master')
+      .select('id, firm_name, party_type')
+      .or(`parent_distributor_id.eq.${partyId},parent_dealer_id.eq.${partyId}`)
+      .limit(5);
+
+    if (childParties && childParties.length > 0) {
+      const childNames = childParties.map(c => `${c.firm_name} (${c.party_type})`).join(', ');
+      throw new Error(`Cannot delete "${party.firm_name}" because child partners are linked under it: ${childNames}. Please reassign or remove them first.`);
+    }
+
+    // 3. Clean up all dependent/child records
+    await Promise.allSettled([
+      adminClient.from('party_roles').delete().eq('party_id', partyId),
+      adminClient.from('party_contacts').delete().eq('party_id', partyId),
+      adminClient.from('party_addresses').delete().eq('party_id', partyId),
+      adminClient.from('party_relationship_history').delete().eq('party_id', partyId),
+      adminClient.from('party_commercial_terms').delete().eq('party_id', partyId),
+      adminClient.from('party_product_authorizations').delete().eq('party_id', partyId),
+      adminClient.from('party_territory_allocations').delete().eq('party_id', partyId),
+      adminClient.from('party_team_assignments').delete().eq('party_id', partyId),
+      adminClient.from('party_order_followup').delete().eq('party_id', partyId),
+      adminClient.from('party_order_feedback').delete().eq('party_id', partyId),
+      adminClient.from('party_monthly_feedback').delete().eq('party_id', partyId),
+      adminClient.from('party_complaints').delete().eq('party_id', partyId),
+      adminClient.from('lead_party_handoffs').delete().eq('target_party_id', partyId)
+    ]);
+
+    // 4. If this party was transferred from a lead, reset lead to pending confirmation in S08
+    if (party.source_lead_id) {
+      try {
+        await adminClient
+          .from('leads')
+          .update({
+            status: '8;01>Transfer to Party>Pending Confirmation'
+          })
+          .eq('id', party.source_lead_id);
+      } catch (_) {}
+    }
+
+    // 5. Delete from party_master
+    const { error: delErr } = await adminClient
+      .from('party_master')
+      .delete()
+      .eq('id', partyId);
+
+    if (delErr) {
+      console.error('Error deleting from party_master:', delErr);
+      throw new Error(delErr.message);
+    }
+
+    // 6. Log audit action
+    try {
+      await logAuditAction('Party Deleted', `Deleted party "${party.firm_name}" (${party.party_universal_code || party.id}) from Party Master`);
+    } catch (_) {}
+
+    return {
+      success: true,
+      message: `Party "${party.firm_name}" successfully deleted.`
+    };
+  } catch (err) {
+    console.error('Error in deletePartyMaster:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to delete party'
+    };
+  }
+}
+

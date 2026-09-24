@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
   Building2, ShieldCheck, Check, Plus, ExternalLink, RefreshCw,
-  Users, MapPin, Phone, Shield, ChevronRight
+  Users, MapPin, Phone, Shield, ChevronRight, Trash2
 } from 'lucide-react';
 
 const STAGE_CONFIGS = {
@@ -104,7 +104,8 @@ export default function StageDataTable({
   activePartyId = null,
   onSelectParty,
   getStageApprovalStatus,
-  onNewParty
+  onNewParty,
+  onDeleteParty
 }) {
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
   const [searchTerm, setSearchTerm] = useState('');
@@ -794,27 +795,64 @@ export default function StageDataTable({
 
                     {/* Action Button */}
                     <td style={{ padding: '0.75rem 0.9rem', textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => onSelectParty(party)}
-                        style={{
-                          padding: '0.42rem 0.85rem',
-                          background: isApproved ? meta.badgeBg : (meta.badgeColor || '#2563eb'),
-                          border: isApproved ? `1px solid ${meta.badgeColor}` : 'none',
-                          borderRadius: '6px',
-                          color: isApproved ? meta.badgeColor : '#ffffff',
-                          fontWeight: 700,
-                          fontSize: '0.76rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.35rem',
-                          boxShadow: isApproved ? 'none' : `0 2px 8px ${meta.badgeBg}`,
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        <ArrowRight size={13} /> {isApproved ? 'Edit / View ➔' : 'Configure ➔'}
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => onSelectParty(party)}
+                          style={{
+                            padding: '0.42rem 0.85rem',
+                            background: isApproved ? meta.badgeBg : (meta.badgeColor || '#2563eb'),
+                            border: isApproved ? `1px solid ${meta.badgeColor}` : 'none',
+                            borderRadius: '6px',
+                            color: isApproved ? meta.badgeColor : '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.76rem',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            boxShadow: isApproved ? 'none' : `0 2px 8px ${meta.badgeBg}`,
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <ArrowRight size={13} /> {isApproved ? 'Edit / View ➔' : 'Configure ➔'}
+                        </button>
+                        {onDeleteParty && (
+                          <button
+                            type="button"
+                            title={`Delete ${party.firm_name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteParty(party);
+                            }}
+                            style={{
+                              padding: '0.42rem 0.6rem',
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                              borderRadius: '6px',
+                              color: '#ef4444',
+                              fontWeight: 700,
+                              fontSize: '0.74rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              transition: 'all 0.15s'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#ef4444';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+                              e.currentTarget.style.color = '#ef4444';
+                            }}
+                          >
+                            <Trash2 size={13} />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

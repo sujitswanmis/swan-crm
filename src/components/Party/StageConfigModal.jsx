@@ -9,7 +9,8 @@ import {
   ShieldCheck,
   Building2,
   Users,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
@@ -250,6 +251,7 @@ export default function StageConfigModal({
   onClose,
   onSwitchTab,
   modalParty,
+  onDeleteParty,
   approvals = {},
   // S01
   s00Form,
@@ -1060,20 +1062,57 @@ export default function StageConfigModal({
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S01 Details
-                    </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div>
+                      {modalParty?.id && onDeleteParty && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onDeleteParty(modalParty);
+                          }}
+                          style={{
+                            padding: '0.65rem 1.1rem',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid #ef4444',
+                            borderRadius: '8px',
+                            color: '#ef4444',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            transition: 'all 0.15s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#ef4444';
+                            e.currentTarget.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                            e.currentTarget.style.color = '#ef4444';
+                          }}
+                        >
+                          <Trash2 size={15} /> Delete Party
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        style={cancelBtnStyle}
+                      >
+                        Close [Esc]
+                      </button>
+                      <button
+                        type="submit"
+                        style={submitBtnStyle}
+                      >
+                        <CheckCircle2 size={16} /> Save &amp; Confirm S01 Details
+                      </button>
+                    </div>
                   </div>
                 </form>
               )}

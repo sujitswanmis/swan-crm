@@ -8,7 +8,7 @@ import {
   DollarSign, Calendar, ChevronRight, Search, Filter, Clock, Star,
   MessageSquare, Truck, Package, Shield, ExternalLink, ThumbsUp,
   AlertCircle, FileText, Check, Lock, ChevronDown, CheckSquare, Sparkles,
-  UserCheck, Layers, GitFork, UserPlus, Tag, Download, RotateCcw
+  UserCheck, Layers, GitFork, UserPlus, Tag, Download, RotateCcw, Trash2
 } from 'lucide-react';
 import {
   getPartyList,
@@ -27,7 +27,8 @@ import {
   saveMonthlyFeedback,
   getComplaintsList,
   createComplaintTicket,
-  verifyAndCloseComplaint
+  verifyAndCloseComplaint,
+  deletePartyMaster
 } from '@/app/actions/partyMaster';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
@@ -414,6 +415,10 @@ export default function PartyMasterModule({
     confirmText: 'OK',
     onConfirm: null
   });
+
+  // Party Deletion confirmation state
+  const [deleteConfirmParty, setDeleteConfirmParty] = useState(null);
+  const [isDeletingParty, setIsDeletingParty] = useState(false);
 
   const refreshTransferredLeads = useCallback(async () => {
     try {
@@ -1239,6 +1244,65 @@ export default function PartyMasterModule({
     setIsStageModalOpen(true);
   };
 
+  const handleDeleteParty = (party) => {
+    if (!party) return;
+    setDeleteConfirmParty(party);
+  };
+
+  const executeDeleteParty = async (party) => {
+    if (!party?.id) return;
+    setIsDeletingParty(true);
+    try {
+      const res = await deletePartyMaster(party.id);
+      if (!res.success) {
+        setCenterAlert({
+          isOpen: true,
+          type: 'error',
+          title: 'Deletion Blocked',
+          message: res.error || 'Failed to delete party',
+          subMessage: 'Please resolve linked child partners and try again.',
+          confirmText: 'Dismiss'
+        });
+        return;
+      }
+
+      // Close confirmation dialog
+      setDeleteConfirmParty(null);
+
+      // Reset modal and active states if active party was deleted
+      if (activePartyId === party.id || wizardParty?.id === party.id) {
+        setActivePartyId(null);
+        setWizardParty(null);
+        setIsStageModalOpen(false);
+      }
+
+      await loadInitialData();
+      await refreshTransferredLeads();
+
+      setCenterAlert({
+        isOpen: true,
+        type: 'success',
+        title: 'Party Deleted',
+        message: res.message || `Party "${party.firm_name}" was successfully removed.`,
+        partnerName: party.firm_name,
+        partnerCode: party.party_universal_code || party.id,
+        subMessage: party.source_lead_id ? 'The source lead in S08 has been safely reset to Pending Confirmation.' : '',
+        confirmText: 'Done'
+      });
+    } catch (err) {
+      console.error('Error deleting party:', err);
+      setCenterAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'Unexpected Error',
+        message: err.message || 'An error occurred while deleting the party',
+        confirmText: 'Dismiss'
+      });
+    } finally {
+      setIsDeletingParty(false);
+    }
+  };
+
   // Wizard & Submenu Save Handlers
   const handleS00Submit = async (e) => {
     e.preventDefault();
@@ -2011,6 +2075,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2022,6 +2087,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2033,6 +2099,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2044,6 +2111,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2055,6 +2123,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2066,6 +2135,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2077,6 +2147,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2088,6 +2159,7 @@ export default function PartyMasterModule({
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
+          onDeleteParty={handleDeleteParty}
         />
       )}
 
@@ -2107,6 +2179,7 @@ export default function PartyMasterModule({
           setIsStageModalOpen(true);
         }}
         modalParty={wizardParty || parties.find(p => p.id === activePartyId)}
+        onDeleteParty={handleDeleteParty}
         approvals={getStageApprovalStatus(wizardParty || parties.find(p => p.id === activePartyId))}
         // S01
         s00Form={s00Form}
@@ -2769,6 +2842,35 @@ export default function PartyMasterModule({
                                 <Phone size={13} /> Order
                               </button>
                             )}
+
+                            <button
+                              onClick={() => handleDeleteParty(p)}
+                              title={`Delete ${p.firm_name}`}
+                              style={{
+                                padding: '0.4rem 0.6rem',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: '#ef4444',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                transition: 'all 0.15s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#ef4444';
+                                e.currentTarget.style.color = '#ffffff';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                                e.currentTarget.style.color = '#ef4444';
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -3934,6 +4036,200 @@ export default function PartyMasterModule({
                 <button type="submit" style={{ padding: '0.6rem 1.25rem', background: '#ef4444', border: 'none', color: '#fff', fontWeight: 700, borderRadius: '8px' }}>Issue Ticket</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* CONFIRMATION POPUP FOR PERMANENT PARTY DELETION */}
+      {/* ========================================================= */}
+      {deleteConfirmParty && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingParty) {
+              setDeleteConfirmParty(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              border: '1.5px solid rgba(239, 68, 68, 0.45)',
+              borderRadius: '20px',
+              padding: '2rem',
+              width: '100%',
+              maxWidth: '480px',
+              color: '#ffffff',
+              textAlign: 'center',
+              boxShadow: '0 25px 55px rgba(0,0,0,0.85), 0 0 35px rgba(239, 68, 68, 0.25)',
+              position: 'relative'
+            }}
+          >
+            {/* Top Close [x] */}
+            <button
+              type="button"
+              disabled={isDeletingParty}
+              onClick={() => setDeleteConfirmParty(null)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'rgba(255,255,255,0.06)',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: isDeletingParty ? 'not-allowed' : 'pointer',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={16} />
+            </button>
+
+            {/* Glowing Icon Badge */}
+            <div
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                margin: '0 auto 1.25rem auto',
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(185, 28, 28, 0.1))',
+                border: '2px solid #ef4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 25px rgba(239, 68, 68, 0.35)',
+                color: '#ef4444'
+              }}
+            >
+              <Trash2 size={34} />
+            </div>
+
+            {/* Badge */}
+            <div style={{ marginBottom: '0.4rem' }}>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  padding: '0.2rem 0.65rem',
+                  borderRadius: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#f87171'
+                }}
+              >
+                Delete Channel Partner
+              </span>
+            </div>
+
+            {/* Title */}
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', margin: '0.5rem 0' }}>
+              Delete &ldquo;{deleteConfirmParty.firm_name}&rdquo;?
+            </h3>
+
+            {/* Partner Details Card */}
+            <div
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '10px',
+                padding: '0.75rem 1rem',
+                margin: '0.85rem 0 1.25rem 0',
+                fontSize: '0.82rem',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span style={{ color: '#94a3b8' }}>Partner Code:</span>
+                <strong style={{ color: '#38bdf8' }}>{deleteConfirmParty.party_universal_code || 'Pending'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span style={{ color: '#94a3b8' }}>Partner Tier:</span>
+                <strong style={{ color: '#fbbf24' }}>{deleteConfirmParty.party_type || 'Partner'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8' }}>Location:</span>
+                <strong style={{ color: '#cbd5e1' }}>
+                  {[deleteConfirmParty.district_name, deleteConfirmParty.state_name].filter(Boolean).join(', ') || '-'}
+                </strong>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 1.5rem 0', fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.45 }}>
+              ⚠️ This will permanently remove this partner and all related contacts, addresses, commercial terms, product authorizations, and stage configurations.
+              {deleteConfirmParty.source_lead_id ? ' The associated lead will be safely reset so you can re-transfer it.' : ''}
+            </p>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                disabled={isDeletingParty}
+                onClick={() => setDeleteConfirmParty(null)}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  borderRadius: '8px',
+                  color: '#cbd5e1',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: isDeletingParty ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingParty}
+                onClick={() => executeDeleteParty(deleteConfirmParty)}
+                style={{
+                  flex: 1.25,
+                  padding: '0.75rem 1rem',
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '0.88rem',
+                  cursor: isDeletingParty ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.45rem',
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
+                }}
+              >
+                {isDeletingParty ? (
+                  <>
+                    <RefreshCw size={15} className="animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={15} />
+                    Yes, Delete Party
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
