@@ -655,6 +655,7 @@ export default function ChecklistModule({
   const [execResponses, setExecResponses] = useState({});
   const [execNotes, setExecNotes] = useState('');
   const [savingSubmission, setSavingSubmission] = useState(false);
+  const [executionError, setExecutionError] = useState('');
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -935,6 +936,7 @@ export default function ChecklistModule({
     setExecutingChecklist(item);
     setExecResponses(item.submission?.responses || {});
     setExecNotes(item.submission?.submission_notes || '');
+    setExecutionError('');
   };
 
   // Dedicated Auto-open Checklist Slot Handler for Notifications & Popups
@@ -1017,6 +1019,7 @@ export default function ChecklistModule({
 
   const handleSubmitExecution = async () => {
     if (!executingChecklist) return;
+    setExecutionError('');
 
     const tmpl = executingChecklist.template;
     const currentDelayInfo = calculateDelayStatus({
@@ -1035,11 +1038,15 @@ export default function ChecklistModule({
     });
 
     if (currentDelayInfo.isExpired) {
-      showNotification(`❌ Submission Window Closed: This checklist slot closed at ${currentDelayInfo.formattedExpire || 'deadline'}. Expired checklists cannot be submitted.`, true);
+      const msg = `❌ Submission Window Closed: This checklist slot closed at ${currentDelayInfo.formattedExpire || 'deadline'}. Expired checklists cannot be submitted.`;
+      setExecutionError(msg);
+      showNotification(msg, true);
       return;
     }
     if (currentDelayInfo.isBeforeStart) {
-      showNotification(`🔒 Checklist is Locked: This checklist slot opens at ${currentDelayInfo.formattedStart || 'start time'}.`, true);
+      const msg = `🔒 Checklist is Locked: This checklist slot opens at ${currentDelayInfo.formattedStart || 'start time'}.`;
+      setExecutionError(msg);
+      showNotification(msg, true);
       return;
     }
 
@@ -1137,7 +1144,9 @@ export default function ChecklistModule({
         // Silent background sync - no screen flicker or reload
         loadEmployeeDashboard(dashboardDate, true);
       } else {
-        showNotification(res.error || 'Failed to submit checklist', true);
+        const errMsg = res.error || 'Failed to submit checklist';
+        setExecutionError(errMsg);
+        showNotification(errMsg, true);
       }
     } catch (e) {
       console.warn('Network submitChecklist failed, checking offline fallback:', e);
@@ -1178,7 +1187,9 @@ export default function ChecklistModule({
         showNotification('⚡ Network Issue: Checklist saved safely to device! Will sync automatically.');
         setExecutingChecklist(null);
       } else {
-        showNotification(e.message, true);
+        const errMsg = e.message || 'Error submitting checklist';
+        setExecutionError(errMsg);
+        showNotification(errMsg, true);
       }
     } finally {
       setSavingSubmission(false);
@@ -1206,7 +1217,7 @@ export default function ChecklistModule({
       daily_slots: generateDefaultDailySlots(1),
       due_time: '18:00',
       buffer_minutes: 20,
-      allow_delayed_submission: false,
+      allow_delayed_submission: true,
       days_of_week: ['Monday'],
       day_of_month: 1,
       quarter_month: 3,
@@ -4932,6 +4943,35 @@ export default function ChecklistModule({
 
             {/* Questions Body */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* In-Modal Error Banner */}
+              {executionError && (
+                <div style={{
+                  padding: '0.85rem 1rem',
+                  background: '#fef2f2',
+                  color: '#991b1b',
+                  border: '1.5px solid #f87171',
+                  borderRadius: '8px',
+                  fontSize: '0.88rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.6rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <AlertTriangle size={20} style={{ flexShrink: 0, color: '#dc2626' }} />
+                    <div style={{ fontWeight: 600 }}>{executionError}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExecutionError('')}
+                    style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem', padding: '0 4px', lineHeight: 1 }}
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
               {/* Completed Lock Banner, Expired Banner, Locked Banner, or Active Banner */}
               {(() => {
                 const isAlreadyCompleted = executingChecklist.status === 'COMPLETED' || executingChecklist.submission?.status === 'COMPLETED';
