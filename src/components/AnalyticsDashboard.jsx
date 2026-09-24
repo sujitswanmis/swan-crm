@@ -324,6 +324,9 @@ export default function AnalyticsDashboard({
     const cDate = toISTDate(lead.created_at);
     if (cDate && (!start || cDate >= start) && (!end || cDate <= end)) return true;
 
+    const uDate = toISTDate(lead.updated_at);
+    if (uDate && (!start || uDate >= start) && (!end || uDate <= end)) return true;
+
     const lDate = toISTDate(lead.lead_date);
     if (lDate && (!start || lDate >= start) && (!end || lDate <= end)) return true;
 
@@ -747,9 +750,36 @@ export default function AnalyticsDashboard({
       // Total Assigned MUST ALWAYS reflect the representative's full portfolio
       const leadsAssigned = empAllLeads.length;
 
-      // Stage breakdown (S1 to S7) reflects the employee's assigned portfolio
+      // Leads active/touched in the selected period for this rep:
+      let periodEmpLeads;
+      if (isAllTime) {
+        periodEmpLeads = empAllLeads;
+      } else {
+        const periodLeadIdSet = new Set();
+        const activeLeads = [];
+        empAllLeads.forEach(l => {
+          if (isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds)) {
+            periodLeadIdSet.add(l.id);
+            activeLeads.push(l);
+          }
+        });
+
+        // Also add any leads that this rep personally touched/noted in the period (even if not strictly assigned to them)
+        if (act.leadIdSet && act.leadIdSet.size > 0) {
+          leads.forEach(l => {
+            if (act.leadIdSet.has(l.id) && !periodLeadIdSet.has(l.id)) {
+              periodLeadIdSet.add(l.id);
+              activeLeads.push(l);
+            }
+          });
+        }
+
+        periodEmpLeads = activeLeads;
+      }
+
+      // Stage breakdown (S1 to S7): Dynamically reacts to selected date filter
       const stageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
-      empAllLeads.forEach(l => {
+      periodEmpLeads.forEach(l => {
         const num = getStageNumber(l.status);
         if (stageBreakdown[num] !== undefined) stageBreakdown[num]++;
         else stageBreakdown[1]++;
@@ -789,12 +819,13 @@ export default function AnalyticsDashboard({
 
       const effectiveTouched = Math.max(assignedTouchedCount, act.uniqueLeads || 0);
       const leadsTouched = effectiveTouched;
-      const contactRate = leadsAssigned > 0 ? Math.min(100, Math.round((leadsTouched / leadsAssigned) * 100)) : 0;
+      const periodTotal = isAllTime ? leadsAssigned : Math.max(periodEmpLeads.length, leadsTouched);
+      const contactRate = periodTotal > 0 ? Math.min(100, Math.round((leadsTouched / periodTotal) * 100)) : 0;
 
       // Outreach Score (Max 30 pts): Directly reflects Touch Rate %
-      const outreachScore = leadsAssigned > 0 
+      const outreachScore = periodTotal > 0 
         ? Math.min(30, Math.round((contactRate / 100) * 30))
-        : (effectiveTouched > 0 ? Math.min(30, Math.round((effectiveTouched / 15) * 30)) : 0);
+        : 0;
 
       // Checklists done vs pending for this employee
       const empChecklistSlots = (dashboardSummaries.checklistSummary?.items || []).filter(c => {
