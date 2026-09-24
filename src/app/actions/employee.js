@@ -73,12 +73,12 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
       .from('employees')
       .select('*, designation:designations(designation_name, designation_level, category)')
       .eq('tenant_id', tenantId)
-      .order('first_name', { ascending: true });
+      .order('emp_name', { ascending: true });
 
     if (!empErr && Array.isArray(empData)) {
       empData.forEach(e => {
         const email = (e.work_email || e.personal_email || e.email || '').trim().toLowerCase();
-        const fullName = [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || e.emp_name || email;
+        const fullName = e.emp_name || [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || email;
         const desigName = e.designation?.designation_name || e.designation || 'Staff';
 
         if (email) {

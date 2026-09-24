@@ -725,7 +725,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       // 5. User sessions active during period
       adminClient
         .from('user_sessions')
-        .select('id, user_id, email, is_active, created_at, last_active')
+        .select('id, user_id, email, is_active, last_active')
         .gte('last_active', dateStartIso)
         .lte('last_active', dateEndIso),
 

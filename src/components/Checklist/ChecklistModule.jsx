@@ -43,6 +43,21 @@ import DateRangePicker, { computeDateRange } from '@/components/common/DateRange
 import { createClient } from '@/utils/supabase/client';
 import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, getLocalChecklists } from '@/utils/offlineSync';
 
+const generateSubmissionUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try { return crypto.randomUUID(); } catch (e) {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+const isValidUUID = (str) => {
+  return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
 export default function ChecklistModule({
   userRole = 'agent',
   userId = '',
@@ -211,12 +226,12 @@ export default function ChecklistModule({
   const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
   const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
-  // Live ticking clock to recalculate lock/open/expire status in realtime every second
+  // Live ticking clock to recalculate lock/open/expire status in realtime every 10 seconds (optimized for smooth performance)
   const [liveNow, setLiveNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => {
       setLiveNow(new Date());
-    }, 1000);
+    }, 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -1061,7 +1076,7 @@ export default function ChecklistModule({
       const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
       const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
       const offlinePayload = {
-        id: executingChecklist.submission?.id || `local_sub_${Date.now()}`,
+        id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : generateSubmissionUUID(),
         template_id: tmpl.id,
         template_title: tmpl.title,
         frequency: tmpl.frequency,
@@ -1099,7 +1114,7 @@ export default function ChecklistModule({
 
     try {
       const res = await submitChecklistResponse({
-        id: executingChecklist.submission?.id,
+        id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : undefined,
         template_id: tmpl.id,
         template_title: tmpl.title,
         frequency: tmpl.frequency,
@@ -1117,7 +1132,7 @@ export default function ChecklistModule({
         const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
         const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
         const savedSub = res.data || {
-          id: executingChecklist.submission?.id || 'temp_sub',
+          id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : generateSubmissionUUID(),
           status,
           responses: execResponses,
           submission_notes: execNotes,
@@ -1155,7 +1170,7 @@ export default function ChecklistModule({
         const stats = calculateChecklistCompletion(executingChecklist.items, execResponses);
         const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
         const offlinePayload = {
-          id: executingChecklist.submission?.id || `local_sub_${Date.now()}`,
+          id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : generateSubmissionUUID(),
           template_id: tmpl.id,
           template_title: tmpl.title,
           frequency: tmpl.frequency,

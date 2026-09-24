@@ -1172,16 +1172,68 @@ export default function LeadProfilePanel({
       })
       .subscribe();
 
-    // Subscribe to call session updates (new calls or newly attached recordings)
+    // Build set of 10-digit phone numbers for this lead
+    const leadPhoneDigits = new Set();
+    [
+      lead.phone,
+      lead.business_contact_1,
+      lead.business_contact_2,
+      lead.business_alt_1,
+      lead.business_alt_2,
+      lead.cp1_mobile_2,
+      lead.cp1_alt_1,
+      lead.cp1_alt_2,
+      lead.cp2_mobile_1,
+      lead.cp2_mobile_2,
+      lead.cp2_alt_1,
+      lead.cp2_alt_2,
+      lead.cp3_mobile_1,
+      lead.cp3_mobile_2,
+      lead.cp3_alt_1,
+      lead.cp3_alt_2,
+      lead.mobile,
+      lead.contact_no_2,
+      lead.business_contact_in_aio,
+      lead.cp_mobile_in_aio,
+      lead['Business Contact in AIO'],
+      lead['CP Mobile in AIO'],
+      lead.business_contact_aio,
+      lead.cp_mobile_aio
+    ].forEach(item => {
+      if (!item) return;
+      String(item).split(/[,;\/\s]+/).forEach(tok => {
+        const d = tok.replace(/\D/g, '');
+        if (d.length >= 10) leadPhoneDigits.add(d.slice(-10));
+      });
+    });
+
+    let callDebounceTimer = null;
+    const debouncedFetchCalls = () => {
+      if (callDebounceTimer) clearTimeout(callDebounceTimer);
+      callDebounceTimer = setTimeout(() => {
+        if (isMounted) fetchCalls();
+      }, 1000);
+    };
+
+    // Subscribe to call session updates (filtered to this lead's numbers to prevent company-wide query storms)
     const callChannel = supabase
       .channel(`lead-calls-${lead.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_sessions' }, () => {
-        fetchCalls();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_sessions' }, (payload) => {
+        const row = payload?.new || payload?.old;
+        if (!row) {
+          debouncedFetchCalls();
+          return;
+        }
+        const custNum = row.customer_number ? String(row.customer_number).replace(/\D/g, '').slice(-10) : '';
+        const agentNum = row.agent_number ? String(row.agent_number).replace(/\D/g, '').slice(-10) : '';
+        if (leadPhoneDigits.size === 0 || leadPhoneDigits.has(custNum) || leadPhoneDigits.has(agentNum)) {
+          debouncedFetchCalls();
+        }
       })
       .subscribe();
 
     const handleCallEnded = () => {
-      fetchCalls();
+      debouncedFetchCalls();
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('crm:call-ended', handleCallEnded);
@@ -1189,6 +1241,7 @@ export default function LeadProfilePanel({
 
     return () => {
       isMounted = false;
+      if (callDebounceTimer) clearTimeout(callDebounceTimer);
       supabase.removeChannel(leadChannel);
       supabase.removeChannel(noteChannel);
       supabase.removeChannel(callChannel);
@@ -1196,7 +1249,7 @@ export default function LeadProfilePanel({
         window.removeEventListener('crm:call-ended', handleCallEnded);
       }
     };
-  }, [lead, isOpen]);
+  }, [lead?.id, isOpen]);
 
   // Unified chronological timeline of notes & calls with strict key uniqueness
   const unifiedHistory = useMemo(() => {

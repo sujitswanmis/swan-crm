@@ -207,50 +207,15 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       day_of_month: dayOfMonth,
       items: Array.isArray(templateData.items) ? templateData.items : [],
       is_active: isActive,
-      include_holidays: includeHolidays,
-      buffer_minutes: bufferMinutes,
-      schedule_config: scheduleConfig,
       created_by: templateData.created_by || 'Admin',
       updated_at: new Date().toISOString()
     };
 
-    let { data, error } = await adminClient
+    const { data, error } = await adminClient
       .from('checklist_templates')
       .upsert(payload)
       .select()
       .single();
-
-    if (error) {
-      // Graceful fallback for environments with standard table columns, using packed description
-      const safePayload = {
-        id,
-        tenant_id: tenantId,
-        title: (templateData.title || '').trim(),
-        description: packedDescription,
-        frequency: (templateData.frequency || 'DAILY').toUpperCase(),
-        department: templateData.department || 'General',
-        category: templateData.category || 'OPERATIONS',
-        assigned_type: templateData.assigned_type || 'EMPLOYEE',
-        assigned_employee_id: templateData.assigned_employee_id || null,
-        assigned_employee_name: templateData.assigned_employee_name || 'All Staff',
-        assigned_employee_email: (templateData.assigned_employee_email || '').trim().toLowerCase(),
-        due_time: templateData.due_time || (dailySlots[0]?.due_time || '18:00'),
-        days_of_week: daysOfWeek,
-        day_of_month: dayOfMonth,
-        items: Array.isArray(templateData.items) ? templateData.items : [],
-        is_active: isActive,
-        created_by: templateData.created_by || 'Admin',
-        updated_at: new Date().toISOString()
-      };
-
-      const res = await adminClient
-        .from('checklist_templates')
-        .upsert(safePayload)
-        .select()
-        .single();
-      data = res.data;
-      error = res.error;
-    }
 
     if (error) throw error;
     return {
@@ -314,32 +279,19 @@ export async function setChecklistTemplateStatus(templateId, newStatus, tenantId
       updatedDescription = serializeTemplateDescription(userDescription, scheduleMeta);
     }
 
-    let updatePayload = {
+    const updatePayload = {
       is_active: isActive,
-      status: statusClean,
       ...(updatedDescription !== undefined ? { description: updatedDescription } : {}),
       updated_at: new Date().toISOString()
     };
 
-    let { error } = await adminClient
+    const { error } = await adminClient
       .from('checklist_templates')
       .update(updatePayload)
       .eq('id', templateId)
       .eq('tenant_id', tenantId);
 
-    if (error) {
-      const fallbackPayload = {
-        is_active: isActive,
-        ...(updatedDescription !== undefined ? { description: updatedDescription } : {}),
-        updated_at: new Date().toISOString()
-      };
-      const { error: fallbackErr } = await adminClient
-        .from('checklist_templates')
-        .update(fallbackPayload)
-        .eq('id', templateId)
-        .eq('tenant_id', tenantId);
-      if (fallbackErr) throw fallbackErr;
-    }
+    if (error) throw error;
 
     return { success: true, status: statusClean, is_active: isActive };
   } catch (err) {
@@ -679,7 +631,15 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
       items = []
     } = submissionData;
 
+    const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    if (!template_id || !isValidUUID(template_id)) {
+      return { success: false, error: 'Invalid template_id: Must be a valid UUID' };
+    }
+
     const emailClean = (employee_email || '').trim().toLowerCase();
+    const finalEmpName = (employee_name && typeof employee_name === 'string' && employee_name.trim() !== '')
+      ? employee_name.trim()
+      : (emailClean ? emailClean.split('@')[0] : 'Employee');
 
     // 1. Enforce Time-Window Expiration Check
     const { data: tmplDoc } = await adminClient
@@ -707,6 +667,9 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         if (matched?.due_time) slotDueTime = matched.due_time;
       }
 
+      const isOfflineSync = submissionData.isOfflineSync === true;
+      const submissionTimestamp = submissionData.submitted_at ? new Date(submissionData.submitted_at) : new Date();
+
       const delayCheck = calculateDelayStatus({
         frequency: tmplDoc.frequency || frequency,
         periodKey: period_key,
@@ -717,28 +680,29 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
         quarterMonth: tmplDoc.quarter_month || scheduleMeta.quarter_month || 3,
         halfYearlyMonth: tmplDoc.half_yearly_month || scheduleMeta.half_yearly_month || 6,
         allowDelayedSubmission,
-        now: new Date()
+        now: isOfflineSync ? submissionTimestamp : new Date()
       });
 
-      if (delayCheck.isExpired) {
-        return {
-          success: false,
-          error: `❌ Submission Window Closed: This checklist slot closed at ${delayCheck.formattedExpire}. Expired checklists cannot be submitted.`
-        };
-      }
+      if (!isOfflineSync) {
+        if (delayCheck.isExpired) {
+          return {
+            success: false,
+            error: `❌ Submission Window Closed: This checklist slot closed at ${delayCheck.formattedExpire}. Expired checklists cannot be submitted.`
+          };
+        }
 
-      if (delayCheck.isBeforeStart) {
-        return {
-          success: false,
-          error: `🔒 Checklist is Locked: This checklist slot opens at ${delayCheck.formattedStart}. Premature submissions are not permitted.`
-        };
+        if (delayCheck.isBeforeStart) {
+          return {
+            success: false,
+            error: `🔒 Checklist is Locked: This checklist slot opens at ${delayCheck.formattedStart}. Premature submissions are not permitted.`
+          };
+        }
       }
     }
 
     const stats = calculateChecklistCompletion(items, responses);
     const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
 
-    const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
     const subId = (submissionData.id && isValidUUID(submissionData.id)) ? submissionData.id : crypto.randomUUID();
 
     const payload = {
@@ -749,14 +713,14 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
       frequency: (frequency || 'DAILY').toUpperCase(),
       period_key: period_key || getCurrentPeriodKey(frequency),
       employee_id: employee_id || null,
-      employee_name: employee_name || 'Employee',
+      employee_name: finalEmpName,
       employee_email: emailClean,
       department: department || 'General',
       status,
       items_completed_count: stats.completedCount,
       items_total_count: stats.totalCount,
       responses,
-      submitted_at: new Date().toISOString(),
+      submitted_at: submissionData.submitted_at || new Date().toISOString(),
       submission_notes,
       verification_status: 'PENDING',
       updated_at: new Date().toISOString()
@@ -783,6 +747,11 @@ export async function verifyChecklistSubmission({
   verificationRemarks = '',
   tenantId = DEFAULT_TENANT_ID
 }) {
+  const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+  if (!submissionId || !isValidUUID(submissionId)) {
+    return { success: false, error: 'Invalid submissionId: Must be a valid UUID' };
+  }
+
   const adminClient = getAdminClient();
   try {
     const payload = {
@@ -836,10 +805,10 @@ export async function getChecklistComplianceReport({
     const { data, error } = await subQuery;
     if (error) throw error;
 
-    // Enrich with templates for cutoff check
+    // Enrich with templates for cutoff check (read description for schedule config)
     const { data: templates } = await adminClient
       .from('checklist_templates')
-      .select('id, due_time, day_of_month, frequency, buffer_minutes, allow_delayed_submission, description, daily_slots, month_of_year, quarter_month, half_yearly_month')
+      .select('id, due_time, day_of_month, frequency, description')
       .eq('tenant_id', tenantId);
 
     const tmplMap = new Map((templates || []).map(t => [t.id, t]));

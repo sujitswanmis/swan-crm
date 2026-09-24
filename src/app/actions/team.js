@@ -44,7 +44,7 @@ export async function getRecruitersList() {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
-    .select('emp_name, emp_designation, user_id, emp_id, emp_status, module_access')
+    .select('emp_name, emp_designation, user_id, emp_id, module_access')
     .ilike('emp_designation', '%recruiter%')
     .order('emp_name', { ascending: true });
 
@@ -52,7 +52,7 @@ export async function getRecruitersList() {
     console.error('Error fetching recruiters list:', error);
     return [];
   }
-  return (data || []).filter(u => u.emp_name && (u.emp_status === 'Active' || (!u.emp_status && u.module_access?.emp_status !== 'InActive' && u.module_access?.emp_status !== 'Trash' && u.module_access?.emp_status !== 'Terminated')));
+  return (data || []).filter(u => u.emp_name && (u.module_access?.emp_status !== 'InActive' && u.module_access?.emp_status !== 'Trash' && u.module_access?.emp_status !== 'Terminated'));
 }
 
 export async function updateUserRole(userId, newRole) {
@@ -1343,7 +1343,7 @@ export async function grantChecklistAndDelegationToAllApprovedUsers() {
   try {
     const { data: users, error } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, role, module_access, is_approved, emp_status')
+      .select('user_id, emp_name, email, role, module_access, is_approved')
       .eq('is_approved', true);
 
     if (error) throw error;

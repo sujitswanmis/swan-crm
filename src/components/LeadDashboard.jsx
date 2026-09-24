@@ -439,7 +439,7 @@ export default function LeadDashboard({
       // 2. Fetch leads created in range
       let leadsQuery = supabase
         .from('leads')
-        .select('id, created_at, created_by, entry_by, user_id, status, assigned_to, company, name, phone, our_company')
+        .select('id, created_at, created_by, entry_by, status, assigned_to, company, name, phone, our_company')
         .order('created_at', { ascending: false });
       if (startIso) leadsQuery = leadsQuery.gte('created_at', startIso);
       if (endIso) leadsQuery = leadsQuery.lte('created_at', endIso);

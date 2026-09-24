@@ -126,6 +126,15 @@ export const formatFollowUpDateTime = (dateVal) => {
   };
 };
 
+// High-performance zero-allocation date comparator for 45k+ leads (prevents browser/PC freeze)
+const sortLeadsByDateDesc = (a, b) => {
+  const tA = (a && a.created_at) || '';
+  const tB = (b && b.created_at) || '';
+  if (tB > tA) return 1;
+  if (tB < tA) return -1;
+  return 0;
+};
+
 const KeepAliveTab = React.memo(
   function KeepAliveTab({ isActive, isVisited, children, style = {} }) {
     if (!isVisited) return null;
@@ -1490,7 +1499,7 @@ export default function CRMContainer({
             }
           }
 
-          const finalMerged = Array.from(leadsMap.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          const finalMerged = Array.from(leadsMap.values()).sort(sortLeadsByDateDesc);
           setRawLeads(finalMerged);
           setSyncLoadedCount(finalMerged.length);
 
@@ -1544,7 +1553,7 @@ export default function CRMContainer({
                 unique.push({ ...lead, lead_notes: [] });
               }
             }
-            const finalLeads = unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const finalLeads = unique.sort(sortLeadsByDateDesc);
             setRawLeads(finalLeads);
             saveLeadsLocally(finalLeads);
           }
@@ -1586,7 +1595,7 @@ export default function CRMContainer({
                 const withNotes = prev.map(lead => ({
                   ...lead,
                   lead_notes: notesMap[lead.id] || lead.lead_notes || []
-                })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                })).sort(sortLeadsByDateDesc);
                 saveLeadsLocally(withNotes);
                 return withNotes;
               });
@@ -1686,7 +1695,7 @@ export default function CRMContainer({
     const handleOfflineQueueChanged = async () => {
       const cached = await getLocalLeads();
       if (cached && cached.length > 0) {
-        setRawLeads(cached.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        setRawLeads(cached.sort(sortLeadsByDateDesc));
       }
     };
 

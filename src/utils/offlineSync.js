@@ -717,7 +717,7 @@ export const VALID_LEAD_DB_COLUMNS = new Set([
   'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
   'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
   'district_name', 'city_name', 'tehsil_name', 'block_name', 'pin_code',
-  'address', 'requirement', 'investment', 'buying_timeline', 'client_status'
+  'address', 'requirement', 'investment', 'buying_timeline'
 ]);
 
 /**
@@ -913,7 +913,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
       } else if (item.entityType === 'checklist_response') {
         const payload = item.payload;
         const { submitChecklistResponse } = await import('@/app/actions/checklist');
-        const res = await submitChecklistResponse(payload);
+        const res = await submitChecklistResponse({ ...payload, isOfflineSync: true });
         if (res && !res.success && res.error) {
           throw new Error(res.error);
         }
