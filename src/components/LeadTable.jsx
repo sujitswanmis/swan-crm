@@ -2931,7 +2931,7 @@ export default function LeadTable({
           )}
         </div>
       ) : (
-        <div className="table-responsive-wrapper" style={{ flex: 1, overflow: 'auto' }}>
+        <div className="table-responsive-wrapper" style={{ flex: 1, overflow: 'auto', overscrollBehavior: 'contain', overflowAnchor: 'none' }}>
           <table style={{ width: `${Math.max(1200, table.getTotalSize())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             {table.getHeaderGroups().map(headerGroup => (

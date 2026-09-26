@@ -1896,24 +1896,6 @@ export default function CRMContainer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Global UX: Prevent accidental middle-click (scroll wheel click/hold) autoscroll freeze & runaway scrolling.
-  // Preserves middle-click on genuine <a> links (to open in new tab) while preventing autoscroll on table/cards/UI.
-  useEffect(() => {
-    const handleMiddleMouseDown = (e) => {
-      if (e.button === 1) { // Middle mouse button (wheel press)
-        const isAnchorLink = e.target && typeof e.target.closest === 'function' && e.target.closest('a[href]');
-        if (!isAnchorLink) {
-          e.preventDefault();
-        }
-      }
-    };
-
-    window.addEventListener('mousedown', handleMiddleMouseDown, { capture: true });
-    return () => {
-      window.removeEventListener('mousedown', handleMiddleMouseDown, { capture: true });
-    };
-  }, []);
-
   // Check browser notification permission status on mount and listen for test alert preview
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -5733,7 +5715,7 @@ export default function CRMContainer({
             display: 'flex', 
             flexDirection: 'column', 
             height: '100%',
-            overflow: activeTab === 'ai' ? 'hidden' : 'auto'
+            overflow: (activeTab === 'ai' || activeTab === 'leads') ? 'hidden' : 'auto'
           }}
         >
           
@@ -5741,7 +5723,7 @@ export default function CRMContainer({
           style={{ 
             flex: 1, 
             minHeight: 0, 
-            overflowY: activeTab === 'ai' ? 'hidden' : 'auto', 
+            overflowY: (activeTab === 'ai' || activeTab === 'leads') ? 'hidden' : 'auto', 
             overflowX: 'hidden', 
             display: 'flex', 
             flexDirection: 'column',

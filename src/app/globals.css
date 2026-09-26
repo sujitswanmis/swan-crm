@@ -1469,6 +1469,8 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   overflow: auto;
   width: 100%;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
 }
 
 .modal-container {
@@ -1563,8 +1565,6 @@ table tbody tr td:last-child {
 
 /* High-Performance Interactive Row Hover Illumination */
 table tbody tr {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 48px;
   transition: background-color 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease !important;
 }
 
