@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
   AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter,
-  Calendar, Check, UserCheck, UserX, Coffee
+  Calendar, Check, UserCheck, UserX, Coffee, Activity, Zap
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
@@ -20,6 +20,20 @@ function getTodayDateStr() {
     }).format(new Date());
   } catch {
     return new Date().toISOString().split('T')[0];
+  }
+}
+
+function getTodayReadableIST() {
+  try {
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      weekday: 'short'
+    }).format(new Date());
+  } catch {
+    return new Date().toDateString();
   }
 }
 
@@ -67,11 +81,14 @@ function formatTimeAgo(dateString) {
 }
 
 export default function ActiveSessionsTab() {
-  const [selectedDate, setSelectedDate] = useState(getTodayDateStr());
+  const todayDateStr = useMemo(() => getTodayDateStr(), []);
+  const todayReadableStr = useMemo(() => getTodayReadableIST(), []);
+
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Online' | 'Present' | 'Absent'
+  // Default filter: 'Present' (Shows only employees who logged in today)
+  const [statusFilter, setStatusFilter] = useState('Present'); 
   const [revokingId, setRevokingId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [currentUserEmail, setCurrentUserEmail] = useState('');
@@ -92,11 +109,11 @@ export default function ActiveSessionsTab() {
     loadUser();
   }, []);
 
-  // Fetch daily employee shift & active session summary
+  // Fetch strictly today's employee shift & active session summary (1 row per employee)
   const fetchActivitySummary = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const res = await getEmployeeDailyActivitySummary(selectedDate, selectedDate);
+      const res = await getEmployeeDailyActivitySummary(todayDateStr, todayDateStr);
       if (res && res.success) {
         setEmployees(res.employees || []);
       } else {
@@ -107,9 +124,9 @@ export default function ActiveSessionsTab() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [selectedDate]);
+  }, [todayDateStr]);
 
-  // Periodic poll every 25 seconds
+  // Periodic poll every 25 seconds for live status
   useEffect(() => {
     fetchActivitySummary(true);
     const interval = setInterval(() => {
@@ -141,7 +158,7 @@ export default function ActiveSessionsTab() {
 
       if (isOnline) {
         statusBadge = {
-          label: '● Online (Working)',
+          label: 'Online (Working)',
           color: '#059669',
           bg: '#ecfdf5',
           border: '#a7f3d0',
@@ -149,7 +166,7 @@ export default function ActiveSessionsTab() {
         };
       } else if (isOnBreak) {
         statusBadge = {
-          label: `☕ On ${emp.currentBreak?.type || 'Break'}`,
+          label: `On ${emp.currentBreak?.type || 'Break'}`,
           color: '#ea580c',
           bg: '#fff7ed',
           border: '#fed7aa',
@@ -157,7 +174,7 @@ export default function ActiveSessionsTab() {
         };
       } else if (isAway) {
         statusBadge = {
-          label: '● Away / Idle',
+          label: 'Away / Idle',
           color: '#d97706',
           bg: '#fffbeb',
           border: '#fde68a',
@@ -165,7 +182,7 @@ export default function ActiveSessionsTab() {
         };
       } else if (emp.hasActivityToday) {
         statusBadge = {
-          label: '⚪ Logged Out',
+          label: 'Logged Out',
           color: '#475569',
           bg: '#f8fafc',
           border: '#e2e8f0',
@@ -188,14 +205,25 @@ export default function ActiveSessionsTab() {
 
   // Status counts
   const counts = useMemo(() => {
-    const c = { All: evaluatedEmployees.length, Online: 0, Present: 0, Absent: 0 };
+    const c = { All: evaluatedEmployees.length, Online: 0, Present: 0, LoggedOut: 0, Absent: 0 };
     evaluatedEmployees.forEach(e => {
       if (e.isLive) c.Online++;
-      if (e.hasActivityToday) c.Present++;
-      else c.Absent++;
+      if (e.hasActivityToday) {
+        c.Present++;
+        if (!e.isLive) c.LoggedOut++;
+      } else {
+        c.Absent++;
+      }
     });
     return c;
   }, [evaluatedEmployees]);
+
+  // Automatically adjust default filter to 'All' if nobody is logged in yet today
+  useEffect(() => {
+    if (counts.Present === 0 && counts.All > 0 && statusFilter === 'Present') {
+      setStatusFilter('All');
+    }
+  }, [counts.Present, counts.All]);
 
   // Filtered list
   const filteredEmployees = useMemo(() => {
@@ -205,6 +233,8 @@ export default function ActiveSessionsTab() {
       list = list.filter(e => e.isLive);
     } else if (statusFilter === 'Present') {
       list = list.filter(e => e.hasActivityToday);
+    } else if (statusFilter === 'LoggedOut') {
+      list = list.filter(e => e.hasActivityToday && !e.isLive);
     } else if (statusFilter === 'Absent') {
       list = list.filter(e => !e.hasActivityToday);
     }
@@ -221,7 +251,14 @@ export default function ActiveSessionsTab() {
       });
     }
 
-    return list;
+    // Sort: Online users first, then present users, then others
+    return [...list].sort((a, b) => {
+      if (a.isLive && !b.isLive) return -1;
+      if (!a.isLive && b.isLive) return 1;
+      if (a.hasActivityToday && !b.hasActivityToday) return -1;
+      if (!a.hasActivityToday && b.hasActivityToday) return 1;
+      return (a.empName || '').localeCompare(b.empName || '');
+    });
   }, [evaluatedEmployees, statusFilter, searchQuery]);
 
   // Force single session termination
@@ -249,8 +286,6 @@ export default function ActiveSessionsTab() {
     }
   };
 
-  const isToday = selectedDate === getTodayDateStr();
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
       {/* Intro Header */}
@@ -266,61 +301,53 @@ export default function ActiveSessionsTab() {
         gap: '1rem'
       }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Monitor size={22} style={{ color: '#059669' }} />
-            Active User Sessions & Daily Login Monitor
-          </h3>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            One row per employee: first login (check-in), last active seen, work duration & live online status
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Monitor size={22} style={{ color: '#059669' }} />
+              Active User Sessions & Daily Login Monitor
+            </h3>
+            {/* Today IST Badge */}
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              padding: '0.25rem 0.65rem',
+              borderRadius: '6px',
+              backgroundColor: '#eff6ff',
+              color: '#2563eb',
+              border: '1px solid #bfdbfe',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}>
+              <Calendar size={13} />
+              Today: {todayReadableStr} (IST)
+            </span>
+          </div>
+          <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            Strictly one row per employee today: First Check-in (In-Time), Last Active Seen (Out-Time), Work Duration & Live Online Status.
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
-          {/* Date Picker */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            backgroundColor: 'var(--bg-primary, #f8fafc)',
-            padding: '0.35rem 0.65rem',
-            borderRadius: '8px',
-            border: '1px solid var(--border-light)'
-          }}>
-            <Calendar size={14} style={{ color: 'var(--text-secondary)' }} />
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Date:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              style={{
-                border: 'none',
-                backgroundColor: 'transparent',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                cursor: 'pointer'
-              }}
-            />
-          </div>
-
-          {/* Real Active Online Badge */}
+          {/* Live Online Count Badge */}
           <span style={{
-            fontSize: '0.78rem',
+            fontSize: '0.8rem',
             fontWeight: 700,
-            padding: '0.3rem 0.75rem',
+            padding: '0.35rem 0.85rem',
             borderRadius: '20px',
             backgroundColor: counts.Online > 0 ? '#ecfdf5' : '#f1f5f9',
             color: counts.Online > 0 ? '#059669' : '#64748b',
             border: `1px solid ${counts.Online > 0 ? '#a7f3d0' : '#cbd5e1'}`,
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '0.4rem'
+            gap: '0.45rem'
           }}>
             <span style={{
-              width: '7px',
-              height: '7px',
+              width: '8px',
+              height: '8px',
               borderRadius: '50%',
-              backgroundColor: counts.Online > 0 ? '#10b981' : '#94a3b8'
+              backgroundColor: counts.Online > 0 ? '#10b981' : '#94a3b8',
+              boxShadow: counts.Online > 0 ? '0 0 0 2px rgba(16, 185, 129, 0.2)' : 'none'
             }} />
             {counts.Online} Online Now
           </span>
@@ -346,6 +373,125 @@ export default function ActiveSessionsTab() {
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* Quick Metric Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '0.85rem'
+      }}>
+        {/* Online Now */}
+        <div style={{
+          padding: '0.85rem 1.15rem',
+          borderRadius: '10px',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem'
+        }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '8px',
+            backgroundColor: '#ecfdf5',
+            color: '#059669',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Zap size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Online Working</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#059669' }}>{counts.Online}</div>
+          </div>
+        </div>
+
+        {/* Present Today */}
+        <div style={{
+          padding: '0.85rem 1.15rem',
+          borderRadius: '10px',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem'
+        }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '8px',
+            backgroundColor: '#eff6ff',
+            color: '#2563eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <UserCheck size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Logged In Today</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#2563eb' }}>{counts.Present}</div>
+          </div>
+        </div>
+
+        {/* Logged Out */}
+        <div style={{
+          padding: '0.85rem 1.15rem',
+          borderRadius: '10px',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem'
+        }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '8px',
+            backgroundColor: '#f8fafc',
+            color: '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Clock size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Shift Ended / Out</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#475569' }}>{counts.LoggedOut}</div>
+          </div>
+        </div>
+
+        {/* Not Logged In */}
+        <div style={{
+          padding: '0.85rem 1.15rem',
+          borderRadius: '10px',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem'
+        }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '8px',
+            backgroundColor: '#fef2f2',
+            color: '#dc2626',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <UserX size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Not Logged In Yet</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#dc2626' }}>{counts.Absent}</div>
+          </div>
         </div>
       </div>
 
@@ -381,10 +527,11 @@ export default function ActiveSessionsTab() {
         {/* Status Filter Badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
           {[
-            { id: 'All', label: 'All Employees', count: counts.All },
+            { id: 'Present', label: '👥 Logged In Today', count: counts.Present },
             { id: 'Online', label: '🟢 Online Now', count: counts.Online },
-            { id: 'Present', label: '👥 Present Today', count: counts.Present },
-            { id: 'Absent', label: '🔴 Not Logged In', count: counts.Absent }
+            { id: 'LoggedOut', label: '⚪ Logged Out', count: counts.LoggedOut },
+            { id: 'Absent', label: '🔴 Not Logged In', count: counts.Absent },
+            { id: 'All', label: 'All Employees', count: counts.All }
           ].map(tab => {
             const isSelected = statusFilter === tab.id;
             return (
@@ -464,14 +611,14 @@ export default function ActiveSessionsTab() {
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.75rem 1rem', width: '240px' }}>Employee / User</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Department & Role</th>
-                <th style={{ padding: '0.75rem 1rem', width: '130px' }}>First Login (In-Time)</th>
-                <th style={{ padding: '0.75rem 1rem', width: '150px' }}>Last Seen (Out-Time)</th>
-                <th style={{ padding: '0.75rem 1rem', width: '140px' }}>Active Work Time</th>
-                <th style={{ padding: '0.75rem 1rem', width: '150px', textAlign: 'center' }}>Live Status</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Device & IP</th>
-                <th style={{ padding: '0.75rem 1rem', width: '110px', textAlign: 'center' }}>Action</th>
+                <th style={{ padding: '0.8rem 1rem', width: '250px' }}>Employee / User</th>
+                <th style={{ padding: '0.8rem 1rem', width: '160px' }}>Department & Role</th>
+                <th style={{ padding: '0.8rem 1rem', width: '140px' }}>First Login (In-Time)</th>
+                <th style={{ padding: '0.8rem 1rem', width: '150px' }}>Last Seen (Out-Time)</th>
+                <th style={{ padding: '0.8rem 1rem', width: '140px' }}>Active Work Time</th>
+                <th style={{ padding: '0.8rem 1rem', width: '160px', textAlign: 'center' }}>Live Status</th>
+                <th style={{ padding: '0.8rem 1rem', width: '170px' }}>Device & IP</th>
+                <th style={{ padding: '0.8rem 1rem', width: '120px', textAlign: 'center' }}>Session Action</th>
               </tr>
             </thead>
             <tbody>
@@ -480,8 +627,34 @@ export default function ActiveSessionsTab() {
                   <td colSpan={8} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Monitor size={36} style={{ opacity: 0.35 }} />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No employee records found</span>
-                      <span style={{ fontSize: '0.78rem' }}>Try clearing your search query or switching filters</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                        {statusFilter === 'Present' 
+                          ? 'No employee logins recorded today yet' 
+                          : statusFilter === 'Online'
+                          ? 'No employees are actively online right now'
+                          : 'No matching employee records found'}
+                      </span>
+                      <span style={{ fontSize: '0.78rem' }}>
+                        {statusFilter !== 'All' ? (
+                          <button
+                            type="button"
+                            onClick={() => setStatusFilter('All')}
+                            style={{
+                              marginTop: '0.5rem',
+                              padding: '0.35rem 0.75rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-surface)',
+                              color: 'var(--primary-color, #2563eb)',
+                              fontWeight: 600,
+                              fontSize: '0.78rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View All {counts.All} Employees
+                          </button>
+                        ) : 'Try clearing your search query'}
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -505,17 +678,18 @@ export default function ActiveSessionsTab() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                           <div style={{
-                            width: '34px',
-                            height: '34px',
+                            width: '36px',
+                            height: '36px',
                             borderRadius: '8px',
-                            backgroundColor: emp.isLive ? '#dcfce7' : '#e2e8f0',
+                            backgroundColor: emp.isLive ? '#dcfce7' : (emp.hasActivityToday ? '#f1f5f9' : '#f8fafc'),
                             color: emp.isLive ? '#15803d' : '#475569',
                             fontWeight: 700,
-                            fontSize: '0.78rem',
+                            fontSize: '0.8rem',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            flexShrink: 0
+                            flexShrink: 0,
+                            border: emp.isLive ? '1.5px solid #86efac' : '1px solid var(--border-light)'
                           }}>
                             {initials}
                           </div>
@@ -536,7 +710,7 @@ export default function ActiveSessionsTab() {
                               )}
                             </div>
                             <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                              {emp.empId ? <span style={{ fontWeight: 600 }}>#{emp.empId} • </span> : null}
+                              {emp.empId ? <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>#{emp.empId} • </span> : null}
                               <span>{emp.email}</span>
                             </div>
                           </div>
@@ -557,10 +731,10 @@ export default function ActiveSessionsTab() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         {emp.hasActivityToday && emp.firstSeenFormatted && emp.firstSeenFormatted !== '--:--' ? (
                           <div>
-                            <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.85rem' }}>
+                            <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.88rem' }}>
                               {emp.firstSeenFormatted}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#16a34a', opacity: 0.85, fontWeight: 500, marginTop: '0.1rem' }}>
                               First Check-in
                             </div>
                           </div>
@@ -575,7 +749,7 @@ export default function ActiveSessionsTab() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         {emp.hasActivityToday && emp.lastSeenFormatted && emp.lastSeenFormatted !== '--:--' ? (
                           <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>
                               {emp.lastSeenFormatted}
                             </div>
                             <div style={{ fontSize: '0.72rem', color: emp.isLive ? '#059669' : 'var(--text-secondary)', fontWeight: 600, marginTop: '0.1rem' }}>
@@ -606,9 +780,9 @@ export default function ActiveSessionsTab() {
                       {/* Live Status */}
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         <span style={{
-                          fontSize: '0.72rem',
+                          fontSize: '0.74rem',
                           fontWeight: 700,
-                          padding: '0.2rem 0.6rem',
+                          padding: '0.25rem 0.65rem',
                           borderRadius: '12px',
                           backgroundColor: emp.statusBadge.bg,
                           color: emp.statusBadge.color,
@@ -633,7 +807,7 @@ export default function ActiveSessionsTab() {
                         </div>
                       </td>
 
-                      {/* Action */}
+                      {/* Session Action */}
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         {emp.isCurrent ? (
                           <span style={{ fontSize: '0.74rem', color: '#10b981', fontWeight: 600 }}>

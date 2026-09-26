@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { createClient } from '@/utils/supabase/server';
 import CRMContainer from '@/components/CRMContainer';
 import { redirect } from 'next/navigation';
@@ -102,25 +103,34 @@ export default async function Home({ params, searchParams }) {
 
   return (
     <main>
-      <CRMContainer 
-        initialLeads={allLeads || []} 
-        userRole={userRole} 
-        canImportExport={canImportExport}
-        canRead={canRead}
-        canWrite={canWrite}
-        moduleAccess={moduleAccess}
-        userId={effectiveUserId}
-        userEmail={effectiveUserEmail}
-        userCompany={userCompany}
-        userName={userName}
-        initialAvatar={userAvatar}
-        isImpersonating={isImpersonating}
-        impersonatorAdmin={impersonatorAdmin}
-        impersonatedUser={isImpersonating ? effectiveRoleData : null}
-        initialRoute={Array.isArray(route) ? route.join('/') : (route || '')}
-        initialSearchParams={resolvedSearchParams}
-        initialTheme={initialTheme}
-      />
+      <Suspense fallback={
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ width: '40px', height: '40px', border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: '14px', color: '#64748b', fontWeight: 500 }}>Loading workspace...</span>
+          </div>
+        </div>
+      }>
+        <CRMContainer 
+          initialLeads={allLeads || []} 
+          userRole={userRole} 
+          canImportExport={canImportExport}
+          canRead={canRead}
+          canWrite={canWrite}
+          moduleAccess={moduleAccess}
+          userId={effectiveUserId}
+          userEmail={effectiveUserEmail}
+          userCompany={userCompany}
+          userName={userName}
+          initialAvatar={userAvatar}
+          isImpersonating={isImpersonating}
+          impersonatorAdmin={impersonatorAdmin}
+          impersonatedUser={isImpersonating ? effectiveRoleData : null}
+          initialRoute={Array.isArray(route) ? route.join('/') : (route || '')}
+          initialSearchParams={resolvedSearchParams}
+          initialTheme={initialTheme}
+        />
+      </Suspense>
     </main>
   );
 }
