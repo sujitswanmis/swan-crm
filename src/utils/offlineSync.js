@@ -289,77 +289,150 @@ export function canPerformOfflineAction(featureKey = '') {
 /**
  * Initializes and returns a reference to the browser's IndexedDB
  */
+let cachedDbInstance = null;
+
+/**
+ * Requests persistent storage from the browser (crucial for mobile Chrome/Safari so IndexedDB is not evicted)
+ */
+export async function requestPersistentStorage() {
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+    try {
+      const isPersisted = await navigator.storage.persist();
+      return isPersisted;
+    } catch (e) {
+      console.warn('[Storage] Error requesting persistence:', e);
+    }
+  }
+  return false;
+}
+
+/**
+ * Initializes and returns a singleton reference to the browser's IndexedDB
+ */
 export function openOfflineDB() {
+  if (cachedDbInstance) {
+    return Promise.resolve(cachedDbInstance);
+  }
+
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !('indexedDB' in window)) {
       resolve(null);
       return;
     }
 
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORES.LEADS_CACHE)) {
-        db.createObjectStore(STORES.LEADS_CACHE, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORES.CHECKLIST_CACHE)) {
-        db.createObjectStore(STORES.CHECKLIST_CACHE, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORES.DELEGATION_CACHE)) {
-        db.createObjectStore(STORES.DELEGATION_CACHE, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
-        const queueStore = db.createObjectStore(STORES.SYNC_QUEUE, { keyPath: 'queueId' });
-        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
-        queueStore.createIndex('status', 'status', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORES.SYNC_HISTORY)) {
-        const historyStore = db.createObjectStore(STORES.SYNC_HISTORY, { keyPath: 'id' });
-        historyStore.createIndex('syncedAt', 'syncedAt', { unique: false });
-      }
-    };
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORES.LEADS_CACHE)) {
+          db.createObjectStore(STORES.LEADS_CACHE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.CHECKLIST_CACHE)) {
+          db.createObjectStore(STORES.CHECKLIST_CACHE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.DELEGATION_CACHE)) {
+          db.createObjectStore(STORES.DELEGATION_CACHE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
+          const queueStore = db.createObjectStore(STORES.SYNC_QUEUE, { keyPath: 'queueId' });
+          queueStore.createIndex('timestamp', 'timestamp', { unique: false });
+          queueStore.createIndex('status', 'status', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(STORES.SYNC_HISTORY)) {
+          const historyStore = db.createObjectStore(STORES.SYNC_HISTORY, { keyPath: 'id' });
+          historyStore.createIndex('syncedAt', 'syncedAt', { unique: false });
+        }
+      };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      console.warn('IndexedDB open error:', request.error);
+      request.onsuccess = () => {
+        cachedDbInstance = request.result;
+        cachedDbInstance.onversionchange = () => {
+          if (cachedDbInstance) {
+            cachedDbInstance.close();
+            cachedDbInstance = null;
+          }
+        };
+        cachedDbInstance.onclose = () => {
+          cachedDbInstance = null;
+        };
+        // Request storage persistence in background (non-blocking)
+        requestPersistentStorage().catch(() => {});
+        resolve(cachedDbInstance);
+      };
+
+      request.onerror = () => {
+        console.warn('IndexedDB open error:', request.error);
+        resolve(null);
+      };
+
+      request.onblocked = () => {
+        console.warn('IndexedDB open blocked by another tab/connection');
+        resolve(request.result || null);
+      };
+    } catch (err) {
+      console.warn('IndexedDB open exception:', err);
       resolve(null);
-    };
+    }
   });
 }
 
 /**
- * Cache current leads array to IndexedDB for zero-latency / offline browsing
+ * Cache current leads array to IndexedDB using safe mobile-optimized chunked writing
+ * Prevents transaction timeouts, IPC buffer limits, and memory crashes on mobile browsers
  */
 export async function saveLeadsLocally(leads) {
-  if (!Array.isArray(leads) || leads.length === 0) return;
+  if (!Array.isArray(leads) || leads.length === 0) return false;
   try {
     const db = await openOfflineDB();
-    if (!db) return;
+    if (!db) return false;
 
-    const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
-    const store = tx.objectStore(STORES.LEADS_CACHE);
-    
-    // Clear and batch rewrite
-    store.clear();
-    leads.forEach((lead) => {
-      if (lead && lead.id) {
-        store.put(lead);
+    // Chunk size: 1500 items per transaction to stay well under mobile RAM & transaction timeout limits
+    const CHUNK_SIZE = 1500;
+    for (let i = 0; i < leads.length; i += CHUNK_SIZE) {
+      const chunk = leads.slice(i, i + CHUNK_SIZE);
+      await new Promise((resolve) => {
+        try {
+          const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+          const store = tx.objectStore(STORES.LEADS_CACHE);
+          
+          for (const lead of chunk) {
+            if (lead && lead.id) {
+              store.put(lead);
+            }
+          }
+
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = (e) => {
+            console.warn(`[IndexedDB] Chunk write warning at index ${i}:`, tx.error || e);
+            resolve(false);
+          };
+          tx.onabort = () => {
+            console.warn(`[IndexedDB] Chunk write aborted at index ${i}`);
+            resolve(false);
+          };
+        } catch (txErr) {
+          console.warn(`[IndexedDB] Transaction error at index ${i}:`, txErr);
+          resolve(false);
+        }
+      });
+
+      // Yield briefly to mobile browser main thread to maintain smooth 60fps UI
+      if (leads.length > CHUNK_SIZE) {
+        await new Promise(r => setTimeout(r, 0));
       }
-    });
+    }
 
-    return new Promise((resolve) => {
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    });
+    return true;
   } catch (err) {
     console.warn('Failed to cache leads locally:', err);
+    return false;
   }
 }
 
 /**
  * Upsert specific leads into IndexedDB without clearing existing store.
- * Updates existing leads by ID or inserts new ones.
+ * Updates existing leads by ID or inserts new ones in safe chunks.
  */
 export async function upsertLeadsLocally(leadsToUpsert) {
   const arr = Array.isArray(leadsToUpsert) ? leadsToUpsert : (leadsToUpsert ? [leadsToUpsert] : []);
@@ -368,21 +441,58 @@ export async function upsertLeadsLocally(leadsToUpsert) {
     const db = await openOfflineDB();
     if (!db) return false;
 
-    const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
-    const store = tx.objectStore(STORES.LEADS_CACHE);
-    
-    for (const lead of arr) {
-      if (lead && lead.id) {
-        store.put(lead);
+    const CHUNK_SIZE = 1500;
+    for (let i = 0; i < arr.length; i += CHUNK_SIZE) {
+      const chunk = arr.slice(i, i + CHUNK_SIZE);
+      await new Promise((resolve) => {
+        try {
+          const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+          const store = tx.objectStore(STORES.LEADS_CACHE);
+          
+          for (const lead of chunk) {
+            if (lead && lead.id) {
+              store.put(lead);
+            }
+          }
+
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+          tx.onabort = () => resolve(false);
+        } catch (e) {
+          resolve(false);
+        }
+      });
+
+      if (arr.length > CHUNK_SIZE) {
+        await new Promise(r => setTimeout(r, 0));
       }
     }
 
+    return true;
+  } catch (err) {
+    console.warn('Failed to upsert leads locally:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a specific lead from local IndexedDB cache
+ */
+export async function deleteLeadLocally(leadId) {
+  if (!leadId) return false;
+  try {
+    const db = await openOfflineDB();
+    if (!db) return false;
+    const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+    const store = tx.objectStore(STORES.LEADS_CACHE);
+    store.delete(leadId);
     return new Promise((resolve) => {
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
     });
   } catch (err) {
-    console.warn('Failed to upsert leads locally:', err);
+    console.warn('Failed to delete lead locally:', err);
     return false;
   }
 }
@@ -408,20 +518,63 @@ export async function clearLocalLeadsCache() {
 }
 
 /**
- * Read cached leads from IndexedDB when offline
+ * Read cached leads from IndexedDB with cursor stream fallback for mobile WebKit IPC limits
  */
 export async function getLocalLeads() {
   try {
     const db = await openOfflineDB();
     if (!db) return [];
 
-    const tx = db.transaction(STORES.LEADS_CACHE, 'readonly');
-    const store = tx.objectStore(STORES.LEADS_CACHE);
-    const request = store.getAll();
-
     return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
+      const readWithCursor = () => {
+        try {
+          const cursorTx = db.transaction(STORES.LEADS_CACHE, 'readonly');
+          const cursorStore = cursorTx.objectStore(STORES.LEADS_CACHE);
+          const cursorReq = cursorStore.openCursor();
+          const items = [];
+          cursorReq.onsuccess = (ev) => {
+            const cursor = ev.target.result;
+            if (cursor) {
+              items.push(cursor.value);
+              cursor.continue();
+            } else {
+              resolve(items);
+            }
+          };
+          cursorReq.onerror = (e) => {
+            console.warn('[IndexedDB] cursor streaming error:', e);
+            resolve([]);
+          };
+        } catch (cursorErr) {
+          console.warn('[IndexedDB] cursor fallback exception:', cursorErr);
+          resolve([]);
+        }
+      };
+
+      try {
+        const tx = db.transaction(STORES.LEADS_CACHE, 'readonly');
+        const store = tx.objectStore(STORES.LEADS_CACHE);
+        let request;
+        try {
+          request = store.getAll();
+        } catch (syncErr) {
+          console.warn('[IndexedDB] store.getAll synchronous throw, falling back to cursor:', syncErr);
+          readWithCursor();
+          return;
+        }
+
+        request.onsuccess = () => {
+          resolve(request.result || []);
+        };
+
+        request.onerror = (e) => {
+          console.warn('[IndexedDB] store.getAll async error, attempting cursor streaming fallback:', request.error || e);
+          readWithCursor();
+        };
+      } catch (innerErr) {
+        console.warn('[IndexedDB] getLocalLeads transaction error, falling back to cursor:', innerErr);
+        readWithCursor();
+      }
     });
   } catch (err) {
     console.warn('Failed to read local leads:', err);

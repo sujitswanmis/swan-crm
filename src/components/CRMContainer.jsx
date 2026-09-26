@@ -41,7 +41,7 @@ import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
 import OfflineRuleModule from './Offline/OfflineRuleModule';
-import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, clearLocalLeadsCache } from '@/utils/offlineSync';
+import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, clearLocalLeadsCache } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
@@ -1302,8 +1302,7 @@ export default function CRMContainer({
       };
 
       try {
-        const hasValidLocalCache = !forceFull && Array.isArray(localCachedLeads) && localCachedLeads.length > 0 &&
-          localCachedLeads.some(l => Array.isArray(l.lead_notes) && l.lead_notes.length > 0);
+        const hasValidLocalCache = !forceFull && Array.isArray(localCachedLeads) && localCachedLeads.length > 0;
 
         if (hasValidLocalCache) {
           // =========================================================================
@@ -1556,7 +1555,10 @@ export default function CRMContainer({
             }
             const finalLeads = unique.sort(sortLeadsByDateDesc);
             setRawLeads(finalLeads);
-            saveLeadsLocally(finalLeads);
+          }
+          // Persist all fetched leads once after pagination loop finishes (avoids thrashing mobile I/O)
+          if (loadedLeads.length > 0) {
+            await saveLeadsLocally(loadedLeads);
           }
 
           // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
@@ -1592,14 +1594,18 @@ export default function CRMContainer({
                 notesMap[note.lead_id].push(note);
               }
 
+              let withNotesLeads = [];
               setRawLeads(prev => {
                 const withNotes = prev.map(lead => ({
                   ...lead,
                   lead_notes: notesMap[lead.id] || lead.lead_notes || []
                 })).sort(sortLeadsByDateDesc);
-                saveLeadsLocally(withNotes);
+                withNotesLeads = withNotes;
                 return withNotes;
               });
+              if (withNotesLeads.length > 0) {
+                await saveLeadsLocally(withNotesLeads);
+              }
             }
           } catch (notesErr) {
             console.error("Failed to fetch all lead notes:", notesErr);
@@ -1630,9 +1636,7 @@ export default function CRMContainer({
         upsertLeadsLocally([{ ...newRow, lead_notes: [] }]);
         setRawLeads((current) => {
           if (current.some(item => item.id === newRow.id)) return current;
-          const updated = [{ ...newRow, lead_notes: [] }, ...current];
-          debouncedSaveLeadsLocally(updated);
-          return updated;
+          return [{ ...newRow, lead_notes: [] }, ...current];
         });
         setLeads((current) => {
           if (current.some(item => item.id === newRow.id)) return current;
@@ -1642,16 +1646,25 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         const updatedRow = payload.new;
         if (!updatedRow || !updatedRow.id) return;
-        upsertLeadsLocally([updatedRow]);
         setRawLeads((current) => {
           const exists = current.some(item => item.id === updatedRow.id);
+          let target = null;
           let updated;
           if (exists) {
-            updated = current.map(item => item.id === updatedRow.id ? { ...item, ...updatedRow, lead_notes: item.lead_notes || [] } : item);
+            updated = current.map(item => {
+              if (item.id === updatedRow.id) {
+                target = { ...item, ...updatedRow, lead_notes: item.lead_notes || [] };
+                return target;
+              }
+              return item;
+            });
           } else {
-            updated = [{ ...updatedRow, lead_notes: [] }, ...current];
+            target = { ...updatedRow, lead_notes: [] };
+            updated = [target, ...current];
           }
-          debouncedSaveLeadsLocally(updated);
+          if (target) {
+            upsertLeadsLocally([target]);
+          }
           return updated;
         });
         setLeads((current) => {
@@ -1664,23 +1677,28 @@ export default function CRMContainer({
         });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
-        setRawLeads((current) => {
-          const updated = current.filter(item => item.id !== payload.old.id);
-          debouncedSaveLeadsLocally(updated);
-          return updated;
-        });
-        setLeads((current) => current.filter(item => item.id !== payload.old.id));
+        const deletedId = payload?.old?.id;
+        if (deletedId) {
+          deleteLeadLocally(deletedId);
+          setRawLeads((current) => current.filter(item => item.id !== deletedId));
+          setLeads((current) => current.filter(item => item.id !== deletedId));
+        }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
         const incoming = payload.new;
+        if (!incoming || !incoming.lead_id) return;
         setRawLeads((current) => {
+          let updatedTarget = null;
           const updated = current.map(item => {
             if (item.id !== incoming.lead_id) return item;
             const existingNotes = item.lead_notes || [];
             if (existingNotes.some(n => n.id === incoming.id)) return item;
-            return { ...item, lead_notes: [incoming, ...existingNotes] };
+            updatedTarget = { ...item, lead_notes: [incoming, ...existingNotes] };
+            return updatedTarget;
           });
-          debouncedSaveLeadsLocally(updated);
+          if (updatedTarget) {
+            upsertLeadsLocally([updatedTarget]);
+          }
           return updated;
         });
         setLeads((current) => current.map(item => {
@@ -1823,7 +1841,7 @@ export default function CRMContainer({
       });
       const next = brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
       // Synchronize in-memory changes to IndexedDB so page reload preserves recent updates
-      debouncedSaveLeadsLocally(next);
+      upsertLeadsLocally(leadsArray);
       return next;
     });
 
