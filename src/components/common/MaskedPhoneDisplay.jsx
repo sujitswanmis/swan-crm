@@ -1,7 +1,29 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useId } from 'react';
 import { Phone, Eye, EyeOff, Copy, Check } from 'lucide-react';
+
+/**
+ * Global Exclusive Unmask Store
+ * Enforces that strictly AT MOST ONE phone number across the entire CRM screen
+ * can be revealed at any one time ("jab 2nd dekhne jaye tab 1st hide ho jaye").
+ */
+let globalRevealedInstanceId = null;
+const globalListeners = new Set();
+
+const broadcastRevealedId = (id) => {
+  globalRevealedInstanceId = id;
+  globalListeners.forEach(listener => {
+    try {
+      listener(id);
+    } catch (e) {
+      console.warn('Listener error in phone unmask:', e);
+    }
+  });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('crm:phone-unmask', { detail: { id } }));
+  }
+};
 
 /**
  * Helper to trigger direct CRM softphone call or dispatch event
@@ -28,8 +50,10 @@ export const triggerDirectCall = (rawNumber) => {
  * Displays: [📞 Call] [xxxxxx4578] [👁️ Eye] [📋 Copy]
  * - By default masks to xxxxxx{last 4 digits}
  * - Eye icon toggles full number visibility
+ * - Exclusive Unmasking: Only 1 phone number across the entire screen can be revealed at once.
+ *   Clicking eye on any 2nd number immediately hides/re-masks the 1st one.
  * - Copy icon copies the complete phone number
- * - Enforces strictly a SINGLE phone number display
+ * - Enforces strictly a SINGLE phone number display per component
  */
 export default function MaskedPhoneDisplay({
   phone,
@@ -38,10 +62,39 @@ export default function MaskedPhoneDisplay({
   style = {},
   className = '',
   textColor = 'var(--text-primary)',
-  showBorder = false
+  showBorder = false,
+  id: customId
 }) {
-  const [isRevealed, setIsRevealed] = useState(false);
+  const generatedId = useId();
+  const instanceId = customId || generatedId;
+
+  const [isRevealed, setIsRevealed] = useState(() => globalRevealedInstanceId === instanceId);
   const [copied, setCopied] = useState(false);
+
+  // Subscribe to global unmask updates so that revealing another number re-masks this one
+  useEffect(() => {
+    const handleUpdate = (currentActiveId) => {
+      setIsRevealed(currentActiveId === instanceId);
+    };
+    globalListeners.add(handleUpdate);
+
+    const handleWindowEvent = (e) => {
+      setIsRevealed(e.detail?.id === instanceId);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm:phone-unmask', handleWindowEvent);
+    }
+
+    return () => {
+      globalListeners.delete(handleUpdate);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('crm:phone-unmask', handleWindowEvent);
+      }
+      if (globalRevealedInstanceId === instanceId) {
+        broadcastRevealedId(null);
+      }
+    };
+  }, [instanceId]);
 
   // Extract strictly a single primary number from string, array, or comma/pipe/slash separated numbers
   const singleNumber = useMemo(() => {
@@ -88,7 +141,13 @@ export default function MaskedPhoneDisplay({
   const handleToggleReveal = (e) => {
     e.stopPropagation();
     e.preventDefault();
-    setIsRevealed(prev => !prev);
+    if (globalRevealedInstanceId === instanceId) {
+      // Clicking eye on currently revealed number hides it
+      broadcastRevealedId(null);
+    } else {
+      // Revealing this number automatically causes all other numbers on the screen to hide
+      broadcastRevealedId(instanceId);
+    }
   };
 
   const handleCopy = async (e) => {
@@ -182,7 +241,7 @@ export default function MaskedPhoneDisplay({
         {displayText}
       </span>
 
-      {/* 3. Eye Icon (Toggle visibility) */}
+      {/* 3. Eye Icon (Toggle visibility - Exclusive single reveal) */}
       <button
         type="button"
         onClick={handleToggleReveal}
