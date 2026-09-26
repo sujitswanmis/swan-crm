@@ -762,7 +762,13 @@ export default function CRMContainer({
     'Settings': false
   });
 
-  const [userManagementSubTab, setUserManagementSubTab] = useState('user_manage');
+  const [userManagementSubTab, setUserManagementSubTab] = useState(() => {
+    const route = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    const requested = route === 'user_management_new'
+      ? (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase()
+      : '';
+    return ['user_manage', 'roles', 'hierarchy', 'public', 'sessions', 'audit'].includes(requested) ? requested : 'user_manage';
+  });
 
   const handleUserManagementSubTabChange = (subTabId) => {
     setUserManagementSubTab(subTabId);
@@ -2108,6 +2114,9 @@ export default function CRMContainer({
         let sub = params.get('subtab') || params.get('tab');
         if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
+      } else if (tab === 'user_management_new') {
+        const sub = (params.get('tab') || params.get('subtab') || '').toLowerCase();
+        setUserManagementSubTab(['user_manage', 'roles', 'hierarchy', 'public', 'sessions', 'audit'].includes(sub) ? sub : 'user_manage');
       } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
         tab = 'settings';
         setCurrentSettingSubTab('sessions');
@@ -2256,6 +2265,13 @@ export default function CRMContainer({
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
+      return;
+    }
+
+    if (tabId === 'user_management_new') {
+      React.startTransition(() => setActiveTab(tabId));
+      window.history.pushState(null, '', `/user_management_new?tab=${userManagementSubTab}`);
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
       return;
     }
 
@@ -6093,7 +6109,7 @@ export default function CRMContainer({
                   <UserManagementContainer 
                     initialUsers={teamMembers} 
                     activeSubTab={userManagementSubTab} 
-                    onTabChange={setUserManagementSubTab} 
+                    onTabChange={handleUserManagementSubTabChange} 
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

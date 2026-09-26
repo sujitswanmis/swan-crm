@@ -20,6 +20,7 @@ export default function PermissionMatrixModal({
     Sales: true,
     Purchase: false,
     'Human Resource': false,
+    'User Management': false,
     System: false,
     Settings: false
   });
@@ -55,7 +56,13 @@ export default function PermissionMatrixModal({
     const preset = ROLE_PRESETS.find(p => p.key === presetKey);
     if (!preset) return;
     if (window.confirm(`Apply "${preset.name}" preset permissions to this user? This will update current selections.`)) {
-      setAccessForm(JSON.parse(JSON.stringify(preset.presetData)));
+      setAccessForm(prev => {
+        const next = { ...prev };
+        // Replace only permission fields; keep employee profile fallback data in module_access.
+        MODULES_CONFIG.forEach(mod => { delete next[mod.id]; });
+        Object.keys(ROLE_PRESETS[0].presetData).forEach(key => { delete next[key]; });
+        return { ...next, ...structuredClone(preset.presetData) };
+      });
     }
   };
 
@@ -133,7 +140,7 @@ export default function PermissionMatrixModal({
   };
 
   // Group modules by Category
-  const categories = ['General', 'Sales', 'Purchase', 'Human Resource', 'System', 'Settings'];
+  const categories = ['General', 'Sales', 'Purchase', 'Human Resource', 'User Management', 'System', 'Settings'];
   const filteredModules = MODULES_CONFIG.filter(mod => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
