@@ -182,8 +182,33 @@ export default function TeamManagement({ initialUsers = [] }) {
   // Status Tabs State
   const [selectedTab, setSelectedTab] = useState('All');
 
-  // Pagination State
+  // Pagination State (Matching Lead Data condition & config)
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageJump, setPageJump] = useState(() => {
+    try {
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        if (settings.pageNumberingJump) return settings.pageNumberingJump;
+      }
+    } catch (e) {}
+    return 3;
+  });
+
+  const [availablePageSizes, setAvailablePageSizes] = useState(() => {
+    let sizes = [10, 25, 50, 100, 200, 500];
+    try {
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        if (settings.availablePageSizes) {
+          sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+        }
+      }
+    } catch (e) {}
+    return sizes.length > 0 ? sizes : [10, 25, 50, 100, 200, 500];
+  });
+
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -193,10 +218,42 @@ export default function TeamManagement({ initialUsers = [] }) {
           const parsed = parseInt(saved, 10);
           if (!isNaN(parsed) && parsed > 0) return parsed;
         }
+        const crmCfg = localStorage.getItem('crm_config');
+        if (crmCfg) {
+          const parsed = JSON.parse(crmCfg);
+          if (parsed.defaultPageSize) return parseInt(parsed.defaultPageSize, 10) || 25;
+        }
       } catch (_e) {}
     }
     return 25;
   });
+
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Listen to CRM config updates for availablePageSizes & pageJump
+  useEffect(() => {
+    const handleConfigUpdate = () => {
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const settings = JSON.parse(saved);
+          if (settings.pageNumberingJump) setPageJump(settings.pageNumberingJump);
+          if (settings.availablePageSizes) {
+            const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            if (sizes.length > 0) setAvailablePageSizes(sizes);
+          }
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('crm_config_updated', handleConfigUpdate);
+    return () => window.removeEventListener('crm_config_updated', handleConfigUpdate);
+  }, []);
 
   // Reset to first page whenever search query or status tab changes
   useEffect(() => {
@@ -1776,261 +1833,99 @@ export default function TeamManagement({ initialUsers = [] }) {
       </table>
       </div>
 
-      {/* Team Management Pagination & Navigation Bar */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        padding: '1rem 0.5rem 0.25rem 0.5rem',
-        marginTop: '0.75rem',
-        borderTop: '1px solid var(--border-light)',
-        fontSize: '0.85rem',
-        color: 'var(--text-secondary)'
-      }}>
-        {/* Left Side: Employee Count Summary & Rows Per Page Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
+      {/* Pagination & Page Navigation Bar (Exact same condition and layout as Lead Data) */}
+      <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
+          <span>
             {(() => {
-              const total = filteredUsers.length;
-              if (total === 0) return '0 employees';
-              const start = (safeCurrentPage - 1) * effectivePageSize + 1;
-              const end = effectivePageSize >= 100000 ? total : Math.min(safeCurrentPage * effectivePageSize, total);
-              return `Showing ${start} to ${end} of ${total} employees`;
+              const totalRecords = filteredUsers.length;
+              const startRecord = totalRecords === 0 ? 0 : (safeCurrentPage - 1) * effectivePageSize + 1;
+              const endRecord = effectivePageSize >= 100000 ? totalRecords : Math.min(safeCurrentPage * effectivePageSize, totalRecords);
+              return `Showing ${startRecord} to ${endRecord} of ${totalRecords} records`;
             })()}
           </span>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>Rows per page:</span>
-            <select
-              value={effectivePageSize >= 100000 ? 100000 : effectivePageSize}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setPageSize(val);
-                setCurrentPage(1);
-                if (typeof window !== 'undefined') {
-                  try {
-                    localStorage.setItem('team_management_page_size', val >= 100000 ? 'all' : String(val));
-                  } catch (_e) {}
-                }
-              }}
-              style={{
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                outline: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-              }}
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={250}>250</option>
-              <option value={500}>500</option>
-              <option value={100000}>All</option>
-            </select>
-          </div>
+          <select
+            value={effectivePageSize}
+            onChange={e => {
+              const newSize = Number(e.target.value);
+              setPageSize(newSize);
+              setCurrentPage(1);
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('team_management_page_size', newSize >= 100000 ? 'all' : String(newSize));
+                } catch (_e) {}
+              }
+            }}
+            style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+          >
+            {(() => {
+              const currentSize = effectivePageSize;
+              const optionsSet = new Set(availablePageSizes);
+              if (currentSize !== 100000 && !isNaN(currentSize)) optionsSet.add(currentSize);
+              const optionsList = Array.from(optionsSet).sort((a,b) => a - b);
+              optionsList.push(100000);
+              
+              return optionsList.map(pageSizeOption => (
+                <option key={pageSizeOption} value={pageSizeOption}>
+                  {pageSizeOption === 100000 ? 'All' : `Show ${pageSizeOption}`}
+                </option>
+              ));
+            })()}
+          </select>
         </div>
+        
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={safeCurrentPage <= 1}
+            style={{ padding: '0.25rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '4px', cursor: safeCurrentPage > 1 ? 'pointer' : 'not-allowed', opacity: safeCurrentPage > 1 ? 1 : 0.5 }}
+          >
+            Previous
+          </button>
+          
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center' }}>
+            {(() => {
+              const totalPages = Math.max(1, Math.ceil(filteredUsers.length / (effectivePageSize >= 100000 ? (filteredUsers.length || 1) : effectivePageSize)));
+              const currentPage = safeCurrentPage;
+              const pages = [];
+              const effectivePageJump = isMobile ? 1 : pageJump;
+              
+              let startPage = Math.max(1, currentPage - effectivePageJump);
+              let endPage = Math.min(totalPages, currentPage + effectivePageJump);
 
-        {/* Right Side: Page Navigation Controls */}
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-            {/* First Page Button */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage(1)}
-              disabled={safeCurrentPage === 1}
-              style={{
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: safeCurrentPage === 1 ? 'var(--border-strong)' : 'var(--text-primary)',
-                cursor: safeCurrentPage === 1 ? 'not-allowed' : 'pointer',
-                opacity: safeCurrentPage === 1 ? 0.5 : 1,
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                transition: 'all 0.15s ease'
-              }}
-              title="First Page"
-            >
-              « First
-            </button>
+              if (currentPage <= effectivePageJump + 1) endPage = Math.min((effectivePageJump * 2) + 1, totalPages);
+              if (currentPage >= totalPages - effectivePageJump) startPage = Math.max(1, totalPages - (effectivePageJump * 2));
 
-            {/* Previous Page Button */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={safeCurrentPage === 1}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.2rem',
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: safeCurrentPage === 1 ? 'var(--border-strong)' : 'var(--text-primary)',
-                cursor: safeCurrentPage === 1 ? 'not-allowed' : 'pointer',
-                opacity: safeCurrentPage === 1 ? 0.5 : 1,
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                transition: 'all 0.15s ease'
-              }}
-              title="Previous Page"
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-
-            {/* Smart Windowed Page Buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              {(() => {
-                const pages = [];
-                const windowSize = 2;
-                let start = Math.max(1, safeCurrentPage - windowSize);
-                let end = Math.min(totalPages, safeCurrentPage + windowSize);
-
-                if (safeCurrentPage <= windowSize + 1) {
-                  end = Math.min(windowSize * 2 + 1, totalPages);
-                }
-                if (safeCurrentPage >= totalPages - windowSize) {
-                  start = Math.max(1, totalPages - windowSize * 2);
-                }
-
-                if (start > 1) {
-                  pages.push(
-                    <button
-                      key={1}
-                      type="button"
-                      onClick={() => setCurrentPage(1)}
-                      style={{
-                        padding: '0.32rem 0.65rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem',
-                        fontWeight: 600
-                      }}
-                    >
-                      1
-                    </button>
-                  );
-                  if (start > 2) {
-                    pages.push(<span key="dots-start" style={{ padding: '0 0.2rem', color: 'var(--text-secondary)' }}>...</span>);
-                  }
-                }
-
-                for (let p = start; p <= end; p++) {
-                  const isCurrent = p === safeCurrentPage;
-                  pages.push(
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setCurrentPage(p)}
-                      style={{
-                        padding: '0.32rem 0.65rem',
-                        borderRadius: '6px',
-                        border: isCurrent ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
-                        backgroundColor: isCurrent ? 'var(--accent-color)' : 'var(--bg-surface)',
-                        color: isCurrent ? '#ffffff' : 'var(--text-primary)',
-                        cursor: isCurrent ? 'default' : 'pointer',
-                        fontSize: '0.8rem',
-                        fontWeight: isCurrent ? 700 : 500,
-                        boxShadow: isCurrent ? '0 1px 3px rgba(37, 99, 235, 0.35)' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  );
-                }
-
-                if (end < totalPages) {
-                  if (end < totalPages - 1) {
-                    pages.push(<span key="dots-end" style={{ padding: '0 0.2rem', color: 'var(--text-secondary)' }}>...</span>);
-                  }
-                  pages.push(
-                    <button
-                      key={totalPages}
-                      type="button"
-                      onClick={() => setCurrentPage(totalPages)}
-                      style={{
-                        padding: '0.32rem 0.65rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem',
-                        fontWeight: 600
-                      }}
-                    >
-                      {totalPages}
-                    </button>
-                  );
-                }
-
-                return pages;
-              })()}
-            </div>
-
-            {/* Next Page Button */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={safeCurrentPage >= totalPages}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.2rem',
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: safeCurrentPage >= totalPages ? 'var(--border-strong)' : 'var(--text-primary)',
-                cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                opacity: safeCurrentPage >= totalPages ? 0.5 : 1,
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                transition: 'all 0.15s ease'
-              }}
-              title="Next Page"
-            >
-              Next <ChevronRight size={14} />
-            </button>
-
-            {/* Last Page Button */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={safeCurrentPage >= totalPages}
-              style={{
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: safeCurrentPage >= totalPages ? 'var(--border-strong)' : 'var(--text-primary)',
-                cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                opacity: safeCurrentPage >= totalPages ? 0.5 : 1,
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                transition: 'all 0.15s ease'
-              }}
-              title="Last Page"
-            >
-              Last »
-            </button>
+              for (let i = startPage; i <= endPage; i++) {
+                pages.push(
+                  <button
+                    key={i}
+                    onClick={() => setCurrentPage(i)}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '4px',
+                      background: currentPage === i ? 'var(--accent-color)' : 'var(--bg-surface)',
+                      color: currentPage === i ? 'white' : 'var(--text-primary)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {i}
+                  </button>
+                );
+              }
+              return pages;
+            })()}
           </div>
-        )}
+
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={safeCurrentPage >= totalPages}
+            style={{ padding: '0.25rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '4px', cursor: safeCurrentPage < totalPages ? 'pointer' : 'not-allowed', opacity: safeCurrentPage < totalPages ? 1 : 0.5 }}
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* Impersonate User Modal */}
