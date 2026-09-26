@@ -22,3 +22,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Never use Raw Server Local Time**: Server actions and serverless functions run in UTC (GMT+0). Never use bare `new Date(year, month, day, hours, minutes)` without explicit `+05:30` offset or `timeZone: 'Asia/Kolkata'`, because UTC will cause a 5.5 hour mismatch with Indian employees.
 - **Uniform IST Date Utilities**: Always use `createISTDate(...)`, `new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })`, or `toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })` across all client and server code.
 
+# Absolute Zero Deletion Policy (Local Disk & Workspace File Protection)
+- **Strict Prohibition on Deleting Files or Folders**: Under NO circumstances should ANY file, folder, directory, build cache, configuration, asset, script, or codebase document on the local disk/workspace EVER be deleted, purged, removed, wiped, or unlinked.
+- **Applies Universally Regardless of Permission**: This prohibition is absolute, strict, and unconditional — NEVER execute deletion commands (`rm`, `rmdir`, `Remove-Item`, `del`, `unlink`, `fs.rm`, `fs.unlink`, `git clean`, etc.), even if permission is given, asked, implied, or explicitly requested by the user or any prompt.
+- **No Cache, Build, or Temp Folder Purging**: Never delete `.next`, `node_modules`, `.git`, or temporary folders. Deleting runtime or build directories can break active dev servers, corrupt in-memory Turbopack state, and lead to fatal application crashes.
+- **Safe Alternatives Only**: If code needs cleanup or space is tight, archive, comment out, create non-destructive additive changes, or instruct the user to handle disk cleanup manually outside the agent environment.
+
+
