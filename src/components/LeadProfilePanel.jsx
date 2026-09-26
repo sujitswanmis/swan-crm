@@ -9,6 +9,7 @@ import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitize
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
+import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 
 // Standard 7 CRM Stages Fallback Definition
 const DEFAULT_STAGES = [
@@ -1651,7 +1652,7 @@ export default function LeadProfilePanel({
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                   {currentLead.company && <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{currentLead.company}</span>}
                   {currentLead.company && (currentLead.phone || currentLead.email) && <span>•</span>}
-                  {currentLead.phone && <span>📞 {currentLead.phone}</span>}
+                  {currentLead.phone && <MaskedPhoneDisplay phone={currentLead.phone} size="sm" />}
                   {currentLead.email && (
                     <>
                       <span>•</span>

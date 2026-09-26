@@ -6,6 +6,7 @@ import {
   Building2, ShieldCheck, Check, Plus, ExternalLink, RefreshCw,
   Users, MapPin, Phone, Shield, ChevronRight, Trash2, Eye
 } from 'lucide-react';
+import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 
 const STAGE_CONFIGS = {
   s01: {
@@ -761,11 +762,10 @@ export default function StageDataTable({
 
                     {/* Contact & Location */}
                     <td style={{ padding: '0.75rem 0.9rem' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <Phone size={11} className="text-emerald-400" />
-                        <span>{party.primary_mobile || party.biz_contact_no_1 || party.contact_mobile_1_1 || '-'}</span>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center' }}>
+                        <MaskedPhoneDisplay phone={party.primary_mobile || party.biz_contact_no_1 || party.contact_mobile_1_1} size="sm" />
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem' }}>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.2rem' }}>
                         <MapPin size={11} className="text-sky-400" />
                         <span>{party.district_name || 'District'}{party.state_name ? `, ${party.state_name}` : ''}</span>
                       </div>

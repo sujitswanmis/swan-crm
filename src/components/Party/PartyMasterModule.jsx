@@ -37,6 +37,7 @@ import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateD
 import StageDataTable from './StageDataTable';
 import StageConfigModal from './StageConfigModal';
 import PartyMasterDashboard from './PartyMasterDashboard';
+import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 const INDIAN_STATES = ALL_INDIAN_STATES;
 
@@ -2581,9 +2582,11 @@ export default function PartyMasterModule({
 
                         {/* Firm & Contact */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem' }}>{p.firm_name}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                            {p.contact_person_name_1 || p.owner_name || 'Principal'} • {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem', marginBottom: '0.2rem' }}>{p.firm_name}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span>{p.contact_person_name_1 || p.owner_name || 'Principal'}</span>
+                            <span>•</span>
+                            <MaskedPhoneDisplay phone={p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1} size="sm" />
                           </div>
                         </td>
 
@@ -3129,8 +3132,8 @@ export default function PartyMasterModule({
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Category: {lead.order_category || 'Agro Implements'}</div>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600 }}>{lead.contact_person || lead.lead_name}</div>
-                          <div style={{ fontSize: '0.78rem', color: '#34d399' }}>{lead.primary_mobile}</div>
+                          <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{lead.contact_person || lead.lead_name}</div>
+                          <MaskedPhoneDisplay phone={lead.primary_mobile} size="sm" />
                         </td>
                         <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
                           <div>{lead.state_name || 'Punjab'}</div>
@@ -4196,8 +4199,8 @@ export default function PartyMasterModule({
 
                         {/* 10. Mobile */}
                         {visibleColumns.mobile !== false && (
-                          <td style={{ padding: '0.65rem 0.85rem', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-                            {p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '-'}
+                          <td style={{ padding: '0.65rem 0.85rem' }}>
+                            <MaskedPhoneDisplay phone={p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1} size="sm" />
                           </td>
                         )}
 
@@ -4702,8 +4705,11 @@ export default function PartyMasterModule({
                             </span>
                             <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#ffffff' }}>{dist.firm_name}</span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                            Owner: {dist.owner_name} • Phone: {dist.primary_mobile} • State: {dist.state_name || 'Punjab'}
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span>Owner: {dist.owner_name}</span>
+                            <span>•</span>
+                            <MaskedPhoneDisplay phone={dist.primary_mobile} size="sm" />
+                            <span>• State: {dist.state_name || 'Punjab'}</span>
                           </div>
                         </div>
                       </div>
@@ -4756,8 +4762,11 @@ export default function PartyMasterModule({
                                         {dlr.billing_route_type === 'DIRECT_COMPANY_BILLING' ? 'Direct Swan' : (dlr.billing_route_type === 'DEALER_BILLED' ? 'Dealer Billed' : 'Distributor Billed')}
                                       </span>
                                     </div>
-                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                      {dlr.owner_name} • {dlr.primary_mobile} • Territory: {dlr.district_name || 'Territory'}
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.15rem' }}>
+                                      <span>{dlr.owner_name}</span>
+                                      <span>•</span>
+                                      <MaskedPhoneDisplay phone={dlr.primary_mobile} size="sm" />
+                                      <span>• Territory: {dlr.district_name || 'Territory'}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -4775,7 +4784,11 @@ export default function PartyMasterModule({
                                       <span>🛒</span>
                                       <span style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.75rem' }}>{sdl.sub_dealer_code || sdl.party_universal_code}</span>
                                       <strong style={{ color: '#fff' }}>{sdl.firm_name}</strong>
-                                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>({sdl.owner_name} • {sdl.primary_mobile})</span>
+                                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                        <span>({sdl.owner_name} •</span>
+                                        <MaskedPhoneDisplay phone={sdl.primary_mobile} size="sm" />
+                                        <span>)</span>
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
@@ -5051,9 +5064,11 @@ export default function PartyMasterModule({
 
                           {/* Firm & Contact */}
                           <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{party.firm_name}</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                              {party.contact_person_name_1 || party.owner_name || 'Principal'} • {phone || '-'}
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>{party.firm_name}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span>{party.contact_person_name_1 || party.owner_name || 'Principal'}</span>
+                              <span>•</span>
+                              <MaskedPhoneDisplay phone={phone} size="sm" />
                             </div>
                           </td>
 
@@ -5409,9 +5424,10 @@ export default function PartyMasterModule({
                           </div>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{f.party?.firm_name || 'Party'}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            {f.party?.party_universal_code || ''} • {f.party?.primary_mobile || '-'}
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>{f.party?.firm_name || 'Party'}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            {f.party?.party_universal_code && <span>{f.party.party_universal_code} •</span>}
+                            <MaskedPhoneDisplay phone={f.party?.primary_mobile} size="sm" />
                           </div>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -5739,9 +5755,11 @@ export default function PartyMasterModule({
                           </td>
 
                           <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{party.firm_name}</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                              {party.contact_person_name_1 || party.owner_name || 'Principal'} • {party.contact_mobile_1_1 || party.primary_mobile || '-'}
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>{party.firm_name}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span>{party.contact_person_name_1 || party.owner_name || 'Principal'}</span>
+                              <span>•</span>
+                              <MaskedPhoneDisplay phone={party.contact_mobile_1_1 || party.primary_mobile || party.biz_contact_no_1} size="sm" />
                             </div>
                           </td>
 
@@ -6244,16 +6262,10 @@ export default function PartyMasterModule({
                     🏢 Official Business Channels
                   </div>
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact No 1:</span>{' '}
-                      <strong style={{ color: '#e2e8f0' }}>{view360Party.biz_contact_no_1 || view360Party.primary_mobile || '-'}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact:</span>
+                      <MaskedPhoneDisplay phone={view360Party.biz_contact_no_1 || view360Party.primary_mobile || view360Party.biz_contact_no_2} size="sm" />
                     </div>
-                    {view360Party.biz_contact_no_2 && (
-                      <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact No 2:</span>{' '}
-                        <span style={{ color: '#cbd5e1' }}>{view360Party.biz_contact_no_2}</span>
-                      </div>
-                    )}
                     {(view360Party.biz_alt_no_1 || view360Party.biz_alt_no_2) && (
                       <div>
                         <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Alt Phone(s):</span>{' '}
@@ -6289,16 +6301,10 @@ export default function PartyMasterModule({
                       <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
                       <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_1 || view360Party.owner_name || 'Principal'}</strong>
                     </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Primary Mobile:</span>{' '}
-                      <strong style={{ color: '#34d399' }}>{view360Party.contact_mobile_1_1 || view360Party.primary_mobile || '-'}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                      <MaskedPhoneDisplay phone={view360Party.contact_mobile_1_1 || view360Party.primary_mobile || view360Party.contact_mobile_1_2} size="sm" />
                     </div>
-                    {view360Party.contact_mobile_1_2 && (
-                      <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Secondary Mobile:</span>{' '}
-                        <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_1_2}</span>
-                      </div>
-                    )}
                     {(view360Party.contact_alt_mobile_1_1 || view360Party.contact_alt_mobile_1_2) && (
                       <div>
                         <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile(s):</span>{' '}
@@ -6325,16 +6331,10 @@ export default function PartyMasterModule({
                         <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
                         <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_2 || '-'}</strong>
                       </div>
-                      <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>{' '}
-                        <strong style={{ color: '#fbbf24' }}>{view360Party.contact_mobile_2_1 || '-'}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                        <MaskedPhoneDisplay phone={view360Party.contact_mobile_2_1 || view360Party.contact_mobile_2_2} size="sm" />
                       </div>
-                      {view360Party.contact_mobile_2_2 && (
-                        <div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile:</span>{' '}
-                          <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_2_2}</span>
-                        </div>
-                      )}
                       {(view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1) && (
                         <div>
                           <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
@@ -6360,16 +6360,10 @@ export default function PartyMasterModule({
                         <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
                         <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_3 || '-'}</strong>
                       </div>
-                      <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>{' '}
-                        <strong style={{ color: '#c084fc' }}>{view360Party.contact_mobile_3_1 || '-'}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                        <MaskedPhoneDisplay phone={view360Party.contact_mobile_3_1 || view360Party.contact_mobile_3_2} size="sm" />
                       </div>
-                      {view360Party.contact_mobile_3_2 && (
-                        <div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile:</span>{' '}
-                          <span style={{ color: '#cbd5e1' }}>{view360Party.contact_mobile_3_2}</span>
-                        </div>
-                      )}
                       {(view360Party.contact_email_3_1 || view360Party.contact_email_3_2) && (
                         <div>
                           <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}

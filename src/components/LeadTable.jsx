@@ -22,6 +22,7 @@ import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
 import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
+import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import Papa from 'papaparse';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
 
@@ -649,81 +650,14 @@ export const triggerDirectCall = (rawNumber) => {
   }
 };
 
-// Reusable Cell for AIO Phone columns with direct click-to-call icon
+// Reusable Cell for AIO Phone columns with direct click-to-call icon, masking, eye toggle and copy
 const AioPhoneCell = ({ info }) => {
   const rawValue = info.getValue();
   if (!rawValue) return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
 
-  // Split comma-separated phone numbers
-  const numbers = String(rawValue)
-    .split(',')
-    .map(n => n.trim())
-    .filter(Boolean);
-
-  if (numbers.length === 0) {
-    return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
-  }
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center' }}>
-      {numbers.map((num, idx) => {
-        const cleanDigits = num.replace(/[^\d+]/g, '');
-        const isDialable = cleanDigits.replace(/\D/g, '').length >= 10;
-
-        return (
-          <div 
-            key={idx}
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {isDialable && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  triggerDirectCall(cleanDigits);
-                }}
-                title={`Call ${cleanDigits} via Softphone`}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '6px',
-                  border: '1px solid #10b981',
-                  backgroundColor: '#ecfdf5',
-                  color: '#059669',
-                  cursor: 'pointer',
-                  padding: 0,
-                  transition: 'all 0.15s ease',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  flexShrink: 0
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#059669';
-                  e.currentTarget.style.color = '#ffffff';
-                  e.currentTarget.style.transform = 'scale(1.08)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ecfdf5';
-                  e.currentTarget.style.color = '#059669';
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              >
-                <Phone size={12} strokeWidth={2.5} />
-              </button>
-            )}
-            <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-              {num}
-            </span>
-          </div>
-        );
-      })}
+    <div style={{ display: 'inline-flex', alignItems: 'center' }}>
+      <MaskedPhoneDisplay phone={rawValue} size="sm" />
     </div>
   );
 };
@@ -2583,46 +2517,33 @@ export default function LeadTable({
                     </div>
                   </div>
 
-                  {/* Multiple Phone Numbers / Contacts Section */}
+                  {/* Primary Mobile / Contact with Masking, Call, Eye, and Copy */}
                   {phoneNumbers.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }} onClick={e => e.stopPropagation()}>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>
-                        📱 Mobile / Contacts ({phoneNumbers.length})
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', fontWeight: 600 }}>
+                        📱 Mobile:
                       </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {phoneNumbers.map((num, nIdx) => (
-                          <div 
-                            key={num + nIdx} 
-                            style={{ 
-                              display: 'inline-flex', 
-                              alignItems: 'center', 
-                              gap: '0.35rem', 
-                              backgroundColor: 'var(--bg-primary)', 
-                              padding: '0.25rem 0.5rem', 
-                              borderRadius: '6px', 
-                              border: '1px solid var(--border-light)',
-                              fontSize: '0.78rem'
-                            }}
-                          >
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{num}</span>
-                            <a 
-                              href={`tel:${num}`} 
-                              style={{ color: 'var(--accent-color)', textDecoration: 'none', padding: '0 0.15rem', display: 'flex', alignItems: 'center' }} 
-                              title={`Call ${num}`}
-                            >
-                              📞
-                            </a>
-                            <button 
-                              type="button"
-                              onClick={() => setWhatsappModalLead({ ...lead, phone: num })} 
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.15rem', display: 'flex', alignItems: 'center' }} 
-                              title={`WhatsApp ${num}`}
-                            >
-                              💬
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                      <MaskedPhoneDisplay phone={phoneNumbers[0]} size="sm" showBorder={true} />
+                      <button 
+                        type="button"
+                        onClick={() => setWhatsappModalLead({ ...lead, phone: phoneNumbers[0] })} 
+                        style={{
+                          background: 'rgba(37, 211, 102, 0.12)',
+                          border: '1px solid #25D366',
+                          color: '#25D366',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          padding: '0.15rem 0.4rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.2rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 700
+                        }} 
+                        title={`WhatsApp ${phoneNumbers[0]}`}
+                      >
+                        💬 WA
+                      </button>
                     </div>
                   )}
 

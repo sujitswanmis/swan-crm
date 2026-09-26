@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import DateRangePicker from '@/components/common/DateRangePicker';
+import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import { createClient } from '@/utils/supabase/client';
 
 const formatActionTimestamp = (ts) => {
@@ -2544,8 +2545,10 @@ export default function LeadDashboard({
               >
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{lead.company || lead.name || 'Unnamed Business'}</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                    {lead.phone || lead.email || 'No Contact'} • Stage: <strong style={{ color: 'var(--accent-color)' }}>{lead.status?.split(';')[0]}</strong>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {lead.phone ? <MaskedPhoneDisplay phone={lead.phone} size="sm" /> : (lead.email || 'No Contact')}
+                    <span>•</span>
+                    <span>Stage: <strong style={{ color: 'var(--accent-color)' }}>{lead.status?.split(';')[0]}</strong></span>
                   </div>
                 </div>
 
@@ -3604,8 +3607,8 @@ export default function LeadDashboard({
                               {item.contactPerson}
                             </div>
                             {item.phone && item.phone !== '—' && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                                📞 {item.phone}
+                              <div style={{ marginTop: '0.2rem' }}>
+                                <MaskedPhoneDisplay phone={item.phone} size="sm" />
                               </div>
                             )}
                           </td>

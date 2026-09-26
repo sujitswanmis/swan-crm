@@ -8,6 +8,7 @@ import {
   ExternalLink, ChevronRight, Shield, Sparkles, Filter, Check,
   UserCheck, Award, Layers
 } from 'lucide-react';
+import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 
 export default function PartyMasterDashboard({
   parties = [],
@@ -1149,8 +1150,8 @@ export default function PartyMasterDashboard({
                         <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>{lead.order_category || 'Agro Implements'}</div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{lead.contact_person || lead.lead_name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#10b981' }}>{lead.primary_mobile}</div>
+                        <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{lead.contact_person || lead.lead_name}</div>
+                        <MaskedPhoneDisplay phone={lead.primary_mobile} size="sm" />
                       </td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem' }}>
                         <div>{lead.state_name || 'Punjab'}</div>
@@ -1315,8 +1316,8 @@ export default function PartyMasterDashboard({
                         {p.firm_name || p.legal_name}
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{p.contact_person_name_1 || '-'}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#10b981' }}>{p.biz_contact_no_1 || p.contact_mobile_1_1 || '-'}</div>
+                        <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{p.contact_person_name_1 || '-'}</div>
+                        <MaskedPhoneDisplay phone={p.biz_contact_no_1 || p.contact_mobile_1_1} size="sm" />
                       </td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem' }}>
                         <div>{p.state_name || 'Punjab'}</div>
