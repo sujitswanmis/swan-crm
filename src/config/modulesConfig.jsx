@@ -149,9 +149,26 @@ export const MODULES_CONFIG = [
   },
   { id: 'joining', path: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
 
+  // User Management
+  { 
+    id: 'user_management_new', 
+    path: 'user_management_new', 
+    label: 'User Management', 
+    category: 'User Management', 
+    icon: <Users size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'user_manage', label: 'User Manage' },
+      { id: 'roles', label: 'Roles & Permissions' },
+      { id: 'hierarchy', label: 'Org Hierarchy' },
+      { id: 'public', label: 'Public Users' },
+      { id: 'sessions', label: 'Active Sessions' },
+      { id: 'audit', label: 'Audit Logs' }
+    ]
+  },
+
   // System
   { id: 'team', path: 'team', label: 'Team Management', category: 'System', icon: <Shield size={20} /> },
-  { id: 'user_management_new', path: 'user_management_new', label: 'User Management (New)', category: 'System', icon: <Users size={20} /> },
   { 
     id: 'workplace', 
     path: 'workplace', 

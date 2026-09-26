@@ -30,11 +30,22 @@ import ConfirmActionModal from './modals/ConfirmActionModal';
 
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 
-export default function UserManagementContainer({ initialUsers = [] }) {
+export default function UserManagementContainer({ initialUsers = [], activeSubTab = 'user_manage', onTabChange = () => {} }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
-  const [activeTab, setActiveTab] = useState('user_manage');
+  const [activeTab, setActiveTab] = useState(activeSubTab || 'user_manage');
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
+
+  useEffect(() => {
+    if (activeSubTab && activeSubTab !== activeTab) {
+      setActiveTab(activeSubTab);
+    }
+  }, [activeSubTab]);
+
+  const handleTabSwitch = (newTabId) => {
+    setActiveTab(newTabId);
+    onTabChange(newTabId);
+  };
 
   // Modals state
   const [addEditModal, setAddEditModal] = useState({ isOpen: false, user: null });
@@ -398,7 +409,7 @@ export default function UserManagementContainer({ initialUsers = [] }) {
             <button
               key={sub.id}
               type="button"
-              onClick={() => setActiveTab(sub.id)}
+              onClick={() => handleTabSwitch(sub.id)}
               style={{
                 padding: '0.55rem 1rem',
                 borderRadius: '8px',

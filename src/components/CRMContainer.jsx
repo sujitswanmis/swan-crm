@@ -18,7 +18,7 @@ import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import AiAdminModule from './AiAdmin/AiAdminModule';
 import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -757,9 +757,23 @@ export default function CRMContainer({
     'Sales': false,
     'Purchase': false,
     'Human Resource': false,
+    'User Management': false,
     'System': false,
     'Settings': false
   });
+
+  const [userManagementSubTab, setUserManagementSubTab] = useState('user_manage');
+
+  const handleUserManagementSubTabChange = (subTabId) => {
+    setUserManagementSubTab(subTabId);
+    React.startTransition(() => {
+      setActiveTab('user_management_new');
+    });
+    window.history.pushState(null, '', `/user_management_new?tab=${subTabId}`);
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem('crm-sidebar-collapsed', isSidebarCollapsed);
@@ -780,6 +794,8 @@ export default function CRMContainer({
       categoryToExpand = 'Purchase';
     } else if (hrTabs.includes(activeTab)) {
       categoryToExpand = 'Human Resource';
+    } else if (activeTab === 'user_management_new') {
+      categoryToExpand = 'User Management';
     } else if (systemTabs.includes(activeTab)) {
       categoryToExpand = 'System';
     } else if (settingsTabs.includes(activeTab)) {
@@ -791,6 +807,7 @@ export default function CRMContainer({
         'Sales': categoryToExpand === 'Sales',
         'Purchase': categoryToExpand === 'Purchase',
         'Human Resource': categoryToExpand === 'Human Resource',
+        'User Management': categoryToExpand === 'User Management',
         'System': categoryToExpand === 'System',
         'Settings': categoryToExpand === 'Settings'
       });
@@ -3821,6 +3838,65 @@ export default function CRMContainer({
             );
           })}
 
+          {/* USER MANAGEMENT CATEGORY (Strictly positioned between Human Resource and System) */}
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view || moduleAccess['user_management_new']?.view) && (
+            <div>
+              <button
+                onClick={() => {
+                  toggleCategory('User Management');
+                  if (activeTab !== 'user_management_new') {
+                    handleTabChange('user_management_new');
+                  }
+                }}
+                className="category-header"
+                data-active={activeTab === 'user_management_new'}
+              >
+                {expandedCategories['User Management'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span>User Management</span>
+              </button>
+
+              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['User Management']) ? 'expanded' : ''}`}>
+                <div className="category-modules-inner">
+                  {[
+                    { id: 'user_manage', label: 'User Manage', icon: Users },
+                    { id: 'roles', label: 'Roles & Permissions', icon: Shield },
+                    { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
+                    { id: 'public', label: 'Public Users', icon: Globe },
+                    { id: 'sessions', label: 'Active Sessions', icon: Monitor },
+                    { id: 'audit', label: 'Audit Logs', icon: Clock }
+                  ].map(sub => {
+                    const SubIcon = sub.icon;
+                    const isSubActive = activeTab === 'user_management_new' && userManagementSubTab === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => handleUserManagementSubTabChange(sub.id)}
+                        className="nav-item"
+                        data-active={isSubActive}
+                        title={isSidebarCollapsed ? sub.label : undefined}
+                        style={{
+                          background: isSubActive ? 'var(--primary-light, rgba(37, 99, 235, 0.12))' : 'none',
+                          border: 'none',
+                          width: '100%',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          paddingLeft: '1.25rem'
+                        }}
+                      >
+                        <SubIcon size={16} style={{ flexShrink: 0, color: isSubActive ? 'var(--primary-color, #2563eb)' : 'inherit' }} />
+                        <span style={{ fontWeight: isSubActive ? 700 : 500 }}>{sub.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SYSTEM CATEGORY ACCORDION */}
           {((userRole === 'admin' || userRole === 'Admin') || 
             moduleAccess['team']?.view || 
@@ -6011,10 +6087,14 @@ export default function CRMContainer({
               {/* User Management (New Preview) */}
               <KeepAliveTab 
                 isActive={activeTab === 'user_management_new'} 
-                isVisited={isTabPermitted('user_management_new', moduleAccess, userRole) && visitedTabs.has('user_management_new')}
+                isVisited={isTabPermitted('user_management_new', moduleAccess, userRole) && (visitedTabs.has('user_management_new') || activeTab === 'user_management_new')}
               >
                 <ErrorBoundary>
-                  <UserManagementContainer initialUsers={teamMembers} />
+                  <UserManagementContainer 
+                    initialUsers={teamMembers} 
+                    activeSubTab={userManagementSubTab} 
+                    onTabChange={setUserManagementSubTab} 
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
