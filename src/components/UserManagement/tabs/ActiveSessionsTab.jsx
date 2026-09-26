@@ -3,11 +3,25 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
-  AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter
+  AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter,
+  Calendar, Check, UserCheck, UserX, Coffee
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { forceLogoutSession, getActiveUserSessions } from '@/app/actions/audit';
-import { formatISTDateTime } from '../utils/userManagementUtils';
+import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
+import { forceLogoutSession } from '@/app/actions/audit';
+
+function getTodayDateStr() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
 
 function parseDeviceInfo(deviceStr = '') {
   if (!deviceStr) return { os: 'Windows', browser: 'Browser', icon: Monitor };
@@ -39,11 +53,11 @@ function parseDeviceInfo(deviceStr = '') {
 }
 
 function formatTimeAgo(dateString) {
-  if (!dateString) return 'Never';
+  if (!dateString) return '';
   const date = new Date(dateString);
   const now = Date.now();
   const diffSec = Math.max(0, Math.floor((now - date.getTime()) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
+  if (diffSec < 60) return 'Just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
   const diffHours = Math.floor(diffMin / 60);
@@ -53,16 +67,16 @@ function formatTimeAgo(dateString) {
 }
 
 export default function ActiveSessionsTab() {
-  const [sessions, setSessions] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(getTodayDateStr());
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Online' | 'Away' | 'Offline'
+  const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Online' | 'Present' | 'Absent'
   const [revokingId, setRevokingId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
-  const [loadError, setLoadError] = useState('');
   const [currentUserEmail, setCurrentUserEmail] = useState('');
 
-  // Fetch current logged in user email to tag "Your Session"
+  // Fetch current user email
   useEffect(() => {
     async function loadUser() {
       try {
@@ -78,156 +92,153 @@ export default function ActiveSessionsTab() {
     loadUser();
   }, []);
 
-  const fetchSessions = useCallback(async (showSpinner = true) => {
+  // Fetch daily employee shift & active session summary
+  const fetchActivitySummary = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const result = await getActiveUserSessions();
-      if (!result?.success) throw new Error(result?.error || 'Could not load sessions');
-      setSessions(result.sessions || []);
-      setLoadError('');
+      const res = await getEmployeeDailyActivitySummary(selectedDate, selectedDate);
+      if (res && res.success) {
+        setEmployees(res.employees || []);
+      } else {
+        setEmployees([]);
+      }
     } catch (err) {
-      console.error('Error fetching sessions:', err);
-      setLoadError(err.message || 'Could not load sessions');
+      console.error('Error fetching employee activity summary:', err);
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, []);
+  }, [selectedDate]);
 
-  // Initial load and periodic background poll every 25 seconds
+  // Periodic poll every 25 seconds
   useEffect(() => {
-    fetchSessions(true);
+    fetchActivitySummary(true);
     const interval = setInterval(() => {
-      fetchSessions(false);
+      fetchActivitySummary(false);
     }, 25000);
     return () => clearInterval(interval);
-  }, [fetchSessions]);
+  }, [fetchActivitySummary]);
 
-  // Evaluated sessions with strict heartbeat time calculation:
-  // - Heartbeat interval is 60s
-  // - <= 10 mins: Live Online
-  // - 10 to 30 mins: Away / Idle
-  // - > 30 mins or is_active === false: Offline / Expired
-  const evaluatedSessions = useMemo(() => {
-    const now = Date.now();
-
-    return (sessions || []).map(s => {
-      const lastActiveMs = s.last_active ? new Date(s.last_active).getTime() : 0;
-      const diffMs = now - lastActiveMs;
-      const diffMinutes = diffMs / (1000 * 60);
-
-      let status = 'offline';
-      let statusLabel = 'Offline';
-      let statusColor = '#64748b';
-      let statusBg = '#f1f5f9';
-      let statusBorder = '#cbd5e1';
-      let statusDot = '#94a3b8';
-      let isLive = false;
-
-      if (s.is_active === false) {
-        status = 'revoked';
-        statusLabel = 'Revoked';
-        statusColor = '#dc2626';
-        statusBg = '#fef2f2';
-        statusBorder = '#fecaca';
-        statusDot = '#ef4444';
-      } else if (diffMinutes <= 10) {
-        status = 'online';
-        statusLabel = '● Online';
-        statusColor = '#059669';
-        statusBg = '#ecfdf5';
-        statusBorder = '#a7f3d0';
-        statusDot = '#10b981';
-        isLive = true;
-      } else if (diffMinutes <= 30) {
-        status = 'away';
-        statusLabel = '● Away';
-        statusColor = '#d97706';
-        statusBg = '#fffbeb';
-        statusBorder = '#fde68a';
-        statusDot = '#f59e0b';
-        isLive = true;
-      } else {
-        status = 'offline';
-        statusLabel = 'Offline';
-        statusColor = '#64748b';
-        statusBg = '#f1f5f9';
-        statusBorder = '#cbd5e1';
-        statusDot = '#94a3b8';
-      }
-
+  // Evaluate each unique employee
+  const evaluatedEmployees = useMemo(() => {
+    return (employees || []).map(emp => {
+      const isOnline = emp.liveStatus === 'working';
+      const isAway = emp.liveStatus === 'away';
+      const isOnBreak = emp.liveStatus === 'on_break';
+      const isLive = isOnline || isAway || isOnBreak;
       const isCurrent = Boolean(
         currentUserEmail && 
-        s.email && 
-        s.email.toLowerCase() === currentUserEmail && 
-        isLive
+        emp.email && 
+        emp.email.toLowerCase() === currentUserEmail
       );
 
+      let statusBadge = {
+        label: 'Not Logged In',
+        color: '#64748b',
+        bg: '#f1f5f9',
+        border: '#cbd5e1',
+        dot: '#94a3b8'
+      };
+
+      if (isOnline) {
+        statusBadge = {
+          label: '● Online (Working)',
+          color: '#059669',
+          bg: '#ecfdf5',
+          border: '#a7f3d0',
+          dot: '#10b981'
+        };
+      } else if (isOnBreak) {
+        statusBadge = {
+          label: `☕ On ${emp.currentBreak?.type || 'Break'}`,
+          color: '#ea580c',
+          bg: '#fff7ed',
+          border: '#fed7aa',
+          dot: '#f97316'
+        };
+      } else if (isAway) {
+        statusBadge = {
+          label: '● Away / Idle',
+          color: '#d97706',
+          bg: '#fffbeb',
+          border: '#fde68a',
+          dot: '#f59e0b'
+        };
+      } else if (emp.hasActivityToday) {
+        statusBadge = {
+          label: '⚪ Logged Out',
+          color: '#475569',
+          bg: '#f8fafc',
+          border: '#e2e8f0',
+          dot: '#64748b'
+        };
+      }
+
       return {
-        ...s,
-        status,
-        statusLabel,
-        statusColor,
-        statusBg,
-        statusBorder,
-        statusDot,
+        ...emp,
+        isOnline,
+        isAway,
+        isOnBreak,
         isLive,
         isCurrent,
-        timeAgo: formatTimeAgo(s.last_active)
+        statusBadge,
+        lastSeenTimeAgo: formatTimeAgo(emp.lastSeen)
       };
     });
-  }, [sessions, currentUserEmail]);
+  }, [employees, currentUserEmail]);
 
-  // Aggregate stats
-  const statusCounts = useMemo(() => {
-    const c = { All: evaluatedSessions.length, Online: 0, Away: 0, Offline: 0 };
-    evaluatedSessions.forEach(s => {
-      if (s.status === 'online') c.Online++;
-      else if (s.status === 'away') c.Away++;
-      else c.Offline++;
+  // Status counts
+  const counts = useMemo(() => {
+    const c = { All: evaluatedEmployees.length, Online: 0, Present: 0, Absent: 0 };
+    evaluatedEmployees.forEach(e => {
+      if (e.isLive) c.Online++;
+      if (e.hasActivityToday) c.Present++;
+      else c.Absent++;
     });
     return c;
-  }, [evaluatedSessions]);
+  }, [evaluatedEmployees]);
 
-  // Filtered sessions
-  const filteredSessions = useMemo(() => {
-    let list = evaluatedSessions;
+  // Filtered list
+  const filteredEmployees = useMemo(() => {
+    let list = evaluatedEmployees;
 
     if (statusFilter === 'Online') {
-      list = list.filter(s => s.status === 'online');
-    } else if (statusFilter === 'Away') {
-      list = list.filter(s => s.status === 'away');
-    } else if (statusFilter === 'Offline') {
-      list = list.filter(s => s.status === 'offline' || s.status === 'revoked');
+      list = list.filter(e => e.isLive);
+    } else if (statusFilter === 'Present') {
+      list = list.filter(e => e.hasActivityToday);
+    } else if (statusFilter === 'Absent') {
+      list = list.filter(e => !e.hasActivityToday);
     }
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(s => {
-        const name = (s.emp_name || '').toLowerCase();
-        const email = (s.email || '').toLowerCase();
-        const ip = (s.ip_address || '').toLowerCase();
-        const dev = (s.device || '').toLowerCase();
-        return name.includes(q) || email.includes(q) || ip.includes(q) || dev.includes(q);
+      list = list.filter(e => {
+        const name = (e.empName || '').toLowerCase();
+        const code = (e.empId || '').toLowerCase();
+        const email = (e.email || '').toLowerCase();
+        const dept = (e.department || '').toLowerCase();
+        const desig = (e.designation || '').toLowerCase();
+        return name.includes(q) || code.includes(q) || email.includes(q) || dept.includes(q) || desig.includes(q);
       });
     }
 
     return list;
-  }, [evaluatedSessions, statusFilter, searchQuery]);
+  }, [evaluatedEmployees, statusFilter, searchQuery]);
 
-  // Force single session logout
-  const handleForceLogout = async (session) => {
-    const userName = session.emp_name || session.email || 'this user';
-    if (!window.confirm(`Log out ${userName} from all active sessions?`)) {
+  // Force single session termination
+  const handleForceLogout = async (emp) => {
+    const targetName = emp.empName || emp.email || 'this employee';
+    if (!window.confirm(`Are you sure you want to terminate the active session for ${targetName}? They will be immediately logged out.`)) {
       return;
     }
 
-    setRevokingId(session.id);
+    const sessionId = emp.sessionId || emp.userId;
+    setRevokingId(emp.userId);
     try {
-      const res = await forceLogoutSession(session.id);
+      const res = await forceLogoutSession(sessionId);
       if (res && res.success) {
-        setSuccessMsg(`All sessions for ${userName} terminated successfully.`);
+        setSuccessMsg(`Session for ${targetName} terminated.`);
         setTimeout(() => setSuccessMsg(''), 3500);
-        fetchSessions(false);
+        fetchActivitySummary(false);
       } else {
         alert(res?.error || 'Failed to terminate session');
       }
@@ -237,6 +248,8 @@ export default function ActiveSessionsTab() {
       setRevokingId(null);
     }
   };
+
+  const isToday = selectedDate === getTodayDateStr();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
@@ -253,25 +266,52 @@ export default function ActiveSessionsTab() {
         gap: '1rem'
       }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Monitor size={20} style={{ color: '#059669' }} />
-            Active User Sessions & Security Monitor
+          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Monitor size={22} style={{ color: '#059669' }} />
+            Active User Sessions & Daily Login Monitor
           </h3>
           <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Real-time tracking of active user logins, devices, IP locations, and instant session revocation
+            One row per employee: first login (check-in), last active seen, work duration & live online status
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          {/* Date Picker */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            backgroundColor: 'var(--bg-primary, #f8fafc)',
+            padding: '0.35rem 0.65rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)'
+          }}>
+            <Calendar size={14} style={{ color: 'var(--text-secondary)' }} />
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Date:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              style={{
+                border: 'none',
+                backgroundColor: 'transparent',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                cursor: 'pointer'
+              }}
+            />
+          </div>
+
           {/* Real Active Online Badge */}
           <span style={{
             fontSize: '0.78rem',
             fontWeight: 700,
             padding: '0.3rem 0.75rem',
             borderRadius: '20px',
-            backgroundColor: statusCounts.Online > 0 ? '#ecfdf5' : '#f1f5f9',
-            color: statusCounts.Online > 0 ? '#059669' : '#64748b',
-            border: `1px solid ${statusCounts.Online > 0 ? '#a7f3d0' : '#cbd5e1'}`,
+            backgroundColor: counts.Online > 0 ? '#ecfdf5' : '#f1f5f9',
+            color: counts.Online > 0 ? '#059669' : '#64748b',
+            border: `1px solid ${counts.Online > 0 ? '#a7f3d0' : '#cbd5e1'}`,
             display: 'inline-flex',
             alignItems: 'center',
             gap: '0.4rem'
@@ -280,15 +320,15 @@ export default function ActiveSessionsTab() {
               width: '7px',
               height: '7px',
               borderRadius: '50%',
-              backgroundColor: statusCounts.Online > 0 ? '#10b981' : '#94a3b8'
+              backgroundColor: counts.Online > 0 ? '#10b981' : '#94a3b8'
             }} />
-            {statusCounts.Online} Active Online
+            {counts.Online} Online Now
           </span>
 
           {/* Refresh Button */}
           <button
             type="button"
-            onClick={() => fetchSessions(true)}
+            onClick={() => fetchActivitySummary(true)}
             style={{
               padding: '0.45rem 0.85rem',
               borderRadius: '8px',
@@ -326,8 +366,6 @@ export default function ActiveSessionsTab() {
         </div>
       )}
 
-      {loadError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: '#fef2f2', color: '#b91c1c' }}>Could not load sessions: {loadError}</div>}
-
       {/* Filter Tabs & Search Bar */}
       <div style={{
         display: 'flex',
@@ -343,10 +381,10 @@ export default function ActiveSessionsTab() {
         {/* Status Filter Badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
           {[
-            { id: 'All', label: 'All Sessions', count: statusCounts.All },
-            { id: 'Online', label: '🟢 Online', count: statusCounts.Online },
-            { id: 'Away', label: '🟡 Away', count: statusCounts.Away },
-            { id: 'Offline', label: '⚪ Offline', count: statusCounts.Offline }
+            { id: 'All', label: 'All Employees', count: counts.All },
+            { id: 'Online', label: '🟢 Online Now', count: counts.Online },
+            { id: 'Present', label: '👥 Present Today', count: counts.Present },
+            { id: 'Absent', label: '🔴 Not Logged In', count: counts.Absent }
           ].map(tab => {
             const isSelected = statusFilter === tab.id;
             return (
@@ -391,7 +429,7 @@ export default function ActiveSessionsTab() {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by user, email, IP address, device..."
+            placeholder="Search by name, employee code, email, department..."
             style={{
               width: '100%',
               padding: '0.45rem 0.75rem 0.45rem 2.1rem',
@@ -405,7 +443,7 @@ export default function ActiveSessionsTab() {
         </div>
       </div>
 
-      {/* Sessions Table */}
+      {/* Main Single-Row Per Employee Table */}
       <div style={{
         border: '1px solid var(--border-light)',
         borderRadius: '12px',
@@ -426,116 +464,187 @@ export default function ActiveSessionsTab() {
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.75rem 1rem', width: '260px' }}>User / Employee</th>
-                <th style={{ padding: '0.75rem 1rem', width: '180px' }}>Device & Browser</th>
-                <th style={{ padding: '0.75rem 1rem', width: '150px' }}>IP Address</th>
-                <th style={{ padding: '0.75rem 1rem', width: '200px' }}>Last Active (IST)</th>
-                <th style={{ padding: '0.75rem 1rem', width: '130px', textAlign: 'center' }}>Session Status</th>
-                <th style={{ padding: '0.75rem 1rem', width: '130px', textAlign: 'center' }}>Revoke</th>
+                <th style={{ padding: '0.75rem 1rem', width: '240px' }}>Employee / User</th>
+                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Department & Role</th>
+                <th style={{ padding: '0.75rem 1rem', width: '130px' }}>First Login (In-Time)</th>
+                <th style={{ padding: '0.75rem 1rem', width: '150px' }}>Last Seen (Out-Time)</th>
+                <th style={{ padding: '0.75rem 1rem', width: '140px' }}>Active Work Time</th>
+                <th style={{ padding: '0.75rem 1rem', width: '150px', textAlign: 'center' }}>Live Status</th>
+                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Device & IP</th>
+                <th style={{ padding: '0.75rem 1rem', width: '110px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {filteredSessions.length === 0 ? (
+              {filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={8} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Monitor size={36} style={{ opacity: 0.35 }} />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{loadError ? 'Session data unavailable' : 'No sessions found'}</span>
-                      <span style={{ fontSize: '0.78rem' }}>Try switching filter tabs or clearing search query</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No employee records found</span>
+                      <span style={{ fontSize: '0.78rem' }}>Try clearing your search query or switching filters</span>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredSessions.map((s, idx) => {
-                  const dev = parseDeviceInfo(s.device);
+                filteredEmployees.map((emp, idx) => {
+                  const dev = parseDeviceInfo(emp.device);
                   const DevIcon = dev.icon;
+                  const initials = (emp.empName || emp.email || 'E').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
                   return (
                     <tr
-                      key={s.id || idx}
+                      key={emp.userId || emp.email || idx}
                       style={{
                         borderBottom: '1px solid var(--border-light)',
-                        backgroundColor: s.isCurrent 
+                        backgroundColor: emp.isCurrent 
                           ? 'rgba(16, 185, 129, 0.05)' 
                           : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))')
                       }}
                     >
-                      {/* User Column */}
+                      {/* Employee Column */}
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span>{s.emp_name || 'System User'}</span>
-                          {s.isCurrent && (
-                            <span style={{
-                              fontSize: '0.66rem',
-                              backgroundColor: '#10b981',
-                              color: '#ffffff',
-                              padding: '0.1rem 0.45rem',
-                              borderRadius: '4px',
-                              fontWeight: 700
-                            }}>
-                              You (Current)
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                          {s.email}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                          <div style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '8px',
+                            backgroundColor: emp.isLive ? '#dcfce7' : '#e2e8f0',
+                            color: emp.isLive ? '#15803d' : '#475569',
+                            fontWeight: 700,
+                            fontSize: '0.78rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            {initials}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span>{emp.empName}</span>
+                              {emp.isCurrent && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  backgroundColor: '#10b981',
+                                  color: '#ffffff',
+                                  padding: '0.1rem 0.4rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 700
+                                }}>
+                                  You
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              {emp.empId ? <span style={{ fontWeight: 600 }}>#{emp.empId} • </span> : null}
+                              <span>{emp.email}</span>
+                            </div>
+                          </div>
                         </div>
                       </td>
 
-                      {/* Device & Browser Column */}
+                      {/* Department & Role */}
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          <DevIcon size={16} style={{ color: 'var(--text-secondary)' }} />
-                          <span>{dev.browser} on {dev.os}</span>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {emp.department || 'General'}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                          {emp.designation || 'Staff'}
                         </div>
                       </td>
 
-                      {/* IP Column */}
-                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        {s.ip_address || 'Logged via Web App'}
-                      </td>
-
-                      {/* Last Active Column */}
+                      {/* First Login (In-Time / Check-In) */}
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          {formatISTDateTime(s.last_active)}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: s.isLive ? '#059669' : 'var(--text-secondary)', fontWeight: 600, marginTop: '0.15rem' }}>
-                          {s.timeAgo}
-                        </div>
+                        {emp.hasActivityToday && emp.firstSeenFormatted && emp.firstSeenFormatted !== '--:--' ? (
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.85rem' }}>
+                              {emp.firstSeenFormatted}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              First Check-in
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.78rem' }}>
+                            Not Logged In
+                          </span>
+                        )}
                       </td>
 
-                      {/* Session Status Column */}
+                      {/* Last Seen (Out-Time / Last Active) */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {emp.hasActivityToday && emp.lastSeenFormatted && emp.lastSeenFormatted !== '--:--' ? (
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                              {emp.lastSeenFormatted}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: emp.isLive ? '#059669' : 'var(--text-secondary)', fontWeight: 600, marginTop: '0.1rem' }}>
+                              {emp.lastSeenTimeAgo}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>--:--</span>
+                        )}
+                      </td>
+
+                      {/* Active Work Time */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {emp.hasActivityToday ? (
+                          <div>
+                            <div style={{ fontWeight: 800, fontFamily: 'monospace', color: emp.isTargetMet ? '#16a34a' : 'var(--text-primary)', fontSize: '0.9rem' }}>
+                              {emp.activeDurationFormatted}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              Span: {emp.shiftSpanFormatted || emp.totalDurationFormatted}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>0h 00m</span>
+                        )}
+                      </td>
+
+                      {/* Live Status */}
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         <span style={{
                           fontSize: '0.72rem',
                           fontWeight: 700,
                           padding: '0.2rem 0.6rem',
                           borderRadius: '12px',
-                          backgroundColor: s.statusBg,
-                          color: s.statusColor,
-                          border: `1px solid ${s.statusBorder}`,
+                          backgroundColor: emp.statusBadge.bg,
+                          color: emp.statusBadge.color,
+                          border: `1px solid ${emp.statusBadge.border}`,
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '0.35rem'
                         }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: s.statusDot }} />
-                          {s.statusLabel}
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: emp.statusBadge.dot }} />
+                          {emp.statusBadge.label}
                         </span>
                       </td>
 
-                      {/* Revoke Column */}
+                      {/* Device & IP */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                          <DevIcon size={15} style={{ color: 'var(--text-secondary)' }} />
+                          <span style={{ fontSize: '0.78rem' }}>{dev.browser} on {dev.os}</span>
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                          {emp.ipAddress || 'Logged via Web App'}
+                        </div>
+                      </td>
+
+                      {/* Action */}
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                        {s.isCurrent ? (
+                        {emp.isCurrent ? (
                           <span style={{ fontSize: '0.74rem', color: '#10b981', fontWeight: 600 }}>
-                            Active
+                            Active (You)
                           </span>
-                        ) : s.isLive ? (
+                        ) : emp.isLive ? (
                           <button
                             type="button"
-                            disabled={revokingId === s.id}
-                            onClick={() => handleForceLogout(s)}
-                            title="Log out user from all sessions"
+                            disabled={revokingId === emp.userId}
+                            onClick={() => handleForceLogout(emp)}
+                            title="Force Logout Session"
                             style={{
                               padding: '0.3rem 0.65rem',
                               borderRadius: '6px',
@@ -544,19 +653,17 @@ export default function ActiveSessionsTab() {
                               color: '#dc2626',
                               fontSize: '0.74rem',
                               fontWeight: 600,
-                              cursor: revokingId === s.id ? 'not-allowed' : 'pointer',
+                              cursor: revokingId === emp.userId ? 'not-allowed' : 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '0.35rem'
                             }}
                           >
                             <LogOut size={13} />
-                            {revokingId === s.id ? 'Revoking...' : 'Log Out User'}
+                            {revokingId === emp.userId ? 'Revoking...' : 'Force Logout'}
                           </button>
                         ) : (
-                          <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                            {s.status === 'revoked' ? 'Revoked' : 'Expired'}
-                          </span>
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>--</span>
                         )}
                       </td>
                     </tr>
