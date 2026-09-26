@@ -5,6 +5,7 @@ import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import TeamManagement from '@/components/TeamManagement';
+import UserManagementContainer from '@/components/UserManagement/UserManagementContainer';
 import PublicUserManagement from '@/components/PublicUserManagement';
 import ClientRegistration from '@/components/ClientRegistration';
 import ClientReport from '@/components/ClientReport';
@@ -185,6 +186,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
   if (tabId === 'checklist') return moduleAccess['checklist']?.view !== false;
   if (tabId === 'delegation') return moduleAccess['delegation']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
+  if (tabId === 'user_management_new') return moduleAccess['user_management_new']?.view === true || moduleAccess['team']?.view === true || isAdmin;
   if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'party' || (typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_')))) return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'location_master' || tabId === 'location_territory' || tabId === 'location-master') {
@@ -6003,6 +6005,16 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <TeamManagement initialUsers={teamMembers} />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* User Management (New Preview) */}
+              <KeepAliveTab 
+                isActive={activeTab === 'user_management_new'} 
+                isVisited={isTabPermitted('user_management_new', moduleAccess, userRole) && visitedTabs.has('user_management_new')}
+              >
+                <ErrorBoundary>
+                  <UserManagementContainer initialUsers={teamMembers} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

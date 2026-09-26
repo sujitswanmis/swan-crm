@@ -151,6 +151,7 @@ export const MODULES_CONFIG = [
 
   // System
   { id: 'team', path: 'team', label: 'Team Management', category: 'System', icon: <Shield size={20} /> },
+  { id: 'user_management_new', path: 'user_management_new', label: 'User Management (New)', category: 'System', icon: <Users size={20} /> },
   { 
     id: 'workplace', 
     path: 'workplace', 
