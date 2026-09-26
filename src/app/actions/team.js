@@ -275,13 +275,20 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
 
   // If email is provided and is different, update it in auth.users
   if (details.email) {
-    const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
-      email: details.email,
-      email_confirm: true // Auto confirm so they don't get stuck
-    });
-    if (authError) {
-      console.error('Error updating auth email:', authError);
-      return { success: false, error: 'Auth Error: ' + authError.message };
+    try {
+      const { data: currentAuth } = await adminClient.from('user_roles').select('email').eq('user_id', userId).maybeSingle();
+      if (!currentAuth?.email || currentAuth.email.toLowerCase() !== details.email.toLowerCase()) {
+        const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+          email: details.email,
+          email_confirm: true // Auto confirm so they don't get stuck
+        });
+        if (authError) {
+          console.error('Error updating auth email:', authError);
+          return { success: false, error: 'Auth Error: ' + authError.message };
+        }
+      }
+    } catch (checkEmailErr) {
+      console.warn('Error checking existing user email:', checkEmailErr);
     }
   }
 
@@ -305,6 +312,10 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     updateData.emp_status = details.emp_status;
   }
 
+  if (details.can_self_reset_password !== undefined) {
+    updateData.can_self_reset_password = Boolean(details.can_self_reset_password);
+  }
+
   if (details.email) {
     updateData.email = details.email;
     updateData.emp_official_mail_id = details.email;
@@ -317,6 +328,7 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
 
   if (error) {
     delete updateData.emp_status;
+    delete updateData.can_self_reset_password;
     delete updateData.emp_sub_department;
     delete updateData.emp_alt_mobile;
     delete updateData.work_location_type;
@@ -335,6 +347,7 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     updateData.module_access = { 
       ...currentAccess, 
       emp_status: details.emp_status || 'Active',
+      can_self_reset_password: details.can_self_reset_password !== undefined ? Boolean(details.can_self_reset_password) : (currentAccess.can_self_reset_password === true),
       emp_sub_department: details.emp_sub_department || '',
       emp_alt_mobile: details.emp_alt_mobile || '',
       work_location_type: details.work_location_type || '',
@@ -432,7 +445,18 @@ export async function updateModuleAccess(userId, accessData) {
   return { success: true };
 }
 
-export async function createAccountAdmin(email, password, details) {
+export async function createAccountAdmin(emailOrData, maybePassword, maybeDetails) {
+  let email, password, details;
+  if (emailOrData && typeof emailOrData === 'object' && !maybePassword) {
+    email = emailOrData.email;
+    password = emailOrData.password;
+    const { email: _, password: __, ...rest } = emailOrData;
+    details = rest;
+  } else {
+    email = emailOrData;
+    password = maybePassword;
+    details = maybeDetails || {};
+  }
   const adminClient = getAdminClient();
   const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email,

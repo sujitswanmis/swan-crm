@@ -132,7 +132,8 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
         }
       } else {
         // Add Mode
-        const res = await createAccountAdmin(formData);
+        const { email, password, ...details } = formData;
+        const res = await createAccountAdmin(email, password, details);
         if (res && res.success) {
           showToast(`Account created for ${formData.emp_name}!`, 'success');
           setAddEditModal({ isOpen: false, user: null });

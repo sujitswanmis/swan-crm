@@ -111,7 +111,12 @@ export default function AddEditUserModal({
       return;
     }
 
-    onSave(formData);
+    const payload = {
+      ...formData,
+      emp_id: formData.emp_id?.trim() || (isEdit ? (user?.emp_id || '') : `EMP-${Date.now().toString().slice(-5)}`)
+    };
+
+    onSave(payload);
   };
 
   const steps = [
