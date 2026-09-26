@@ -52,8 +52,8 @@ export async function GET(req) {
 
       if (session && session.status !== 'ended' && session.status !== 'failed') {
         const cleanCust = session.customer_number ? `+91 ${session.customer_number.replace(/\D/g, '').slice(-10)}` : 'Customer';
-        members = [
-          {
+        if (session.agent_answer_time) {
+          members.push({
             memberId: session.agent_member_id || 'agent_leg',
             callerName: 'Agent (You)',
             role: 'agent',
@@ -64,20 +64,22 @@ export async function GET(req) {
               ? new Date(session.agent_answer_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
               : 'Active',
             muted: false
-          },
-          {
+          });
+        }
+        // A dial request or carrier ring callback does not put the customer in
+        // the conference. Add them only after the answer webhook confirms it.
+        if (session.customer_answer_time) {
+          members.push({
             memberId: session.customer_member_id || 'customer_leg',
             callerName: cleanCust,
             to: session.customer_number,
             direction: 'outbound',
             role: 'customer',
             callUuid: session.customer_call_uuid,
-            joinTime: session.customer_answer_time
-              ? new Date(session.customer_answer_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
-              : (session.status === 'customer_ringing' ? 'Ringing...' : 'Active'),
+            joinTime: new Date(session.customer_answer_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
             muted: false
-          }
-        ];
+          });
+        }
       }
     }
 

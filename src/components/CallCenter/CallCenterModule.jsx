@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { PhoneCall, Users, Clock, Database, Loader2, ShieldAlert } from 'lucide-react';
 import { getAgentProfile, getRecentCalls, updateCallAgentAdmin } from '@/app/actions/team';
+import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 
 
 export default function CallCenterModule({ userId }) {
@@ -55,13 +56,18 @@ export default function CallCenterModule({ userId }) {
   const handleStartCall = async (e) => {
     e.preventDefault();
     if (!customerNumber) return;
+    const dialNumber = normalizeIndianPhoneNumber(customerNumber);
+    if (!dialNumber) {
+      alert('Valid 10-digit Indian phone number required');
+      return;
+    }
 
     try {
       const res = await fetch('/api/plivo/start-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerNumber: `+91${customerNumber}`,
+          customerNumber: dialNumber,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
           agentMobile: agentData?.mobile_number

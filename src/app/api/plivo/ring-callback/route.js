@@ -49,6 +49,7 @@ export async function POST(req) {
     const requestUuid = event.RequestUUID || '';
     const callStatus = (event.CallStatus || '').toLowerCase();
     const hangupCause = event.HangupCause || event.HangupCauseName || '';
+    const hangupCauseCode = event.HangupCauseCode || event.HangupCauseCodeNumber || null;
     const hangupSource = event.HangupSource || '';
 
     // If completely empty payload, return 200 for idempotency
@@ -66,6 +67,18 @@ export async function POST(req) {
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
+    if (roomFromQuery) {
+      // Keep the provider's raw cause and source for later carrier disputes.
+      // A failed diagnostic insert must not change the call outcome.
+      try {
+        await adminClient.from('call_events').insert({
+          room_name: roomFromQuery,
+          call_uuid: callUuid || null,
+          event_type: `plivo_${leg || 'unknown'}_${callStatus || 'event'}`,
+          raw_payload: event
+        });
+      } catch (_error) {}
+    }
 
     // --- Handle CUSTOMER leg terminal events (rejection, busy, no-answer, or customer hangup) ---
     const isTerminalStatus = TERMINAL_CUSTOMER_STATUSES.has(callStatus) ||
@@ -109,14 +122,19 @@ export async function POST(req) {
       // If session was prematurely marked with a generic placeholder (like agent_hangup or failed),
       // upgrade it with the true customer telecom cause so realtime announcements fire accurately
       if (session.status === 'ended' || session.status === 'failed') {
-        const isGeneric = !session.hangup_cause || session.hangup_cause === 'agent_hangup' || session.hangup_cause === 'failed' || session.hangup_cause === 'initiated';
+        if (event.CallUUID && event.CallUUID !== session.customer_call_uuid) {
+          await adminClient.from('call_sessions').update({ customer_call_uuid: event.CallUUID }).eq('id', session.id);
+        }
+        const isAgentCancellation = session.hangup_cause === 'agent_hangup' && session.hangup_source === 'agent';
+        const isGeneric = !isAgentCancellation && (!session.hangup_cause || ['agent_hangup', 'failed', 'initiated', 'call_cancelled'].includes(session.hangup_cause));
         if (isGeneric && !session.customer_answer_time) {
           const ringingSec = session.ringing_duration_sec || (session.agent_answer_time ? Math.max(0, Math.floor((Date.now() - new Date(session.agent_answer_time).getTime()) / 1000)) : 0);
-          const trueCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false);
+          const trueCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false, hangupCauseCode);
           if (trueCause && trueCause !== 'failed') {
             await adminClient.from('call_sessions').update({
               hangup_cause: trueCause,
-              hangup_source: hangupSource || 'customer_leg'
+              hangup_source: hangupSource || 'customer_leg',
+              ...(event.CallUUID ? { customer_call_uuid: event.CallUUID } : {})
             }).eq('id', session.id);
             console.log(`ring-callback: upgraded ended session ${session.id} cause to ${trueCause}`);
           }
@@ -146,7 +164,7 @@ export async function POST(req) {
           ? Math.max(0, Math.floor((endTime - agentAnsTime) / 1000))
           : Math.max(0, Math.floor((endTime - startTime) / 1000));
         talkSec = 0;
-        determinedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false);
+        determinedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource, ringingSec, false, hangupCauseCode);
       }
 
       // Update DB with terminal status and normalized cause
@@ -157,6 +175,7 @@ export async function POST(req) {
         end_time: endTime.toISOString(),
         ringing_duration_sec: ringingSec,
         talk_duration_sec: talkSec,
+        ...(event.CallUUID ? { customer_call_uuid: event.CallUUID } : {}),
       }).eq('id', session.id);
 
       console.log(`ring-callback: customer ${callStatus} / cause=${determinedCause} for room=${session.room_name}, hanging up conference/agent`);
@@ -181,16 +200,6 @@ export async function POST(req) {
         } catch (_e) {}
       }
 
-      // 3. Cancel/hangup customer leg if still active
-      const customerUuid = session.customer_call_uuid || callUuid;
-      if (customerUuid && callStatus !== 'completed') {
-        try {
-          await plivoClient.calls.cancel(customerUuid);
-        } catch (_e) {
-          try { await plivoClient.calls.hangup(customerUuid); } catch (_e2) {}
-        }
-      }
-
       return new NextResponse('OK', { status: 200 });
     }
 
@@ -199,8 +208,9 @@ export async function POST(req) {
     if (callStatus === 'ringing') {
       if (leg === 'customer' && roomFromQuery) {
         await adminClient.from('call_sessions').update({
-          status: 'customer_ringing'
-        }).eq('room_name', roomFromQuery);
+          status: 'customer_ringing',
+          ...(event.CallUUID ? { customer_call_uuid: event.CallUUID } : {})
+        }).eq('room_name', roomFromQuery).in('status', ['initiated', 'agent_answered', 'customer_ringing']);
       } else if (callUuid) {
         const { data: agentSession } = await adminClient
           .from('call_sessions')
@@ -216,26 +226,32 @@ export async function POST(req) {
       }
     }
 
-    // Handle agent-leg terminal failures
-    if (['failed', 'rejected', 'busy', 'no-answer', 'canceled'].includes(callStatus) && leg !== 'customer') {
+    // Agent-leg failures must not be announced as customer telecom outcomes.
+    if (isTerminalStatus && leg === 'agent') {
       let session = null;
-      if (callUuid) {
+      if (roomFromQuery) {
+        const { data } = await adminClient.from('call_sessions').select('*')
+          .eq('room_name', roomFromQuery).maybeSingle();
+        session = data;
+      }
+      if (!session && callUuid) {
         const { data } = await adminClient
           .from('call_sessions')
           .select('*')
-          .or(`agent_call_uuid.eq.${callUuid},customer_call_uuid.eq.${callUuid}`)
+          .or(`agent_call_uuid.eq.${callUuid},agent_call_uuid.eq.${requestUuid}`)
           .maybeSingle();
         session = data;
       }
 
-      if (session && session.status !== 'ended' && session.status !== 'connected') {
-        const normalizedCause = categorizeHangupCause(callStatus, hangupCause, hangupSource);
+      if (session && ['initiated', 'ringing'].includes(session.status)) {
         await adminClient.from('call_sessions').update({
           status: 'failed',
-          hangup_cause: normalizedCause,
+          hangup_cause: 'agent_unavailable',
+          hangup_source: hangupSource || 'agent_leg',
           end_time: new Date().toISOString(),
           talk_duration_sec: 0,
-        }).eq('id', session.id);
+          ...(event.CallUUID ? { agent_call_uuid: event.CallUUID } : {})
+        }).eq('id', session.id).in('status', ['initiated', 'ringing']);
       }
     }
 

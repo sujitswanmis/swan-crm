@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import plivo from 'plivo';
 import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
+import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
+import { outboundRoomToken } from '@/app/api/plivo/outbound-intent';
 
 export async function POST(req) {
   try {
@@ -13,10 +15,20 @@ export async function POST(req) {
     }
 
     const body = await req.json();
-    const { customerNumber, callingMode, agentEndpoint, agentMobile, roomName: clientRoomName } = body;
+    const { customerNumber, callingMode, agentMobile, roomName: clientRoomName } = body;
 
     if (!customerNumber || !callingMode) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+    }
+    if (!['browser_webrtc', 'mobile', 'external_softphone'].includes(callingMode)) {
+      return NextResponse.json({ error: 'Invalid calling mode' }, { status: 400 });
+    }
+    if (clientRoomName && !/^room_[A-Za-z0-9_]{1,64}$/.test(clientRoomName)) {
+      return NextResponse.json({ error: 'Invalid call room' }, { status: 400 });
+    }
+    const normalizedCustomerNumber = normalizeIndianPhoneNumber(customerNumber);
+    if (!normalizedCustomerNumber) {
+      return NextResponse.json({ error: 'Valid 10-digit Indian phone number required' }, { status: 400 });
     }
 
     const authId = process.env.PLIVO_AUTH_ID;
@@ -29,6 +41,7 @@ export async function POST(req) {
 
     const client = new plivo.Client(authId, authToken);
     const roomName = clientRoomName || `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const outboundToken = outboundRoomToken(roomName);
 
     // Create Call Session in DB
     const adminClient = require('@supabase/supabase-js').createClient(
@@ -46,17 +59,23 @@ export async function POST(req) {
     if (!agentData) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
     }
+    const dialTo = callingMode === 'mobile'
+      ? normalizeIndianPhoneNumber(agentMobile)
+      : agentData.plivo_sip_uri;
+    if (!dialTo) {
+      return NextResponse.json({ error: 'Valid agent endpoint or mobile number required' }, { status: 400 });
+    }
 
     const { data: sessionData, error: sessionError } = await adminClient
       .from('call_sessions')
       .insert({
         room_name: roomName,
         agent_id: agentData.id,
-        customer_number: customerNumber,
+        customer_number: normalizedCustomerNumber,
         calling_mode: callingMode,
         status: 'initiated',
         start_time: new Date().toISOString(),
-        agent_dial_to: callingMode === 'mobile' ? agentMobile : (agentEndpoint || agentData.plivo_sip_uri)
+        agent_dial_to: dialTo
       })
       .select()
       .single();
@@ -67,44 +86,53 @@ export async function POST(req) {
     }
 
     let appBaseUrl = getPlivoWebhookBaseUrl(req);
-    // We only initiate the call to the AGENT first.
-    // The answer URL will put the agent in the conference.
-    // The conference callback will then dial the customer.
+    // Dial with real carrier audio is the default. The existing conference
+    // path remains available as an operational rollback for active call teams.
+    const answerPath = process.env.PLIVO_OUTBOUND_FLOW === 'conference'
+      ? `/api/plivo/answer?room=${roomName}&role=agent`
+      : `/api/plivo/outbound-dial?room=${roomName}`;
     
-    let dialTo = '';
-    if (callingMode === 'mobile') {
-      dialTo = agentMobile;
-    } else {
-      // Browser WebRTC or External Softphone uses SIP URI
-      dialTo = agentEndpoint || agentData.plivo_sip_uri;
+    let response;
+    try {
+      response = await client.calls.create(
+        fromNumber,
+        dialTo,
+        `${appBaseUrl}${answerPath}`,
+        {
+          answerMethod: 'POST',
+          fallbackMethod: 'POST',
+          hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=agent`,
+          hangupMethod: 'POST',
+          ringTimeout: 35,
+          ...(callingMode === 'browser_webrtc' ? {
+            sipHeaders: `CrmRoom=${outboundToken}`,
+            callerName: `CRM${outboundToken}`,
+          } : {}),
+        }
+      );
+      if (!response?.requestUuid) throw new Error('Provider did not accept the agent call');
+    } catch (dialError) {
+      await adminClient.from('call_sessions').update({
+        status: 'failed',
+        hangup_cause: 'agent_dial_error',
+        end_time: new Date().toISOString()
+      }).eq('id', sessionData.id);
+      throw dialError;
     }
 
-    if (!dialTo) {
-       return NextResponse.json({ error: 'No endpoint or mobile number available for agent' }, { status: 400 });
-    }
-
-    const response = await client.calls.create(
-      fromNumber,
-      dialTo,
-      `${appBaseUrl}/api/plivo/answer?room=${roomName}&role=agent&customer_number=${encodeURIComponent(customerNumber)}`,
-      {
-        answerMethod: 'POST',
-        fallbackMethod: 'POST',
-        hangupUrl: `${appBaseUrl}/api/plivo/ring-callback?room=${roomName}&leg=agent`,
-        hangupMethod: 'POST',
-        ringTimeout: 35,
-      }
-    );
-
-    await adminClient
+    const { data: updatedRows } = await adminClient
       .from('call_sessions')
       .update({ agent_call_uuid: response.requestUuid })
-      .eq('id', sessionData.id);
+      .eq('id', sessionData.id)
+      .is('agent_call_uuid', null)
+      .select('*');
 
-    const updatedSession = {
-      ...sessionData,
-      agent_call_uuid: response.requestUuid
-    };
+    let updatedSession = updatedRows?.[0];
+    if (!updatedSession) {
+      const { data: latestSession } = await adminClient.from('call_sessions')
+        .select('*').eq('id', sessionData.id).maybeSingle();
+      updatedSession = latestSession || { ...sessionData, agent_call_uuid: response.requestUuid };
+    }
 
     return NextResponse.json({ 
       success: true, 

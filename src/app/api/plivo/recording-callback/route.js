@@ -11,7 +11,7 @@ export async function POST(req) {
     const searchParams = new URLSearchParams(textData);
     const event = Object.fromEntries(searchParams);
     
-    const recordUrl = event.RecordUrl || event.RecordingUrl || event.DialBLegRecordingUrl || '';
+    const recordUrl = event.RecordUrl || event.RecordingUrl || event.RecordingURL || event.DialBLegRecordingUrl || '';
     const recordDuration = parseInt(event.RecordDuration || event.RecordingDuration || event.DialBLegDuration || '0', 10);
     const callUuid = event.CallUUID || event.DialBLegUUID || event.DialALegUUID || '';
 

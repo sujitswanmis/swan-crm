@@ -5,6 +5,8 @@ import Draggable from 'react-draggable';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
+import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
+import { incomingMatchesOutboundRoom, shouldAutoAnswerOutbound } from '@/app/api/plivo/outbound-intent';
 
 // Web Audio API tone generator for instant audio cues
 // Authentic Indian Standard Telecom Ringback Tone Generator (400 Hz + 450 Hz Dual Frequency)
@@ -142,7 +144,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v1.0.604';
+const SOFTPHONE_VERSION = 'v1.0.649';
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -321,11 +323,16 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const nodeRef = useRef(null);
   const activeSessionRef = useRef(null);
   const optimisticCallRef = useRef(null);
+  const pendingOutboundCallRef = useRef(null);
+  const startCallInFlightRef = useRef(null);
+  const cancelledOutboundRoomsRef = useRef(new Set());
   const agentDataRef = useRef(null);
   const announcementTimerRef = useRef(null);
   const handleSessionTerminationAnnouncementRef = useRef(null);
   const lastAnnouncedRoomRef = useRef(null);
   const recentEndedSessionRef = useRef(null);
+  const pendingOutcomeRoomsRef = useRef(new Set());
+  const announcedOutcomeRoomsRef = useRef(new Set());
 
   useEffect(() => {
     activeSessionRef.current = activeSession;
@@ -338,15 +345,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
   useEffect(() => {
     agentDataRef.current = agentData;
   }, [agentData]);
-
-  const startRingingAudio = useCallback((roomName) => {
-    // Only ring if we are in browser_webrtc mode (mobile/external devices ring themselves)
-    const mode = optimisticCallRef.current?.callingMode || activeSessionRef.current?.calling_mode || callingMode;
-    if (mode && mode !== 'browser_webrtc') return;
-
-    const target = roomName || activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
-    globalRingController.start(target);
-  }, [callingMode]);
 
   const stopRingingAudio = useCallback((roomName) => {
     const target = roomName || activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
@@ -389,7 +387,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const hangupCall = useCallback(async () => {
     const currentRoom = activeSessionRef.current?.room_name || optimisticCallRef.current?.roomName;
-    const currentAgentId = agentDataRef.current?.id;
+    if (currentRoom) {
+      recentEndedSessionRef.current = { roomName: currentRoom, session: activeSessionRef.current, time: Date.now() };
+    }
+    if (currentRoom && startCallInFlightRef.current === currentRoom) {
+      cancelledOutboundRoomsRef.current.add(currentRoom);
+      setTimeout(() => cancelledOutboundRoomsRef.current.delete(currentRoom), 120000);
+    }
 
     // Stop ringback audio immediately
     stopRingingAudio();
@@ -399,6 +403,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setActiveSession(null);
     setOptimisticCall(null);
     optimisticCallRef.current = null;
+    pendingOutboundCallRef.current = null;
     setIncomingCall(null);
     setCallDuration(0);
 
@@ -420,12 +425,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
 
     // 3. Inform backend to terminate conference and cancel any ringing customer leg immediately
-    if (currentRoom || currentAgentId) {
+    if (currentRoom) {
       try {
         fetch('/api/plivo/controls/hangup-conference', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomName: currentRoom, agentId: currentAgentId })
+          body: JSON.stringify({ roomName: currentRoom })
         }).catch(err => console.error("Error ending conference:", err));
       } catch (e) {
         console.error(e);
@@ -467,6 +472,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }
       if (prev.id === newSession.id && prev.status === newSession.status && prev.customer_member_id === newSession.customer_member_id) {
         return prev;
+      }
+      if (prev.id === newSession.id) {
+        const order = ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected', 'ended'];
+        const previousStage = order.indexOf(prev.status);
+        const nextStage = order.indexOf(newSession.status);
+        if (previousStage >= 0 && nextStage >= 0 && nextStage < previousStage) return prev;
       }
       return newSession;
     });
@@ -634,11 +645,41 @@ export default function GlobalSoftphoneWidget({ userId }) {
     fetchAgent();
   }, [userId]);
 
-  const handleSessionTerminationAnnouncement = useCallback((sessionData) => {
+  const handleSessionTerminationAnnouncement = useCallback((sessionData, allowGeneric = false) => {
     if (!sessionData) return;
     const room = sessionData.room_name;
     const cause = (sessionData.hangup_cause || '').toLowerCase();
     const cleanNum = (sessionData.customer_number || '').replace(/[^0-9]/g, '').slice(-10);
+
+    if (room && announcedOutcomeRoomsRef.current.has(room)) return;
+    if (room && !allowGeneric && !sessionData.customer_answer_time && sessionData.hangup_source !== 'agent' &&
+        ['', 'failed', 'initiated', 'call_cancelled'].includes(cause)) {
+      if (pendingOutcomeRoomsRef.current.has(room)) return;
+      pendingOutcomeRoomsRef.current.add(room);
+      const checkCarrierCause = async (attempt = 1) => {
+        if (announcedOutcomeRoomsRef.current.has(room)) return;
+        let latest = sessionData;
+        try {
+          const response = await fetch(`/api/plivo/session-status?room=${encodeURIComponent(room)}`, { cache: 'no-store' });
+          if (response.ok) {
+            const result = await response.json();
+            latest = result?.activeSession || latest;
+          }
+        } catch (_error) {}
+        const latestCause = (latest.hangup_cause || '').toLowerCase();
+        if (!['', 'failed', 'initiated', 'call_cancelled'].includes(latestCause)) {
+          pendingOutcomeRoomsRef.current.delete(room);
+          handleSessionTerminationAnnouncementRef.current?.(latest);
+        } else if (attempt < 5) {
+          setTimeout(() => checkCarrierCause(attempt + 1), attempt * 500);
+        } else {
+          pendingOutcomeRoomsRef.current.delete(room);
+          handleSessionTerminationAnnouncementRef.current?.(latest, true);
+        }
+      };
+      setTimeout(checkCarrierCause, 300);
+      return;
+    }
 
     // Guard: Prevent duplicate announcements for the same room
     const announceKey = `${room || 'room'}_${cause || 'ended'}`;
@@ -647,24 +688,27 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
     if (room) {
       lastAnnouncedRoomRef.current = announceKey;
+      announcedOutcomeRoomsRef.current.add(room);
+      pendingOutcomeRoomsRef.current.delete(room);
     }
 
     if (cause === 'agent_hangup') {
-      if (!sessionData.customer_answer_time && (sessionData.ringing_duration_sec >= 25)) {
-        triggerAnnouncement({
-          type: 'no_answer',
-          title: 'Customer ने Phone नहीं उठाया',
-          subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
-          speech: 'Customer ne phone nahi uthaya.',
-          speechEnglish: 'Customer did not answer the phone.',
-          customerNumber: cleanNum
-        });
-      }
       return;
     }
 
-    // If customer was connected and answered, then hung up
-    if (sessionData.customer_answer_time || cause === 'customer_hangup') {
+    if (cause === 'agent_unavailable' || cause === 'agent_dial_error') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: 'Agent Softphone Connect नहीं हुआ',
+        subtitle: 'Apna browser softphone, SIP app ya agent mobile connection check karein.',
+        speech: 'Agent softphone connect nahi ho paya.',
+        speechEnglish: 'The agent softphone could not connect.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
+
+    if (cause === 'customer_hangup') {
       triggerAnnouncement({
         type: 'ended',
         title: 'Customer ने Call Disconnect कर दिया',
@@ -676,52 +720,102 @@ export default function GlobalSoftphoneWidget({ userId }) {
       return;
     }
 
-    // Switched off / out of coverage
-    if (cause === 'switched_off' || cause.includes('switch') || cause.includes('unreach') || cause.includes('absent') || cause.includes('unallocated') || cause.includes('destination out of service') || cause.includes('out of service')) {
+    if (cause === 'invalid_number') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: 'Number उपलब्ध नहीं है',
+        subtitle: 'Carrier ne number invalid ya unallocated bataya.',
+        speech: 'Yeh number uplabdh nahi hai.',
+        speechEnglish: 'This number is unavailable.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
+
+    if (sessionData.customer_answer_time) {
+      triggerAnnouncement({
+        type: 'ended',
+        title: 'Call End हुई',
+        subtitle: 'Connected call end ho gayi.',
+        speech: 'Call end ho gayi.',
+        speechEnglish: 'The call has ended.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
+
+    if (cause === 'unreachable' || cause === 'switched_off') {
       triggerAnnouncement({
         type: 'switched_off',
-        title: 'Customer का Phone Switched Off है',
-        subtitle: 'Customer ka phone switched off ya out of network coverage hai.',
-        speech: 'Customer ka phone switched off ya network se bahar hai.',
-        speechEnglish: 'Customer phone is switched off or unreachable.',
+        title: 'Number Switched Off / Unreachable',
+        subtitle: 'Carrier ke mutabik number abhi service ya network par available nahi hai.',
+        speech: 'Number switched off ya unreachable hai.',
+        speechEnglish: 'This number is currently unreachable.',
         customerNumber: cleanNum
       });
       return;
     }
 
     // Customer cut / rejected while ringing
-    if (cause === 'rejected' || cause.includes('reject') || cause.includes('cancel') || cause.includes('abandon')) {
+    if (cause === 'rejected' || cause.includes('reject') || cause.includes('abandon')) {
       triggerAnnouncement({
         type: 'rejected',
-        title: 'Customer ने Call Cut कर दिया',
-        subtitle: 'Customer ne call disconnect ya reject kar diya.',
-        speech: 'Customer ne call cut kar diya hai.',
-        speechEnglish: 'Customer declined the call.',
+        title: 'Call Decline / Busy',
+        subtitle: 'Customer ne call decline kar di ya line busy hai.',
+        speech: 'Customer ne call decline kar di, line busy hai.',
+        speechEnglish: 'The call was declined or line is busy.',
         customerNumber: cleanNum
       });
     } else if (cause === 'busy' || cause.includes('busy')) {
       triggerAnnouncement({
         type: 'busy',
-        title: 'Customer Busy है',
-        subtitle: 'Customer doosri call par vyast hai.',
-        speech: 'Customer doosri call par vyast hai.',
-        speechEnglish: 'Customer is busy on another call.',
+        title: 'Line Busy Hai',
+        subtitle: 'Customer doosri call par vyast hai ya line busy hai.',
+        speech: 'Line busy hai.',
+        speechEnglish: 'The line is busy.',
         customerNumber: cleanNum
       });
     } else if (cause === 'no_answer' || cause.includes('timeout') || cause.includes('no-answer')) {
       triggerAnnouncement({
         type: 'no_answer',
-        title: 'Customer ने Phone नहीं उठाया',
-        subtitle: 'Ring timeout ho gaya, call pick nahi hua.',
-        speech: 'Customer ne phone nahi uthaya.',
-        speechEnglish: 'Customer did not answer the phone.',
+        title: 'Call का Answer नहीं मिला',
+        subtitle: 'Carrier ne no answer ya ring timeout bataya.',
+        speech: 'Call ka answer nahi mila.',
+        speechEnglish: 'The call was not answered.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'call_cancelled') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: 'Call Cancel हुई',
+        subtitle: 'Call answer hone se pehle cancel ho gayi.',
+        speech: 'Call answer hone se pehle cancel ho gayi.',
+        speechEnglish: 'The call was cancelled before answer.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'network_error') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: 'Network के कारण Call नहीं लगी',
+        subtitle: 'Carrier ne network ya routing error bataya.',
+        speech: 'Network ke karan call connect nahi ho payi.',
+        speechEnglish: 'The call failed due to a network issue.',
+        customerNumber: cleanNum
+      });
+    } else if (cause === 'capacity_error' || cause === 'setup_error') {
+      triggerAnnouncement({
+        type: 'failed',
+        title: cause === 'capacity_error' ? 'Call Capacity Limit आया' : 'Call Setup में दिक्कत आई',
+        subtitle: cause === 'capacity_error' ? 'Provider ki call limit ya balance check karein.' : 'Provider settings ya call route check karein.',
+        speech: cause === 'capacity_error' ? 'Call limit ki wajah se call nahi lagi.' : 'Call setup mein dikkat aayi.',
+        speechEnglish: cause === 'capacity_error' ? 'The call limit was reached.' : 'The call could not be set up.',
         customerNumber: cleanNum
       });
     } else {
       triggerAnnouncement({
         type: 'failed',
         title: 'Call Connect नहीं हो सका',
-        subtitle: 'Network issue ya disconnected call.',
+        subtitle: 'Carrier ne exact reason confirm nahi kiya.',
         speech: 'Call connect nahi ho paya.',
         speechEnglish: 'Call could not connect.',
         customerNumber: cleanNum
@@ -737,6 +831,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     stopRingingAudio();
     const s = endedSession || activeSessionRef.current;
     if (s) {
+      recentEndedSessionRef.current = { roomName: s.room_name, session: s, time: Date.now() };
       handleSessionTerminationAnnouncement(s);
     }
     updateActiveSession(null);
@@ -754,18 +849,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
       const res = await fetch(url, { cache: 'no-store' });
       const statusData = await res.json();
+      if (statusData?.activeSession?.room_name && cancelledOutboundRoomsRef.current.has(statusData.activeSession.room_name)) return;
 
       if (statusData?.activeSession && !statusData.isEnded) {
         const s = statusData.activeSession;
-        if (statusData.isConnected || statusData.customerAnswered || s.status === 'connected' || s.customer_answer_time) {
-          stopRingingAudio(s.room_name);
-        } else if (s.status === 'customer_ringing') {
-          if (!s.customer_answer_time) {
-            startRingingAudio(s.room_name);
-          }
-        } else {
-          stopRingingAudio(s.room_name);
-        }
+        const recentlyEnded = recentEndedSessionRef.current;
+        if (recentlyEnded?.roomName === s.room_name && Date.now() - recentlyEnded.time < 120000) return;
+        // A carrier ring callback does not prove the handset is alerting.
+        stopRingingAudio(s.room_name);
         setOptimisticCall(null);
         updateActiveSession(s);
       } else if (statusData?.isEnded) {
@@ -776,6 +867,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           const prev = activeSessionRef.current;
           const endedData = statusData.activeSession || prev || (activeRoom ? { room_name: activeRoom, hangup_cause: statusData.hangupCause } : null);
           if (endedData) {
+            recentEndedSessionRef.current = { roomName: endedData.room_name || activeRoom, session: endedData, time: Date.now() };
             handleSessionTerminationAnnouncement(endedData);
           }
           updateActiveSession(null);
@@ -798,21 +890,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
             const active = data.find(c => {
               const isStatusActive = ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing'].includes(c.status);
               const ageInMs = Date.now() - new Date(c.created_at).getTime();
-              if (['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(c.status) && ageInMs > 45000) return false;
+              if (['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(c.status) && ageInMs > 90000) return false;
               const isRecent = ageInMs < 1000 * 60 * 10;
-              return isStatusActive && isRecent;
+              const recentlyEnded = recentEndedSessionRef.current;
+              const wasEndedLocally = recentlyEnded?.roomName === c.room_name && Date.now() - recentlyEnded.time < 120000;
+              return isStatusActive && isRecent && !wasEndedLocally;
             });
 
             if (active) {
-              if (active.status === 'connected' || active.customer_answer_time) {
-                stopRingingAudio(active.room_name);
-              } else if (active.status === 'customer_ringing') {
-                if (!active.customer_answer_time) {
-                  startRingingAudio(active.room_name);
-                }
-              } else {
-                stopRingingAudio(active.room_name);
-              }
+              stopRingingAudio(active.room_name);
               setOptimisticCall(null);
               updateActiveSession(active);
             } else {
@@ -821,6 +907,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 stopRingingAudio(prev.room_name);
                 const latest = data.find(c => c.id === prev.id) || data[0];
                 if (latest && (latest.status === 'ended' || latest.status === 'failed')) {
+                  recentEndedSessionRef.current = { roomName: latest.room_name, session: latest, time: Date.now() };
                   handleSessionTerminationAnnouncement(latest);
                 }
                 updateActiveSession(null);
@@ -833,15 +920,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
     } catch (err) {
       console.error('Error fetching softphone session:', err);
     }
-  }, [agentData, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
+  }, [agentData, updateActiveSession, stopRingingAudio, handleSessionTerminationAnnouncement]);
 
-  // Dynamic Polling: 1000ms during active call/ringing, 60s background fallback when idle (Realtime handles instant pickup)
+  // Realtime handles immediate changes; polling recovers missed events.
   useEffect(() => {
     if (!agentData) return;
     fetchSession();
 
     const isEngaged = !!(activeCall || activeSession || optimisticCall);
-    const intervalMs = isEngaged ? 1000 : 60000;
+    const intervalMs = isEngaged ? 2000 : 60000;
     const interval = setInterval(fetchSession, intervalMs);
 
     return () => clearInterval(interval);
@@ -860,6 +947,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
         filter: `agent_id=eq.${agentData.id}`
       }, (payload) => {
         const updated = payload.new;
+        if (updated?.room_name && cancelledOutboundRoomsRef.current.has(updated.room_name)) {
+          if (updated.status === 'ended' || updated.status === 'failed') cancelledOutboundRoomsRef.current.delete(updated.room_name);
+          return;
+        }
         if (payload.eventType === 'DELETE' || !updated) {
           updateActiveSession(null);
           setOptimisticCall(null);
@@ -872,13 +963,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         const isRecent = ageInMs < 1000 * 60 * 60;
 
         if (isStatusActive && isRecent) {
-          if (updated.status === 'connected' || updated.customer_answer_time) {
-            stopRingingAudio();
-          } else if (updated.status === 'customer_ringing') {
-            startRingingAudio(updated.room_name);
-          } else {
-            stopRingingAudio();
-          }
+          const recentlyEnded = recentEndedSessionRef.current;
+          if (recentlyEnded?.roomName === updated.room_name && Date.now() - recentlyEnded.time < 120000) return;
+          stopRingingAudio();
           setOptimisticCall(null);
           updateActiveSession(updated);
         } else {
@@ -895,6 +982,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                                isRecentEndedMatch;
           if (isOurSession) {
             stopRingingAudio();
+            recentEndedSessionRef.current = { roomName: updated.room_name, session: updated, time: Date.now() };
             handleSessionTerminationAnnouncement(updated);
             updateActiveSession(null);
             setOptimisticCall(null);
@@ -906,7 +994,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [agentData, supabase, updateActiveSession, stopRingingAudio, startRingingAudio, handleSessionTerminationAnnouncement]);
+  }, [agentData, supabase, updateActiveSession, stopRingingAudio, handleSessionTerminationAnnouncement]);
 
   const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
     if (!clientInstance) return;
@@ -945,6 +1033,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
         const client = plivoObj.client;
         activeClient = client;
         plivoClientRef.current = client;
+        // Let Plivo's real carrier media through. Local ringback can mask
+        // switched-off or busy announcements during outbound dialing.
+        if (typeof client.setRingTone === 'function') client.setRingTone(false);
+        if (typeof client.setRingToneBack === 'function') client.setRingToneBack(false);
 
         client.on('onLogin', () => {
           setConnectionState('online');
@@ -986,16 +1078,29 @@ export default function GlobalSoftphoneWidget({ userId }) {
           }
         });
 
-        client.on('onIncomingCall', async (callerName, extraHeaders, callInfo) => {
-          // Fast auto-answer logic for outbound calls initiated by the agent
-          if (localStorage.getItem('pendingOutboundCall') === 'true') {
-            localStorage.removeItem('pendingOutboundCall');
-            // Immediate WebRTC answer without delay for fast connection
-            try { client.answer(); } catch(e){}
-            setActiveCall({ direction: 'inbound', remote: callerName });
-            setIncomingCall(null);
+        client.on('onIncomingCall', async (callerName, extraHeaders, callInfo, incomingCallerName) => {
+          const pending = pendingOutboundCallRef.current;
+          const activeRoom = optimisticCallRef.current?.roomName || activeSessionRef.current?.room_name || pending?.roomName;
+          const isCancelledOutbound = [...cancelledOutboundRoomsRef.current].some((room) =>
+            incomingMatchesOutboundRoom(room, extraHeaders, incomingCallerName)
+          );
+          if (isCancelledOutbound) {
+            try { client.reject(callInfo?.callUUID); } catch (_e) {}
             return;
           }
+          const matchesOutbound = shouldAutoAnswerOutbound(pending, activeRoom, extraHeaders, incomingCallerName);
+          if (matchesOutbound) {
+            pendingOutboundCallRef.current = null;
+            try {
+              if (typeof client.stopRingTone === 'function') client.stopRingTone();
+              if (client.answer(callInfo?.callUUID) !== false) {
+                setActiveCall({ direction: 'inbound', remote: callerName });
+                setIncomingCall(null);
+                return;
+              }
+            } catch (e) { console.error('Outbound auto-answer failed:', e); }
+          }
+          if (pending && Date.now() - pending.startedAt >= 20000) pendingOutboundCallRef.current = null;
 
           let leadName = '';
           let leadCompany = '';
@@ -1048,11 +1153,25 @@ export default function GlobalSoftphoneWidget({ userId }) {
           setIncomingCall(null);
         });
 
+        client.on('onMediaPermission', (event) => {
+          if (event?.error) {
+            setErrorMessage('Microphone permission nahi mili. Browser settings check karein.');
+          }
+        });
+
+        client.on('onCallFailed', (reason) => {
+          stopRingingAudio();
+          setActiveCall(null);
+          setIncomingCall(null);
+          setErrorMessage(`Call failed: ${String(reason?.message || reason?.cause || reason || 'connection error')}`);
+        });
+
         client.on('onCallAnswered', () => {
           startDurationTimer();
         });
 
         client.on('onCallTerminated', async () => {
+          pendingOutboundCallRef.current = null;
           stopRingingAudio();
           setActiveCall(null);
           setIncomingCall(null);
@@ -1084,8 +1203,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 const statusData = await res.json();
                 const sessionResult = statusData?.activeSession;
                 const cause = sessionResult?.hangup_cause;
-                // If a definitive customer cause arrived (rejected, switched_off, busy, no_answer, customer_hangup), announce immediately!
-                if (cause && !['initiated', 'ringing', 'agent_answered'].includes(cause)) {
+                // Give the carrier CDR a moment to replace a generic end reason.
+                if (cause && !['initiated', 'ringing', 'agent_answered', 'failed', 'agent_hangup', 'call_cancelled'].includes(cause)) {
                   handleSessionTerminationAnnouncementRef.current?.(sessionResult);
                 } else if (attempts < 5) {
                   setTimeout(pollEndedCause, attempts * 400);
@@ -1195,28 +1314,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
     e?.preventDefault?.();
     const rawTarget = directNumber || customerNumber;
     if (!rawTarget) return;
-
-    // Sanitize phone number (strip whitespace, hyphens, brackets)
-    let clean = String(rawTarget).trim().replace(/[^\d+]/g, '');
-    let formattedE164 = clean;
-
-    if (formattedE164.startsWith('+91')) {
-      // already +91
-    } else if (formattedE164.startsWith('91') && formattedE164.length === 12) {
-      formattedE164 = '+' + formattedE164;
-    } else if (formattedE164.startsWith('0') && formattedE164.length === 11) {
-      formattedE164 = '+91' + formattedE164.slice(1);
-    } else {
-      formattedE164 = '+91' + formattedE164.replace(/\D/g, '');
-    }
-
-    const digitsOnly = formattedE164.replace(/\D/g, '');
-    if (digitsOnly.length < 10) {
-      alert("Invalid phone number: " + rawTarget);
+    if (optimisticCallRef.current || activeSessionRef.current || activeCall) return;
+    if (callingMode === 'browser_webrtc' && connectionState !== 'online') {
+      alert('Browser softphone connect hone ke baad call karein.');
       return;
     }
 
-    const display10Digit = digitsOnly.slice(-10);
+    const formattedE164 = normalizeIndianPhoneNumber(rawTarget);
+    if (!formattedE164) {
+      alert('Valid 10-digit Indian phone number required');
+      return;
+    }
+    const display10Digit = formattedE164.slice(-10);
     setCustomerNumber(display10Digit);
 
     // Unhide and unminimize softphone so agent sees the call progress
@@ -1227,6 +1336,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setCallAnnouncement(null);
 
     const clientRoomName = `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    startCallInFlightRef.current = clientRoomName;
 
     // 1. Set immediate optimistic UI state! (0 ms latency, completely steady)
     const optimisticState = {
@@ -1239,14 +1349,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setOptimisticCall(optimisticState);
     optimisticCallRef.current = optimisticState;
 
-    // Unlock browser AudioContext permissions directly inside user click gesture!
-    // DO NOT play tone yet (no fake ringing). Tone will only play when carrier confirms customer_ringing.
     if (callingMode === 'browser_webrtc') {
-      globalRingController.unlock();
+      pendingOutboundCallRef.current = {
+        roomName: clientRoomName,
+        startedAt: Date.now()
+      };
     }
-
-    // Set flag so onIncomingCall knows this is our outbound call
-    localStorage.setItem('pendingOutboundCall', 'true');
 
     try {
       const res = await fetch('/api/plivo/start-call', {
@@ -1257,29 +1365,56 @@ export default function GlobalSoftphoneWidget({ userId }) {
           customerNumber: formattedE164,
           callingMode,
           agentEndpoint: agentData?.plivo_sip_uri,
-          agentMobile: callingMode === 'mobile' ? (agentMobile.startsWith('+') ? agentMobile : `+91${agentMobile}`) : undefined
+          agentMobile: callingMode === 'mobile' ? agentMobile : undefined
         })
       });
       const result = await res.json();
+      if (cancelledOutboundRoomsRef.current.has(clientRoomName)) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const cleanup = await fetch('/api/plivo/controls/hangup-conference', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomName: clientRoomName })
+            });
+            if (cleanup.ok) break;
+          } catch (cleanupError) {
+            console.error('Failed to cancel outbound call:', cleanupError);
+          }
+        }
+        return;
+      }
       if (result.error) {
+        pendingOutboundCallRef.current = null;
         stopRingingAudio(clientRoomName);
         setOptimisticCall(null);
         optimisticCallRef.current = null;
         alert("Call Error: " + result.error);
       } else {
         if (!directNumber) setCustomerNumber('');
-        // Instantly adopt session if returned!
         if (result.session) {
-          updateActiveSession(result.session);
+          if (['ended', 'failed'].includes(result.session.status)) {
+            pendingOutboundCallRef.current = null;
+            recentEndedSessionRef.current = { roomName: result.session.room_name, session: result.session, time: Date.now() };
+            handleSessionTerminationAnnouncement(result.session);
+          } else {
+            updateActiveSession(result.session);
+          }
           setOptimisticCall(null);
           optimisticCallRef.current = null;
         }
       }
     } catch (err) {
+      if (cancelledOutboundRoomsRef.current.has(clientRoomName)) {
+        return;
+      }
+      pendingOutboundCallRef.current = null;
       stopRingingAudio(clientRoomName);
       setOptimisticCall(null);
       optimisticCallRef.current = null;
       alert("Failed to start call");
+    } finally {
+      if (startCallInFlightRef.current === clientRoomName) startCallInFlightRef.current = null;
     }
   };
 
@@ -1689,8 +1824,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 {(activeSession?.status === 'connected' || activeSession?.customer_answer_time || (activeCall && activeCall.direction === 'inbound'))
                   ? 'Call Connected'
                   : (activeSession?.status === 'customer_ringing'
-                      ? 'Ringing Customer...'
-                      : (optimisticCall || activeSession?.status === 'initiated' || activeSession?.status === 'agent_answered' ? 'Connecting to Line...' : 'Ringing Customer...'))}
+                      ? 'Carrier is trying customer line...'
+                      : 'Connecting to Line...')}
               </div>
 
               {/* Target Number */}

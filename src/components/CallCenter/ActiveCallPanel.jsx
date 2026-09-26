@@ -194,7 +194,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
         <div>
           <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
             <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: (session.status === 'connected' || session.customer_answer_time) ? '#10b981' : '#f59e0b', animation: 'pulse 2s infinite' }} />
-            {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Ringing Customer...' : 'Connecting to Line...')}
+            {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Carrier is trying customer line...' : 'Connecting to Line...')}
           </h2>
           <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent-color)', marginTop: '0.2rem' }}>
             Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
@@ -212,11 +212,11 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' }}>
         <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0 0 0.25rem 0' }}>
-          <Users size={14} /> Live Participants ({members.length + ((!session.customer_answer_time && session.status !== 'connected' && session.customer_number) ? 1 : 0)})
+          <Users size={14} /> Live Participants ({members.length})
         </h3>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          {/* If customer hasn't answered yet, show them as ringing participant */}
+          {/* Customer is pending until they actually join the conference. */}
           {(!session.customer_answer_time && session.status !== 'connected' && session.customer_number) && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-primary)', borderRadius: '6px', borderLeft: '3px solid #f59e0b' }}>
               <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
@@ -224,7 +224,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                   Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}
                 </div>
                 <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
-                  <Loader2 size={11} className="spin" /> {session.status === 'customer_ringing' ? 'Phone Ringing (Waiting for pickup)...' : 'Connecting to telecom line...'}
+                  <Loader2 size={11} className="spin" /> {session.status === 'customer_ringing' ? 'Carrier connecting customer line...' : 'Connecting to telecom line...'}
                 </div>
               </div>
             </div>
@@ -252,7 +252,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                   </div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+                {!['agent_leg', 'customer_leg'].includes(member.memberId) && <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
                   <button 
                     onClick={() => handleHoldToggle(member.memberId, heldMembers[member.memberId] || false)}
                     disabled={loadingAction === `hold_${member.memberId}`}
@@ -277,7 +277,7 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                   >
                     {loadingAction === `kick_${member.memberId}` ? <Loader2 size={14} className="spin" /> : <UserX size={14} />}
                   </button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>

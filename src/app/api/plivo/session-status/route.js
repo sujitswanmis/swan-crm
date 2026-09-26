@@ -43,24 +43,37 @@ export async function GET(req) {
     let session = sessionData;
     let isConnected = session.status === 'connected' || !!session.customer_answer_time;
     let isEnded = session.status === 'ended' || session.status === 'failed';
+    let conferenceChecked = !session.agent_answer_time || !session.conference_name;
 
-    // 45s Hard Cutoff: Prevent ghost ringing from ever surviving telecom timeout
-    if (!isConnected && !isEnded && ['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(session.status)) {
-      const ageMs = Date.now() - new Date(session.created_at || session.start_time).getTime();
-      if (ageMs > 45000) {
-        isEnded = true;
-        session.status = 'ended';
-        session.hangup_cause = session.hangup_cause || 'no_answer';
-        adminClient
-          .from('call_sessions')
-          .update({
+    // Dial calls have no conference until the answered legs are transferred.
+    // Recover a missed Dial action callback from the customer's CDR.
+    if (!isEnded && !session.conference_name && session.customer_call_uuid && session.agent_answer_time) {
+      try {
+        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+        const customerCall = await client.calls.get(session.customer_call_uuid);
+        if (customerCall?.endTime) {
+          const answeredAt = session.customer_answer_time || customerCall.answerTime || null;
+          const cause = answeredAt
+            ? 'customer_hangup'
+            : categorizeHangupCause('', customerCall.hangupCauseName, customerCall.hangupSource, 0, false, customerCall.hangupCauseCode);
+          const { data: endedRows } = await adminClient.from('call_sessions').update({
             status: 'ended',
-            hangup_cause: session.hangup_cause,
-            end_time: new Date().toISOString()
-          })
-          .eq('id', session.id)
-          .then(() => {});
-      }
+            hangup_cause: cause,
+            hangup_source: customerCall.hangupSource || 'Plivo',
+            end_time: new Date(customerCall.endTime).toISOString()
+          }).eq('id', session.id).is('conference_name', null)
+            .in('status', ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected']).select('id');
+          if (endedRows?.length) {
+            isEnded = true;
+            session.status = 'ended';
+            session.hangup_cause = cause;
+            session.hangup_source = customerCall.hangupSource || 'Plivo';
+            if (session.agent_call_uuid) {
+              try { await client.calls.hangup(session.agent_call_uuid); } catch (_error) {}
+            }
+          }
+        }
+      } catch (_error) {}
     }
 
     // Fast active check: If agent is waiting in conference, check customer leg status in real time
@@ -72,33 +85,40 @@ export async function GET(req) {
         if (session.customer_call_uuid) {
           try {
             const custCall = await client.calls.get(session.customer_call_uuid);
-            if (custCall && (custCall.endTime || custCall.hangupCauseName || custCall.callState === 'completed' || custCall.callState === 'hangup')) {
-              isEnded = true;
-              session.status = 'ended';
+            if (custCall && (custCall.endTime || custCall.hangupCauseName)) {
               const ringSec = session.agent_answer_time
                 ? Math.max(0, Math.floor((Date.now() - new Date(session.agent_answer_time).getTime()) / 1000))
                 : 0;
-              const cause = categorizeHangupCause(custCall.callState, custCall.hangupCauseName, custCall.hangupSource, ringSec, false);
-              session.hangup_cause = cause;
-              session.hangup_source = custCall.hangupSource || 'Carrier';
-
-              // Terminate conference & agent leg immediately so softphone stops ringing
-              try { await client.conferences.hangup(session.conference_name); } catch (_e) {}
-              if (session.agent_call_uuid) {
-                try { await client.calls.hangup(session.agent_call_uuid); } catch (_e) {}
-              }
-
-              // Update DB non-blocking
-              adminClient
+              const cause = categorizeHangupCause('', custCall.hangupCauseName, custCall.hangupSource, ringSec, false, custCall.hangupCauseCode);
+              const source = custCall.hangupSource || 'Carrier';
+              const { data: endedRows } = await adminClient
                 .from('call_sessions')
                 .update({
                   status: 'ended',
                   hangup_cause: cause,
-                  hangup_source: session.hangup_source,
+                  hangup_source: source,
                   end_time: new Date().toISOString()
                 })
                 .eq('id', session.id)
-                .then(() => {});
+                .in('status', ['initiated', 'ringing', 'customer_ringing', 'agent_answered'])
+                .select('id');
+              if (endedRows?.length) {
+                isEnded = true;
+                session.status = 'ended';
+                session.hangup_cause = cause;
+                session.hangup_source = source;
+                try { await client.conferences.hangup(session.conference_name); } catch (_e) {}
+                if (session.agent_call_uuid) {
+                  try { await client.calls.hangup(session.agent_call_uuid); } catch (_e) {}
+                }
+              } else {
+                const { data: latest } = await adminClient.from('call_sessions').select('*').eq('id', session.id).maybeSingle();
+                if (latest) {
+                  session = latest;
+                  isConnected = latest.status === 'connected' || !!latest.customer_answer_time;
+                  isEnded = latest.status === 'ended' || latest.status === 'failed';
+                }
+              }
             }
           } catch (_callErr) {}
         }
@@ -106,6 +126,7 @@ export async function GET(req) {
         // 2. If customer hasn't terminated, check conference bridge for pickup
         if (!isEnded) {
           const conf = await client.conferences.get(session.conference_name);
+          conferenceChecked = true;
           const members = conf?.members || [];
 
           if (members.length >= 2) {
@@ -115,50 +136,81 @@ export async function GET(req) {
             session.status = 'connected';
             session.customer_answer_time = session.customer_answer_time || nowIso;
 
-            // Non-blocking update in DB
-            adminClient
+            await adminClient
               .from('call_sessions')
               .update({
                 status: 'connected',
                 customer_answer_time: session.customer_answer_time
               })
               .eq('id', session.id)
-              .then(() => {});
-          } else if (members.length === 0 && session.agent_call_uuid) {
-            // Both members left or conference dissolved
-            const confAgeMs = Date.now() - new Date(session.start_time || session.created_at).getTime();
-            if (confAgeMs > 8000) {
-              isEnded = true;
-              session.status = 'ended';
-            }
+              .in('status', ['initiated', 'ringing', 'customer_ringing', 'agent_answered']);
           }
         }
-      } catch (_confErr) {
-        // Ignore conference check error
+      } catch (confErr) {
+        // A missing conference can safely age out; a transient API failure
+        // cannot prove that a live conference has ended.
+        if (confErr?.statusCode === 404 || /not found|\b404\b/i.test(confErr?.message || '')) {
+          conferenceChecked = true;
+        }
+      }
+    }
+
+    // Recover from lost webhooks only after checking the live customer leg and
+    // conference membership. Elapsed time alone is not a no-answer reason.
+    if (!isConnected && !isEnded && ['initiated', 'ringing', 'customer_ringing', 'agent_answered'].includes(session.status)) {
+      const waitingSince = session.agent_answer_time || session.created_at || session.start_time;
+      const ageMs = Date.now() - new Date(waitingSince).getTime();
+      if (conferenceChecked && ageMs > (session.agent_answer_time ? 55000 : 45000)) {
+        isEnded = true;
+        session.status = 'ended';
+        session.hangup_cause = session.hangup_cause || 'failed';
+        const { data: expiredRows } = await adminClient.from('call_sessions').update({
+          status: 'ended',
+          hangup_cause: session.hangup_cause,
+          end_time: new Date().toISOString()
+        }).eq('id', session.id).in('status', ['initiated', 'ringing', 'customer_ringing', 'agent_answered']).select('id');
+        if (!expiredRows?.length) {
+          const { data: latest } = await adminClient.from('call_sessions').select('*').eq('id', session.id).maybeSingle();
+          if (latest) {
+            session = latest;
+            isConnected = latest.status === 'connected' || !!latest.customer_answer_time;
+            isEnded = latest.status === 'ended' || latest.status === 'failed';
+          }
+        } else {
+          try {
+            const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+            if (session.conference_name) await client.conferences.hangup(session.conference_name);
+            if (session.customer_call_uuid) {
+              try { await client.calls.cancel(session.customer_call_uuid); }
+              catch (_e) { try { await client.calls.hangup(session.customer_call_uuid); } catch (_e2) {} }
+            }
+            if (session.agent_call_uuid) await client.calls.hangup(session.agent_call_uuid);
+          } catch (_e) {}
+        }
       }
     }
 
     // If session ended without customer answering, but cause is generic/missing, query Plivo customer call leg to retrieve definitive telecom cause
-    if (isEnded && !session.customer_answer_time && session.customer_call_uuid && (!session.hangup_cause || ['agent_hangup', 'failed', 'initiated'].includes(session.hangup_cause))) {
+    if (isEnded && !session.customer_answer_time && session.customer_call_uuid && !(session.hangup_cause === 'agent_hangup' && session.hangup_source === 'agent') && (!session.hangup_cause || ['agent_hangup', 'failed', 'initiated', 'call_cancelled'].includes(session.hangup_cause))) {
       try {
         const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
         const custCall = await client.calls.get(session.customer_call_uuid);
-        if (custCall && (custCall.endTime || custCall.hangupCauseName || custCall.callState === 'completed' || custCall.callState === 'hangup')) {
+        if (custCall && (custCall.endTime || custCall.hangupCauseName)) {
           const ringSec = session.agent_answer_time
             ? Math.max(0, Math.floor((new Date(custCall.endTime || Date.now()).getTime() - new Date(session.agent_answer_time).getTime()) / 1000))
             : (session.ringing_duration_sec || 0);
-          const trueCause = categorizeHangupCause(custCall.callState, custCall.hangupCauseName, custCall.hangupSource, ringSec, false);
+          const trueCause = categorizeHangupCause('', custCall.hangupCauseName, custCall.hangupSource, ringSec, false, custCall.hangupCauseCode);
           if (trueCause && trueCause !== 'failed') {
             session.hangup_cause = trueCause;
             session.hangup_source = custCall.hangupSource || 'Carrier';
-            adminClient
+            await adminClient
               .from('call_sessions')
               .update({
                 hangup_cause: trueCause,
                 hangup_source: session.hangup_source
               })
               .eq('id', session.id)
-              .then(() => {});
+              .eq('status', 'ended');
           }
         }
       } catch (_e) {}

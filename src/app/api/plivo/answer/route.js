@@ -14,13 +14,13 @@ export async function POST(req) {
     const event = Object.fromEntries(searchParams);
 
     const roomName = url.searchParams.get('room') || event.room || '';
-    const customerNumber = url.searchParams.get('customer_number') || event.customer_number || '';
     const role = url.searchParams.get('role') || event.role || 'agent';
     const callUuid = event.CallUUID || event.CallUuid || '';
     const appBaseUrl = getPlivoWebhookBaseUrl(req);
 
-    // Update DB based on role
-    if (roomName) {
+    // The agent conference-enter callback records the agent UUID and answer
+    // time. Avoid a database round trip on this latency-sensitive answer URL.
+    if (roomName && role !== 'agent') {
       try {
         const adminClient = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,11 +28,7 @@ export async function POST(req) {
         );
         const updatePayload = {};
 
-        if (role === 'agent') {
-          updatePayload.status = 'agent_answered';
-          updatePayload.agent_answer_time = new Date().toISOString();
-          if (callUuid) updatePayload.agent_call_uuid = callUuid;
-        } else if (role === 'customer' || role === 'customer_conf') {
+        if (role === 'customer' || role === 'customer_conf') {
           updatePayload.status = 'connected';
           updatePayload.customer_answer_time = new Date().toISOString();
           updatePayload.conference_name = roomName;
@@ -48,7 +44,8 @@ export async function POST(req) {
           await adminClient
             .from('call_sessions')
             .update(updatePayload)
-            .eq('room_name', roomName);
+            .eq('room_name', roomName)
+            .in('status', ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected']);
         }
       } catch (dbErr) {
         console.error('Error updating call session in answer:', dbErr);
@@ -65,17 +62,13 @@ export async function POST(req) {
     const endOnExit = isAgentRole ? 'true' : 'false';
     const startOnEnter = isAgentRole ? 'false' : 'true';
 
-    // Pass customer_number in agent leg's callbackUrl so conference-callback can auto-dial customer
-    // when ConferenceFirstMember=true fires. For customer/guest legs it's not needed.
-    // CRITICAL: In XML attributes, '&' must be escaped as '&amp;' or Plivo throws 'Invalid Answer XML (8011)'!
-    const custParam = (role === 'agent' && customerNumber)
-      ? `&amp;customer_number=${encodeURIComponent(customerNumber)}`
-      : '';
-    const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${custParam}`;
+    const noAutoDial = role === 'agent' ? '' : '&amp;autodial=0';
+    const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${noAutoDial}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${encodeURIComponent(cleanRoom)}`;
+    const waitSound = isAgentRole ? ` waitSound="${appBaseUrl}/api/plivo/wait-silence"` : '';
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}" record="true" recordCallbackUrl="${recordCallbackUrl}">
+    <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}"${waitSound} record="true" recordCallbackUrl="${recordCallbackUrl}">
         ${cleanRoom}
     </Conference>
 </Response>`;

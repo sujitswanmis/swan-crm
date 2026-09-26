@@ -34,42 +34,32 @@ export async function POST(req) {
         hangup_cause: hangupCause,
         hangup_source: hangupSource,
         end_time: endTime.toISOString()
-      }).eq('id', session.id);
+      }).eq('id', session.id).in('status', ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected']);
     }
 
     const targetRoom = roomName || session?.room_name;
 
-    // 2. Perform Plivo hangups in the background
+    // 2. Finish Plivo cleanup before the serverless request exits. The browser
+    // already returns to the dialpad immediately without awaiting this fetch.
     const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-    
-    // Non-blocking background call hangups
-    (async () => {
+    try {
+      if (targetRoom) await client.conferences.hangup(targetRoom);
+    } catch (confErr) {
+      console.log('Controls API: Conference hangup status:', confErr.message);
+    }
+
+    if (session?.agent_call_uuid) {
+      try { await client.calls.hangup(session.agent_call_uuid); } catch (_e) {}
+    }
+
+    if (session?.customer_call_uuid) {
       try {
-        if (targetRoom) await client.conferences.hangup(targetRoom);
-      } catch (confErr) {
-        console.log('Controls API: Conference hangup background status:', confErr.message);
+        await client.calls.cancel(session.customer_call_uuid);
+      } catch (_cancelErr) {
+        try { await client.calls.hangup(session.customer_call_uuid); }
+        catch (hangupErr) { console.error('Controls API: Customer hangup error:', hangupErr.message); }
       }
-
-      // Hang up agent call leg so WebRTC softphone in browser disconnects immediately
-      if (session?.agent_call_uuid) {
-        try {
-          await client.calls.hangup(session.agent_call_uuid);
-        } catch (_e) {}
-      }
-
-      // If customer call was still ringing or active, terminate it
-      if (session?.customer_call_uuid) {
-        try {
-          await client.calls.cancel(session.customer_call_uuid);
-        } catch (cancelErr) {
-          try {
-            await client.calls.hangup(session.customer_call_uuid);
-          } catch (hangupErr) {
-            console.error('Controls API: Background customer hangup error:', hangupErr.message);
-          }
-        }
-      }
-    })();
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

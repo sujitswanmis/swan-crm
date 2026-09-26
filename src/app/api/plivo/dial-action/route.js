@@ -1,184 +1,104 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import plivo from 'plivo';
+import { categorizeHangupCause, getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
 
-// Normalize DialStatus / DialHangupCause to user-friendly CRM status
-function mapDialOutcome(dialStatus, hangupCause, ringStatus, duration = 0, hasAnswered = false) {
-  const s = (dialStatus || '').toLowerCase();
-  const h = (hangupCause || '').toLowerCase();
-  const isRing = String(ringStatus).toLowerCase() === 'true';
+const hangupXml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
 
-  // 1. If customer answered and spoke, it's a completed conversation
-  if (hasAnswered || s === 'completed') {
-    return 'customer_hangup';
-  }
-
-  // 2. Explicit switched off, out of coverage, unallocated, network congestion, or invalid destination
-  if (
-    h.includes('switched_off') ||
-    h.includes('unallocated') ||
-    h.includes('absent') ||
-    h.includes('unreachable') ||
-    h.includes('out of service') ||
-    h.includes('destination out of service') ||
-    h.includes('no_route') ||
-    h.includes('temporary_failure') ||
-    h.includes('network congestion') ||
-    h.includes('destination_out_of_order') ||
-    h.includes('user does not exist')
-  ) {
-    return 'switched_off';
-  }
-
-  // 3. Indian Telecom behavior: If DialRingStatus is FALSE and call failed or returned busy/normal_clearing before ringing
-  // Indian telecom carriers return USER_BUSY, NORMAL_CLEARING, or FAILED when a phone is switched off/out of network without ringing!
-  if (!isRing && (s === 'failed' || s === 'busy' || h.includes('busy') || h.includes('normal_clearing'))) {
-    return 'switched_off';
-  }
-
-  // 4. If ringing DID occur:
-  if (isRing) {
-    if (h.includes('reject') || h.includes('call rejected') || h.includes('declined')) {
-      return 'rejected';
-    }
-    if (s === 'busy' || h.includes('busy') || h.includes('user_busy')) {
-      return 'busy';
-    }
-    if (s === 'no-answer' || s === 'timeout' || h.includes('timeout') || h.includes('no_answer')) {
-      return 'no_answer';
-    }
-  }
-
-  // 5. Explicit cancellations
-  if (s === 'cancel' || h.includes('cancel')) {
-    return 'agent_hangup';
-  }
-
-  // 6. General fallbacks
-  if (s === 'busy' || h.includes('busy')) return 'busy';
-  if (s === 'no-answer' || s === 'timeout' || h.includes('timeout')) return 'no_answer';
-  if (h.includes('reject') || h.includes('declined')) return 'rejected';
-
-  return s || 'failed';
+function conferenceRedirectXml(roomName, baseUrl) {
+  const conferenceUrl = `${baseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&amp;role=agent_conf`;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${conferenceUrl}</Redirect></Response>`;
 }
 
 export async function GET() {
-  return new NextResponse('Plivo Dial Action Active', { status: 200 });
+  return new NextResponse('Plivo Dial Action Active');
 }
 
 export async function POST(req) {
   try {
     const url = new URL(req.url);
-    const textData = await req.text();
-    const searchParams = new URLSearchParams(textData);
-    const event = Object.fromEntries(searchParams);
+    const roomName = url.searchParams.get('room') || '';
+    if (!/^room_[A-Za-z0-9_]{1,64}$/.test(roomName)) {
+      return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
+    }
+    const event = Object.fromEntries(new URLSearchParams(await req.text()));
+    const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const { data: session } = await adminClient.from('call_sessions').select('*').eq('room_name', roomName).maybeSingle();
+    if (!session) return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
 
-    const roomName = url.searchParams.get('room') || event.room || '';
-    const dialStatus = event.DialStatus || '';
-    const hangupCause = event.DialHangupCause || event.HangupCause || '';
-    const bLegUuid = event.DialBLegUUID || '';
-    const aLegUuid = event.DialALegUUID || event.CallUUID || '';
-    const duration = parseInt(event.DialBLegDuration || event.Duration || '0', 10);
-    const ringStatus = event.DialRingStatus;
-
-    console.log(`dial-action: room=${roomName}, DialStatus=${dialStatus}, cause=${hangupCause}, ringStatus=${ringStatus}, duration=${duration}`);
-
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    let session = null;
-    if (roomName) {
-      const { data } = await adminClient
-        .from('call_sessions')
-        .select('*')
-        .eq('room_name', roomName)
-        .maybeSingle();
-      session = data;
+    // Transfer to the conference ends the original Dial. It is not a call end.
+    if (session.conference_name) {
+      const xml = conferenceRedirectXml(roomName, getPlivoWebhookBaseUrl(req));
+      return new NextResponse(xml, { headers: { 'Content-Type': 'application/xml' } });
     }
 
-    if (!session && (aLegUuid || bLegUuid)) {
-      const { data } = await adminClient
-        .from('call_sessions')
-        .select('*')
-        .or(`agent_call_uuid.eq.${aLegUuid},customer_call_uuid.eq.${bLegUuid}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      session = data;
+    const bLegUuid = event.DialBLegUUID || session.customer_call_uuid || '';
+    let causeName = event.DialBLegHangupCause || event.DialBLegHangupCauseName || event.DialHangupCause || event.HangupCause || '';
+    let causeCode = event.DialBLegHangupCauseCode || event.DialHangupCauseCode || event.HangupCauseCode || null;
+    let source = event.DialBLegHangupSource || event.HangupSource || 'plivo_dial';
+    const dialRingStatus = event.DialRingStatus;
+    let cdr = null;
+    if (bLegUuid) {
+      try {
+        const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+        const result = await client.calls.get(bLegUuid);
+        if (result?.endTime) {
+          cdr = result;
+          causeName = result.hangupCauseName || causeName;
+          causeCode = result.hangupCauseCode || causeCode;
+          source = result.hangupSource || source;
+        }
+      } catch (_error) {
+        // The Dial action can arrive before the CDR. Session polling retries it.
+      }
     }
 
-    const recordUrl = event.DialBLegRecordingUrl || event.RecordingUrl || event.RecordUrl || '';
+    const answeredAt = session.customer_answer_time || cdr?.answerTime || null;
+    const status = (event.DialStatus || '').toLowerCase();
+    const cause = answeredAt
+      ? 'customer_hangup'
+      : categorizeHangupCause(status, causeName, source, 0, false, causeCode, dialRingStatus);
 
-    if (session && session.status !== 'ended') {
-      // If the session was converted to a multi-party conference, do NOT terminate
-      const { data: currentSession } = await adminClient
-        .from('call_sessions')
-        .select('conference_name, status')
-        .eq('id', session.id)
-        .maybeSingle();
-
-      if (currentSession?.conference_name) {
-        console.log(`dial-action: session ${session.room_name} is conferenced, returning Hangup to clean up stale Dial leg`);
-        return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', {
-          status: 200,
-          headers: { 'Content-Type': 'application/xml' }
-        });
-      }
-
-      const hasCustomerAnswered = !!session.customer_answer_time;
-      const determinedCause = mapDialOutcome(dialStatus, hangupCause, ringStatus, duration, hasCustomerAnswered);
-      const endTime = new Date();
-      const customerAnsTime = session.customer_answer_time ? new Date(session.customer_answer_time) : null;
-      const agentAnsTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
-      const startTime = session.start_time ? new Date(session.start_time) : (agentAnsTime || endTime);
-
-      let talkSec = duration;
-      let ringingSec = 0;
-
-      if (customerAnsTime) {
-        talkSec = Math.max(talkSec, Math.floor((endTime - customerAnsTime) / 1000));
-        ringingSec = Math.max(0, Math.floor((customerAnsTime - (agentAnsTime || startTime)) / 1000));
-      } else {
-        ringingSec = Math.max(0, Math.floor((endTime - (agentAnsTime || startTime)) / 1000));
-      }
-
-      const updateData = {
+    if (!['ended', 'failed'].includes(session.status)) {
+      const endTime = cdr?.endTime ? new Date(cdr.endTime) : new Date();
+      const agentAnswerTime = session.agent_answer_time ? new Date(session.agent_answer_time) : null;
+      const customerAnswerTime = answeredAt ? new Date(answeredAt) : null;
+      const ringSeconds = agentAnswerTime
+        ? Math.max(0, Math.floor(((customerAnswerTime || endTime) - agentAnswerTime) / 1000))
+        : null;
+      const talkSeconds = customerAnswerTime
+        ? Math.max(0, Math.floor((endTime - customerAnswerTime) / 1000))
+        : 0;
+      await adminClient.from('call_sessions').update({
         status: 'ended',
-        hangup_cause: determinedCause,
-        hangup_source: 'plivo_dial',
+        hangup_cause: cause,
+        hangup_source: source,
         end_time: endTime.toISOString(),
         customer_call_uuid: bLegUuid || session.customer_call_uuid,
-        talk_duration_sec: talkSec,
-        ringing_duration_sec: ringingSec
-      };
-
-      if (aLegUuid && !session.agent_call_uuid) {
-        updateData.agent_call_uuid = aLegUuid;
-      }
-
-      if (recordUrl) {
-        updateData.recording_url = recordUrl;
-      }
-
-      await adminClient.from('call_sessions').update(updateData).eq('id', session.id);
+        customer_answer_time: answeredAt,
+        ringing_duration_sec: ringSeconds,
+        talk_duration_sec: talkSeconds
+      }).eq('id', session.id).is('conference_name', null)
+        .in('status', ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected']);
     }
 
-    // Return Hangup XML or empty Response for clean completion
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Hangup/>
-</Response>`;
-
-    return new NextResponse(xml, {
-      status: 200,
-      headers: { 'Content-Type': 'application/xml' }
+    await adminClient.from('call_events').insert({
+      room_name: roomName,
+      call_uuid: bLegUuid || event.DialALegUUID || null,
+      event_type: 'dial_action',
+      raw_payload: event
     });
+    // The transfer may have claimed the conference while this action was
+    // waiting on a CDR or database write. Never hang up a transferred A-leg.
+    const { data: latestSession } = await adminClient.from('call_sessions')
+      .select('conference_name, status').eq('id', session.id).maybeSingle();
+    if (latestSession?.conference_name && latestSession.status === 'connected') {
+      const xml = conferenceRedirectXml(roomName, getPlivoWebhookBaseUrl(req));
+      return new NextResponse(xml, { headers: { 'Content-Type': 'application/xml' } });
+    }
+    return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
   } catch (error) {
-    console.error('dial-action error:', error);
-    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', {
-      status: 200,
-      headers: { 'Content-Type': 'application/xml' }
-    });
+    console.error('Dial action error:', error);
+    return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
   }
 }
