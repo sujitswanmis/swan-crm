@@ -731,8 +731,40 @@ export async function checkSessionValidity(deviceInfo) {
   }
 }
 
+export async function getActiveUserSessions() {
+  try {
+    const sessionClient = await createClient();
+    const { data: { user }, error: authError } = await sessionClient.auth.getUser();
+    if (authError || !user) return { success: false, error: 'Authentication required', sessions: [] };
+
+    const adminClient = getAdminClient();
+    const { data: actor, error: roleError } = await adminClient
+      .from('user_roles')
+      .select('role, module_access')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (roleError || !actor) return { success: false, error: 'Permission denied', sessions: [] };
+    const isAdmin = ['admin', 'superadmin', 'masteradmin'].includes((actor.role || '').toLowerCase());
+    const canView = actor.module_access?.user_management_new?.view === true || actor.module_access?.team?.view === true;
+    if (!isAdmin && !canView) return { success: false, error: 'Permission denied', sessions: [] };
+
+    const { data, error } = await adminClient
+      .from('user_sessions')
+      .select('id, user_id, emp_name, email, device, ip_address, last_active, is_active')
+      .order('last_active', { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    return { success: true, sessions: data || [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Could not load sessions', sessions: [] };
+  }
+}
+
 export async function forceLogoutSession(sessionId) {
   try {
+    const sessionClient = await createClient();
+    const { data: { user }, error: authError } = await sessionClient.auth.getUser();
+    if (authError || !user) return { success: false, error: 'Authentication required' };
     const adminClient = getAdminClient();
     // 1. Get the session info before marking inactive
     const { data: sessionData } = await adminClient
@@ -741,14 +773,30 @@ export async function forceLogoutSession(sessionId) {
       .eq('id', sessionId)
       .maybeSingle();
 
+    if (!sessionData) return { success: false, error: 'Session not found' };
+    if (sessionData.user_id !== user.id) {
+      const { data: actor, error: roleError } = await adminClient
+        .from('user_roles')
+        .select('role, module_access')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (roleError || !actor) return { success: false, error: 'Permission denied' };
+      const isAdmin = ['admin', 'superadmin', 'masteradmin'].includes((actor.role || '').toLowerCase());
+      const canManage = actor.module_access?.user_management_new?.write === true || actor.module_access?.team?.write === true;
+      if (!isAdmin && !canManage) return { success: false, error: 'Permission denied' };
+    }
+
     // 2. Mark this session inactive
-    await adminClient.from('user_sessions').update({ is_active: false }).eq('id', sessionId);
+    const { error: revokeError } = await adminClient.from('user_sessions').update({ is_active: false }).eq('id', sessionId);
+    if (revokeError) throw revokeError;
 
     // 3. Also mark all active sessions for this user_id / email as inactive
     if (sessionData?.user_id) {
-      await adminClient.from('user_sessions').update({ is_active: false }).eq('user_id', sessionData.user_id);
+      const { error } = await adminClient.from('user_sessions').update({ is_active: false }).eq('user_id', sessionData.user_id);
+      if (error) throw error;
     } else if (sessionData?.email) {
-      await adminClient.from('user_sessions').update({ is_active: false }).eq('email', sessionData.email);
+      const { error } = await adminClient.from('user_sessions').update({ is_active: false }).eq('email', sessionData.email);
+      if (error) throw error;
     }
 
     await logAuditAction('Force Logout', `Revoked active user session for: ${sessionData?.emp_name || sessionData?.email || sessionId}`);

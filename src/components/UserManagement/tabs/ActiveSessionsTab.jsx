@@ -6,7 +6,7 @@ import {
   AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
+import { forceLogoutSession, getActiveUserSessions } from '@/app/actions/audit';
 import { formatISTDateTime } from '../utils/userManagementUtils';
 
 function parseDeviceInfo(deviceStr = '') {
@@ -58,7 +58,6 @@ export default function ActiveSessionsTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Online' | 'Away' | 'Offline'
   const [revokingId, setRevokingId] = useState(null);
-  const [revokingAll, setRevokingAll] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [loadError, setLoadError] = useState('');
   const [currentUserEmail, setCurrentUserEmail] = useState('');
@@ -82,15 +81,9 @@ export default function ActiveSessionsTab() {
   const fetchSessions = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('user_sessions')
-        .select('*')
-        .order('last_active', { ascending: false })
-        .limit(200);
-
-      if (error) throw error;
-      setSessions(data || []);
+      const result = await getActiveUserSessions();
+      if (!result?.success) throw new Error(result?.error || 'Could not load sessions');
+      setSessions(result.sessions || []);
       setLoadError('');
     } catch (err) {
       console.error('Error fetching sessions:', err);
@@ -245,29 +238,6 @@ export default function ActiveSessionsTab() {
     }
   };
 
-  // Force logout all other sessions
-  const handleForceLogoutAllOthers = async () => {
-    if (!window.confirm('Log out your other active sessions?')) {
-      return;
-    }
-
-    setRevokingAll(true);
-    try {
-      const res = await forceLogoutAllOtherSessions();
-      if (res && res.success) {
-        setSuccessMsg('Your other sessions terminated successfully.');
-        setTimeout(() => setSuccessMsg(''), 3500);
-        fetchSessions(false);
-      } else {
-        alert(res?.error || 'Failed to terminate other sessions');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setRevokingAll(false);
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
       {/* Intro Header */}
@@ -314,31 +284,6 @@ export default function ActiveSessionsTab() {
             }} />
             {statusCounts.Online} Active Online
           </span>
-
-          {/* Force Logout All Others if multiple live sessions */}
-          {statusCounts.Online > 1 && (
-            <button
-              type="button"
-              disabled={revokingAll}
-              onClick={handleForceLogoutAllOthers}
-              style={{
-                padding: '0.45rem 0.85rem',
-                borderRadius: '8px',
-                border: '1px solid #fecaca',
-                backgroundColor: '#fef2f2',
-                color: '#dc2626',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: revokingAll ? 'not-allowed' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}
-            >
-              <LogOut size={14} />
-              {revokingAll ? 'Revoking...' : 'Log Out My Other Sessions'}
-            </button>
-          )}
 
           {/* Refresh Button */}
           <button
@@ -495,7 +440,7 @@ export default function ActiveSessionsTab() {
                   <td colSpan={6} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Monitor size={36} style={{ opacity: 0.35 }} />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No sessions found</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{loadError ? 'Session data unavailable' : 'No sessions found'}</span>
                       <span style={{ fontSize: '0.78rem' }}>Try switching filter tabs or clearing search query</span>
                     </div>
                   </td>

@@ -11,10 +11,12 @@ export default function AuditLogsTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [loadError, setLoadError] = useState('');
   const pageSize = 25;
 
   const fetchLogs = async (page = currentPage) => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await getAuditLogs({
         page,
@@ -23,14 +25,15 @@ export default function AuditLogsTab() {
         module: 'all'
       });
 
-      if (res && res.logs) {
+      if (res?.success && Array.isArray(res.logs)) {
         setLogs(res.logs);
-        setTotalCount(res.totalCount || res.logs.length);
+        setTotalCount(res.totalCount ?? res.logs.length);
       } else {
-        setLogs([]);
+        throw new Error(res?.error || 'Could not load audit logs');
       }
     } catch (err) {
       console.error('Error fetching audit logs:', err);
+      setLoadError(err.message || 'Could not load audit logs');
     } finally {
       setLoading(false);
     }
@@ -42,8 +45,8 @@ export default function AuditLogsTab() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setCurrentPage(1);
-    fetchLogs(1);
+    if (currentPage === 1) fetchLogs(1);
+    else setCurrentPage(1);
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -138,6 +141,8 @@ export default function AuditLogsTab() {
         </button>
       </form>
 
+      {loadError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: '#fef2f2', color: '#b91c1c' }}>Could not load audit logs: {loadError}</div>}
+
       {/* Logs Table */}
       <div style={{
         border: '1px solid var(--border-light)',
@@ -172,7 +177,7 @@ export default function AuditLogsTab() {
                   <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Clock size={36} style={{ opacity: 0.35 }} />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No audit events found</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{loadError ? 'Audit data unavailable' : 'No audit events found'}</span>
                     </div>
                   </td>
                 </tr>
@@ -218,7 +223,7 @@ export default function AuditLogsTab() {
                     </td>
 
                     <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      {log.ip_address || '127.0.0.1'}
+                      {log.ip_address || log.ip || '—'}
                     </td>
 
                     <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>

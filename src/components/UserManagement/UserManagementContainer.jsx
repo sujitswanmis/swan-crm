@@ -292,7 +292,8 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
-          await deleteUserAdmin(targetUser.user_id);
+          const result = await deleteUserAdmin(targetUser.user_id);
+          if (!result?.success) throw new Error(result?.error || 'Delete failed');
           showToast('User permanently deleted', 'success');
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
           fetchUsers(false);
