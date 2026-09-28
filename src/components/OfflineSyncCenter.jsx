@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X, ShieldAlert, Zap, Copy, Check } from 'lucide-react';
 import { 
   getPendingQueue, 
@@ -24,7 +24,12 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [offlineUsage, setOfflineUsage] = useState(() => getDailyOfflineUsage());
 
-  const supabase = createClient();
+  const onSyncCompleteRef = useRef(onSyncComplete);
+  useEffect(() => {
+    onSyncCompleteRef.current = onSyncComplete;
+  }, [onSyncComplete]);
+
+  const isSyncingRef = useRef(false);
 
   const loadQueueState = useCallback(async () => {
     try {
@@ -40,21 +45,29 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   }, []);
 
   const triggerSync = useCallback(async () => {
-    if (isSyncing || !navigator.onLine) return;
+    if (isSyncingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+    isSyncingRef.current = true;
     setIsSyncing(true);
     try {
+      const supabase = createClient();
       const result = await syncPendingQueue(supabase);
-      if (result.count > 0) {
+      if (result && result.count > 0) {
         setToastMessage(`🎉 ${result.count} offline update${result.count > 1 ? 's' : ''} synchronized successfully!`);
-        if (onSyncComplete) onSyncComplete();
+        if (onSyncCompleteRef.current) onSyncCompleteRef.current();
       }
       await loadQueueState();
     } catch (err) {
       console.warn('Sync error:', err);
     } finally {
+      isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [isSyncing, supabase, onSyncComplete, loadQueueState]);
+  }, [loadQueueState]);
+
+  const triggerSyncRef = useRef(triggerSync);
+  useEffect(() => {
+    triggerSyncRef.current = triggerSync;
+  }, [triggerSync]);
 
   // Sync latest offline rules from Supabase and listen for custom events
   useEffect(() => {
@@ -110,7 +123,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       setIsOnline(true);
       setOfflineUsage(getDailyOfflineUsage());
       setToastMessage('🌐 Internet reconnected! Syncing offline changes...');
-      triggerSync();
+      if (triggerSyncRef.current) triggerSyncRef.current();
     };
 
     const handleOffline = () => {
@@ -129,7 +142,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     window.addEventListener('supuja_offline_queue_changed', handleQueueChanged);
 
     const interval = setInterval(() => {
-      if (navigator.onLine) {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
         loadQueueState();
       }
     }, 30000);
@@ -140,7 +153,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       window.removeEventListener('supuja_offline_queue_changed', handleQueueChanged);
       clearInterval(interval);
     };
-  }, [triggerSync, loadQueueState]);
+  }, [loadQueueState]);
 
   useEffect(() => {
     if (!toastMessage) return;

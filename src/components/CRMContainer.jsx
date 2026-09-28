@@ -1821,6 +1821,12 @@ export default function CRMContainer({
     };
   }, [hasLeadsAccess]);
 
+  const handleOfflineSyncComplete = useCallback(() => {
+    if (loadLeadsRef.current) {
+      loadLeadsRef.current(false);
+    }
+  }, []);
+
   // Filter leads based on company and step assignments
   useEffect(() => {
     if (loadingLeads && (!rawLeads || rawLeads.length === 0)) return;
@@ -5434,7 +5440,7 @@ export default function CRMContainer({
             </div>
 
             {/* Global Offline Mode Status & Sync Center Pill */}
-            <OfflineSyncCenter onSyncComplete={() => loadLeadsRef.current && loadLeadsRef.current(false)} />
+            <OfflineSyncCenter onSyncComplete={handleOfflineSyncComplete} />
 
             {/* Live Session Inactivity Expiry Countdown & Mouse Tracker (Desktop) */}
             <div className="desktop-only">
