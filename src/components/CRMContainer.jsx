@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
@@ -401,11 +401,22 @@ export default function CRMContainer({
     return path;
   });
   const [isMounted, setIsMounted] = useState(false);
-  const fastCachedLeads = useMemo(() => getFastLeadsSnapshot(), []);
-  const [leads, setLeads] = useState(() => fastCachedLeads);
-  const [rawLeads, setRawLeads] = useState(() => fastCachedLeads);
-  const rawLeadsRef = useRef(fastCachedLeads);
-  const [loadingLeads, setLoadingLeads] = useState(() => fastCachedLeads.length === 0);
+  const [leads, setLeads] = useState([]);
+  const [rawLeads, setRawLeads] = useState([]);
+  const rawLeadsRef = useRef([]);
+  const [loadingLeads, setLoadingLeads] = useState(true);
+
+  // Instant 0ms Client Cache Hydration on mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    setIsMounted(true);
+    const fast = getFastLeadsSnapshot();
+    if (Array.isArray(fast) && fast.length > 0) {
+      setRawLeads(fast);
+      setLeads(fast);
+      rawLeadsRef.current = fast;
+      setLoadingLeads(false);
+    }
+  }, []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
