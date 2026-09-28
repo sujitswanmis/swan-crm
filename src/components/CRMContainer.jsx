@@ -42,7 +42,7 @@ import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
 import OfflineRuleModule from './Offline/OfflineRuleModule';
-import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, clearLocalLeadsCache } from '@/utils/offlineSync';
+import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, clearLocalLeadsCache, getFastLeadsSnapshot, saveFastLeadsSnapshot } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
@@ -401,9 +401,11 @@ export default function CRMContainer({
     return path;
   });
   const [isMounted, setIsMounted] = useState(false);
-  const [leads, setLeads] = useState([]);
-  const [rawLeads, setRawLeads] = useState([]);
-  const [loadingLeads, setLoadingLeads] = useState(true);
+  const fastCachedLeads = useMemo(() => getFastLeadsSnapshot(), []);
+  const [leads, setLeads] = useState(() => fastCachedLeads);
+  const [rawLeads, setRawLeads] = useState(() => fastCachedLeads);
+  const rawLeadsRef = useRef(fastCachedLeads);
+  const [loadingLeads, setLoadingLeads] = useState(() => fastCachedLeads.length === 0);
   const [teamMembers, setTeamMembers] = useState([]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -1181,6 +1183,10 @@ export default function CRMContainer({
     }, 800);
   };
 
+  useEffect(() => {
+    rawLeadsRef.current = rawLeads;
+  }, [rawLeads]);
+
   const updateLeadsIfChanged = (newList) => {
     const listToProcess = Array.isArray(newList) ? newList : (newList ? [newList] : []);
     prevLeadsSigRef.current = '';
@@ -1209,12 +1215,14 @@ export default function CRMContainer({
             setRawLeads(localCachedLeads);
             setSyncLoadedCount(localCachedLeads.length);
             setLoadingLeads(false);
+            saveFastLeadsSnapshot(localCachedLeads);
           } else {
-            setLoadingLeads(true);
+            // Keep current view if fast cache already populated in memory
+            setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
           }
         } catch (cacheErr) {
           console.warn("Local leads cache read error:", cacheErr);
-          setLoadingLeads(true);
+          setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
         }
       } else {
         setLoadingLeads(true);
@@ -1327,37 +1335,36 @@ export default function CRMContainer({
       };
 
       try {
-        const hasValidLocalCache = !forceFull && Array.isArray(localCachedLeads) && localCachedLeads.length > 0;
+        const hasValidLocalCache = !forceFull && (
+          (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) ||
+          (Array.isArray(rawLeadsRef.current) && rawLeadsRef.current.length > 0)
+        );
 
         if (hasValidLocalCache) {
           // =========================================================================
           // HIGH-EFFICIENCY DELTA SYNC (Conserves 99% Supabase Egress & Eliminates Lag)
           // =========================================================================
-          let maxLeadCreatedAt = null;
-          let maxNoteCreatedAt = null;
+          const baseLeads = (Array.isArray(localCachedLeads) && localCachedLeads.length > 0)
+            ? localCachedLeads
+            : (rawLeadsRef.current || []);
 
-          for (const l of localCachedLeads) {
-            if (l.created_at && (!maxLeadCreatedAt || l.created_at > maxLeadCreatedAt)) {
-              maxLeadCreatedAt = l.created_at;
-            }
-            if (Array.isArray(l.lead_notes)) {
-              for (const n of l.lead_notes) {
-                if (n.created_at && (!maxNoteCreatedAt || n.created_at > maxNoteCreatedAt)) {
-                  maxNoteCreatedAt = n.created_at;
-                }
-              }
-            }
-          }
+          // 1. Determine since timestamp with safety window
+          let lastSyncTime = null;
+          try {
+            lastSyncTime = localStorage.getItem('crm_last_lead_sync_timestamp');
+          } catch (e) {}
+
+          // 5-minute safety overlap so server time skew or seconds precision never drops a record
+          const lookbackMs = 5 * 60 * 1000;
+          const deltaSince = lastSyncTime
+            ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
+            : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
           // 1. Fetch Page 0 (top 1000 most recent leads) to sync status/assignment updates on active leads
           const page0Data = await fetchLeadsPageWithRetry(0);
 
-          // 2. Fetch new notes created since last sync (Robust pagination overcoming Supabase 1000-row cap)
+          // 2. Fetch new notes created since last sync
           let newNotes = [];
-          // If maxNoteCreatedAt is available, use it; otherwise fallback to start of yesterday to ensure zero gaps
-          const fallbackSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-          const notesSince = maxNoteCreatedAt || fallbackSince;
-
           try {
             let notePage = 0;
             const noteChunkSize = 1000;
@@ -1365,7 +1372,7 @@ export default function CRMContainer({
               const { data: chunk, error: dNoteErr } = await supabase
                 .from('lead_notes')
                 .select('id, lead_id, created_at, note_text, created_by')
-                .gt('created_at', notesSince)
+                .gt('created_at', deltaSince)
                 .order('created_at', { ascending: false })
                 .range(notePage * noteChunkSize, (notePage + 1) * noteChunkSize - 1);
 
@@ -1385,9 +1392,8 @@ export default function CRMContainer({
             console.warn("Delta notes fetch loop error:", e);
           }
 
-          // 3. Fetch newly added leads since maxLeadCreatedAt (with pagination)
+          // 3. Fetch newly added or updated leads since deltaSince (checking both updated_at and created_at)
           let newLeads = [];
-          const leadsSince = maxLeadCreatedAt || fallbackSince;
           try {
             let leadPage = 0;
             const leadChunkSize = 1000;
@@ -1395,8 +1401,9 @@ export default function CRMContainer({
               let deltaQuery = supabase
                 .from('leads')
                 .select('*')
-                .gt('created_at', leadsSince)
+                .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
                 .order('created_at', { ascending: false });
+
               if (_agentCompanyFilter) {
                 if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
                   deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
@@ -1404,9 +1411,26 @@ export default function CRMContainer({
                   deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
                 }
               }
+
               const { data: chunk, error: dLeadErr } = await deltaQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
               if (dLeadErr) {
-                console.warn("Delta leads fetch error:", dLeadErr);
+                console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
+                let fallbackQuery = supabase
+                  .from('leads')
+                  .select('*')
+                  .gt('created_at', deltaSince)
+                  .order('created_at', { ascending: false });
+                if (_agentCompanyFilter) {
+                  if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                    fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
+                  } else {
+                    fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
+                  }
+                }
+                const { data: fbChunk } = await fallbackQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
+                if (Array.isArray(fbChunk) && fbChunk.length > 0) {
+                  newLeads = newLeads.concat(fbChunk);
+                }
                 break;
               }
               if (Array.isArray(chunk) && chunk.length > 0) {
@@ -1467,7 +1491,7 @@ export default function CRMContainer({
 
           // 6. Merge cleanly: Preserve existing notes, apply fresh Page 0 updates, add new leads & notes
           const leadsMap = new Map();
-          for (const l of localCachedLeads) {
+          for (const l of baseLeads) {
             leadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
           }
 
@@ -1481,7 +1505,7 @@ export default function CRMContainer({
             }
           }
 
-          // Add brand new leads
+          // Add brand new or updated delta leads
           for (const nl of newLeads) {
             const existing = leadsMap.get(nl.id);
             if (existing) {
@@ -1527,6 +1551,11 @@ export default function CRMContainer({
           const finalMerged = Array.from(leadsMap.values()).sort(sortLeadsByDateDesc);
           setRawLeads(finalMerged);
           setSyncLoadedCount(finalMerged.length);
+
+          try {
+            localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
+            saveFastLeadsSnapshot(finalMerged);
+          } catch (e) {}
 
           // Fast selective persistence: Only upsert changed leads (takes ~50ms instead of 10s for 45k leads)
           try {
@@ -1584,6 +1613,10 @@ export default function CRMContainer({
           // Persist all fetched leads once after pagination loop finishes (avoids thrashing mobile I/O)
           if (loadedLeads.length > 0) {
             await saveLeadsLocally(loadedLeads);
+            try {
+              localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
+              saveFastLeadsSnapshot(loadedLeads);
+            } catch (e) {}
           }
 
           // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
@@ -1630,6 +1663,10 @@ export default function CRMContainer({
               });
               if (withNotesLeads.length > 0) {
                 await saveLeadsLocally(withNotesLeads);
+                try {
+                  localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
+                  saveFastLeadsSnapshot(withNotesLeads);
+                } catch (e) {}
               }
             }
           } catch (notesErr) {
@@ -1751,6 +1788,12 @@ export default function CRMContainer({
 
     const handleForceFullSync = async () => {
       await clearLocalLeadsCache();
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.removeItem('supuja_fast_leads_snapshot');
+          localStorage.removeItem('crm_last_lead_sync_timestamp');
+        } catch (e) {}
+      }
       if (loadLeadsRef.current) {
         loadLeadsRef.current(true);
       }

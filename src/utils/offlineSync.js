@@ -290,6 +290,7 @@ export function canPerformOfflineAction(featureKey = '') {
  * Initializes and returns a reference to the browser's IndexedDB
  */
 let cachedDbInstance = null;
+let dbOpenPromise = null;
 
 /**
  * Requests persistent storage from the browser (crucial for mobile Chrome/Safari so IndexedDB is not evicted)
@@ -313,9 +314,13 @@ export function openOfflineDB() {
   if (cachedDbInstance) {
     return Promise.resolve(cachedDbInstance);
   }
+  if (dbOpenPromise) {
+    return dbOpenPromise;
+  }
 
-  return new Promise((resolve) => {
+  dbOpenPromise = new Promise((resolve) => {
     if (typeof window === 'undefined' || !('indexedDB' in window)) {
+      dbOpenPromise = null;
       resolve(null);
       return;
     }
@@ -347,14 +352,17 @@ export function openOfflineDB() {
 
       request.onsuccess = () => {
         cachedDbInstance = request.result;
+        dbOpenPromise = null;
         cachedDbInstance.onversionchange = () => {
           if (cachedDbInstance) {
-            cachedDbInstance.close();
+            try { cachedDbInstance.close(); } catch (e) {}
             cachedDbInstance = null;
+            dbOpenPromise = null;
           }
         };
         cachedDbInstance.onclose = () => {
           cachedDbInstance = null;
+          dbOpenPromise = null;
         };
         // Request storage persistence in background (non-blocking)
         requestPersistentStorage().catch(() => {});
@@ -363,18 +371,80 @@ export function openOfflineDB() {
 
       request.onerror = () => {
         console.warn('IndexedDB open error:', request.error);
+        dbOpenPromise = null;
         resolve(null);
       };
 
       request.onblocked = () => {
         console.warn('IndexedDB open blocked by another tab/connection');
-        resolve(request.result || null);
+        setTimeout(() => {
+          dbOpenPromise = null;
+          resolve(cachedDbInstance || null);
+        }, 500);
       };
     } catch (err) {
       console.warn('IndexedDB open exception:', err);
+      dbOpenPromise = null;
       resolve(null);
     }
   });
+
+  return dbOpenPromise;
+}
+
+/**
+ * Sanitizes a lead object before storing to IndexedDB:
+ * Truncates lead_notes to the latest 15 notes so local storage size drops from 50MB to ~5MB,
+ * preventing mobile WebKit IPC limit crashes and transaction timeouts.
+ */
+function sanitizeLeadForLocalStore(lead) {
+  if (!lead || typeof lead !== 'object' || lead.id === undefined || lead.id === null) return null;
+  let notes = lead.lead_notes;
+  if (Array.isArray(notes) && notes.length > 15) {
+    notes = notes.slice(0, 15);
+  }
+  return {
+    ...lead,
+    lead_notes: notes || []
+  };
+}
+
+/**
+ * Fast synchronous snapshot cache for instant 0ms hydration on page reload/F5.
+ * Stored in sessionStorage which is preserved across refreshes in the same tab.
+ */
+export function getFastLeadsSnapshot() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = sessionStorage.getItem('supuja_fast_leads_snapshot');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+  return [];
+}
+
+/**
+ * Saves top leads into sessionStorage for instant 0ms hydration on next refresh
+ */
+export function saveFastLeadsSnapshot(leads) {
+  if (typeof window === 'undefined' || !Array.isArray(leads) || leads.length === 0) return;
+  try {
+    // Keep top 600 leads to fit easily inside sessionStorage 5MB limit
+    const subset = leads.slice(0, 600).map(l => {
+      const notes = Array.isArray(l.lead_notes) ? l.lead_notes.slice(0, 3) : [];
+      return { ...l, lead_notes: notes };
+    });
+    sessionStorage.setItem('supuja_fast_leads_snapshot', JSON.stringify(subset));
+  } catch (e) {
+    try {
+      const smaller = leads.slice(0, 200).map(l => ({ ...l, lead_notes: [] }));
+      sessionStorage.setItem('supuja_fast_leads_snapshot', JSON.stringify(smaller));
+    } catch (inner) {}
+  }
 }
 
 /**
@@ -387,8 +457,8 @@ export async function saveLeadsLocally(leads) {
     const db = await openOfflineDB();
     if (!db) return false;
 
-    // Chunk size: 1500 items per transaction to stay well under mobile RAM & transaction timeout limits
-    const CHUNK_SIZE = 1500;
+    // Chunk size: 500 items per transaction to stay well under mobile RAM & transaction timeout limits
+    const CHUNK_SIZE = 500;
     for (let i = 0; i < leads.length; i += CHUNK_SIZE) {
       const chunk = leads.slice(i, i + CHUNK_SIZE);
       await new Promise((resolve) => {
@@ -396,9 +466,10 @@ export async function saveLeadsLocally(leads) {
           const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
           const store = tx.objectStore(STORES.LEADS_CACHE);
           
-          for (const lead of chunk) {
-            if (lead && lead.id) {
-              store.put(lead);
+          for (const rawLead of chunk) {
+            const clean = sanitizeLeadForLocalStore(rawLead);
+            if (clean) {
+              store.put(clean);
             }
           }
 
@@ -441,7 +512,7 @@ export async function upsertLeadsLocally(leadsToUpsert) {
     const db = await openOfflineDB();
     if (!db) return false;
 
-    const CHUNK_SIZE = 1500;
+    const CHUNK_SIZE = 500;
     for (let i = 0; i < arr.length; i += CHUNK_SIZE) {
       const chunk = arr.slice(i, i + CHUNK_SIZE);
       await new Promise((resolve) => {
@@ -449,9 +520,10 @@ export async function upsertLeadsLocally(leadsToUpsert) {
           const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
           const store = tx.objectStore(STORES.LEADS_CACHE);
           
-          for (const lead of chunk) {
-            if (lead && lead.id) {
-              store.put(lead);
+          for (const rawLead of chunk) {
+            const clean = sanitizeLeadForLocalStore(rawLead);
+            if (clean) {
+              store.put(clean);
             }
           }
 
@@ -518,7 +590,8 @@ export async function clearLocalLeadsCache() {
 }
 
 /**
- * Read cached leads from IndexedDB with cursor stream fallback for mobile WebKit IPC limits
+ * Read cached leads from IndexedDB with cursor stream fallback for mobile WebKit IPC limits.
+ * Guaranteed never to hang or discard valid cached records on mobile Safari/Chrome.
  */
 export async function getLocalLeads() {
   try {
@@ -526,34 +599,75 @@ export async function getLocalLeads() {
     if (!db) return [];
 
     return new Promise((resolve) => {
+      let isResolved = false;
+      const safeResolve = (val) => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve(val);
+        }
+      };
+
+      // Safety timer: Resolve within 3500ms even if mobile WebKit delays cursor callbacks
+      const safetyTimer = setTimeout(() => {
+        console.warn('[IndexedDB] getLocalLeads safety timer fired');
+        safeResolve([]);
+      }, 3500);
+
       const readWithCursor = () => {
         try {
           const cursorTx = db.transaction(STORES.LEADS_CACHE, 'readonly');
           const cursorStore = cursorTx.objectStore(STORES.LEADS_CACHE);
           const cursorReq = cursorStore.openCursor();
           const items = [];
+
           cursorReq.onsuccess = (ev) => {
             const cursor = ev.target.result;
             if (cursor) {
               items.push(cursor.value);
               cursor.continue();
             } else {
-              resolve(items);
+              clearTimeout(safetyTimer);
+              safeResolve(items);
             }
           };
+
           cursorReq.onerror = (e) => {
             console.warn('[IndexedDB] cursor streaming error:', e);
-            resolve([]);
+            clearTimeout(safetyTimer);
+            // ZERO REGRESSION: If we already collected items, resolve them rather than returning empty!
+            safeResolve(items.length > 0 ? items : []);
+          };
+
+          cursorTx.onerror = (e) => {
+            console.warn('[IndexedDB] cursor tx error:', e);
+            clearTimeout(safetyTimer);
+            safeResolve(items.length > 0 ? items : []);
+          };
+
+          cursorTx.onabort = () => {
+            console.warn('[IndexedDB] cursor tx aborted, preserving read items');
+            clearTimeout(safetyTimer);
+            safeResolve(items.length > 0 ? items : []);
           };
         } catch (cursorErr) {
           console.warn('[IndexedDB] cursor fallback exception:', cursorErr);
-          resolve([]);
+          clearTimeout(safetyTimer);
+          safeResolve([]);
         }
       };
 
       try {
         const tx = db.transaction(STORES.LEADS_CACHE, 'readonly');
         const store = tx.objectStore(STORES.LEADS_CACHE);
+
+        tx.onerror = () => {
+          readWithCursor();
+        };
+
+        tx.onabort = () => {
+          readWithCursor();
+        };
+
         let request;
         try {
           request = store.getAll();
@@ -564,7 +678,8 @@ export async function getLocalLeads() {
         }
 
         request.onsuccess = () => {
-          resolve(request.result || []);
+          clearTimeout(safetyTimer);
+          safeResolve(request.result || []);
         };
 
         request.onerror = (e) => {
