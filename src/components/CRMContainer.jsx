@@ -1821,7 +1821,7 @@ export default function CRMContainer({
     };
   }, [hasLeadsAccess]);
 
-  const handleOfflineSyncComplete = useCallback(() => {
+  const handleOfflineSyncComplete = React.useCallback(() => {
     if (loadLeadsRef.current) {
       loadLeadsRef.current(false);
     }
