@@ -1376,9 +1376,18 @@ export default function CRMContainer({
             }
           }
 
-          const fallbackSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-          const notesSince = maxNoteCreatedAt || fallbackSince;
-          const leadsSince = maxLeadCreatedAt || fallbackSince;
+          let lastSyncTime = null;
+          try {
+            lastSyncTime = localStorage.getItem('crm_last_lead_sync_timestamp');
+          } catch (e) {}
+
+          const lookbackMs = 15 * 60 * 1000;
+          const timeSince = lastSyncTime
+            ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
+            : new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+          const notesSince = maxNoteCreatedAt || timeSince;
+          const leadsSince = maxLeadCreatedAt || timeSince;
 
           // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);
@@ -1598,12 +1607,15 @@ export default function CRMContainer({
           
           // Render first chunk immediately
           setRawLeads(loadedLeads.map(l => ({ ...l, lead_notes: [] })));
+          rawLeadsRef.current = loadedLeads;
           setSyncLoadedCount(loadedLeads.length);
           setLoadingLeads(false);
+          saveFastLeadsSnapshot(loadedLeads);
+          upsertLeadsLocally(loadedLeads).catch(() => {});
 
-          // 2. Fetch remaining pages of leads in parallel batches of 2
+          // 2. Fetch remaining pages of leads in parallel batches of 4
           const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
-          const leadsBatchSize = 2;
+          const leadsBatchSize = 4;
           
           for (let i = 0; i < remainingPages.length; i += leadsBatchSize) {
             const batch = remainingPages.slice(i, i + leadsBatchSize);
@@ -1625,6 +1637,8 @@ export default function CRMContainer({
             }
             const finalLeads = unique.sort(sortLeadsByDateDesc);
             setRawLeads(finalLeads);
+            rawLeadsRef.current = finalLeads;
+            saveFastLeadsSnapshot(finalLeads);
           }
           // Persist all fetched leads once after pagination loop finishes (avoids thrashing mobile I/O)
           if (loadedLeads.length > 0) {
@@ -1848,7 +1862,7 @@ export default function CRMContainer({
 
   // Filter leads based on company and step assignments
   useEffect(() => {
-    if (loadingLeads) return;
+    if (loadingLeads && (!rawLeads || rawLeads.length === 0)) return;
     
     let preFilteredLeads = rawLeads;
     
@@ -5944,7 +5958,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('leads', moduleAccess, userRole) && visitedTabs.has('leads')}
               >
                 <ErrorBoundary>
-                  {loadingLeads ? (
+                  {loadingLeads && (!leads || leads.length === 0) ? (
                     <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
                   ) : (
                     <LeadTable 
