@@ -1360,17 +1360,25 @@ export default function CRMContainer({
             ? localCachedLeads
             : (rawLeadsRef.current || []);
 
-          // 1. Determine since timestamp with safety window
-          let lastSyncTime = null;
-          try {
-            lastSyncTime = localStorage.getItem('crm_last_lead_sync_timestamp');
-          } catch (e) {}
+          let maxLeadCreatedAt = null;
+          let maxNoteCreatedAt = null;
 
-          // 5-minute safety overlap so server time skew or seconds precision never drops a record
-          const lookbackMs = 5 * 60 * 1000;
-          const deltaSince = lastSyncTime
-            ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
-            : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          for (const l of baseLeads) {
+            if (l.created_at && (!maxLeadCreatedAt || l.created_at > maxLeadCreatedAt)) {
+              maxLeadCreatedAt = l.created_at;
+            }
+            if (Array.isArray(l.lead_notes)) {
+              for (const n of l.lead_notes) {
+                if (n.created_at && (!maxNoteCreatedAt || n.created_at > maxNoteCreatedAt)) {
+                  maxNoteCreatedAt = n.created_at;
+                }
+              }
+            }
+          }
+
+          const fallbackSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+          const notesSince = maxNoteCreatedAt || fallbackSince;
+          const leadsSince = maxLeadCreatedAt || fallbackSince;
 
           // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);
@@ -1384,7 +1392,7 @@ export default function CRMContainer({
                 const { data: chunk, error: dNoteErr } = await supabase
                   .from('lead_notes')
                   .select('id, lead_id, created_at, note_text, created_by')
-                  .gt('created_at', deltaSince)
+                  .gt('created_at', notesSince)
                   .order('created_at', { ascending: false })
                   .range(notePage * noteChunkSize, (notePage + 1) * noteChunkSize - 1);
 
@@ -1415,7 +1423,7 @@ export default function CRMContainer({
                 let deltaQuery = supabase
                   .from('leads')
                   .select('*')
-                  .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
+                  .gt('created_at', leadsSince)
                   .order('created_at', { ascending: false });
 
                 if (_agentCompanyFilter) {
@@ -1428,23 +1436,7 @@ export default function CRMContainer({
 
                 const { data: chunk, error: dLeadErr } = await deltaQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
                 if (dLeadErr) {
-                  console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
-                  let fallbackQuery = supabase
-                    .from('leads')
-                    .select('*')
-                    .gt('created_at', deltaSince)
-                    .order('created_at', { ascending: false });
-                  if (_agentCompanyFilter) {
-                    if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                      fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
-                    } else {
-                      fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
-                    }
-                  }
-                  const { data: fbChunk } = await fallbackQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
-                  if (Array.isArray(fbChunk) && fbChunk.length > 0) {
-                    leads = leads.concat(fbChunk);
-                  }
+                  console.warn("Delta leads fetch error:", dLeadErr);
                   break;
                 }
                 if (Array.isArray(chunk) && chunk.length > 0) {
