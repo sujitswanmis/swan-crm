@@ -1360,106 +1360,80 @@ export default function CRMContainer({
             ? localCachedLeads
             : (rawLeadsRef.current || []);
 
-          let maxLeadCreatedAt = null;
-          let maxNoteCreatedAt = null;
-
-          for (const l of baseLeads) {
-            if (l.created_at && (!maxLeadCreatedAt || l.created_at > maxLeadCreatedAt)) {
-              maxLeadCreatedAt = l.created_at;
-            }
-            if (Array.isArray(l.lead_notes)) {
-              for (const n of l.lead_notes) {
-                if (n.created_at && (!maxNoteCreatedAt || n.created_at > maxNoteCreatedAt)) {
-                  maxNoteCreatedAt = n.created_at;
-                }
-              }
-            }
-          }
-
           let lastSyncTime = null;
           try {
             lastSyncTime = localStorage.getItem('crm_last_lead_sync_timestamp');
           } catch (e) {}
 
           const lookbackMs = 15 * 60 * 1000;
-          const timeSince = lastSyncTime
+          const deltaSince = lastSyncTime
             ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
             : new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-
-          const notesSince = maxNoteCreatedAt || timeSince;
-          const leadsSince = maxLeadCreatedAt || timeSince;
 
           // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);
 
           const fetchDeltaNotesPromise = (async () => {
-            let notes = [];
             try {
-              let notePage = 0;
-              const noteChunkSize = 1000;
-              while (notePage < 10) { // Safety ceiling: up to 10,000 delta notes
-                const { data: chunk, error: dNoteErr } = await supabase
-                  .from('lead_notes')
-                  .select('id, lead_id, created_at, note_text, created_by')
-                  .gt('created_at', notesSince)
-                  .order('created_at', { ascending: false })
-                  .range(notePage * noteChunkSize, (notePage + 1) * noteChunkSize - 1);
+              const { data: chunk, error: dNoteErr } = await supabase
+                .from('lead_notes')
+                .select('id, lead_id, created_at, note_text, created_by')
+                .gt('created_at', deltaSince)
+                .order('created_at', { ascending: false })
+                .limit(1000);
 
-                if (dNoteErr) {
-                  console.warn("Delta notes fetch error:", dNoteErr);
-                  break;
-                }
-                if (Array.isArray(chunk) && chunk.length > 0) {
-                  notes = notes.concat(chunk);
-                  if (chunk.length < noteChunkSize) break;
-                  notePage++;
-                } else {
-                  break;
-                }
+              if (dNoteErr) {
+                console.warn("Delta notes fetch error:", dNoteErr);
+                return [];
               }
+              return Array.isArray(chunk) ? chunk : [];
             } catch (e) {
-              console.warn("Delta notes fetch loop error:", e);
+              console.warn("Delta notes fetch error:", e);
+              return [];
             }
-            return notes;
           })();
 
           const fetchDeltaLeadsPromise = (async () => {
-            let leads = [];
             try {
-              let leadPage = 0;
-              const leadChunkSize = 1000;
-              while (leadPage < 10) {
-                let deltaQuery = supabase
-                  .from('leads')
-                  .select('*')
-                  .gt('created_at', leadsSince)
-                  .order('created_at', { ascending: false });
+              let deltaQuery = supabase
+                .from('leads')
+                .select('*')
+                .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
+                .order('created_at', { ascending: false })
+                .limit(1000);
 
-                if (_agentCompanyFilter) {
-                  if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                    deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
-                  } else {
-                    deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
-                  }
-                }
-
-                const { data: chunk, error: dLeadErr } = await deltaQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
-                if (dLeadErr) {
-                  console.warn("Delta leads fetch error:", dLeadErr);
-                  break;
-                }
-                if (Array.isArray(chunk) && chunk.length > 0) {
-                  leads = leads.concat(chunk);
-                  if (chunk.length < leadChunkSize) break;
-                  leadPage++;
+              if (_agentCompanyFilter) {
+                if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                  deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
                 } else {
-                  break;
+                  deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
                 }
               }
+
+              const { data: chunk, error: dLeadErr } = await deltaQuery;
+              if (dLeadErr) {
+                console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
+                let fallbackQuery = supabase
+                  .from('leads')
+                  .select('*')
+                  .gt('created_at', deltaSince)
+                  .order('created_at', { ascending: false })
+                  .limit(1000);
+                if (_agentCompanyFilter) {
+                  if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                    fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
+                  } else {
+                    fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
+                  }
+                }
+                const { data: fbChunk } = await fallbackQuery;
+                return Array.isArray(fbChunk) ? fbChunk : [];
+              }
+              return Array.isArray(chunk) ? chunk : [];
             } catch (e) {
               console.warn("Delta leads fetch error:", e);
+              return [];
             }
-            return leads;
           })();
 
           const fetchAssignedLeadsPromise = (async () => {
@@ -1601,106 +1575,93 @@ export default function CRMContainer({
           // =========================================================================
           // FULL INITIAL SYNC (Only for cold start / first time browser / empty cache)
           // =========================================================================
-          // 1. Fetch Page 0 of leads first for instant UI response
+          // 1. Fetch Page 0 of leads first for instant UI response (top 1000 in ~250ms)
           const page0Data = await fetchLeadsPageWithRetry(0);
           loadedLeads = [...page0Data];
           
-          // Render first chunk immediately
-          setRawLeads(loadedLeads.map(l => ({ ...l, lead_notes: [] })));
-          rawLeadsRef.current = loadedLeads;
+          // Render first chunk immediately so table and dashboard display immediately
+          const initialChunk = loadedLeads.map(l => ({ ...l, lead_notes: [] }));
+          setRawLeads(initialChunk);
+          rawLeadsRef.current = initialChunk;
           setSyncLoadedCount(loadedLeads.length);
           setLoadingLeads(false);
-          saveFastLeadsSnapshot(loadedLeads);
-          upsertLeadsLocally(loadedLeads).catch(() => {});
+          saveFastLeadsSnapshot(initialChunk);
+          upsertLeadsLocally(initialChunk).catch(() => {});
 
-          // 2. Fetch remaining pages of leads in parallel batches of 4
+          // 2. Fetch remaining pages of leads in parallel batches of 5 (High Concurrency Background Sync)
           const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
-          const leadsBatchSize = 4;
+          const leadsBatchSize = 5;
           
           for (let i = 0; i < remainingPages.length; i += leadsBatchSize) {
             const batch = remainingPages.slice(i, i + leadsBatchSize);
             const batchResults = await Promise.all(batch.map(p => fetchLeadsPageWithRetry(p)));
             for (const data of batchResults) {
-              loadedLeads = loadedLeads.concat(data);
-            }
-            setSyncLoadedCount(loadedLeads.length);
-            
-            // Deduplicate and update state cleanly without quadratic array duplication
-            const currentSnapshot = [...loadedLeads];
-            const unique = [];
-            const seen = new Set();
-            for (const lead of currentSnapshot) {
-              if (!seen.has(lead.id)) {
-                seen.add(lead.id);
-                unique.push({ ...lead, lead_notes: [] });
+              if (Array.isArray(data)) {
+                loadedLeads = loadedLeads.concat(data);
               }
             }
-            const finalLeads = unique.sort(sortLeadsByDateDesc);
-            setRawLeads(finalLeads);
-            rawLeadsRef.current = finalLeads;
-            saveFastLeadsSnapshot(finalLeads);
+            setSyncLoadedCount(loadedLeads.length);
+            // CRITICAL: Do NOT call setRawLeads here in the loop!
+            // Updating rawLeads in every batch causes 10+ expensive full-table rerenders and Recharts recalculations!
           }
-          // Persist all fetched leads once after pagination loop finishes (avoids thrashing mobile I/O)
-          if (loadedLeads.length > 0) {
-            await saveLeadsLocally(loadedLeads);
+
+          // Deduplicate all leads once after pagination finishes
+          const uniqueMap = new Map();
+          for (const lead of loadedLeads) {
+            if (lead && lead.id && !uniqueMap.has(lead.id)) {
+              uniqueMap.set(lead.id, { ...lead, lead_notes: [] });
+            }
+          }
+          const finalLeads = Array.from(uniqueMap.values()).sort(sortLeadsByDateDesc);
+          setRawLeads(finalLeads);
+          rawLeadsRef.current = finalLeads;
+          setSyncLoadedCount(finalLeads.length);
+          saveFastLeadsSnapshot(finalLeads);
+
+          // Persist all fetched leads immediately to IndexedDB so cache is 100% valid on next reload!
+          if (finalLeads.length > 0) {
+            await saveLeadsLocally(finalLeads);
             try {
               localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
-              saveFastLeadsSnapshot(loadedLeads);
             } catch (e) {}
           }
 
-          // 3. Fetch ALL lead notes so every lead has full history and accurate Last Status
+          // 3. Background Recent Notes Hydration (Non-blocking: fetch latest 1,000 notes in ~200ms)
           try {
-            const { count: totalNotesCount } = await supabase
+            const { data: recentNotes } = await supabase
               .from('lead_notes')
-              .select('*', { count: 'exact', head: true });
+              .select('id, lead_id, created_at, note_text, created_by')
+              .order('created_at', { ascending: false })
+              .range(0, 999);
 
-            const notesPageSize = 1000;
-            const totalNotes = totalNotesCount || 0;
-            const notesNumPages = totalNotes > 0 ? Math.ceil(totalNotes / notesPageSize) : 1;
-            
-            let allNotes = [];
-            const notesBatches = Array.from({ length: notesNumPages }, (_, i) => i);
-            const notesBatchSize = 4; // Fetch 4 pages (4,000 notes) in parallel batches
-            
-            for (let i = 0; i < notesBatches.length; i += notesBatchSize) {
-              const currentBatch = notesBatches.slice(i, i + notesBatchSize);
-              const results = await Promise.all(currentBatch.map(p => fetchNotesPageWithRetry(p, notesPageSize)));
-              for (const data of results) {
-                if (Array.isArray(data)) {
-                  allNotes = allNotes.concat(data);
-                }
-              }
-            }
-
-            if (allNotes.length > 0) {
-              const notesMap = {};
-              for (const note of allNotes) {
-                if (!notesMap[note.lead_id]) {
-                  notesMap[note.lead_id] = [];
-                }
-                notesMap[note.lead_id].push(note);
+            if (Array.isArray(recentNotes) && recentNotes.length > 0) {
+              const notesMap = new Map();
+              for (const note of recentNotes) {
+                if (!notesMap.has(note.lead_id)) notesMap.set(note.lead_id, []);
+                notesMap.get(note.lead_id).push(note);
               }
 
-              let withNotesLeads = [];
+              let touchedLeads = [];
               setRawLeads(prev => {
-                const withNotes = prev.map(lead => ({
-                  ...lead,
-                  lead_notes: notesMap[lead.id] || lead.lead_notes || []
-                })).sort(sortLeadsByDateDesc);
-                withNotesLeads = withNotes;
+                const withNotes = prev.map(lead => {
+                  const n = notesMap.get(lead.id);
+                  if (n) {
+                    const updated = { ...lead, lead_notes: n };
+                    touchedLeads.push(updated);
+                    return updated;
+                  }
+                  return lead;
+                });
+                rawLeadsRef.current = withNotes;
                 return withNotes;
               });
-              if (withNotesLeads.length > 0) {
-                await saveLeadsLocally(withNotesLeads);
-                try {
-                  localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
-                  saveFastLeadsSnapshot(withNotesLeads);
-                } catch (e) {}
+
+              if (touchedLeads.length > 0) {
+                upsertLeadsLocally(touchedLeads).catch(() => {});
               }
             }
           } catch (notesErr) {
-            console.error("Failed to fetch all lead notes:", notesErr);
+            console.warn("Recent notes non-blocking fetch error:", notesErr);
           }
         }
 

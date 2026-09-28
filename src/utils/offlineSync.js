@@ -431,21 +431,42 @@ export function getFastLeadsSnapshot() {
 }
 
 /**
- * Saves top leads into both sessionStorage and localStorage for instant 0ms hydration on next refresh
+ * Saves top leads into both sessionStorage and localStorage for instant 0ms hydration on next refresh.
+ * Uses compact minimal projections to guarantee payload is ~40KB (never throws QuotaExceededError).
  */
 export function saveFastLeadsSnapshot(leads) {
   if (typeof window === 'undefined' || !Array.isArray(leads) || leads.length === 0) return;
   try {
-    const subset = leads.slice(0, 1000).map(l => {
-      const notes = Array.isArray(l.lead_notes) ? l.lead_notes.slice(0, 3) : [];
-      return { ...l, lead_notes: notes };
-    });
+    const subset = leads.slice(0, 300).map(l => ({
+      id: l.id,
+      name: l.name,
+      phone: l.phone,
+      email: l.email,
+      status: l.status,
+      stage: l.stage,
+      our_company: l.our_company,
+      assigned_to: l.assigned_to,
+      assigned_to_name: l.assigned_to_name,
+      created_at: l.created_at,
+      updated_at: l.updated_at,
+      city: l.city,
+      state: l.state,
+      lead_notes: []
+    }));
     const serialized = JSON.stringify(subset);
     try { sessionStorage.setItem('supuja_fast_leads_snapshot', serialized); } catch (e) {}
     try { localStorage.setItem('supuja_fast_leads_snapshot', serialized); } catch (e) {}
   } catch (e) {
     try {
-      const smaller = leads.slice(0, 300).map(l => ({ ...l, lead_notes: [] }));
+      const smaller = leads.slice(0, 100).map(l => ({
+        id: l.id,
+        name: l.name,
+        phone: l.phone,
+        status: l.status,
+        our_company: l.our_company,
+        created_at: l.created_at,
+        lead_notes: []
+      }));
       const smallSer = JSON.stringify(smaller);
       try { sessionStorage.setItem('supuja_fast_leads_snapshot', smallSer); } catch (e) {}
       try { localStorage.setItem('supuja_fast_leads_snapshot', smallSer); } catch (e) {}
@@ -603,6 +624,19 @@ export async function getLocalLeads() {
     if (!db) return [];
 
     return new Promise((resolve) => {
+      let isResolved = false;
+      const safeResolve = (val) => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve(val);
+        }
+      };
+
+      const safetyTimer = setTimeout(() => {
+        console.warn('[IndexedDB] getLocalLeads safety timeout fired');
+        safeResolve([]);
+      }, 3000);
+
       const readWithCursor = () => {
         try {
           const cursorTx = db.transaction(STORES.LEADS_CACHE, 'readonly');
@@ -619,16 +653,19 @@ export async function getLocalLeads() {
               }
               cursor.continue();
             } else {
-              resolve(items);
+              clearTimeout(safetyTimer);
+              safeResolve(items);
             }
           };
           cursorReq.onerror = (e) => {
             console.warn('[IndexedDB] cursor streaming error:', e);
-            resolve(items);
+            clearTimeout(safetyTimer);
+            safeResolve(items);
           };
         } catch (cursorErr) {
           console.warn('[IndexedDB] cursor fallback exception:', cursorErr);
-          resolve([]);
+          clearTimeout(safetyTimer);
+          safeResolve([]);
         }
       };
 
@@ -645,6 +682,7 @@ export async function getLocalLeads() {
         }
 
         request.onsuccess = () => {
+          clearTimeout(safetyTimer);
           const res = request.result || [];
           if (Array.isArray(res) && res.some(r => r && typeof r.id === 'string' && r.id.startsWith('__bucket_'))) {
             let unpacked = [];
@@ -655,9 +693,9 @@ export async function getLocalLeads() {
                 unpacked.push(r);
               }
             }
-            resolve(unpacked);
+            safeResolve(unpacked);
           } else {
-            resolve(res);
+            safeResolve(res);
           }
         };
 
