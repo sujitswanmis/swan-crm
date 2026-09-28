@@ -34,11 +34,12 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   const loadQueueState = useCallback(async () => {
     try {
       const queue = await getPendingQueue();
-      setPendingCount(queue.length);
+      setPendingCount(prev => (prev === queue.length ? prev : queue.length));
       setPendingItems(queue);
       const history = await getSyncHistory();
       setSyncedHistory(history);
-      setOfflineUsage(getDailyOfflineUsage());
+      const usage = getDailyOfflineUsage();
+      setOfflineUsage(prev => (JSON.stringify(prev) === JSON.stringify(usage) ? prev : usage));
     } catch (e) {
       console.warn('Load queue state notice:', e);
     }

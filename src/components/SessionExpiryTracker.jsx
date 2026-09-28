@@ -117,29 +117,38 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           const cachedBreak = localStorage.getItem('crm_active_break');
           if (cachedBreak) {
             const parsed = JSON.parse(cachedBreak);
-            setCurrentBreak(parsed);
+            setCurrentBreak(prev => (JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed));
             const elapsed = Math.max(0, Math.floor((Date.now() - new Date(parsed.startTime).getTime()) / 1000));
-            setBreakElapsedSec(elapsed);
+            setBreakElapsedSec(prev => (prev === elapsed ? prev : elapsed));
           }
         }
       } catch (e) {}
 
       const res = await getSessionSecuritySettings();
       if (res?.success && res?.settings) {
-        setSettings(res.settings);
+        setSettings(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(res.settings)) return prev;
+          return res.settings;
+        });
         const fullTimeout = (res.settings.inactivityTimeoutMinutes || 60) * 60;
-        setTimeLeftSeconds(fullTimeout);
+        setTimeLeftSeconds(prev => (prev === fullTimeout ? prev : fullTimeout));
       }
 
       const statusRes = await getCurrentEmployeeStatus(userEmail);
       if (statusRes?.success) {
         if (Array.isArray(statusRes.breaks)) {
-          setTodayBreaksList(statusRes.breaks);
+          setTodayBreaksList(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(statusRes.breaks)) return prev;
+            return statusRes.breaks;
+          });
         }
         if (statusRes.currentBreak) {
-          setCurrentBreak(statusRes.currentBreak);
+          setCurrentBreak(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(statusRes.currentBreak)) return prev;
+            return statusRes.currentBreak;
+          });
           const elapsed = Math.max(0, Math.floor((Date.now() - new Date(statusRes.currentBreak.startTime).getTime()) / 1000));
-          setBreakElapsedSec(elapsed);
+          setBreakElapsedSec(prev => (prev === elapsed ? prev : elapsed));
           try {
             localStorage.setItem('crm_active_break', JSON.stringify(statusRes.currentBreak));
           } catch (e) {}
@@ -147,7 +156,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           try {
             localStorage.removeItem('crm_active_break');
           } catch (e) {}
-          setCurrentBreak(null);
+          setCurrentBreak(prev => (prev === null ? prev : null));
         }
       }
     } catch (e) {
@@ -155,11 +164,20 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     }
   }, [userEmail]);
 
+  const fetchSettingsAndStatusRef = useRef(fetchSettingsAndStatus);
   useEffect(() => {
-    fetchSettingsAndStatus();
+    fetchSettingsAndStatusRef.current = fetchSettingsAndStatus;
+  }, [fetchSettingsAndStatus]);
+
+  useEffect(() => {
+    if (fetchSettingsAndStatusRef.current) {
+      fetchSettingsAndStatusRef.current();
+    }
 
     const handleConfigUpdate = () => {
-      fetchSettingsAndStatus();
+      if (fetchSettingsAndStatusRef.current) {
+        fetchSettingsAndStatusRef.current();
+      }
     };
 
     window.addEventListener('session_config_updated', handleConfigUpdate);
@@ -169,14 +187,20 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       window.removeEventListener('session_config_updated', handleConfigUpdate);
       window.removeEventListener('crm_config_updated', handleConfigUpdate);
     };
-  }, [fetchSettingsAndStatus]);
+  }, []);
+
+  useEffect(() => {
+    if (userEmail && fetchSettingsAndStatusRef.current) {
+      fetchSettingsAndStatusRef.current();
+    }
+  }, [userEmail]);
 
   // 2. User Activity Reset Handler
   const handleUserActivity = useCallback(() => {
     lastActivityTimestamp.current = Date.now();
     isCurrentlyActive.current = true;
-    setIsAway(false);
-    setShowWarningModal(false);
+    setIsAway(prev => (prev ? false : prev));
+    setShowWarningModal(prev => (prev ? false : prev));
   }, []);
 
   // Event Listeners for Activity Reset
@@ -221,8 +245,8 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       if (currentBreakRef.current) {
         setBreakElapsedSec(prev => prev + elapsedSec);
         idleAccumulator.current += elapsedSec;
-        setIsAway(false);
-        setShowWarningModal(false);
+        setIsAway(prev => (prev ? false : prev));
+        setShowWarningModal(prev => (prev ? false : prev));
         return;
       }
 
@@ -230,13 +254,13 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       if (timeSinceLastActivitySec >= idleThreshSec || isTabHidden) {
         if (isCurrentlyActive.current) {
           isCurrentlyActive.current = false;
-          setIsAway(true);
+          setIsAway(prev => (prev ? prev : true));
         }
         idleAccumulator.current += elapsedSec;
       } else {
         if (!isCurrentlyActive.current) {
           isCurrentlyActive.current = true;
-          setIsAway(false);
+          setIsAway(prev => (!prev ? prev : false));
         }
         activeAccumulator.current += elapsedSec;
       }
@@ -244,13 +268,10 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       // C. Inactivity Timeout Countdown (Session Expiry)
       if (settingsRef.current.enableAutoLogout) {
         const remaining = Math.max(0, inactivityMaxSec - timeSinceLastActivitySec);
-        setTimeLeftSeconds(remaining);
+        setTimeLeftSeconds(prev => (prev === remaining ? prev : remaining));
 
-        if (remaining <= warningSec && remaining > 0) {
-          setShowWarningModal(true);
-        } else if (remaining > warningSec) {
-          setShowWarningModal(false);
-        }
+        const shouldWarn = remaining <= warningSec && remaining > 0;
+        setShowWarningModal(prev => (prev === shouldWarn ? prev : shouldWarn));
 
         if (remaining <= 0 && !isLoggingOut.current) {
           isLoggingOut.current = true;
