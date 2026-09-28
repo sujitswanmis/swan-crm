@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
