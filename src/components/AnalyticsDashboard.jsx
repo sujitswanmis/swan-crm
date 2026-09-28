@@ -43,6 +43,41 @@ const getStageBadgeInfo = (stage, status) => {
   }
 };
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const istDateCache = new Map();
+
+export const fastToISTDate = (dateVal) => {
+  if (!dateVal) return '';
+  if (typeof dateVal === 'string') {
+    const trimmed = dateVal.trim();
+    if (!trimmed) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const cached = istDateCache.get(trimmed);
+    if (cached !== undefined) return cached;
+
+    let res = '';
+    const ms = Date.parse(trimmed);
+    if (!isNaN(ms)) {
+      const ist = new Date(ms + IST_OFFSET_MS);
+      const y = ist.getUTCFullYear();
+      const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(ist.getUTCDate()).padStart(2, '0');
+      res = `${y}-${m}-${d}`;
+    }
+    if (istDateCache.size < 50000) {
+      istDateCache.set(trimmed, res);
+    }
+    return res;
+  }
+  const ms = dateVal instanceof Date ? dateVal.getTime() : Date.parse(dateVal);
+  if (isNaN(ms)) return '';
+  const ist = new Date(ms + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(ist.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export default function AnalyticsDashboard({ 
   leads = [], 
   teamMembers = [],
@@ -214,22 +249,7 @@ export default function AnalyticsDashboard({
   });
   const [loadingSummaries, setLoadingSummaries] = useState(true);
 
-  const istDateFormatter = useMemo(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }), []);
-
-  const toISTDate = (dateVal) => {
-    if (!dateVal) return '';
-    try {
-      if (typeof dateVal === 'string') {
-        const trimmed = dateVal.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-      }
-      const d = new Date(dateVal);
-      if (isNaN(d.getTime())) return '';
-      return istDateFormatter.format(d);
-    } catch {
-      return '';
-    }
-  };
+  const toISTDate = fastToISTDate;
 
   const isAllTime = useMemo(() => {
     return datePreset === 'all' || datePreset === 'all_time' || (!startDate && !endDate);
@@ -262,6 +282,55 @@ export default function AnalyticsDashboard({
     if (empEmail && str.includes(empEmail.split('@')[0])) return true;
     return false;
   };
+
+  // High-performance O(1) Employee Index & Fuzzy Lookup Cache
+  const employeeLookup = useMemo(() => {
+    const directMap = new Map();
+    const matchCache = new Map();
+
+    formattedEmployees.forEach(emp => {
+      const email = (emp.email || '').trim().toLowerCase();
+      const name = (emp.emp_name || emp.name || '').trim().toLowerCase();
+      const id = (emp.user_id || '').trim().toLowerCase();
+      const code = (emp.emp_code || emp.emp_id || '').trim().toLowerCase();
+
+      if (email) directMap.set(email, emp);
+      if (name) directMap.set(name, emp);
+      if (id) directMap.set(id, emp);
+      if (code) directMap.set(code, emp);
+      if (email && email.includes('@')) {
+        const username = email.split('@')[0];
+        if (username) directMap.set(username, emp);
+      }
+    });
+
+    const matchEmployee = (identifier) => {
+      if (!identifier) return null;
+      const str = String(identifier).trim().toLowerCase();
+      if (!str) return null;
+      if (matchCache.has(str)) return matchCache.get(str);
+
+      // 1. Instant O(1) Map match
+      let found = directMap.get(str);
+      if (found) {
+        matchCache.set(str, found);
+        return found;
+      }
+
+      // 2. Fallback to substring matching across employees (cached on first encounter)
+      for (let i = 0; i < formattedEmployees.length; i++) {
+        const emp = formattedEmployees[i];
+        if (isEmployeeMatch(str, emp)) {
+          found = emp;
+          break;
+        }
+      }
+      matchCache.set(str, found || null);
+      return found || null;
+    };
+
+    return { matchEmployee };
+  }, [formattedEmployees]);
 
   const selectedEmployee = useMemo(() => {
     if (selectedEmployeeEmails.length === 0) return 'All';
@@ -353,44 +422,65 @@ export default function AnalyticsDashboard({
     return 1;
   };
 
-  // Helper: check if a lead was created, followed up, or scheduled in the specified period
+  // Helper: check if a lead was created, followed up, or scheduled in the specified period (fast short-circuiting)
   const isLeadInPeriod = (lead, start, end, touchedLeadIdSet) => {
     if (!lead) return false;
     if (touchedLeadIdSet && touchedLeadIdSet.has(lead.id)) return true;
 
-    const cDate = toISTDate(lead.created_at);
-    if (cDate && (!start || cDate >= start) && (!end || cDate <= end)) return true;
-
-    const uDate = toISTDate(lead.updated_at);
-    if (uDate && (!start || uDate >= start) && (!end || uDate <= end)) return true;
-
-    const lDate = toISTDate(lead.lead_date);
-    if (lDate && (!start || lDate >= start) && (!end || lDate <= end)) return true;
-
-    const fDate = toISTDate(lead.follow_up_date || lead.next_follow_up_date);
-    if (fDate && (!start || fDate >= start) && (!end || fDate <= end)) return true;
-
+    if (lead.created_at) {
+      const cDate = fastToISTDate(lead.created_at);
+      if (cDate && (!start || cDate >= start) && (!end || cDate <= end)) return true;
+    }
+    if (lead.updated_at) {
+      const uDate = fastToISTDate(lead.updated_at);
+      if (uDate && (!start || uDate >= start) && (!end || uDate <= end)) return true;
+    }
+    if (lead.lead_date) {
+      const lDate = fastToISTDate(lead.lead_date);
+      if (lDate && (!start || lDate >= start) && (!end || lDate <= end)) return true;
+    }
+    const fStr = lead.follow_up_date || lead.next_follow_up_date;
+    if (fStr) {
+      const fDate = fastToISTDate(fStr);
+      if (fDate && (!start || fDate >= start) && (!end || fDate <= end)) return true;
+    }
     return false;
   };
 
-  // Synchronous, instant evaluation of touched leads and employee activity for the selected period
-  const { periodTouchedLeadIds, employeeActivityList, crmActiveEmployeesMap } = useMemo(() => {
+  // High-performance single-pass Leads & Activity Engine (O(N) processing instead of O(N*M))
+  const leadAnalyticsEngine = useMemo(() => {
+    const leadMapById = new Map();
+    const empAssignedLeadsMap = new Map();
     const touchedLeadSet = new Set();
     const actMap = new Map();
 
-    const findApprovedEmployee = (empKey) => {
-      if (!empKey) return null;
-      return formattedEmployees.find(t => isEmployeeMatch(empKey, t));
-    };
+    formattedEmployees.forEach(emp => {
+      const empEmail = (emp.email || '').toLowerCase();
+      empAssignedLeadsMap.set(empEmail, []);
+    });
 
-    leads.forEach(lead => {
+    for (let i = 0; i < leads.length; i++) {
+      const lead = leads[i];
+      leadMapById.set(lead.id, lead);
+
+      // 1. Group assigned leads to employee in O(1)
+      if (lead.assigned_to) {
+        const assignedEmp = employeeLookup.matchEmployee(lead.assigned_to);
+        if (assignedEmp && assignedEmp.email) {
+          const list = empAssignedLeadsMap.get(assignedEmp.email.toLowerCase());
+          if (list) list.push(lead);
+        }
+      }
+
+      // 2. Note activity in period
       const notes = Array.isArray(lead.lead_notes) ? lead.lead_notes : [];
-      notes.forEach(note => {
+      for (let j = 0; j < notes.length; j++) {
+        const note = notes[j];
         let noteInPeriod = false;
         if (isAllTime) {
           noteInPeriod = true;
         } else {
-          const nDate = toISTDate(note.created_at);
+          const nDate = fastToISTDate(note.created_at);
           if (nDate && (!startDate || nDate >= startDate) && (!endDate || nDate <= endDate)) {
             noteInPeriod = true;
           }
@@ -400,7 +490,7 @@ export default function AnalyticsDashboard({
           touchedLeadSet.add(lead.id);
 
           const empKey = note.created_by || lead.assigned_to || '';
-          const tm = findApprovedEmployee(empKey);
+          const tm = employeeLookup.matchEmployee(empKey);
           if (tm) {
             const empName = tm.emp_name || tm.name || tm.email;
             const normKey = empName.toLowerCase();
@@ -420,8 +510,8 @@ export default function AnalyticsDashboard({
             entry.leadIdSet.add(lead.id);
           }
         }
-      });
-    });
+      }
+    }
 
     const activityList = [];
     const activeMap = new Map();
@@ -435,78 +525,96 @@ export default function AnalyticsDashboard({
     activityList.sort((a, b) => b.uniqueLeads - a.uniqueLeads || b.actions - a.actions);
 
     return {
+      leadMapById,
+      empAssignedLeadsMap,
       periodTouchedLeadIds: touchedLeadSet,
       employeeActivityList: activityList,
       crmActiveEmployeesMap: activeMap
     };
-  }, [leads, isAllTime, startDate, endDate, formattedEmployees, istDateFormatter]);
+  }, [leads, isAllTime, startDate, endDate, formattedEmployees, employeeLookup]);
+
+  const { periodTouchedLeadIds, employeeActivityList, crmActiveEmployeesMap } = leadAnalyticsEngine;
 
   // Reactive filtered leads responding dynamically to both Employee(s) and Date Range
   const filteredLeadsSync = useMemo(() => {
     // 1. Employee filter (if one or multiple reps are selected)
-    let baseLeads = leads;
+    let baseLeads;
     if (selectedEmployeeEmails.length > 0) {
-      baseLeads = leads.filter(l => {
-        if (!l.assigned_to) return false;
-        return selectedEmployeeObjs.some(emp => isEmployeeMatch(l.assigned_to, emp));
-      });
+      baseLeads = [];
+      const seenLeads = new Set();
+      for (let i = 0; i < selectedEmployeeObjs.length; i++) {
+        const emp = selectedEmployeeObjs[i];
+        const assigned = leadAnalyticsEngine.empAssignedLeadsMap.get((emp.email || '').toLowerCase()) || [];
+        for (let j = 0; j < assigned.length; j++) {
+          const l = assigned[j];
+          if (!seenLeads.has(l.id)) {
+            seenLeads.add(l.id);
+            baseLeads.push(l);
+          }
+        }
+      }
+    } else {
+      baseLeads = leads;
     }
 
     // 2. All Time view -> return all base leads
     if (isAllTime) return baseLeads;
 
     // 3. Period-scoped view -> filter by active leads in [startDate, endDate]
-    return baseLeads.filter(l => isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds));
-  }, [leads, selectedEmployeeEmails, selectedEmployeeObjs, isAllTime, startDate, endDate, periodTouchedLeadIds]);
+    const filtered = [];
+    for (let i = 0; i < baseLeads.length; i++) {
+      const l = baseLeads[i];
+      if (isLeadInPeriod(l, startDate, endDate, leadAnalyticsEngine.periodTouchedLeadIds)) {
+        filtered.push(l);
+      }
+    }
+    return filtered;
+  }, [leads, selectedEmployeeEmails, selectedEmployeeObjs, isAllTime, startDate, endDate, leadAnalyticsEngine]);
 
   const kpis = useMemo(() => {
     const total = filteredLeadsSync.length;
-    const todayIST = toISTDate(new Date());
+    const todayIST = fastToISTDate(new Date());
     let overdueFollowups = 0;
     let todayFollowups = 0;
+    let newLeads = 0;
+    let followUps = 0;
+    let inPipeline = 0;
+    let won = 0;
 
-    filteredLeadsSync.forEach(l => {
+    for (let i = 0; i < filteredLeadsSync.length; i++) {
+      const l = filteredLeadsSync[i];
       const fDateStr = l.follow_up_date || l.next_follow_up_date;
       if (fDateStr) {
-        const dateOnly = toISTDate(fDateStr);
+        const dateOnly = fastToISTDate(fDateStr);
         if (dateOnly) {
           if (dateOnly < todayIST) overdueFollowups++;
           else if (dateOnly === todayIST) todayFollowups++;
         }
       }
-    });
 
-    const newLeads = filteredLeadsSync.filter(l => {
-      const stage = getStageFromStatus(l.status);
-      return stage === '01 - New Stage';
-    }).length;
-
-    const followUps = filteredLeadsSync.filter(l => {
-      const stage = getStageFromStatus(l.status);
-      return stage === '04 - Follow Up Stage' ||
-        (l.status && (l.status.toLowerCase().includes('reschedule') || l.status.toLowerCase().includes('follow')));
-    }).length;
-
-    const inPipeline = filteredLeadsSync.filter(l => {
-      const stage = getStageFromStatus(l.status);
-      return ['02 - Contact Stage', '03 - Qualification Stage', '05 - Sales Process Stage', '06 - Conversion Stage'].includes(stage);
-    }).length;
-
-    const won = filteredLeadsSync.filter(l => {
-      const stage = getStageFromStatus(l.status);
-      return stage === '07 - Final Stage' && (l.status?.includes('Won') || l.status?.includes('Converted') || l.status?.includes('Closed') || l.status?.includes('Order Received'));
-    }).length;
+      const st = l.status || '';
+      const stage = getStageFromStatus(st);
+      if (stage === '01 - New Stage') {
+        newLeads++;
+      } else if (stage === '04 - Follow Up Stage' || (st && (st.toLowerCase().includes('reschedule') || st.toLowerCase().includes('follow')))) {
+        followUps++;
+      } else if (['02 - Contact Stage', '03 - Qualification Stage', '05 - Sales Process Stage', '06 - Conversion Stage'].includes(stage)) {
+        inPipeline++;
+      } else if (stage === '07 - Final Stage' && (st.includes('Won') || st.includes('Converted') || st.includes('Closed') || st.includes('Order Received'))) {
+        won++;
+      }
+    }
 
     const actionNeeded = newLeads + followUps;
     return { total, newLeads, followUps, inPipeline, won, actionNeeded, overdueFollowups, todayFollowups };
-  }, [filteredLeadsSync, istDateFormatter]);
+  }, [filteredLeadsSync]);
 
   const stageData = useMemo(() => {
-    const stageCounts = filteredLeadsSync.reduce((acc, lead) => {
-      const stage = getStageFromStatus(lead.status);
-      acc[stage] = (acc[stage] || 0) + 1;
-      return acc;
-    }, {});
+    const stageCounts = {};
+    for (let i = 0; i < filteredLeadsSync.length; i++) {
+      const stage = getStageFromStatus(filteredLeadsSync[i].status);
+      stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+    }
     return Object.keys(stageCounts).sort().map(stage => ({
       name: stage.split('- ')[1] || stage,
       count: stageCounts[stage]
@@ -526,7 +634,8 @@ export default function AnalyticsDashboard({
       8: { fullStage: '08 - Transfer to Party', shortName: 'Transfer to Party', color: '#0d9488', count: 0, subMap: {} }
     };
 
-    filteredLeadsSync.forEach(l => {
+    for (let i = 0; i < filteredLeadsSync.length; i++) {
+      const l = filteredLeadsSync[i];
       const num = getStageNumber(l.status);
       const target = stageMap[num] || stageMap[1];
       target.count++;
@@ -545,7 +654,7 @@ export default function AnalyticsDashboard({
         }
       }
       target.subMap[subName] = (target.subMap[subName] || 0) + 1;
-    });
+    }
 
     return Object.values(stageMap).map(item => {
       const substages = Object.keys(item.subMap).map(subLabel => ({
@@ -563,10 +672,11 @@ export default function AnalyticsDashboard({
   // Lead Acquisition Source Breakdown
   const sourceBreakdown = useMemo(() => {
     const map = {};
-    filteredLeadsSync.forEach(l => {
+    for (let i = 0; i < filteredLeadsSync.length; i++) {
+      const l = filteredLeadsSync[i];
       const src = (l.source || l.source_name || 'Direct / Unspecified').trim();
       map[src] = (map[src] || 0) + 1;
-    });
+    }
     return Object.keys(map)
       .map(name => ({ name, count: map[name] }))
       .sort((a, b) => b.count - a.count)
@@ -610,10 +720,10 @@ export default function AnalyticsDashboard({
           dateFilter: periodLabel
         }, periodLabel);
         if (!isCancelled && res?.success && res?.data) {
-          setMetrics({
-            employeeActivity: employeeActivityList,
+          setMetrics(prev => ({
+            ...prev,
             whatsappStats: res.data.whatsappStats || { period: 0, total: 0 }
-          });
+          }));
         }
       } catch (err) {
         console.warn('Error loading dashboard metrics:', err);
@@ -623,7 +733,7 @@ export default function AnalyticsDashboard({
     }
     loadMetrics();
     return () => { isCancelled = true; };
-  }, [filteredLeadsSync, isAllTime, datePreset, employeeActivityList]);
+  }, [filteredLeadsSync.length, isAllTime, datePreset, startDate, endDate, selectedEmployee]);
 
   const fetchAssignedWork = async () => {
     setLoadingAssignedWork(true);
@@ -767,7 +877,8 @@ export default function AnalyticsDashboard({
 
   // Comprehensive Team Scorecard & Leaderboard calculations (Multi-Process Performance Engine)
   const teamScorecardData = useMemo(() => {
-    const todayIST = toISTDate(new Date());
+    const todayIST = fastToISTDate(new Date());
+    const { empAssignedLeadsMap, periodTouchedLeadIds, crmActiveEmployeesMap, leadMapById } = leadAnalyticsEngine;
 
     return formattedEmployees.map(emp => {
       const empEmail = (emp.email || '').toLowerCase();
@@ -778,11 +889,8 @@ export default function AnalyticsDashboard({
                   crmActiveEmployeesMap.get(empEmail) || 
                   { actions: 0, uniqueLeads: 0, leadIdSet: new Set() };
 
-      // Leads assigned to this rep (All-time full assigned portfolio)
-      const empAllLeads = leads.filter(l => {
-        if (!l.assigned_to) return false;
-        return isEmployeeMatch(l.assigned_to, emp);
-      });
+      // Leads assigned to this rep (All-time full assigned portfolio) - O(1) Instant Lookup
+      const empAllLeads = empAssignedLeadsMap.get(empEmail) || [];
 
       // Total Assigned MUST ALWAYS reflect the representative's full portfolio
       const leadsAssigned = empAllLeads.length;
@@ -794,19 +902,24 @@ export default function AnalyticsDashboard({
       } else {
         const periodLeadIdSet = new Set();
         const activeLeads = [];
-        empAllLeads.forEach(l => {
+        for (let i = 0; i < empAllLeads.length; i++) {
+          const l = empAllLeads[i];
           if (isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds)) {
             periodLeadIdSet.add(l.id);
             activeLeads.push(l);
           }
-        });
+        }
 
         // Also add any leads that this rep personally touched/noted in the period (even if not strictly assigned to them)
+        // O(1) ID lookup via leadMapById instead of scanning 44,552 leads
         if (act.leadIdSet && act.leadIdSet.size > 0) {
-          leads.forEach(l => {
-            if (act.leadIdSet.has(l.id) && !periodLeadIdSet.has(l.id)) {
-              periodLeadIdSet.add(l.id);
-              activeLeads.push(l);
+          act.leadIdSet.forEach(id => {
+            if (!periodLeadIdSet.has(id)) {
+              const l = leadMapById.get(id);
+              if (l) {
+                periodLeadIdSet.add(id);
+                activeLeads.push(l);
+              }
             }
           });
         }
@@ -816,42 +929,45 @@ export default function AnalyticsDashboard({
 
       // Stage breakdown (S1 to S7): Dynamically reacts to selected date filter
       const stageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
-      periodEmpLeads.forEach(l => {
-        const num = getStageNumber(l.status);
+      for (let i = 0; i < periodEmpLeads.length; i++) {
+        const num = getStageNumber(periodEmpLeads[i].status);
         if (stageBreakdown[num] !== undefined) stageBreakdown[num]++;
         else stageBreakdown[1]++;
-      });
+      }
 
       // Overdue follow-ups for this rep (evaluated strictly in IST)
       let overdueFollowups = 0;
       let todayFollowups = 0;
-      empAllLeads.forEach(l => {
+      for (let i = 0; i < empAllLeads.length; i++) {
+        const l = empAllLeads[i];
         const fDate = l.follow_up_date || l.next_follow_up_date;
         if (fDate) {
-          const dStr = toISTDate(fDate);
+          const dStr = fastToISTDate(fDate);
           if (dStr) {
             if (dStr < todayIST) overdueFollowups++;
             else if (dStr === todayIST) todayFollowups++;
           }
         }
-      });
+      }
 
       // Calculate touched leads for this representative:
       let assignedTouchedCount = 0;
       if (isAllTime) {
-        empAllLeads.forEach(l => {
+        for (let i = 0; i < empAllLeads.length; i++) {
+          const l = empAllLeads[i];
           const stNum = getStageNumber(l.status);
           if (stNum > 1 || l.follow_up_date || l.next_follow_up_date || (Array.isArray(l.lead_notes) && l.lead_notes.length > 0) || (act.leadIdSet && act.leadIdSet.has(l.id))) {
             assignedTouchedCount++;
           }
-        });
+        }
       } else {
-        empAllLeads.forEach(l => {
+        for (let i = 0; i < empAllLeads.length; i++) {
+          const l = empAllLeads[i];
           // Strictly within selected period: touched if rep made activity/note on it in period, or lead was updated in period
-          if ((act.leadIdSet && act.leadIdSet.has(l.id)) || (periodTouchedLeadIds.has(l.id) && isEmployeeMatch(l.assigned_to, emp))) {
+          if ((act.leadIdSet && act.leadIdSet.has(l.id)) || periodTouchedLeadIds.has(l.id)) {
             assignedTouchedCount++;
           }
-        });
+        }
       }
 
       const effectiveTouched = Math.max(assignedTouchedCount, act.uniqueLeads || 0);
@@ -1114,7 +1230,7 @@ export default function AnalyticsDashboard({
       if (bVol !== aVol) return bVol - aVol;
       return b.leadsAssigned - a.leadsAssigned;
     });
-  }, [formattedEmployees, leads, isAllTime, startDate, endDate, periodTouchedLeadIds, crmActiveEmployeesMap, dashboardSummaries.checklistSummary, dashboardSummaries.recruitmentSummary, assignedWork.delegation, attendanceRecordMap]);
+  }, [formattedEmployees, isAllTime, startDate, endDate, leadAnalyticsEngine, dashboardSummaries.checklistSummary, dashboardSummaries.recruitmentSummary, assignedWork.delegation, attendanceRecordMap]);
 
   // Filtered leaderboard with Role/Department filter and selected employee(s) filter
   const filteredScorecard = useMemo(() => {
