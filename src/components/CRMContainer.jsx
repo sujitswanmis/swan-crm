@@ -1224,6 +1224,7 @@ export default function CRMContainer({
           localCachedLeads = await getLocalLeads();
           if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
             setRawLeads(localCachedLeads);
+            rawLeadsRef.current = localCachedLeads;
             setSyncLoadedCount(localCachedLeads.length);
             setLoadingLeads(false);
             saveFastLeadsSnapshot(localCachedLeads);
@@ -1371,106 +1372,117 @@ export default function CRMContainer({
             ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
             : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-          // 1. Fetch Page 0 (top 1000 most recent leads) to sync status/assignment updates on active leads
-          const page0Data = await fetchLeadsPageWithRetry(0);
+          // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
+          const fetchPage0Promise = fetchLeadsPageWithRetry(0);
 
-          // 2. Fetch new notes created since last sync
-          let newNotes = [];
-          try {
-            let notePage = 0;
-            const noteChunkSize = 1000;
-            while (notePage < 10) { // Safety ceiling: up to 10,000 delta notes
-              const { data: chunk, error: dNoteErr } = await supabase
-                .from('lead_notes')
-                .select('id, lead_id, created_at, note_text, created_by')
-                .gt('created_at', deltaSince)
-                .order('created_at', { ascending: false })
-                .range(notePage * noteChunkSize, (notePage + 1) * noteChunkSize - 1);
+          const fetchDeltaNotesPromise = (async () => {
+            let notes = [];
+            try {
+              let notePage = 0;
+              const noteChunkSize = 1000;
+              while (notePage < 10) { // Safety ceiling: up to 10,000 delta notes
+                const { data: chunk, error: dNoteErr } = await supabase
+                  .from('lead_notes')
+                  .select('id, lead_id, created_at, note_text, created_by')
+                  .gt('created_at', deltaSince)
+                  .order('created_at', { ascending: false })
+                  .range(notePage * noteChunkSize, (notePage + 1) * noteChunkSize - 1);
 
-              if (dNoteErr) {
-                console.warn("Delta notes fetch error:", dNoteErr);
-                break;
-              }
-              if (Array.isArray(chunk) && chunk.length > 0) {
-                newNotes = newNotes.concat(chunk);
-                if (chunk.length < noteChunkSize) break;
-                notePage++;
-              } else {
-                break;
-              }
-            }
-          } catch (e) {
-            console.warn("Delta notes fetch loop error:", e);
-          }
-
-          // 3. Fetch newly added or updated leads since deltaSince (checking both updated_at and created_at)
-          let newLeads = [];
-          try {
-            let leadPage = 0;
-            const leadChunkSize = 1000;
-            while (leadPage < 10) {
-              let deltaQuery = supabase
-                .from('leads')
-                .select('*')
-                .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
-                .order('created_at', { ascending: false });
-
-              if (_agentCompanyFilter) {
-                if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                  deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
+                if (dNoteErr) {
+                  console.warn("Delta notes fetch error:", dNoteErr);
+                  break;
+                }
+                if (Array.isArray(chunk) && chunk.length > 0) {
+                  notes = notes.concat(chunk);
+                  if (chunk.length < noteChunkSize) break;
+                  notePage++;
                 } else {
-                  deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
+                  break;
                 }
               }
+            } catch (e) {
+              console.warn("Delta notes fetch loop error:", e);
+            }
+            return notes;
+          })();
 
-              const { data: chunk, error: dLeadErr } = await deltaQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
-              if (dLeadErr) {
-                console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
-                let fallbackQuery = supabase
+          const fetchDeltaLeadsPromise = (async () => {
+            let leads = [];
+            try {
+              let leadPage = 0;
+              const leadChunkSize = 1000;
+              while (leadPage < 10) {
+                let deltaQuery = supabase
                   .from('leads')
                   .select('*')
-                  .gt('created_at', deltaSince)
+                  .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
                   .order('created_at', { ascending: false });
+
                 if (_agentCompanyFilter) {
                   if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                    fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
+                    deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
                   } else {
-                    fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
+                    deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
                   }
                 }
-                const { data: fbChunk } = await fallbackQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
-                if (Array.isArray(fbChunk) && fbChunk.length > 0) {
-                  newLeads = newLeads.concat(fbChunk);
-                }
-                break;
-              }
-              if (Array.isArray(chunk) && chunk.length > 0) {
-                newLeads = newLeads.concat(chunk);
-                if (chunk.length < leadChunkSize) break;
-                leadPage++;
-              } else {
-                break;
-              }
-            }
-          } catch (e) {
-            console.warn("Delta leads fetch error:", e);
-          }
 
-          // 4. CRITICAL: Fetch all leads assigned to the logged-in agent/user (catches older assigned leads)
-          let myAssignedLeads = [];
-          if (userId) {
+                const { data: chunk, error: dLeadErr } = await deltaQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
+                if (dLeadErr) {
+                  console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
+                  let fallbackQuery = supabase
+                    .from('leads')
+                    .select('*')
+                    .gt('created_at', deltaSince)
+                    .order('created_at', { ascending: false });
+                  if (_agentCompanyFilter) {
+                    if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+                      fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
+                    } else {
+                      fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
+                    }
+                  }
+                  const { data: fbChunk } = await fallbackQuery.range(leadPage * leadChunkSize, (leadPage + 1) * leadChunkSize - 1);
+                  if (Array.isArray(fbChunk) && fbChunk.length > 0) {
+                    leads = leads.concat(fbChunk);
+                  }
+                  break;
+                }
+                if (Array.isArray(chunk) && chunk.length > 0) {
+                  leads = leads.concat(chunk);
+                  if (chunk.length < leadChunkSize) break;
+                  leadPage++;
+                } else {
+                  break;
+                }
+              }
+            } catch (e) {
+              console.warn("Delta leads fetch error:", e);
+            }
+            return leads;
+          })();
+
+          const fetchAssignedLeadsPromise = (async () => {
+            if (!userId) return [];
             try {
               const { data: assignedData, error: assignedErr } = await supabase
                 .from('leads')
                 .select('*')
                 .eq('assigned_to', userId);
               if (!assignedErr && Array.isArray(assignedData)) {
-                myAssignedLeads = assignedData;
+                return assignedData;
               }
             } catch (e) {
               console.warn("Assigned leads delta fetch error:", e);
             }
-          }
+            return [];
+          })();
+
+          const [page0Data, newNotes, newLeads, myAssignedLeads] = await Promise.all([
+            fetchPage0Promise,
+            fetchDeltaNotesPromise,
+            fetchDeltaLeadsPromise,
+            fetchAssignedLeadsPromise
+          ]);
 
           // 5. Fetch updated leads from touched notes (in parallel batches)
           let touchedLeads = [];
@@ -1561,6 +1573,7 @@ export default function CRMContainer({
 
           const finalMerged = Array.from(leadsMap.values()).sort(sortLeadsByDateDesc);
           setRawLeads(finalMerged);
+          rawLeadsRef.current = finalMerged;
           setSyncLoadedCount(finalMerged.length);
 
           try {
@@ -1802,6 +1815,7 @@ export default function CRMContainer({
       if (typeof window !== 'undefined') {
         try {
           sessionStorage.removeItem('supuja_fast_leads_snapshot');
+          localStorage.removeItem('supuja_fast_leads_snapshot');
           localStorage.removeItem('crm_last_lead_sync_timestamp');
         } catch (e) {}
       }
