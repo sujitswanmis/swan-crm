@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
-import { transferDialToConference } from '@/app/api/plivo/transfer-to-conference';
+
 
 export async function GET() {
   return new NextResponse('Plivo Dial Callback Active', { status: 200 });
@@ -36,16 +35,7 @@ export async function POST(req) {
         return new NextResponse('OK');
       }
 
-      // Move both answered legs into the existing conference so recording,
-      // guest participants and per-member controls continue to work. Transfer
-      // only once; if it fails the two-way Dial stays connected as a fallback.
-      if (action === 'connected' && aLegUuid && bLegUuid && !session.conference_name) {
-        try {
-          await transferDialToConference({ ...session, ...update }, adminClient, getPlivoWebhookBaseUrl(req));
-        } catch (transferError) {
-          console.error('Dial-to-conference transfer failed:', transferError);
-        }
-      }
+
     } else if (action === 'hangup' && bLegUuid && !session.customer_call_uuid) {
       // Dial action provides the final cause. Save the B-leg UUID now so the
       // status endpoint can recover its CDR if that action webhook is lost.

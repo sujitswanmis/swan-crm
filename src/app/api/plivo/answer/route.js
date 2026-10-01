@@ -59,13 +59,13 @@ export async function POST(req) {
     // Customer:     endConferenceOnExit=false, startConferenceOnEnter=true   (starts audio, stays if agent leaves)
     // Guest (3rd+): endConferenceOnExit=false, startConferenceOnEnter=true   (adding doesn't end call on exit)
     const isAgentRole = (role === 'agent' || role === 'agent_conf');
-    const endOnExit = isAgentRole ? 'true' : 'false';
-    const startOnEnter = isAgentRole ? 'false' : 'true';
+    const endOnExit = (role === 'agent') ? 'true' : 'false';
+    const startOnEnter = (role === 'agent') ? 'false' : 'true';
 
     const noAutoDial = role === 'agent' ? '' : '&amp;autodial=0';
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${noAutoDial}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${encodeURIComponent(cleanRoom)}`;
-    const waitSound = isAgentRole ? ` waitSound="${appBaseUrl}/ringback.mp3"` : '';
+    const waitSound = (role === 'agent') ? ` waitSound="${appBaseUrl}/api/plivo/wait-silence"` : '';
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}"${waitSound} record="true" recordCallbackUrl="${recordCallbackUrl}">

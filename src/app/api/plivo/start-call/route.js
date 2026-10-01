@@ -76,7 +76,7 @@ export async function POST(req) {
         status: 'initiated',
         start_time: new Date().toISOString(),
         agent_dial_to: dialTo,
-        conference_name: process.env.PLIVO_OUTBOUND_FLOW === 'dial' ? null : roomName
+        conference_name: (process.env.PLIVO_OUTBOUND_FLOW === 'conference' || body?.flow === 'conference') ? roomName : null
       })
       .select()
       .single();
@@ -87,12 +87,12 @@ export async function POST(req) {
     }
 
     let appBaseUrl = getPlivoWebhookBaseUrl(req);
-    // Pure Conference architecture is the stable default (proven across 4-5 months in production,
-    // supporting multi-party 3-8 person conferencing without India Telecom Media Anchoring 2070 drops).
-    // Direct Dial remains optionally selectable via PLIVO_OUTBOUND_FLOW=dial.
-    const answerPath = process.env.PLIVO_OUTBOUND_FLOW === 'dial'
-      ? `/api/plivo/outbound-dial?room=${roomName}`
-      : `/api/plivo/answer?room=${roomName}&role=agent`;
+    // Direct Dial with real carrier audio is the default (v1.0.668).
+    // The conference path remains available when multi-party conference is explicitly selected.
+    const isConference = (process.env.PLIVO_OUTBOUND_FLOW === 'conference' || body?.flow === 'conference');
+    const answerPath = isConference
+      ? `/api/plivo/answer?room=${roomName}&role=agent`
+      : `/api/plivo/outbound-dial?room=${roomName}`;
     
     let response;
     try {

@@ -1,24 +1,33 @@
 import plivo from 'plivo';
 
-export async function transferDialToConference(session, adminClient, baseUrl) {
-  if (session.conference_name) return;
+export async function transferDialToConference(session, adminClient, baseUrl, force = false) {
+  if (session.conference_name && !force) return;
   if (session.status !== 'connected' || !session.agent_call_uuid || !session.customer_call_uuid) {
     throw new Error('Both call legs must be connected before adding participants');
   }
   const roomName = session.room_name;
-  const { data: claimed, error } = await adminClient.from('call_sessions')
-    .update({ conference_name: roomName })
-    .eq('id', session.id).is('conference_name', null).eq('status', 'connected').select('id');
-  if (error) throw error;
-  if (!claimed?.length) return;
+  if (!session.conference_name) {
+    const { data: claimed, error } = await adminClient.from('call_sessions')
+      .update({ conference_name: roomName })
+      .eq('id', session.id).is('conference_name', null).eq('status', 'connected').select('id');
+    if (error) throw error;
+    if (!claimed?.length && !force) return;
+  }
 
   try {
     const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+    const agentConfUrl = `${baseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=agent_conf`;
+    const custConfUrl = `${baseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=customer_conf`;
+
     await client.calls.transfer(session.agent_call_uuid, {
       legs: 'both',
-      alegUrl: `${baseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=agent_conf`,
+      aleg_url: agentConfUrl,
+      alegUrl: agentConfUrl,
+      aleg_method: 'POST',
       alegMethod: 'POST',
-      blegUrl: `${baseUrl}/api/plivo/answer?room=${encodeURIComponent(roomName)}&role=customer_conf`,
+      bleg_url: custConfUrl,
+      blegUrl: custConfUrl,
+      bleg_method: 'POST',
       blegMethod: 'POST'
     });
   } catch (error) {

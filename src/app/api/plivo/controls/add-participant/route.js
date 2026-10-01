@@ -35,9 +35,19 @@ export async function POST(req) {
 
     if (!session.conference_name) {
       await transferDialToConference(session, adminClient, appBaseUrl);
+    } else {
+      try {
+        const confCheck = await client.conferences.get(roomName);
+        if (!confCheck || (confCheck.members || []).length < 2) {
+          await transferDialToConference(session, adminClient, appBaseUrl, true);
+        }
+      } catch (_e) {
+        await transferDialToConference(session, adminClient, appBaseUrl, true);
+      }
     }
+
     let conferenceReady = false;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
       try {
         const conference = await client.conferences.get(roomName);
         if ((conference?.members || []).length >= 2) {
@@ -45,7 +55,7 @@ export async function POST(req) {
           break;
         }
       } catch (_error) {}
-      if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 350));
+      if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 400));
     }
     if (!conferenceReady) {
       return NextResponse.json({ error: 'Conference is still connecting. Please retry in a moment.' }, { status: 409 });

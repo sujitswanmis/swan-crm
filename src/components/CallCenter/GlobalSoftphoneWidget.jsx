@@ -692,29 +692,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
       pendingOutcomeRoomsRef.current.delete(room);
     }
 
-    if (sessionData.customer_answer_time) {
-      if (cause === 'customer_hangup') {
-        triggerAnnouncement({
-          type: 'ended',
-          title: 'Customer ने Call Disconnect कर दिया',
-          subtitle: 'Customer ne call end kar diya.',
-          speech: 'Customer ne call disconnect kar diya.',
-          speechEnglish: 'Customer disconnected the call.',
-          customerNumber: cleanNum
-        });
-        return;
-      }
-      triggerAnnouncement({
-        type: 'ended',
-        title: 'Call End हुई',
-        subtitle: 'Connected call end ho gayi.',
-        speech: 'Call end ho gayi.',
-        speechEnglish: 'The call has ended.',
-        customerNumber: cleanNum
-      });
-      return;
-    }
-
     if (cause === 'agent_hangup') {
       return;
     }
@@ -731,6 +708,17 @@ export default function GlobalSoftphoneWidget({ userId }) {
       return;
     }
 
+    if (cause === 'customer_hangup') {
+      triggerAnnouncement({
+        type: 'ended',
+        title: 'Customer ने Call Disconnect कर दिया',
+        subtitle: 'Customer ne call end kar diya.',
+        speech: 'Customer ne call disconnect kar diya.',
+        speechEnglish: 'Customer disconnected the call.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
 
     if (cause === 'invalid_number') {
       triggerAnnouncement({
@@ -744,6 +732,17 @@ export default function GlobalSoftphoneWidget({ userId }) {
       return;
     }
 
+    if (sessionData.customer_answer_time) {
+      triggerAnnouncement({
+        type: 'ended',
+        title: 'Call End हुई',
+        subtitle: 'Connected call end ho gayi.',
+        speech: 'Call end ho gayi.',
+        speechEnglish: 'The call has ended.',
+        customerNumber: cleanNum
+      });
+      return;
+    }
 
     if (cause === 'unreachable' || cause === 'switched_off') {
       triggerAnnouncement({
