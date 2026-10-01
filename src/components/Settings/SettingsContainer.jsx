@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity } from 'lucide-react';
 
 // Subcomponents (to be implemented)
 import BusinessProfile from './BusinessProfile';
@@ -15,6 +15,7 @@ import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
 import PageNavigationConfig from './PageNavigationConfig';
 import ManageDepartments from './ManageDepartments';
+import SystemStatusHealth from './SystemStatusHealth';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
@@ -30,7 +31,8 @@ const SETTINGS_TABS = [
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
   { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> },
-  { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> }
+  { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
+  { id: 'status', label: 'System Health & Status', icon: <Activity size={18} /> }
 ];
 
 export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
@@ -134,6 +136,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
         {activeTab === 'media' && <FileMedia />}
         {activeTab === 'navigation' && <PageNavigationConfig />}
         {activeTab === 'departments' && <ManageDepartments />}
+        {activeTab === 'status' && <SystemStatusHealth />}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -90,7 +90,8 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'targets', label: 'Targets & Performance', icon: Target },
   { id: 'media', label: 'File & Media Settings', icon: FileType },
   { id: 'navigation', label: 'Page Navigation', icon: Compass },
-  { id: 'departments', label: 'Manage Departments', icon: Layers }
+  { id: 'departments', label: 'Manage Departments', icon: Layers },
+  { id: 'status', label: 'System Health & Status', icon: Activity }
 ];
 
 // Helper to map DB status to Team Management Stage format

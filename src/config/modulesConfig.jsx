@@ -290,7 +290,8 @@ export const MODULES_CONFIG = [
       { id: 'targets', label: 'Targets & Performance' },
       { id: 'media', label: 'File & Media Settings' },
       { id: 'navigation', label: 'Page Navigation' },
-      { id: 'departments', label: 'Manage Departments' }
+      { id: 'departments', label: 'Manage Departments' },
+      { id: 'status', label: 'System Health & Status' }
     ]
   }
 ];
