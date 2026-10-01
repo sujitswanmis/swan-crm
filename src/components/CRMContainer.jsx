@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -57,6 +57,7 @@ const EmailConfigModule = dynamic(() => import('./EmailConfig/EmailConfigModule'
 const ChecklistModule = dynamic(() => import('./Checklist/ChecklistModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
 const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
 const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
+const SuperAdminSaasPanel = dynamic(() => import('./SaaS/SuperAdminSaasPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
@@ -221,6 +222,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (tabId === 'email_config') return moduleAccess['email_config']?.view === true;
   if (tabId === 'admin_message_config') return moduleAccess['admin_message_config']?.view === true;
   if (tabId === 'settings') return moduleAccess['settings']?.view === true;
+  if (tabId === 'saas_studio') return isAdmin;
 
   return moduleAccess[tabId]?.view === true;
 }
@@ -362,6 +364,7 @@ export default function CRMContainer({
   }, [userId, supabase]);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isMasterAdmin = (userEmail || '').toLowerCase() === 'supujacreations@gmail.com';
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -412,6 +415,9 @@ export default function CRMContainer({
     }
     if (path === 'party' || (path && path.startsWith('party/'))) {
       return 'party';
+    }
+    if (['saas-studio', 'saas_studio', 'saasstudio'].includes(path)) {
+      return 'saas_studio';
     }
 
     if (!path) {
@@ -2528,6 +2534,15 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'saas_studio') {
+      setActiveTab('saas_studio');
+      window.history.pushState(null, '', '/saas-studio');
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
@@ -3415,6 +3430,46 @@ export default function CRMContainer({
           </button>
         </div>
         <nav className="nav-list">
+          {/* Master Admin / Admin Top-Level SaaS Studio */}
+          {(isMasterAdmin || isAdmin) && (
+            <button 
+              onClick={() => handleTabChange('saas_studio')}
+              className="nav-item" 
+              data-active={activeTab === 'saas_studio'}
+              title={isSidebarCollapsed ? "SaaS Studio" : undefined}
+              style={{ 
+                background: activeTab === 'saas_studio' 
+                  ? 'linear-gradient(135deg, rgba(79, 70, 229, 0.16) 0%, rgba(124, 58, 237, 0.16) 100%)' 
+                  : 'none', 
+                borderLeft: activeTab === 'saas_studio' ? '3px solid #7c3aed' : 'none',
+                width: '100%', 
+                textAlign: 'left', 
+                cursor: 'pointer', 
+                fontFamily: 'inherit', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.75rem' 
+              }}
+            >
+              <Crown size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <span style={{ fontWeight: activeTab === 'saas_studio' ? 600 : 500 }}>SaaS Studio</span>
+                <span style={{ 
+                  fontSize: '0.62rem', 
+                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 
+                  color: '#92400e', 
+                  padding: '1px 6px', 
+                  borderRadius: '999px', 
+                  fontWeight: 800, 
+                  letterSpacing: '0.04em',
+                  border: '1px solid #fcd34d' 
+                }}>
+                  MASTER
+                </span>
+              </div>
+            </button>
+          )}
+
           {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
             <button 
               onClick={() => handleTabChange('dashboard')}
@@ -4613,6 +4668,7 @@ export default function CRMContainer({
                   {activeTab === 'email_config' && 'Email Config'}
                   {activeTab === 'admin_message_config' && 'Admin Messaging Config'}
                   {activeTab === 'settings' && 'Enterprise Settings'}
+                  {activeTab === 'saas_studio' && '👑 SaaS Studio (Multi-Tenant & Billing)'}
                 </h1>
               </div>
             )}
@@ -6445,6 +6501,16 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* SaaS Studio (Multi-Tenant & Master Billing) */}
+              <KeepAliveTab 
+                isActive={activeTab === 'saas_studio'} 
+                isVisited={(isMasterAdmin || isAdmin) && (visitedTabs.has('saas_studio') || activeTab === 'saas_studio')}
+              >
+                <ErrorBoundary>
+                  <SuperAdminSaasPanel />
                 </ErrorBoundary>
               </KeepAliveTab>
             </React.Suspense>
