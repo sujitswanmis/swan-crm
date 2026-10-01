@@ -15,7 +15,12 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
-  Award
+  Award,
+  X,
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -25,8 +30,10 @@ import {
   getAllTenantsWithSubscriptions,
   extendTenantSubscription,
   updateTenantSeats,
-  updateTenantCustomRate
+  updateTenantCustomRate,
+  createTenantWorkspace
 } from '@/app/actions/saasSubscription';
+import PlanPricingCalculator from './PlanPricingCalculator';
 
 export default function SuperAdminSaasPanel() {
   const [activeTab, setActiveTab] = useState('pricing'); // 'pricing' | 'tenants'
@@ -45,6 +52,19 @@ export default function SuperAdminSaasPanel() {
   const [extendingId, setExtendingId] = useState(null);
   const [seatModalTenant, setSeatModalTenant] = useState(null);
   const [newSeatValue, setNewSeatValue] = useState(5);
+
+  // Create Client Tenant Modal State (Master Admin Exclusive)
+  const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
+  const [createStep, setCreateStep] = useState(1);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminMobile, setNewAdminMobile] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState(null);
+  const [createSuccess, setCreateSuccess] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -203,6 +223,47 @@ export default function SuperAdminSaasPanel() {
       }
     } catch (err) {
       showNotification(err.message, true);
+    }
+  };
+
+  const handleCreateClientWorkspace = async (planData) => {
+    setCreateLoading(true);
+    setCreateError(null);
+    setCreateSuccess(null);
+
+    try {
+      const res = await createTenantWorkspace({
+        companyName: newCompanyName,
+        adminEmail: newAdminEmail,
+        adminPassword: newAdminPassword,
+        adminName: newAdminName,
+        adminMobile: newAdminMobile,
+        processCodes: planData?.processCodes || ['LEADS_WITH_CALLING'],
+        userSeats: planData?.seats || 5,
+        cycleCode: planData?.cycleCode || 'YEARLY'
+      });
+
+      if (res.success) {
+        setCreateSuccess(res.message);
+        showNotification(res.message);
+        await loadData();
+        setTimeout(() => {
+          setShowCreateTenantModal(false);
+          setCreateStep(1);
+          setNewCompanyName('');
+          setNewAdminName('');
+          setNewAdminEmail('');
+          setNewAdminMobile('');
+          setNewAdminPassword('');
+          setCreateSuccess(null);
+        }, 1500);
+      } else {
+        setCreateError(res.error || 'वर्कस्पेस बनाने में समस्या आई।');
+      }
+    } catch (err) {
+      setCreateError(err.message || 'त्रुटि हुई।');
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -473,13 +534,39 @@ export default function SuperAdminSaasPanel() {
       {/* TAB 2: TENANTS & WORKSPACES */}
       {activeTab === 'tenants' && (
         <div className="card" style={{ padding: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>कंपनी टेनेंट्स और एक्टिव प्लान्स</h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
                 किसी भी क्लाइंट की वैलिडिटी (महीने) आगे बढ़ाएं या सीट्स कोटा अपडेट करें।
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateTenantModal(true);
+                setCreateStep(1);
+                setCreateError(null);
+                setCreateSuccess(null);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                backgroundColor: '#4338ca',
+                color: '#ffffff',
+                padding: '0.6rem 1.15rem',
+                borderRadius: '8px',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
+              }}
+            >
+              <PlusCircle size={16} /> + नया क्लाइंट वर्कस्पेस बनाएं (Create Client Workspace)
+            </button>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
@@ -697,6 +784,244 @@ export default function SuperAdminSaasPanel() {
                 सेव करें
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE NEW CLIENT TENANT WORKSPACE (MASTER ADMIN EXCLUSIVE) */}
+      {showCreateTenantModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !createLoading) setShowCreateTenantModal(false);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              padding: '2rem',
+              width: '100%',
+              maxWidth: createStep === 2 ? '900px' : '520px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: '16px',
+              transition: 'max-width 0.25s ease',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Building size={22} style={{ color: '#4338ca' }} />
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                    नया क्लाइंट वर्कस्पेस ऑनबोर्डिंग
+                  </h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.25rem 0 0 0' }}>
+                  {createStep === 1
+                    ? 'Step 1 of 2: क्लाइंट कंपनी एवं एडमिन की जानकारी भरें'
+                    : 'Step 2 of 2: इस क्लाइंट के लिए स्वीकृत मॉड्यूल्स एवं सीट्स चुनें'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!createLoading) setShowCreateTenantModal(false);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Error / Success Notifications */}
+            {createError && (
+              <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertTriangle size={16} />
+                <span>{createError}</span>
+              </div>
+            )}
+            {createSuccess && (
+              <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={16} />
+                <span>{createSuccess}</span>
+              </div>
+            )}
+
+            {createStep === 1 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    क्लाइंट कंपनी / संस्था का नाम *
+                  </label>
+                  <input
+                    type="text"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="उदा. ABC Motors Pvt Ltd"
+                    style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                      क्लाइंट मुख्य एडमिन का नाम *
+                    </label>
+                    <input
+                      type="text"
+                      value={newAdminName}
+                      onChange={(e) => setNewAdminName(e.target.value)}
+                      placeholder="उदा. राहुल शर्मा"
+                      style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                      एडमिन मोबाइल नंबर
+                    </label>
+                    <input
+                      type="tel"
+                      value={newAdminMobile}
+                      onChange={(e) => setNewAdminMobile(e.target.value)}
+                      placeholder="9876543210"
+                      style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    क्लाइंट आधिकारिक ईमेल (Login Work Email) *
+                  </label>
+                  <input
+                    type="email"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="admin@abcmotors.com"
+                    style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    प्रारंभिक पासवर्ड (Initial Password) *
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newAdminPassword}
+                      onChange={(e) => setNewAdminPassword(e.target.value)}
+                      placeholder="न्यूनतम 6 अक्षर"
+                      style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowNewPassword(prev => !prev)}
+                      style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    >
+                      {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateTenantModal(false)}
+                    style={{ padding: '0.65rem 1.25rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    रद्द करें
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newCompanyName.trim() || !newAdminName.trim() || !newAdminEmail.trim() || !newAdminPassword) {
+                        setCreateError('कृपया कंपनी का नाम, एडमिन का नाम, ईमेल और पासवर्ड भरें।');
+                        return;
+                      }
+                      if (newAdminPassword.length < 6) {
+                        setCreateError('पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
+                        return;
+                      }
+                      setCreateError(null);
+                      setCreateStep(2);
+                    }}
+                    style={{
+                      padding: '0.65rem 1.5rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: '#4338ca',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    Next: मॉड्यूल्स व प्लान चुनें <ArrowRight size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <PlanPricingCalculator
+                  initialProcessCodes={['LEADS_WITH_CALLING']}
+                  initialSeats={5}
+                  initialCycle="YEARLY"
+                  showHeading={true}
+                  onProceed={handleCreateClientWorkspace}
+                  proceedButtonText={createLoading ? "वर्कस्पेस तैयार हो रहा है..." : "क्लाइंट वर्कस्पेस सक्रिय करें 🚀"}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep(1)}
+                    disabled={createLoading}
+                    style={{
+                      padding: '0.55rem 1rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <ArrowLeft size={16} /> ← कंपनी विवरण में संशोधन करें
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

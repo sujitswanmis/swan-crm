@@ -10,9 +10,7 @@ import {
   requestLoginOtp,
   verifyLoginOtp
 } from '@/app/actions/team';
-import { createTenantWorkspace } from '@/app/actions/saasSubscription';
-import PlanPricingCalculator from '@/components/SaaS/PlanPricingCalculator';
-import { Eye, EyeOff, KeyRound, ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck, Mail, RefreshCw, Lock, Sparkles, UserCheck, Building2 } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw, Lock, Sparkles, UserCheck } from 'lucide-react';
 import { PremiumProgressLoader } from '@/components/PremiumProgressLoader';
 import pkg from '../../../package.json';
 
@@ -61,18 +59,6 @@ function LoginFormContent() {
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // SaaS Tenant Workspace Registration state
-  const [workspaceStep, setWorkspaceStep] = useState(1);
-  const [companyName, setCompanyName] = useState('');
-  const [workspaceAdminName, setWorkspaceAdminName] = useState('');
-  const [workspaceAdminEmail, setWorkspaceAdminEmail] = useState('');
-  const [workspaceAdminMobile, setWorkspaceAdminMobile] = useState('');
-  const [workspaceAdminPassword, setWorkspaceAdminPassword] = useState('');
-  const [showWorkspacePassword, setShowWorkspacePassword] = useState(false);
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
-  const [workspaceSuccessMsg, setWorkspaceSuccessMsg] = useState(null);
-
   const router = useRouter();
   const supabase = createClient();
 
@@ -299,56 +285,6 @@ function LoginFormContent() {
     }
   };
 
-  const handleCreateWorkspaceSubmit = async (planData) => {
-    setWorkspaceLoading(true);
-    setError(null);
-    setWorkspaceSuccessMsg(null);
-
-    try {
-      const res = await createTenantWorkspace({
-        companyName,
-        adminEmail: workspaceAdminEmail,
-        adminPassword: workspaceAdminPassword,
-        adminName: workspaceAdminName,
-        adminMobile: workspaceAdminMobile,
-        processCodes: planData?.processCodes || ['LEADS_WITH_CALLING'],
-        userSeats: planData?.seats || 5,
-        cycleCode: planData?.cycleCode || 'YEARLY'
-      });
-
-      if (res.success) {
-        setWorkspaceSuccessMsg(res.message);
-        // Instant Sign In
-        try {
-          const signInRes = await supabase.auth.signInWithPassword({
-            email: workspaceAdminEmail.trim().toLowerCase(),
-            password: workspaceAdminPassword
-          });
-          if (signInRes.data?.session) {
-            completeLoginFlow(signInRes.data.user.id);
-            return;
-          }
-        } catch (authErr) {
-          console.warn('Auto sign-in notice:', authErr);
-        }
-
-        // Fallback: switch to login
-        setTimeout(() => {
-          setMode('login');
-          setEmail(workspaceAdminEmail);
-          setPassword('');
-          setError(null);
-        }, 1800);
-      } else {
-        setError(res.error || 'वर्कस्पेस बनाने में समस्या आई।');
-      }
-    } catch (err) {
-      setError(err.message || 'त्रुटि हुई।');
-    } finally {
-      setWorkspaceLoading(false);
-    }
-  };
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -359,16 +295,15 @@ function LoginFormContent() {
       padding: '2rem'
     }}>
       <div className="card" style={{
-        padding: mode === 'create_workspace' ? '2rem 2.25rem' : '2.5rem 2.25rem',
+        padding: '2.5rem 2.25rem',
         width: '100%',
-        maxWidth: mode === 'create_workspace' ? '920px' : '460px',
+        maxWidth: '460px',
         borderRadius: '20px',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        backgroundColor: 'rgba(255, 255, 255, 0.92)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.8)',
-        border: '1px solid #e2e8f0',
-        transition: 'max-width 0.25s ease'
+        border: '1px solid #e2e8f0'
       }}>
         
         {/* Logo / Header */}
@@ -414,27 +349,11 @@ function LoginFormContent() {
               </>
             )}
             {mode === 'register' && 'Create Employee Account'}
-            {mode === 'create_workspace' && (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  <Building2 size={24} style={{ color: '#4338ca' }} />
-                  <span>नया कंपनी वर्कस्पेस बनाएं</span>
-                </div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#6366f1', marginTop: '0.35rem' }}>
-                  Step {workspaceStep} of 2: {workspaceStep === 1 ? 'Company & Admin Profile' : 'Choose SaaS Modules & Plan'}
-                </div>
-              </>
-            )}
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.45rem', marginBottom: 0, fontSize: '0.86rem', lineHeight: 1.45 }}>
             {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using 6-Digit Email OTP')}
             {mode === 'register' && 'Enter your official details to register'}
-            {mode === 'create_workspace' && (
-              workspaceStep === 1
-                ? 'अपनी कंपनी की जानकारी और मास्टर एडमिन क्रेडेंशियल दर्ज करें'
-                : 'अपनी आवश्यकता अनुसार मॉड्यूल और यूज़र सीट्स चुनें'
-            )}
             {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure reset code' : 'Enter OTP and create your new password')}
           </p>
         </div>
@@ -532,14 +451,6 @@ function LoginFormContent() {
           </div>
         )}
 
-        {/* Workspace Success Message */}
-        {workspaceSuccessMsg && mode === 'create_workspace' && (
-          <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <CheckCircle2 size={16} />
-            <span>{workspaceSuccessMsg}</span>
-          </div>
-        )}
-
         {/* ========================================================================= */}
         {/* OPTION 1: PASSWORD LOGIN / REGISTER */}
         {/* ========================================================================= */}
@@ -621,47 +532,16 @@ function LoginFormContent() {
                 <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
               </button>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginTop: '0.35rem' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('register');
-                    setError(null);
-                  }}
-                  style={{ width: '100%', padding: '0.45rem', fontSize: '0.84rem', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 500, color: 'var(--text-secondary)' }}
-                >
-                  मौजूदा कंपनी के कर्मचारी? <span style={{ color: '#4338ca', fontWeight: 600 }}>Register Account</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('create_workspace');
-                    setWorkspaceStep(1);
-                    setError(null);
-                    setWorkspaceSuccessMsg(null);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem',
-                    fontSize: '0.85rem',
-                    background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)',
-                    border: '1px solid #c7d2fe',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    color: '#4338ca',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.45rem',
-                    boxShadow: '0 1px 2px rgba(67, 56, 202, 0.05)'
-                  }}
-                >
-                  <Sparkles size={15} style={{ color: '#6366f1' }} />
-                  नया कंपनी वर्कस्पेस बनाएं (Create SaaS Workspace)
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register');
+                  setError(null);
+                }}
+                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 500, color: 'var(--text-secondary)' }}
+              >
+                Don&apos;t have an account? <span style={{ color: '#4338ca', fontWeight: 600 }}>Register</span>
+              </button>
             </div>
           </>
         )}
@@ -880,178 +760,6 @@ function LoginFormContent() {
               Back to Login
             </button>
           </>
-        )}
-
-        {/* ========================================================================= */}
-        {/* SAAS WORKSPACE SELF-SERVE ONBOARDING FLOW */}
-        {/* ========================================================================= */}
-        {mode === 'create_workspace' && (
-          <div>
-            {workspaceStep === 1 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', color: '#1e293b' }}>
-                    कंपनी / संस्था का नाम (Company / Organization Name) *
-                  </label>
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="उदा. Acme Solutions Pvt Ltd"
-                    style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', color: '#1e293b' }}>
-                      सुपर एडमिन का नाम (Super Admin Name) *
-                    </label>
-                    <input
-                      type="text"
-                      value={workspaceAdminName}
-                      onChange={(e) => setWorkspaceAdminName(e.target.value)}
-                      placeholder="उदा. राहुल शर्मा"
-                      style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', color: '#1e293b' }}>
-                      एडमिन मोबाइल नंबर (Mobile Number) *
-                    </label>
-                    <input
-                      type="tel"
-                      value={workspaceAdminMobile}
-                      onChange={(e) => setWorkspaceAdminMobile(e.target.value)}
-                      placeholder="10-अंकों का मोबाइल नंबर"
-                      style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', color: '#1e293b' }}>
-                    आधिकारिक ईमेल (Work / Admin Email) *
-                  </label>
-                  <input
-                    type="email"
-                    value={workspaceAdminEmail}
-                    onChange={(e) => setWorkspaceAdminEmail(e.target.value)}
-                    placeholder="admin@acme.com"
-                    style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                  />
-                  <p style={{ margin: 0, marginTop: '0.25rem', fontSize: '0.74rem', color: '#64748b' }}>
-                    यह ईमेल आपके कंपनी वर्कस्पेस के मुख्य एडमिन लॉगिन के रूप में उपयोग होगा।
-                  </p>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', color: '#1e293b' }}>
-                    मास्टर एडमिन पासवर्ड (Admin Password) *
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showWorkspacePassword ? "text" : "password"}
-                      value={workspaceAdminPassword}
-                      onChange={(e) => setWorkspaceAdminPassword(e.target.value)}
-                      placeholder="कम से कम 6 अक्षर"
-                      style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                    />
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setShowWorkspacePassword(prev => !prev)}
-                      style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                    >
-                      {showWorkspacePassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!companyName.trim() || !workspaceAdminName.trim() || !workspaceAdminEmail.trim() || !workspaceAdminPassword) {
-                      setError("कृपया कंपनी का नाम, एडमिन का नाम, ईमेल और पासवर्ड भरें।");
-                      return;
-                    }
-                    if (workspaceAdminPassword.length < 6) {
-                      setError("पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।");
-                      return;
-                    }
-                    setError(null);
-                    setWorkspaceStep(2);
-                  }}
-                  className="btn-primary"
-                  style={{ width: '100%', marginTop: '0.5rem', padding: '0.8rem', fontSize: '0.95rem', fontWeight: 700, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
-                >
-                  आगे बढ़ें: मॉड्यूल व प्लान चुनें <ArrowRight size={16} />
-                </button>
-              </div>
-            ) : (
-              <div>
-                <PlanPricingCalculator
-                  initialProcessCodes={['LEADS_WITH_CALLING']}
-                  initialSeats={5}
-                  initialCycle="YEARLY"
-                  showHeading={true}
-                  onProceed={handleCreateWorkspaceSubmit}
-                  proceedButtonText={workspaceLoading ? "कंपनी वर्कस्पेस तैयार हो रहा है..." : "वर्कस्पेस सक्रिय करें (Activate Workspace) 🚀"}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceStep(1)}
-                  disabled={workspaceLoading}
-                  style={{
-                    width: '100%',
-                    marginTop: '1rem',
-                    padding: '0.65rem',
-                    fontSize: '0.85rem',
-                    background: 'transparent',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    color: '#475569',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.4rem'
-                  }}
-                >
-                  <ArrowLeft size={16} /> ← कंपनी विवरण में संशोधन करें (Edit Details)
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setWorkspaceSuccessMsg(null);
-              }}
-              style={{
-                width: '100%',
-                marginTop: '1rem',
-                padding: '0.65rem',
-                fontSize: '0.85rem',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                fontWeight: 600
-              }}
-            >
-              <ArrowLeft size={16} /> Back to Login
-            </button>
-          </div>
         )}
 
         {/* ========================================================================= */}
