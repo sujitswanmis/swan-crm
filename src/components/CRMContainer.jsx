@@ -912,8 +912,18 @@ export default function CRMContainer({
         setCurrentSettingSubTab(e.detail);
       }
     };
+    const handleOpenBilling = () => {
+      setActiveTab('settings');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: 'saas_master' }));
+      }, 50);
+    };
     window.addEventListener('setting_subtab_change', handleSubTabChange);
-    return () => window.removeEventListener('setting_subtab_change', handleSubTabChange);
+    window.addEventListener('open-saas-billing', handleOpenBilling);
+    return () => {
+      window.removeEventListener('setting_subtab_change', handleSubTabChange);
+      window.removeEventListener('open-saas-billing', handleOpenBilling);
+    };
   }, []);
 
   const toggleCategory = (categoryName) => {

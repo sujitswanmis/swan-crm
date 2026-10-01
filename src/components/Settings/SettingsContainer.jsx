@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity, DollarSign } from 'lucide-react';
 
 // Subcomponents (to be implemented)
 import BusinessProfile from './BusinessProfile';
@@ -16,6 +16,7 @@ import FileMedia from './FileMedia';
 import PageNavigationConfig from './PageNavigationConfig';
 import ManageDepartments from './ManageDepartments';
 import SystemStatusHealth from './SystemStatusHealth';
+import SuperAdminSaasPanel from '../SaaS/SuperAdminSaasPanel';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
@@ -32,7 +33,8 @@ const SETTINGS_TABS = [
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
   { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> },
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
-  { id: 'status', label: 'System Health & Status', icon: <Activity size={18} /> }
+  { id: 'status', label: 'System Health & Status', icon: <Activity size={18} /> },
+  { id: 'saas_master', label: 'SaaS Billing & Pricing Studio', icon: <DollarSign size={18} /> }
 ];
 
 export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
@@ -137,6 +139,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
         {activeTab === 'navigation' && <PageNavigationConfig />}
         {activeTab === 'departments' && <ManageDepartments />}
         {activeTab === 'status' && <SystemStatusHealth />}
+        {activeTab === 'saas_master' && <SuperAdminSaasPanel />}
       </div>
     </div>
   );

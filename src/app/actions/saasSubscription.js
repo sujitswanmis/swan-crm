@@ -305,3 +305,217 @@ export async function updateCycleDiscount(cycleCode, newDiscountPercent) {
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Fetch all tenants with active subscriptions and user counts for Super Admin
+ */
+export async function getAllTenantsWithSubscriptions() {
+  try {
+    const admin = getAdminClient();
+    const { data: tenantsList, error: tErr } = await admin
+      .from('tenants')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (tErr) throw tErr;
+
+    const { data: subsList } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    const { data: entitlementsList } = await admin
+      .from('tenant_entitlements')
+      .select('tenant_id, module_key, is_enabled');
+
+    const { data: userCounts } = await admin
+      .from('user_roles')
+      .select('tenant_id, user_id, role');
+
+    const now = new Date();
+
+    const enriched = (tenantsList || []).map(t => {
+      const sub = (subsList || []).find(s => s.tenant_id === t.id);
+      const tEntitlements = (entitlementsList || [])
+        .filter(e => e.tenant_id === t.id && e.is_enabled)
+        .map(e => e.module_key);
+
+      const activeUserCount = (userCounts || []).filter(u => 
+        (u.tenant_id === t.id || (!u.tenant_id && t.id === DEFAULT_TENANT_ID)) && 
+        u.role !== 'customer'
+      ).length;
+
+      let daysRemaining = null;
+      let isExpired = false;
+      let isExpiringSoon = false;
+
+      if (sub?.valid_until) {
+        const expiry = new Date(sub.valid_until);
+        const msDiff = expiry.getTime() - now.getTime();
+        daysRemaining = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
+        isExpired = daysRemaining <= 0;
+        isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
+      }
+
+      return {
+        id: t.id,
+        tenant_code: t.tenant_code,
+        name: t.name,
+        status: t.status || 'ACTIVE',
+        created_at: t.created_at,
+        subscription: sub ? {
+          ...sub,
+          days_remaining: daysRemaining,
+          is_expired: isExpired,
+          is_expiring_soon: isExpiringSoon
+        } : null,
+        entitlements: tEntitlements,
+        active_users_count: activeUserCount,
+        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 999999 : 5)
+      };
+    });
+
+    return { success: true, tenants: enriched };
+  } catch (err) {
+    console.error('getAllTenantsWithSubscriptions error:', err);
+    return { success: false, error: err.message, tenants: [] };
+  }
+}
+
+/**
+ * Super Admin: Extend a tenant's subscription validity (Offline / Cash / Bank Payment)
+ */
+export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
+  try {
+    const admin = getAdminClient();
+    const { data: existing } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const months = Math.max(1, parseInt(monthsToAdd, 10) || 1);
+    let baseDate = new Date();
+    if (existing?.valid_until) {
+      const currentExpiry = new Date(existing.valid_until);
+      if (currentExpiry > baseDate) {
+        baseDate = currentExpiry;
+      }
+    }
+
+    const newExpiry = new Date(baseDate);
+    newExpiry.setMonth(newExpiry.getMonth() + months);
+
+    if (existing) {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .update({
+          valid_until: newExpiry.toISOString(),
+          status: 'ACTIVE',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'PRO_CUSTOM',
+          user_seat_limit: 10,
+          valid_from: new Date().toISOString(),
+          valid_until: newExpiry.toISOString(),
+          status: 'ACTIVE',
+          billing_cycle: months === 12 ? 'YEARLY' : (months === 6 ? 'HALF_YEARLY' : (months === 3 ? 'QUARTERLY' : 'MONTHLY'))
+        }]);
+      if (error) throw error;
+    }
+
+    return {
+      success: true,
+      message: `वैलिडिटी सफलतापूर्वक ${months} महीने आगे बढ़ाई गई! (New Expiry: ${newExpiry.toLocaleDateString('en-IN')})`
+    };
+  } catch (err) {
+    console.error('extendTenantSubscription error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Update a tenant's purchased seat limit
+ */
+export async function updateTenantSeats(tenantId, newSeatLimit) {
+  try {
+    const admin = getAdminClient();
+    const seats = Math.max(1, parseInt(newSeatLimit, 10) || 1);
+
+    const { data: existing } = await admin
+      .from('tenant_subscriptions')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .update({ user_seat_limit: seats })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'STANDARD',
+          user_seat_limit: seats,
+          valid_from: new Date().toISOString(),
+          valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'ACTIVE',
+          billing_cycle: 'MONTHLY'
+        }]);
+      if (error) throw error;
+    }
+
+    return { success: true, message: `सीट लिमिट अपडेट होकर ${seats} हो गई है!` };
+  } catch (err) {
+    console.error('updateTenantSeats error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Assign client-specific negotiated rate
+ */
+export async function updateTenantCustomRate(tenantId, processCode, customRate) {
+  try {
+    const admin = getAdminClient();
+    const config = (await getDynamicConfig(admin)) || {};
+    const tenantRates = config.tenant_rates || {};
+    if (!tenantRates[tenantId]) {
+      tenantRates[tenantId] = {};
+    }
+    tenantRates[tenantId][processCode] = Number(customRate);
+    config.tenant_rates = tenantRates;
+    config.updated_at = new Date().toISOString();
+
+    const { error } = await admin
+      .from('tenant_entitlements')
+      .upsert({
+        tenant_id: DEFAULT_TENANT_ID,
+        module_key: CONFIG_ENTITLEMENT_KEY,
+        is_enabled: true,
+        config_json: config
+      }, { onConflict: 'tenant_id,module_key' });
+
+    if (error) throw error;
+    return { success: true, message: `नेगोशिएटेड रेट ₹${customRate} सेट हो गया!` };
+  } catch (err) {
+    console.error('updateTenantCustomRate error:', err);
+    return { success: false, error: err.message };
+  }
+}
+

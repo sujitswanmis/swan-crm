@@ -426,10 +426,10 @@
       "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
       "email": "sujitswanmis@gmail.com",
       "empName": "Sujit Gupta",
-      "activeSeconds": 3343,
-      "idleSeconds": 20218,
+      "activeSeconds": 3372,
+      "idleSeconds": 20729,
       "firstSeen": "2026-10-01T05:47:50.042031+00:00",
-      "lastSeen": "2026-10-01T16:46:01.939Z",
+      "lastSeen": "2026-10-01T16:55:35.134Z",
       "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
     }
