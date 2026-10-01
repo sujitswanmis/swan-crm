@@ -5,7 +5,7 @@
 export const MAX_OFFLINE_SECONDS_PER_DAY = 5 * 60 * 60; // Maximum 5 Hours Offline Limit Per Day (18,000 Seconds)
 
 const DB_NAME = 'supuja_crm_offline_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const LEAD_CACHE_SCOPE_KEY = 'supuja_leads_cache_scope';
 const STORES = {
   LEADS_CACHE: 'leads_cache',
@@ -331,8 +331,11 @@ export function openOfflineDB() {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORES.LEADS_CACHE)) {
-          db.createObjectStore(STORES.LEADS_CACHE, { keyPath: 'id' });
+        const leadsStore = db.objectStoreNames.contains(STORES.LEADS_CACHE)
+          ? event.target.transaction.objectStore(STORES.LEADS_CACHE)
+          : db.createObjectStore(STORES.LEADS_CACHE, { keyPath: 'id' });
+        if (!leadsStore.indexNames.contains('scopeGeneration')) {
+          leadsStore.createIndex('scopeGeneration', ['__cacheScope', '__cacheGeneration'], { unique: false });
         }
         if (!db.objectStoreNames.contains(STORES.CHECKLIST_CACHE)) {
           db.createObjectStore(STORES.CHECKLIST_CACHE, { keyPath: 'id' });
@@ -476,6 +479,7 @@ export async function getLocalLeadsPreview(userCompany, userRole) {
       request.onsuccess = () => {
         const row = request.result;
         resolve(row?.__cacheScope === cacheScope &&
+          row?.__cacheGeneration === getLeadCacheGeneration(cacheScope) &&
           row?.__userCompany === (userCompany || '') &&
           row?.__userRole === userRole &&
           Array.isArray(row.leads) ? row.leads : []);
@@ -519,21 +523,23 @@ export async function saveLocalLeadsPreview(leads, generation, userCompany, user
  * Fast synchronous snapshot cache for instant 0ms hydration on page reload/F5.
  * Stored in sessionStorage which is preserved across refreshes in the same tab.
  */
-export function getFastLeadsSnapshot(userId) {
+export function getFastLeadsSnapshot(userId, context) {
   if (typeof window === 'undefined') return [];
   const key = userId ? `supuja_fast_leads_snapshot_${userId}` : 'supuja_fast_leads_snapshot';
-  try {
-    const rawSession = sessionStorage.getItem(key);
-    if (rawSession) {
-      const parsed = JSON.parse(rawSession);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-    const rawLocal = localStorage.getItem(key);
-    if (rawLocal) {
-      const parsed = JSON.parse(rawLocal);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {}
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      const raw = storage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const leads = Array.isArray(parsed) ? parsed : parsed?.leads;
+      if (Array.isArray(leads) && leads.length > 0 && (!context || (
+        !Array.isArray(parsed) &&
+        parsed.userCompany === (context.userCompany || '') &&
+        parsed.userRole === context.userRole &&
+        parsed.generation === getLeadCacheGeneration(userId)
+      ))) return leads;
+    } catch (e) {}
+  }
   return [];
 }
 
@@ -541,7 +547,7 @@ export function getFastLeadsSnapshot(userId) {
  * Saves top leads into both sessionStorage and localStorage for instant 0ms hydration on next refresh.
  * Uses compact minimal projections to guarantee payload is ~40KB (never throws QuotaExceededError).
  */
-export function saveFastLeadsSnapshot(leads, userId) {
+export function saveFastLeadsSnapshot(leads, userId, context) {
   if (typeof window === 'undefined' || !Array.isArray(leads) || leads.length === 0) return;
   const key = userId ? `supuja_fast_leads_snapshot_${userId}` : 'supuja_fast_leads_snapshot';
   try {
@@ -563,7 +569,12 @@ export function saveFastLeadsSnapshot(leads, userId) {
     for (const storage of [sessionStorage, localStorage]) {
       for (const candidate of [subset, subset.slice(0, 100), compact, compact.slice(0, 25), compact.slice(0, 10), compact.slice(0, 1)]) {
         try {
-          storage.setItem(key, JSON.stringify(candidate));
+          storage.setItem(key, JSON.stringify(context ? {
+            userCompany: context.userCompany || '',
+            userRole: context.userRole,
+            generation: getLeadCacheGeneration(userId),
+            leads: candidate
+          } : candidate));
           break;
         } catch (e) {}
       }
@@ -758,12 +769,22 @@ export async function getLocalLeads({ onPreview } = {}) {
         try {
           const cursorTx = db.transaction(STORES.LEADS_CACHE, 'readonly');
           const cursorStore = cursorTx.objectStore(STORES.LEADS_CACHE);
-          const cursorReq = cursorStore.openCursor();
+          const scope = getLeadCacheScope();
+          const generation = getLeadCacheGeneration(scope);
+          const rangeFactory = window.IDBKeyRange || globalThis.IDBKeyRange;
+          const scopedIndex = scope && generation && rangeFactory && cursorStore.indexNames?.contains('scopeGeneration')
+            ? cursorStore.index('scopeGeneration')
+            : null;
+          const cursorReq = scopedIndex
+            ? scopedIndex.openCursor(rangeFactory.only([scope, generation]))
+            : cursorStore.openCursor();
           const items = [];
           const previewScope = getLeadCacheScope();
+          const previewGeneration = getLeadCacheGeneration(previewScope);
           const append = (lead) => {
             if (!lead || !lead.id || String(lead.id).startsWith('__')) return;
-            if (previewScope && lead.__cacheScope && lead.__cacheScope !== previewScope) return;
+            if (previewScope && lead.__cacheScope !== previewScope) return;
+            if (previewGeneration && lead.__cacheGeneration !== previewGeneration) return;
             items.push(lead);
             if (!previewDelivered && typeof onPreview === 'function' && items.length >= 100) {
               previewDelivered = true;
@@ -774,7 +795,9 @@ export async function getLocalLeads({ onPreview } = {}) {
             if (isResolved) return;
             const cursor = ev.target.result;
             if (cursor) {
-              if (cursor.value && cursor.value.id && !String(cursor.value.id).startsWith('__bucket_') && !String(cursor.value.id).startsWith('__lead_preview_')) {
+              if (cursor.value && String(cursor.value.id || '').startsWith('__lead_preview_')) {
+                // A preview is a projection of real rows, not another cache page.
+              } else if (cursor.value && cursor.value.id && !String(cursor.value.id).startsWith('__bucket_')) {
                 append(cursor.value);
               } else if (cursor.value && Array.isArray(cursor.value.leads)) {
                 cursor.value.leads.forEach(append);
@@ -826,6 +849,9 @@ export async function getLocalLeads({ onPreview } = {}) {
           if (Array.isArray(res) && res.some(r => r && typeof r.id === 'string' && r.id.startsWith('__bucket_'))) {
             let unpacked = [];
             for (const r of res) {
+              if (String(r?.id || '').startsWith('__lead_preview_')) {
+                continue;
+              }
               if (Array.isArray(r.leads)) {
                 unpacked.push(...r.leads);
               } else if (r && r.id && !String(r.id).startsWith('__bucket_')) {

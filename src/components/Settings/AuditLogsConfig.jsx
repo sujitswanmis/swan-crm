@@ -7,7 +7,7 @@ import {
   Moon, Sun
 } from 'lucide-react';
 import { getAuditLogs, getAuditLogFilters } from '@/app/actions/audit';
-import DateRangePicker from '@/components/common/DateRangePicker';
+import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
 const DEFAULT_COLUMNS = [
   { key: 'user', label: 'USER / EMPLOYEE', defaultWidth: 230, minWidth: 160 },
@@ -20,6 +20,7 @@ const DEFAULT_COLUMNS = [
 ];
 
 export default function AuditLogsConfig() {
+  const todayIST = computeDateRange('today').startDate;
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({
     totalEvents: 0,
@@ -44,9 +45,9 @@ export default function AuditLogsConfig() {
   const [selectedTimeOfDay, setSelectedTimeOfDay] = useState('all'); // 'all' | 'off_hours' | 'day' | 'night' | 'custom'
   const [customTimeFrom, setCustomTimeFrom] = useState('19:00');
   const [customTimeTo, setCustomTimeTo] = useState('09:00');
-  const [dateRangeQuick, setDateRangeQuick] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateRangeQuick, setDateRangeQuick] = useState('today');
+  const [dateFrom, setDateFrom] = useState(todayIST);
+  const [dateTo, setDateTo] = useState(todayIST);
 
   // Searchable Employee Dropdown state
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
@@ -182,7 +183,7 @@ export default function AuditLogsConfig() {
   const handleQuickDate = (type) => {
     setDateRangeQuick(type);
     const today = new Date();
-    const formatDate = (d) => d.toISOString().split('T')[0];
+    const formatDate = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
 
     if (type === 'all') {
       setDateFrom('');
@@ -270,9 +271,10 @@ export default function AuditLogsConfig() {
     setCustomTimeTo('09:00');
     setEmployeeSearchInput('');
     setIsEmployeeDropdownOpen(false);
-    setDateRangeQuick('all');
-    setDateFrom('');
-    setDateTo('');
+    const todayRange = computeDateRange('today');
+    setDateRangeQuick('today');
+    setDateFrom(todayRange.startDate);
+    setDateTo(todayRange.endDate);
     setCurrentPage(1);
   };
 
@@ -918,7 +920,7 @@ export default function AuditLogsConfig() {
           </div>
 
           {/* Reset Filters */}
-          {(searchQuery || selectedModule !== 'all' || selectedAction !== 'all' || selectedUser !== 'all' || selectedTimeOfDay !== 'all' || dateRangeQuick !== 'all' || dateFrom || dateTo) && (
+          {(searchQuery || selectedModule !== 'all' || selectedAction !== 'all' || selectedUser !== 'all' || selectedTimeOfDay !== 'all' || dateRangeQuick !== 'today' || dateFrom !== todayIST || dateTo !== todayIST) && (
             <button
               onClick={handleResetFilters}
               style={{
@@ -1397,4 +1399,3 @@ export default function AuditLogsConfig() {
     </div>
   );
 }
-

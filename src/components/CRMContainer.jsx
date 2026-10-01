@@ -25,7 +25,9 @@ import { getTransferredLeads } from '@/app/actions/partyHandoff';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
+import { isCompleteLeadCache } from '@/utils/leadCachePolicy';
 
+const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const ClientRegistration = dynamic(() => import('@/components/ClientRegistration'), { loading: () => <WorkspaceSkeleton variant="form" /> });
 const CallCenterModule = dynamic(() => import('./CallCenter/CallCenterModule'), { loading: () => <WorkspaceSkeleton variant="callcenter" /> });
@@ -413,14 +415,14 @@ export default function CRMContainer({
   const [isMounted, setIsMounted] = useState(false);
   const [leads, setLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId);
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
       if (Array.isArray(fast) && fast.length > 0) return fast;
     }
     return [];
   });
   const [rawLeads, setRawLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId);
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
       if (Array.isArray(fast) && fast.length > 0) return fast;
     }
     return [];
@@ -428,7 +430,7 @@ export default function CRMContainer({
   const rawLeadsRef = useRef([]);
   const [loadingLeads, setLoadingLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId);
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
       if (Array.isArray(fast) && fast.length > 0) return false;
     }
     return true;
@@ -439,7 +441,7 @@ export default function CRMContainer({
     let active = true;
     setIsMounted(true);
     setLeadCacheScope(userId);
-    const fast = getFastLeadsSnapshot(userId);
+    const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
     if (Array.isArray(fast) && fast.length > 0) {
       setRawLeads(fast);
       setLeads(fast);
@@ -452,7 +454,7 @@ export default function CRMContainer({
         setLeads(preview);
         rawLeadsRef.current = preview;
         setLoadingLeads(false);
-        saveFastLeadsSnapshot(preview, userId);
+        saveFastLeadsSnapshot(preview, userId, { userCompany, userRole });
       }).catch(() => {});
     }
     return () => { active = false; };
@@ -1222,6 +1224,8 @@ export default function CRMContainer({
   
   const loadLeadsRef = useRef(null);
   const leadSyncInFlightRef = useRef(false);
+  const pendingLeadSyncRef = useRef(null);
+  const realtimeNeedsCatchupRef = useRef(false);
   const prevLeadsSigRef = useRef('');
   const initialSyncFinishedRef = useRef(false);
   const saveLeadsTimeoutRef = useRef(null);
@@ -1253,10 +1257,15 @@ export default function CRMContainer({
       setIsSyncing(false);
       return;
     }
+    let effectActive = true;
 
     async function loadLeads(forceFull = false) {
+      if (!effectActive) return;
       loadLeadsRef.current = loadLeads;
-      if (leadSyncInFlightRef.current) return;
+      if (leadSyncInFlightRef.current) {
+        pendingLeadSyncRef.current = Boolean(forceFull || pendingLeadSyncRef.current);
+        return;
+      }
       leadSyncInFlightRef.current = true;
       setLeadCacheScope(userId);
       setIsSyncing(true);
@@ -1264,32 +1273,52 @@ export default function CRMContainer({
       const supabase = createClient();
       const cacheMetaKey = `crm_leads_complete_cache_v1_${userId}`;
       let cacheMeta = null;
+      let networkPublished = false;
       try {
         cacheMeta = JSON.parse(localStorage.getItem(cacheMetaKey) || 'null');
       } catch (e) {}
       
-      // 0. Instant 0ms Cache Hydration from IndexedDB (skip if forceFull)
+      // Show a cached preview first; never wait 30 seconds for a full IDB scan
+      // before starting the network recovery path.
       let localCachedLeads = [];
       if (!forceFull) {
         try {
-          localCachedLeads = await getLocalLeads({
+          const cacheReadPromise = getLocalLeads({
             onPreview: preview => {
-              if (rawLeadsRef.current?.length > 0 || preview.length === 0) return;
+              if (!effectActive || networkPublished || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
               const firstLeads = preview.sort(sortLeadsByDateDesc);
               rawLeadsRef.current = firstLeads;
               setRawLeads(firstLeads);
               setSyncLoadedCount(firstLeads.length);
               setLoadingLeads(false);
-              saveFastLeadsSnapshot(firstLeads, userId);
-              saveLocalLeadsPreview(firstLeads, cacheMeta?.generation, userCompany, userRole).catch(() => {});
+              saveFastLeadsSnapshot(firstLeads, userId, { userCompany, userRole });
             }
           });
+          let cacheWaitTimer;
+          const cacheRead = await Promise.race([
+            cacheReadPromise.then(leads => ({ complete: true, leads })),
+            new Promise(resolve => {
+              cacheWaitTimer = setTimeout(() => resolve({ complete: false, leads: [] }), 1500);
+            })
+          ]);
+          clearTimeout(cacheWaitTimer);
+          localCachedLeads = cacheRead.leads;
+          if (!cacheRead.complete) {
+            cacheReadPromise.then(leads => {
+              if (!effectActive || networkPublished || !Array.isArray(leads) || leads.length <= rawLeadsRef.current.length) return;
+              rawLeadsRef.current = leads;
+              setRawLeads(leads);
+              setSyncLoadedCount(leads.length);
+              setLoadingLeads(false);
+              saveFastLeadsSnapshot(leads, userId, { userCompany, userRole });
+            }).catch(() => {});
+          }
           if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
             setRawLeads(localCachedLeads);
             rawLeadsRef.current = localCachedLeads;
             setSyncLoadedCount(localCachedLeads.length);
             setLoadingLeads(false);
-            saveFastLeadsSnapshot(localCachedLeads, userId);
+            saveFastLeadsSnapshot(localCachedLeads, userId, { userCompany, userRole });
             saveLocalLeadsPreview(localCachedLeads, cacheMeta?.generation, userCompany, userRole).catch(() => {});
           } else {
             // Keep current view if fast cache already populated in memory
@@ -1312,27 +1341,27 @@ export default function CRMContainer({
         ? userCompany.trim()
         : null;
 
-      let total = 0;
-      try {
-        let countQuery = supabase
-          .from('leads')
-          .select('*', { count: 'exact', head: true });
-        // Apply company filter server-side for agents
-        if (_agentCompanyFilter) {
-          if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-            countQuery = countQuery.in('our_company', ['NSTL', 'NSTLP']);
-          } else {
-            countQuery = countQuery.eq('our_company', _agentCompanyFilter);
+      const fetchLeadCount = async () => {
+        try {
+          let countQuery = supabase
+            .from('leads')
+            .select('*', { count: 'exact', head: true });
+          if (_agentCompanyFilter) {
+            if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+              countQuery = countQuery.in('our_company', ['NSTL', 'NSTLP']);
+            } else {
+              countQuery = countQuery.eq('our_company', _agentCompanyFilter);
+            }
           }
+          const { count, error: countError } = await countQuery;
+          if (countError) throw countError;
+          if (Number.isSafeInteger(count)) setSyncTotalCount(count);
+          return Number.isSafeInteger(count) ? count : 0;
+        } catch (e) {
+          console.warn("Failed to fetch leads count:", e);
+          return 0;
         }
-        const { count, error: countError } = await countQuery;
-        if (!countError && count) {
-          total = count;
-          setSyncTotalCount(total);
-        }
-      } catch (e) {
-        console.error("Failed to fetch leads count:", e);
-      }
+      };
 
       // Default to optimal 1000 pageSize to minimize HTTP requests
       let pageSize = 1000;
@@ -1354,7 +1383,6 @@ export default function CRMContainer({
       
       // Cap at Supabase page size limit (1000)
       const queryPageSize = Math.min(1000, pageSize);
-      const numPages = total > 0 ? Math.ceil(total / queryPageSize) : 1;
       
       let loadedLeads = [];
       
@@ -1432,9 +1460,9 @@ export default function CRMContainer({
       try {
         // A fast snapshot contains at most 300 rows. A partial IndexedDB write
         // must never switch the first load into delta-only mode.
-        const hasValidLocalCache = !forceFull &&
-          Array.isArray(localCachedLeads) &&
-          localCachedLeads.length > 0;
+        const hasValidLocalCache = !forceFull && isCompleteLeadCache(cacheMeta, localCachedLeads, {
+          userId, userCompany, userRole
+        });
 
         if (hasValidLocalCache) {
           // =========================================================================
@@ -1451,7 +1479,7 @@ export default function CRMContainer({
             ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
             : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-          // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
+          // Page 0 also tells us which lead columns exist without a failing schema probe.
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);
 
           const fetchDeltaNotesPromise = (async () => {
@@ -1472,34 +1500,37 @@ export default function CRMContainer({
             throw new Error('Delta notes exceeded 100 pages; retry without advancing sync time');
           })();
 
-          const fetchDeltaLeadsPromise = (async () => {
+          const fetchDeltaLeadsPromise = fetchPage0Promise.then(async (page0Data) => {
             const allChangedLeads = [];
+            let changeColumn = page0Data.length > 0 && Object.prototype.hasOwnProperty.call(page0Data[0], 'updated_at')
+              ? 'updated_at'
+              : 'created_at';
             for (let page = 0; page < 100; page++) {
-              let deltaQuery = supabase
-                .from('leads')
-                .select('*')
-                // The live leads table has no updated_at column. Existing lead
-                // edits are refreshed via recent page 0, notes, and assignments.
-                .gt('created_at', deltaSince)
-                .order('created_at', { ascending: false })
-                .order('id');
-
-              if (_agentCompanyFilter) {
-                if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                  deltaQuery = deltaQuery.in('our_company', ['NSTL', 'NSTLP']);
-                } else {
-                  deltaQuery = deltaQuery.eq('our_company', _agentCompanyFilter);
+              const fetchChangedPage = async (column) => {
+                let deltaQuery = supabase
+                  .from('leads')
+                  .select('*')
+                  .gt(column, deltaSince)
+                  .order(column, { ascending: false })
+                  .order('id');
+                if (_agentCompanyFilter) {
+                  deltaQuery = (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP')
+                    ? deltaQuery.in('our_company', ['NSTL', 'NSTLP'])
+                    : deltaQuery.eq('our_company', _agentCompanyFilter);
                 }
+                return deltaQuery.range(page * 1000, (page + 1) * 1000 - 1);
+              };
+              let { data: chunk, error: dLeadErr } = await fetchChangedPage(changeColumn);
+              if (changeColumn === 'updated_at' && dLeadErr?.code === '42703') {
+                changeColumn = 'created_at';
+                ({ data: chunk, error: dLeadErr } = await fetchChangedPage(changeColumn));
               }
-
-              const { data: chunk, error: dLeadErr } = await deltaQuery
-                .range(page * 1000, (page + 1) * 1000 - 1);
               if (dLeadErr) throw dLeadErr;
               allChangedLeads.push(...(chunk || []));
               if (!chunk || chunk.length < 1000) return allChangedLeads;
             }
             throw new Error('Delta leads exceeded 100 pages; retry without advancing sync time');
-          })();
+          });
 
           const fetchAssignedLeadsPromise = (async () => {
             try {
@@ -1605,11 +1636,12 @@ export default function CRMContainer({
           }
 
           const finalMerged = Array.from(leadsMap.values()).sort(sortLeadsByDateDesc);
+          networkPublished = true;
           setRawLeads(finalMerged);
           rawLeadsRef.current = finalMerged;
           setSyncLoadedCount(finalMerged.length);
 
-          saveFastLeadsSnapshot(finalMerged, userId);
+          saveFastLeadsSnapshot(finalMerged, userId, { userCompany, userRole });
 
           // Fast selective persistence: Only upsert changed leads (takes ~50ms instead of 10s for 45k leads)
           try {
@@ -1638,20 +1670,24 @@ export default function CRMContainer({
           // FULL INITIAL SYNC (Only for cold start / first time browser / empty cache)
           // =========================================================================
           // 1. Fetch Page 0 of leads first for instant UI response (top 1000 in ~250ms)
+          const countPromise = fetchLeadCount();
           const page0Data = await fetchLeadsPageWithRetry(0);
           loadedLeads = [...page0Data];
           
           // Render first chunk immediately so table and dashboard display immediately
           const initialChunk = loadedLeads.map(l => ({ ...l, lead_notes: [] }));
+          networkPublished = true;
           setRawLeads(initialChunk);
           rawLeadsRef.current = initialChunk;
           setSyncLoadedCount(loadedLeads.length);
           setLoadingLeads(false);
-          saveFastLeadsSnapshot(initialChunk, userId);
+          saveFastLeadsSnapshot(initialChunk, userId, { userCompany, userRole });
           saveLocalLeadsPreview(initialChunk, syncStartedAt, userCompany, userRole).catch(() => {});
           upsertLeadsLocally(initialChunk).catch(() => {});
 
           // 2. Fetch remaining pages of leads in parallel batches of 5 (High Concurrency Background Sync)
+          const total = await countPromise;
+          const numPages = total > 0 ? Math.ceil(total / queryPageSize) : 1;
           const remainingPages = Array.from({ length: numPages - 1 }, (_, i) => i + 1);
           const leadsBatchSize = 5;
           
@@ -1695,7 +1731,6 @@ export default function CRMContainer({
           setRawLeads(finalLeads);
           rawLeadsRef.current = finalLeads;
           setSyncLoadedCount(finalLeads.length);
-          saveFastLeadsSnapshot(finalLeads, userId);
 
           // Persist all fetched leads immediately to IndexedDB so cache is 100% valid on next reload!
           if (finalLeads.length > 0) {
@@ -1707,6 +1742,7 @@ export default function CRMContainer({
                   generation: syncStartedAt
                 }));
                 localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+                saveFastLeadsSnapshot(finalLeads, userId, { userCompany, userRole });
                 saveLocalLeadsPreview(finalLeads, syncStartedAt, userCompany, userRole).catch(() => {});
               } catch (e) {}
             } else {
@@ -1772,6 +1808,11 @@ export default function CRMContainer({
         setLoadingLeads(false);
         setIsSyncing(false);
         leadSyncInFlightRef.current = false;
+        if (pendingLeadSyncRef.current !== null) {
+          const nextForceFull = pendingLeadSyncRef.current;
+          pendingLeadSyncRef.current = null;
+          queueMicrotask(() => loadLeadsRef.current?.(nextForceFull));
+        }
       }
     }
     loadLeads();
@@ -1857,7 +1898,15 @@ export default function CRMContainer({
           return { ...item, lead_notes: [incoming, ...existingNotes] };
         }));
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED' && realtimeNeedsCatchupRef.current) {
+          realtimeNeedsCatchupRef.current = false;
+          loadLeadsRef.current?.(false);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          realtimeNeedsCatchupRef.current = true;
+          console.warn('Lead Realtime disconnected; delta sync will catch up on reconnect:', status);
+        }
+      });
 
     // Reactive listener for local offline actions (instant 0ms front-end table update)
     const handleOfflineQueueChanged = async () => {
@@ -1904,6 +1953,9 @@ export default function CRMContainer({
     window.addEventListener('crm_force_full_sync', handleForceFullSync);
 
     return () => {
+      effectActive = false;
+      pendingLeadSyncRef.current = null;
+      if (loadLeadsRef.current === loadLeads) loadLeadsRef.current = null;
       clearInterval(deltaSyncInterval);
       if (saveLeadsTimeoutRef.current) clearTimeout(saveLeadsTimeoutRef.current);
       supabase.removeChannel(channel);

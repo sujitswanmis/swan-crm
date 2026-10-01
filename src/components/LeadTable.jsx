@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings, Phone } from 'lucide-react';
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
@@ -12,11 +13,6 @@ import {
   getPaginationRowModel,
   flexRender,
 } from '@tanstack/react-table';
-import LeadFormModal from './LeadFormModal';
-import LeadProfilePanel from './LeadProfilePanel';
-import ClientRegistration from './ClientRegistration';
-import WhatsappSendModal from './WhatsappSendModal';
-import LeadDashboard from './LeadDashboard';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
@@ -25,6 +21,12 @@ import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, norma
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import Papa from 'papaparse';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
+
+const LeadFormModal = dynamic(() => import('./LeadFormModal'));
+const LeadProfilePanel = dynamic(() => import('./LeadProfilePanel'));
+const ClientRegistration = dynamic(() => import('./ClientRegistration'));
+const WhatsappSendModal = dynamic(() => import('./WhatsappSendModal'));
+const LeadDashboard = dynamic(() => import('./LeadDashboard'));
 
 const extractStatusFromNoteText = (noteText) => {
   if (!noteText || typeof noteText !== 'string') return null;
@@ -85,7 +87,7 @@ const getLeadPhoneNumbers = (lead) => {
   return unique;
 };
 
-const processLeads = (rawLeads, teamMembers = []) => {
+const processLeads = (rawLeads, teamMembers = [], startIndex = 0) => {
   return (rawLeads || []).map((lead, i) => {
     const notes = Array.isArray(lead.lead_notes) 
       ? [...lead.lead_notes].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) 
@@ -191,7 +193,7 @@ const processLeads = (rawLeads, teamMembers = []) => {
 
     return { 
       ...lead, 
-      sr_no: i + 1,
+      sr_no: startIndex + i + 1,
       last_status: lastStatus,
       latest_remark: latestRemark,
       latest_emp_name: latestEmpName,
@@ -1110,7 +1112,32 @@ export default function LeadTable({
   };
   
   useEffect(() => {
-    setData(processLeads(initialData || [], teamMembers));
+    const rows = initialData || [];
+    if (rows.length <= 400) {
+      setData(processLeads(rows, teamMembers));
+      return;
+    }
+
+    let cancelled = false;
+    let timer;
+    let offset = 0;
+    const processed = [];
+    const processBatch = () => {
+      if (cancelled) return;
+      const nextOffset = Math.min(offset + 400, rows.length);
+      processed.push(...processLeads(rows.slice(offset, nextOffset), teamMembers, offset));
+      offset = nextOffset;
+      if (offset < rows.length) {
+        timer = setTimeout(processBatch, 0);
+      } else {
+        setData(processed);
+      }
+    };
+    timer = setTimeout(processBatch, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [initialData, teamMembers]);
 
   useEffect(() => {
@@ -3252,7 +3279,7 @@ export default function LeadTable({
         </div>
       </div>
 
-      <LeadFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      {isModalOpen && <LeadFormModal isOpen={true} onClose={() => setIsModalOpen(false)} />}
       
       {/* Client Registration Full Form Edit Modal */}
       {selectedLead && profileMode === 'edit' && (

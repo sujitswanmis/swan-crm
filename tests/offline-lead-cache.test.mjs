@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { isCompleteLeadCache } from '../src/utils/leadCachePolicy.js';
 import {
   getFastLeadsSnapshot,
   getLocalLeads,
@@ -97,7 +98,7 @@ test('lead cache writes are scoped, bounded, and report transaction failures', a
   // A later full sync excludes stale rows without clearing unrelated records.
   assert.equal(await saveLeadsLocally([{ id: 4, company: 'A new' }], 'a2'), true);
   localStorage.setItem('crm_leads_complete_cache_v1_employee-a', JSON.stringify({ generation: 'a2' }));
-  assert.deepEqual((await getLocalLeadsPreview('Company A', 'agent')).map(lead => lead.id), [1]);
+  assert.deepEqual(await getLocalLeadsPreview('Company A', 'agent'), []);
   assert.deepEqual((await getLocalLeads()).map(lead => lead.id), [4]);
 
   saveFastLeadsSnapshot([{ id: 1, company: 'A', lead_ref_id: 'A-1' }], 'employee-a');
@@ -123,6 +124,7 @@ test('large local lead reads publish a preview before the complete cache', async
 
   const leads = Array.from({ length: 305 }, (_, id) => ({ id: id + 1000, company: 'Preview' }));
   assert.equal(await saveLeadsLocally(leads, 'preview-1'), true);
+  assert.equal(await saveLocalLeadsPreview(leads, 'preview-1', 'Company A', 'agent'), true);
 
   let preview = [];
   const all = await getLocalLeads({ onPreview: firstRows => { preview = firstRows; } });
@@ -144,4 +146,31 @@ test('fast snapshot falls back to a smaller payload when storage is nearly full'
   const leads = Array.from({ length: 300 }, (_, id) => ({ id, company: 'Acme', remarks: 'long note '.repeat(100) }));
   saveFastLeadsSnapshot(leads, 'employee-quota');
   assert.ok(getFastLeadsSnapshot('employee-quota').length > 0);
+});
+
+test('fast snapshot rejects a changed role, company, or cache generation', () => {
+  globalThis.window = {};
+  globalThis.sessionStorage = storage();
+  globalThis.localStorage = storage();
+  const context = { userCompany: 'Company A', userRole: 'agent' };
+  saveFastLeadsSnapshot([{ id: 42, company: 'A' }], 'employee-context', context);
+  assert.equal(getFastLeadsSnapshot('employee-context', context).length, 1);
+  sessionStorage.setItem('supuja_fast_leads_snapshot_employee-context', '{broken');
+  assert.equal(getFastLeadsSnapshot('employee-context', context).length, 1);
+  assert.deepEqual(getFastLeadsSnapshot('employee-context', { ...context, userRole: 'admin' }), []);
+  localStorage.setItem('crm_leads_complete_cache_v1_employee-context', JSON.stringify({ generation: 'new-generation' }));
+  assert.deepEqual(getFastLeadsSnapshot('employee-context', context), []);
+});
+
+test('delta sync requires a complete, current cache for the same user and role', () => {
+  const now = Date.parse('2026-10-01T10:00:00.000Z');
+  const scope = { userId: 'employee-a', userCompany: 'Company A', userRole: 'agent', now };
+  const meta = { ...scope, count: 2, generation: 'gen-1', syncedAt: '2026-10-01T09:00:00.000Z', fullSyncedAt: '2026-10-01T08:00:00.000Z' };
+  const leads = [1, 2].map(id => ({ id, __cacheScope: scope.userId, __cacheGeneration: meta.generation }));
+  assert.equal(isCompleteLeadCache(meta, leads, scope), true);
+  assert.equal(isCompleteLeadCache(meta, leads.slice(0, 1), scope), false);
+  assert.equal(isCompleteLeadCache({ ...meta, fullSyncedAt: null }, leads, scope), false);
+  assert.equal(isCompleteLeadCache(meta, [{ ...leads[0], __cacheGeneration: 'old' }, leads[1]], scope), false);
+  assert.equal(isCompleteLeadCache(meta, leads, { ...scope, userCompany: 'Company B' }), false);
+  assert.equal(isCompleteLeadCache({ ...meta, fullSyncedAt: '2026-09-29T08:00:00.000Z' }, leads, scope), false);
 });

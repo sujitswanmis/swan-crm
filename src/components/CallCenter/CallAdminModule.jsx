@@ -471,7 +471,7 @@ function TabCallLogs() {
   }, []);
 
   // Quick Date Presets (Strict IST)
-  const [datePreset, setDatePreset] = useState('all');
+  const [datePreset, setDatePreset] = useState('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 

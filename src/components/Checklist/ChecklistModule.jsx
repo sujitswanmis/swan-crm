@@ -103,8 +103,8 @@ export default function ChecklistModule({
   };
 
   // Performance Dashboard Filters & State
-  const initialDashboardRange = useMemo(() => computeDateRange('this_month'), []);
-  const [dashboardDatePreset, setDashboardDatePreset] = useState('this_month'); // 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom'
+  const initialDashboardRange = useMemo(() => computeDateRange('today'), []);
+  const [dashboardDatePreset, setDashboardDatePreset] = useState('today'); // 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom'
   const [dashboardStartDate, setDashboardStartDate] = useState(initialDashboardRange.startDate);
   const [dashboardEndDate, setDashboardEndDate] = useState(initialDashboardRange.endDate);
   const [dashboardScope, setDashboardScope] = useState(isAdmin || isManager ? 'COMPANY_WIDE' : 'MY_PERFORMANCE'); // 'COMPANY_WIDE' | 'MY_TEAM' | 'MY_PERFORMANCE'
@@ -113,8 +113,8 @@ export default function ChecklistModule({
   const [dashboardLeaderboardScoreFilter, setDashboardLeaderboardScoreFilter] = useState('ALL');
 
   // Compliance & Verification Filters & Pagination State
-  const initialComplianceRange = useMemo(() => computeDateRange('this_month'), []);
-  const [complianceDatePreset, setComplianceDatePreset] = useState('this_month'); // 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom'
+  const initialComplianceRange = useMemo(() => computeDateRange('today'), []);
+  const [complianceDatePreset, setComplianceDatePreset] = useState('today'); // 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom'
   const [complianceStartDate, setComplianceStartDate] = useState(initialComplianceRange.startDate);
   const [complianceEndDate, setComplianceEndDate] = useState(initialComplianceRange.endDate);
   const [complianceSearchQuery, setComplianceSearchQuery] = useState('');
@@ -330,8 +330,7 @@ export default function ChecklistModule({
       if (dashboardDatePreset === 'all') return true;
       const logDate = log.submitted_at ? new Date(log.submitted_at) : null;
       if (!logDate || isNaN(logDate.getTime())) return true;
-
-      const logDateStr = `${logDate.getFullYear()}-${String(logDate.getMonth() + 1).padStart(2, '0')}-${String(logDate.getDate()).padStart(2, '0')}`;
+      const logDateStr = getISTDateParts(logDate).dateStr;
       if (dashboardStartDate && logDateStr < dashboardStartDate) return false;
       if (dashboardEndDate && logDateStr > dashboardEndDate) return false;
       return true;

@@ -40,6 +40,17 @@ const CATEGORIES = [
   'OTHER'
 ];
 
+const istDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+});
+
+const getISTDateKey = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = value instanceof Date ? value : new Date(value);
+  return isNaN(date.getTime()) ? '' : istDateFormatter.format(date);
+};
+
 export default function DelegationTaskModule({
   userRole = 'agent',
   userId = '',
@@ -57,7 +68,7 @@ export default function DelegationTaskModule({
   // Tabs: 'dashboard' (Delegation Dashboard) | 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
   const [viewMode, setViewMode] = useState('tiles'); // 'tiles' | 'table'
-  const [taskDateRange, setTaskDateRange] = useState('all'); // 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30_days' | 'custom'
+  const [taskDateRange, setTaskDateRange] = useState('today'); // 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30_days' | 'custom'
   const [taskCustomStartDate, setTaskCustomStartDate] = useState('');
   const [taskCustomEndDate, setTaskCustomEndDate] = useState('');
   const [tasks, setTasks] = useState([]);
@@ -72,7 +83,7 @@ export default function DelegationTaskModule({
 
   // Dashboard specific filters
   const [dashboardScope, setDashboardScope] = useState(isAdmin ? 'COMPANY_WIDE' : 'MY_DELEGATIONS');
-  const [dashboardTimeRange, setDashboardTimeRange] = useState('all');
+  const [dashboardTimeRange, setDashboardTimeRange] = useState('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [dashboardDept, setDashboardDept] = useState('ALL');
@@ -270,24 +281,24 @@ export default function DelegationTaskModule({
   const filteredTasks = useMemo(() => {
     let list = [...tasks];
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = getISTDateKey(now);
 
     if (taskDateRange === 'today') {
-      list = list.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr || (t.start_date || '').slice(0, 10) === todayStr);
+      list = list.filter(t => getISTDateKey(t.created_at) === todayStr || getISTDateKey(t.deadline) === todayStr || getISTDateKey(t.start_date) === todayStr);
     } else if (taskDateRange === 'tomorrow') {
       const tom = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const tomStr = tom.toISOString().slice(0, 10);
-      list = list.filter(t => (t.deadline || '').slice(0, 10) === tomStr || (t.start_date || '').slice(0, 10) === tomStr);
+      const tomStr = getISTDateKey(tom);
+      list = list.filter(t => getISTDateKey(t.deadline) === tomStr || getISTDateKey(t.start_date) === tomStr);
     } else if (taskDateRange === 'upcoming') {
       list = list.filter(t => {
-        const dStr = (t.deadline || '').slice(0, 10);
-        const sStr = (t.start_date || '').slice(0, 10);
+        const dStr = getISTDateKey(t.deadline);
+        const sStr = getISTDateKey(t.start_date);
         return dStr > todayStr || sStr > todayStr;
       });
     } else if (taskDateRange === 'yesterday') {
       const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const yestStr = yest.toISOString().slice(0, 10);
-      list = list.filter(t => (t.created_at || '').slice(0, 10) === yestStr || (t.deadline || '').slice(0, 10) === yestStr || (t.start_date || '').slice(0, 10) === yestStr);
+      const yestStr = getISTDateKey(yest);
+      list = list.filter(t => getISTDateKey(t.created_at) === yestStr || getISTDateKey(t.deadline) === yestStr || getISTDateKey(t.start_date) === yestStr);
     } else if (taskDateRange === 'this_week') {
       const startOfWeek = new Date(now);
       const day = now.getDay();
@@ -337,24 +348,24 @@ export default function DelegationTaskModule({
 
     // 2. Date Range Filter
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = getISTDateKey(now);
 
     if (dashboardTimeRange === 'today') {
-      baseTasks = baseTasks.filter(t => (t.created_at || '').slice(0, 10) === todayStr || (t.deadline || '').slice(0, 10) === todayStr);
+      baseTasks = baseTasks.filter(t => getISTDateKey(t.created_at) === todayStr || getISTDateKey(t.deadline) === todayStr);
     } else if (dashboardTimeRange === 'tomorrow') {
       const tom = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const tomStr = tom.toISOString().slice(0, 10);
-      baseTasks = baseTasks.filter(t => (t.deadline || '').slice(0, 10) === tomStr || (t.start_date || '').slice(0, 10) === tomStr);
+      const tomStr = getISTDateKey(tom);
+      baseTasks = baseTasks.filter(t => getISTDateKey(t.deadline) === tomStr || getISTDateKey(t.start_date) === tomStr);
     } else if (dashboardTimeRange === 'upcoming') {
       baseTasks = baseTasks.filter(t => {
-        const dStr = (t.deadline || '').slice(0, 10);
-        const sStr = (t.start_date || '').slice(0, 10);
+        const dStr = getISTDateKey(t.deadline);
+        const sStr = getISTDateKey(t.start_date);
         return dStr > todayStr || sStr > todayStr;
       });
     } else if (dashboardTimeRange === 'yesterday') {
       const yest = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const yestStr = yest.toISOString().slice(0, 10);
-      baseTasks = baseTasks.filter(t => (t.created_at || '').slice(0, 10) === yestStr || (t.deadline || '').slice(0, 10) === yestStr);
+      const yestStr = getISTDateKey(yest);
+      baseTasks = baseTasks.filter(t => getISTDateKey(t.created_at) === yestStr || getISTDateKey(t.deadline) === yestStr);
     } else if (dashboardTimeRange === 'this_week') {
       const startOfWeek = new Date(now);
       const day = now.getDay();

@@ -69,12 +69,11 @@ export const HOURLY_SLOTS = [
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
 
-// Helper function for local YYYY-MM-DD string formatting (prevents UTC timezone desync)
+// All lead date presets use the same IST calendar day on every device.
 function getLocalDateStr(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(d);
 }
 
 function getLocalHour(dateVal) {
@@ -267,7 +266,7 @@ export default function LeadDashboard({
   const canViewHourlyWork = getSubItemPermissions(moduleAccess, userRole, 'leads', 'hourly_work').view;
 
   // Filter States
-  const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'all', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'custom'
+  const [dateRangeFilter, setDateRangeFilter] = useState('today'); // 'all', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'custom'
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
