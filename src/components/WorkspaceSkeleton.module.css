@@ -1,8 +1,9 @@
 .root {
   width: 100%;
   min-height: 100%;
-  padding: 0.25rem;
+  padding: 0.5rem;
   color: var(--text-primary);
+  box-sizing: border-box;
 }
 
 .srOnly {
@@ -24,61 +25,428 @@
   animation: workspaceSkeletonPulse 1.4s ease-in-out infinite;
 }
 
-.heading,
-.filters,
+/* ==========================================================================
+   COMMON LAYOUTS
+   ========================================================================== */
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.title { width: min(16rem, 50%); height: 2.2rem; }
+.action { width: 7.5rem; height: 2.3rem; }
+.filters { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.search { width: min(22rem, 55%); height: 2.5rem; }
+.filter { width: 6.5rem; height: 2.5rem; }
+
+.table,
+.card,
+.panel,
+.formCard,
+.chatContainer,
+.settingsCard {
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #fff);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ==========================================================================
+   TABLE VARIANT
+   ========================================================================== */
+.table { overflow: hidden; padding: 0.75rem; }
+.tableHead { height: 2.6rem; margin-bottom: 0.4rem; }
 .row {
   display: flex;
   align-items: center;
   gap: 1rem;
+  padding: 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
 }
-
-.heading {
+.row:last-child { border-bottom: 0; }
+.cellWide { width: 35%; height: 1.1rem; }
+.cell { width: 20%; height: 1.1rem; }
+.cellShort { width: 12%; height: 1.1rem; }
+.paginationBar {
+  display: flex;
   justify-content: space-between;
-  margin-bottom: 1.5rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.5rem 0.25rem;
+}
+.pagePills { display: flex; gap: 0.4rem; }
+.pagePill { width: 2.2rem; height: 2rem; border-radius: 0.35rem; }
+
+/* ==========================================================================
+   FORM VARIANT (Client Registration & Forms)
+   ========================================================================== */
+.formContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.formCard {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.formSectionTitle { width: 14rem; height: 1.4rem; margin-bottom: 0.5rem; }
+.formGrid2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+.formGrid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.fieldLabel { width: 35%; height: 0.9rem; }
+.fieldInput { width: 100%; height: 2.6rem; }
+.fieldTextarea { width: 100%; height: 5rem; }
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 
-.title { width: min(15rem, 50%); height: 2rem; }
-.action { width: 7rem; height: 2.25rem; }
-.filters { margin-bottom: 1.25rem; }
-.search { width: min(22rem, 48%); height: 2.5rem; }
-.filter { width: 6rem; height: 2.5rem; }
+/* ==========================================================================
+   ANALYTICS / DASHBOARD VARIANT
+   ========================================================================== */
+.kpiGrid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.kpiCard {
+  padding: 1.25rem;
+  min-height: 7.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.kpiHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.kpiIcon { width: 2.5rem; height: 2.5rem; border-radius: 0.5rem; }
+.kpiLabel { width: 45%; height: 0.85rem; }
+.kpiValue { width: 60%; height: 2rem; margin-top: 0.5rem; }
+.kpiTrend { width: 40%; height: 1rem; }
 
-.table,
-.card,
-.panel {
+.chartsGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.chartCard {
+  padding: 1.25rem;
+  min-height: 18rem;
+  display: flex;
+  flex-direction: column;
+}
+.chartTitle { width: 12rem; height: 1.2rem; margin-bottom: 1.5rem; }
+.chartBars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.85rem;
+  padding: 0.5rem 0;
+}
+.chartBar {
+  flex: 1;
+  border-radius: 0.35rem 0.35rem 0 0;
+}
+.donutContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+.chartDonut {
+  width: 9rem;
+  height: 9rem;
+  border-radius: 50%;
+}
+.donutLegend {
+  display: flex;
+  gap: 0.75rem;
+  width: 80%;
+  justify-content: center;
+}
+.legendItem { width: 4rem; height: 0.9rem; }
+
+/* ==========================================================================
+   CHAT / MESSAGING VARIANT (WhatsApp, AI Assistant)
+   ========================================================================== */
+.chatContainer {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: calc(100vh - 145px);
+  min-height: 520px;
+  overflow: hidden;
+}
+.chatSidebar {
+  border-right: 1px solid var(--border-light, #e2e8f0);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background: var(--bg-surface, #fff);
+}
+.chatSearch { width: 100%; height: 2.4rem; }
+.chatList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.chatListItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.5rem;
+  border-radius: 0.5rem;
+}
+.chatAvatar { width: 2.75rem; height: 2.75rem; border-radius: 50%; flex-shrink: 0; }
+.chatMeta { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
+.chatName { width: 55%; height: 0.95rem; }
+.chatPreview { width: 85%; height: 0.75rem; }
+
+.chatMain {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #f8fafc);
+}
+.chatHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-surface, #fff);
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+}
+.chatHeaderMeta { display: flex; flex-direction: column; gap: 0.35rem; }
+.chatHeaderName { width: 10rem; height: 1rem; }
+.chatHeaderStatus { width: 5rem; height: 0.75rem; }
+.chatFeed {
+  flex: 1;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  overflow: hidden;
+}
+.chatBubbleLeft {
+  align-self: flex-start;
+  width: min(20rem, 70%);
+  height: 3.5rem;
+  border-radius: 0.75rem 0.75rem 0.75rem 0.15rem;
+}
+.chatBubbleRight {
+  align-self: flex-end;
+  width: min(18rem, 65%);
+  height: 3rem;
+  border-radius: 0.75rem 0.75rem 0.15rem 0.75rem;
+}
+.chatInputBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-surface, #fff);
+  border-top: 1px solid var(--border-light, #e2e8f0);
+}
+.chatInput { flex: 1; height: 2.6rem; border-radius: 2rem; }
+.chatSendBtn { width: 2.6rem; height: 2.6rem; border-radius: 50%; }
+
+/* ==========================================================================
+   CALL CENTER VARIANT
+   ========================================================================== */
+.ccHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.75rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #fff);
+}
+.ccStatusPill { width: 8rem; height: 2.2rem; border-radius: 2rem; }
+.ccLayout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 1.25rem;
+}
+.ccDialerCard {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+.ccDisplay { width: 100%; height: 3.2rem; border-radius: 0.5rem; }
+.ccKeypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  width: 100%;
+}
+.ccKey { height: 3.5rem; border-radius: 50%; }
+.ccCallAction { width: 100%; height: 3.2rem; border-radius: 2rem; margin-top: 0.5rem; }
+
+/* ==========================================================================
+   ATTENDANCE VARIANT
+   ========================================================================== */
+.attBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #fff);
+}
+.punchClockBox { display: flex; flex-direction: column; gap: 0.5rem; }
+.punchTime { width: 12rem; height: 2.4rem; }
+.punchDate { width: 8rem; height: 1rem; }
+.punchBtn { width: 10rem; height: 3.5rem; border-radius: 2rem; }
+
+/* ==========================================================================
+   SETTINGS VARIANT
+   ========================================================================== */
+.settingsLayout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1.25rem;
+}
+.settingsSidebar {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   border: 1px solid var(--border-light, #e2e8f0);
   background: var(--bg-surface, #fff);
   border-radius: 0.75rem;
+  height: fit-content;
 }
+.settingsMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.65rem;
+  border-radius: 0.5rem;
+}
+.settingsMenuIcon { width: 1.5rem; height: 1.5rem; border-radius: 0.35rem; }
+.settingsMenuText { width: 60%; height: 0.95rem; }
+.settingsContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.settingsCard {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+}
+.settingsRow:last-child { border-bottom: 0; padding-bottom: 0; }
+.settingsRowMeta { display: flex; flex-direction: column; gap: 0.4rem; width: 65%; }
+.settingsRowTitle { width: 50%; height: 1rem; }
+.settingsRowDesc { width: 85%; height: 0.8rem; }
+.settingsToggle { width: 3.2rem; height: 1.8rem; border-radius: 2rem; }
 
-.table { overflow: hidden; padding: 0.75rem; }
-.tableHead { height: 2.5rem; margin-bottom: 0.35rem; }
-.row { padding: 0.85rem 0.5rem; border-bottom: 1px solid var(--border-light, #e2e8f0); }
-.row:last-child { border-bottom: 0; }
-.cellWide { width: 35%; height: 1rem; }
-.cell { width: 20%; height: 1rem; }
-.cellShort { width: 12%; height: 1rem; }
+/* ==========================================================================
+   CHECKLIST / TASKS VARIANT
+   ========================================================================== */
+.tabsBar {
+  display: flex;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.tabItem { width: 7rem; height: 2.4rem; border-radius: 0.5rem; flex-shrink: 0; }
+.progressCard {
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #fff);
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.progressBar { width: 100%; height: 0.75rem; border-radius: 1rem; }
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.taskItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #fff);
+}
+.taskCheck { width: 1.5rem; height: 1.5rem; border-radius: 0.35rem; flex-shrink: 0; }
+.taskBody { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
+.taskTitle { width: 65%; height: 1rem; }
+.taskMeta { display: flex; gap: 0.65rem; }
+.taskTag { width: 4.5rem; height: 0.8rem; border-radius: 0.25rem; }
 
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
-.card { min-height: 7rem; padding: 1.25rem; }
-.cardLabel { width: 45%; height: 0.85rem; margin-bottom: 1.1rem; }
-.cardValue { width: 60%; height: 1.7rem; }
-.panel { min-height: 17rem; padding: 1.25rem; }
-.panelTitle { width: 11rem; height: 1.2rem; margin-bottom: 1.5rem; }
-.panelBody { width: 100%; height: 11rem; }
-
+/* ==========================================================================
+   ANIMATIONS & RESPONSIVE BREAKPOINTS
+   ========================================================================== */
 @keyframes workspaceSkeletonPulse {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
 }
 
-@media (max-width: 640px) {
-  .cards { grid-template-columns: 1fr; }
-  .card { min-height: 5.5rem; }
-  .row .cell:nth-last-child(-n + 2) { display: none; }
-  .search { width: 55%; }
-  .filter { width: 20%; }
-  .filters .filter:last-child { display: none; }
+@media (max-width: 1024px) {
+  .chartsGrid { grid-template-columns: 1fr; }
+  .kpiGrid4 { grid-template-columns: repeat(2, 1fr); }
+  .chatContainer { grid-template-columns: 240px 1fr; }
+  .settingsLayout { grid-template-columns: 200px 1fr; }
+  .ccLayout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .formGrid2, .formGrid3 { grid-template-columns: 1fr; }
+  .chatContainer { grid-template-columns: 1fr; }
+  .chatSidebar { display: none; }
+  .settingsLayout { grid-template-columns: 1fr; }
+  .settingsSidebar { display: none; }
+  .kpiGrid4 { grid-template-columns: 1fr; }
+  .attBanner { flex-direction: column; gap: 1rem; align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
