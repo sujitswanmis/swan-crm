@@ -65,7 +65,7 @@ export async function POST(req) {
     const noAutoDial = role === 'agent' ? '' : '&amp;autodial=0';
     const callbackUrl = `${appBaseUrl}/api/plivo/conference-callback?room=${encodeURIComponent(cleanRoom)}${noAutoDial}`;
     const recordCallbackUrl = `${appBaseUrl}/api/plivo/recording-callback?room=${encodeURIComponent(cleanRoom)}`;
-    const waitSound = isAgentRole ? ` waitSound="${appBaseUrl}/api/plivo/wait-silence"` : '';
+    const waitSound = isAgentRole ? ` waitSound="${appBaseUrl}/ringback.mp3"` : '';
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Conference callbackUrl="${callbackUrl}" callbackMethod="POST" startConferenceOnEnter="${startOnEnter}" endConferenceOnExit="${endOnExit}"${waitSound} record="true" recordCallbackUrl="${recordCallbackUrl}">
