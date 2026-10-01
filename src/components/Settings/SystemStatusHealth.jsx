@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Activity, Database, Wifi, HardDrive, PhoneCall, MessageSquare,
   Bot, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Clock,
   ShieldCheck, ArrowUpRight, Zap, Check, AlertCircle, HelpCircle,
   Server, Cpu, Play, Mic, Volume2, FileText, CheckSquare, Layers,
-  Download, Copy, Trash2, Bug, Info, ExternalLink, Lock, Wrench
+  Download, Copy, Trash2, Bug, Info, ExternalLink, Lock, Wrench,
+  Users, UserCheck, PhoneMissed, PhoneForwarded, AlertOctagon,
+  Calendar, CheckCircle, Flame, ShieldAlert, Sparkles, FolderArchive
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -37,15 +39,19 @@ const formatISTTimestamp = (date = new Date()) => {
 
 export default function SystemStatusHealth() {
   const supabase = createClient();
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'leads' | 'telephony' | 'workforce' | 'infra' | 'errors'
   const [isRunning, setIsRunning] = useState(false);
   const [lastChecked, setLastChecked] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'operational' | 'issues'
   const [reportCopied, setReportCopied] = useState(false);
   const [selfHealingState, setSelfHealingState] = useState({ active: false, action: '', message: '' });
 
   // Captured live runtime errors
   const [runtimeErrors, setRuntimeErrors] = useState([]);
+
+  // Deep Server Audit State
+  const [serverAudit, setServerAudit] = useState(null);
+  const [serverAuditLoading, setServerAuditLoading] = useState(false);
 
   // Setup Global Error Listeners on Mount
   useEffect(() => {
@@ -60,7 +66,7 @@ export default function SystemStatusHealth() {
         timestamp: formatISTTimestamp(new Date()),
         timeRaw: new Date()
       };
-      setRuntimeErrors(prev => [errObj, ...prev.slice(0, 19)]);
+      setRuntimeErrors(prev => [errObj, ...prev.slice(0, 24)]);
     };
 
     const handleUnhandledRejection = (event) => {
@@ -75,7 +81,7 @@ export default function SystemStatusHealth() {
         timestamp: formatISTTimestamp(new Date()),
         timeRaw: new Date()
       };
-      setRuntimeErrors(prev => [errObj, ...prev.slice(0, 19)]);
+      setRuntimeErrors(prev => [errObj, ...prev.slice(0, 24)]);
     };
 
     window.addEventListener('error', handleWindowError);
@@ -89,12 +95,12 @@ export default function SystemStatusHealth() {
 
   // Component Status Map
   const [components, setComponents] = useState({
-    // Database & Core Storage
-    supabase_auth: { id: 'supabase_auth', category: 'Database', name: 'Supabase Auth & Session Token', status: 'pending', latency: null, details: 'Validating active session...', error: null, impact: 'User authentication & session access' },
-    db_connection: { id: 'db_connection', category: 'Database', name: 'PostgreSQL Database Connection (PostgREST)', status: 'pending', latency: null, details: 'Measuring connection latency...', error: null, impact: 'Core data query and mutation operations' },
+    // Core Database & Security
+    supabase_auth: { id: 'supabase_auth', category: 'Database', name: 'Supabase Auth Session & Tokens', status: 'pending', latency: null, details: 'Validating active session...', error: null, impact: 'User authentication & session access' },
+    db_connection: { id: 'db_connection', category: 'Database', name: 'PostgreSQL PostgREST Query Ping', status: 'pending', latency: null, details: 'Measuring connection latency...', error: null, impact: 'Core database read/write responsiveness' },
     leads_table: { id: 'leads_table', category: 'Database', name: 'Leads Table & Data Access', status: 'pending', latency: null, details: 'Checking row counts & query health...', error: null, impact: 'Lead management, search, and table viewing' },
-    notes_table: { id: 'notes_table', category: 'Database', name: 'Lead Notes & Audit Trail Records', status: 'pending', latency: null, details: 'Checking activity logs...', error: null, impact: 'Remarks, timeline history, and employee audit' },
-    attendance_table: { id: 'attendance_table', category: 'Database', name: 'Smart Attendance & Punch Records', status: 'pending', latency: null, details: 'Verifying punch record access...', error: null, impact: 'Morning in-punch, evening out-punch, and working hours' },
+    notes_table: { id: 'notes_table', category: 'Database', name: 'Lead Notes & Activity Trail', status: 'pending', latency: null, details: 'Checking activity logs...', error: null, impact: 'Remarks, timeline history, and employee audit' },
+    attendance_table: { id: 'attendance_table', category: 'Database', name: 'Smart Attendance Records', status: 'pending', latency: null, details: 'Verifying punch record access...', error: null, impact: 'Morning in-punch, evening out-punch, and working hours' },
     roles_permissions: { id: 'roles_permissions', category: 'Database', name: 'User Roles & Access Control (RLS)', status: 'pending', latency: null, details: 'Verifying user permissions...', error: null, impact: 'Page security, role enforcement, and module access' },
     tasks_checklists: { id: 'tasks_checklists', category: 'Database', name: 'Delegation Tasks & Smart Checklists', status: 'pending', latency: null, details: 'Checking operational task storage...', error: null, impact: 'Daily checklists, delegated tasks, and approvals' },
     audit_logs: { id: 'audit_logs', category: 'Database', name: 'System Security & Activity Audit Trail', status: 'pending', latency: null, details: 'Verifying security audit table...', error: null, impact: 'Security compliance and user action monitoring' },
@@ -125,7 +131,7 @@ export default function SystemStatusHealth() {
     }));
   }, []);
 
-  // Individual Testers
+  // Testers
   const testNetwork = async () => {
     const start = performance.now();
     try {
@@ -176,7 +182,7 @@ export default function SystemStatusHealth() {
           status: 'operational',
           latency,
           details: hasSession
-            ? `Active session for ${data.session.user?.email || 'User'}${expiresAt ? ` (Valid until ${expiresAt})` : ''}`
+            ? `Active session for ${data.session.user?.email || 'User'}${expiresAt ? ` (Expires: ${expiresAt})` : ''}`
             : 'Public / Guest Session Active',
           error: null
         });
@@ -399,7 +405,7 @@ export default function SystemStatusHealth() {
         updateComponent('audit_logs', {
           status: 'operational',
           latency,
-          details: `Audit Trail Active (${(count || 0).toLocaleString()} logs, latest at ${lastAudit})`,
+          details: `Audit Trail Active (${(count || 0).toLocaleString()} logs, latest: ${lastAudit})`,
           error: null
         });
       }
@@ -439,7 +445,7 @@ export default function SystemStatusHealth() {
         updateComponent('microphone_permission', {
           status: 'warning',
           latency: null,
-          details: 'MediaDevices API not available in current browser mode (e.g. non-HTTPS)',
+          details: 'MediaDevices API not available in current browser mode',
           error: 'navigator.mediaDevices unavailable'
         });
         return;
@@ -628,7 +634,7 @@ export default function SystemStatusHealth() {
         updateComponent('storage_quota', {
           status: 'operational',
           latency: null,
-          details: 'Storage quota API not restricted',
+          details: 'Storage quota API normal',
           error: null
         });
       }
@@ -722,13 +728,16 @@ export default function SystemStatusHealth() {
     }
   };
 
-  const testServerHealth = async () => {
+  const fetchServerDeepAudit = async () => {
+    setServerAuditLoading(true);
     const start = performance.now();
     try {
       const res = await fetch('/api/system/health', { cache: 'no-store' });
       const latency = Math.round(performance.now() - start);
       if (res.ok) {
         const data = await res.json();
+        setServerAudit(data);
+
         const server = data?.checks?.server;
         const memoryStr = server?.memory ? `Heap: ${server.memory.heapUsedMb}/${server.memory.heapTotalMb}MB` : 'Memory OK';
         const uptimeStr = server?.uptimeSeconds ? `Uptime: ${Math.round(server.uptimeSeconds / 60)}m` : 'Online';
@@ -751,9 +760,11 @@ export default function SystemStatusHealth() {
       updateComponent('server_health', {
         status: 'warning',
         latency: null,
-        details: 'Server health check route unreachable',
+        details: 'Server health route unreachable',
         error: e.message
       });
+    } finally {
+      setServerAuditLoading(false);
     }
   };
 
@@ -761,7 +772,6 @@ export default function SystemStatusHealth() {
   const runAllChecks = useCallback(async () => {
     setIsRunning(true);
 
-    // Set all to checking
     setComponents(prev => {
       const updated = { ...prev };
       Object.keys(updated).forEach(k => {
@@ -791,7 +801,7 @@ export default function SystemStatusHealth() {
         testFastSnapshot(),
         testSyncQueue(),
         testLocalStorage(),
-        testServerHealth()
+        fetchServerDeepAudit()
       ]);
     } finally {
       setIsRunning(false);
@@ -804,7 +814,7 @@ export default function SystemStatusHealth() {
     runAllChecks();
   }, [runAllChecks]);
 
-  // Auto-Refresh interval (every 45s)
+  // Auto-Refresh interval
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
@@ -813,12 +823,12 @@ export default function SystemStatusHealth() {
     return () => clearInterval(interval);
   }, [autoRefresh, runAllChecks]);
 
-  // Self-Healing Actions
+  // Self-Healing Handlers
   const handleClearCache = async () => {
     setSelfHealingState({ active: true, action: 'cache', message: 'Purging local IndexedDB cache...' });
     try {
       await clearLocalLeadsCache();
-      setSelfHealingState({ active: false, action: '', message: 'Local cache cleared successfully! Re-running diagnostics...' });
+      setSelfHealingState({ active: false, action: '', message: 'Local cache cleared successfully! Priming snapshot...' });
       await testIndexedDb();
       await testFastSnapshot();
     } catch (e) {
@@ -830,7 +840,7 @@ export default function SystemStatusHealth() {
     setSelfHealingState({ active: true, action: 'sync', message: 'Syncing pending offline mutations...' });
     try {
       await syncPendingQueue(supabase);
-      setSelfHealingState({ active: false, action: '', message: 'Sync queue processed! Re-evaluating status...' });
+      setSelfHealingState({ active: false, action: '', message: 'Sync queue processed successfully!' });
       await testSyncQueue();
       await testLeadsTable();
     } catch (e) {
@@ -846,7 +856,7 @@ export default function SystemStatusHealth() {
         await testMicrophonePermission();
       }
     } catch (e) {
-      alert('Microphone Access Blocked: Please allow microphone permission in your browser URL bar icon.');
+      alert('Microphone Access Blocked: Please allow microphone permission in your browser address bar.');
       await testMicrophonePermission();
     }
   };
@@ -854,7 +864,7 @@ export default function SystemStatusHealth() {
   const handleExportReport = () => {
     try {
       const report = {
-        title: 'Swan CRM System Health Diagnostic Report',
+        title: 'Swan CRM System Health & Operational Audit Report',
         generatedAtIST: formatISTTimestamp(new Date()),
         overallHealthScore: healthScore + '%',
         browserInfo: {
@@ -862,14 +872,9 @@ export default function SystemStatusHealth() {
           isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
           platform: typeof navigator !== 'undefined' ? navigator.platform : 'N/A'
         },
-        detectedIssues: issuesList.map(issue => ({
-          component: issue.name,
-          category: issue.category,
-          status: issue.status,
-          rootCause: issue.error || issue.details,
-          impact: issue.impact
-        })),
-        allSubsystems: components,
+        deepServerAudit: serverAudit,
+        activeAnomalies: allAnomalies,
+        subsystems: components,
         recentRuntimeErrors: runtimeErrors
       };
 
@@ -892,18 +897,108 @@ export default function SystemStatusHealth() {
   const healthScore = Math.round(((operationalCount + warningCount * 0.6) / (totalCount || 1)) * 100);
   const overallState = errorCount > 0 ? 'critical' : warningCount > 0 ? 'degraded' : 'healthy';
 
-  const issuesList = componentList.filter(c => c.status === 'error' || c.status === 'warning');
+  // Dynamic Operational Anomalies List (From Client + Deep Server Audit)
+  const allAnomalies = useMemo(() => {
+    const list = [];
 
-  const filteredComponents = componentList.filter(c => {
-    if (activeFilter === 'operational') return c.status === 'operational';
-    if (activeFilter === 'issues') return c.status === 'warning' || c.status === 'error';
-    return true;
-  });
+    // Client component issues
+    componentList.forEach(c => {
+      if (c.status === 'error' || c.status === 'warning') {
+        list.push({
+          id: c.id,
+          source: 'Client Subsystem',
+          title: c.name,
+          category: c.category,
+          severity: c.status === 'error' ? 'CRITICAL' : 'WARNING',
+          rootCause: c.error || c.details,
+          impact: c.impact
+        });
+      }
+    });
 
-  const categories = ['Database', 'Realtime & Telephony', 'Client & Cache', 'Backend Server'];
+    // Deep Server Audit Anomalies
+    const s = serverAudit?.checks;
+    if (s) {
+      if (s.leadsDoctor?.unassignedLeads > 50) {
+        list.push({
+          id: 'unassigned_leads_anomaly',
+          source: 'Lead Pipeline Doctor',
+          title: 'Unassigned Leads Accumulation',
+          category: 'Leads',
+          severity: s.leadsDoctor.unassignedLeads > 200 ? 'CRITICAL' : 'WARNING',
+          rootCause: `${s.leadsDoctor.unassignedLeads.toLocaleString()} leads have NO employee assigned (assigned_to is NULL).`,
+          impact: 'Customer leads are sitting unattended without follow-up.'
+        });
+      }
+
+      if (s.leadsDoctor?.staleLeads > 500) {
+        list.push({
+          id: 'stale_leads_anomaly',
+          source: 'Lead Pipeline Doctor',
+          title: 'High Stale Leads Volume',
+          category: 'Leads',
+          severity: 'WARNING',
+          rootCause: `${s.leadsDoctor.staleLeads.toLocaleString()} leads have not received any update in over 14 days.`,
+          impact: 'Pipeline stagnation; potential revenue leakage.'
+        });
+      }
+
+      if (s.attendanceDoctor?.unclosedPastShifts > 5) {
+        list.push({
+          id: 'unclosed_shifts_anomaly',
+          source: 'Attendance Doctor',
+          title: 'Unclosed Shifts (Missing Out-Punch)',
+          category: 'Workforce',
+          severity: 'WARNING',
+          rootCause: `${s.attendanceDoctor.unclosedPastShifts} employee shifts from past days have In-Punch but NO Out-Punch.`,
+          impact: 'Inaccurate working hours and payroll regularization backlogs.'
+        });
+      }
+
+      if (s.tasksChecklistsDoctor?.overdueTasks > 10) {
+        list.push({
+          id: 'overdue_tasks_anomaly',
+          source: 'Task Delegation Doctor',
+          title: 'Overdue Operational Tasks',
+          category: 'Operations',
+          severity: 'WARNING',
+          rootCause: `${s.tasksChecklistsDoctor.overdueTasks} delegated tasks have crossed their deadline (IST) and remain uncompleted.`,
+          impact: 'Delayed project deliverables and operational bottlenecks.'
+        });
+      }
+
+      if (s.telephonyDoctor?.failedCallsToday > 10) {
+        list.push({
+          id: 'failed_calls_anomaly',
+          source: 'Telephony Doctor',
+          title: 'Elevated Call Failures Today',
+          category: 'Telephony',
+          severity: 'WARNING',
+          rootCause: `${s.telephonyDoctor.failedCallsToday} calls failed, rejected or dropped today.`,
+          impact: 'Potential telecommunication carrier issues or incorrect client numbers.'
+        });
+      }
+
+      if (s.storageDoctor?.status === 'warning') {
+        list.push({
+          id: 'storage_bucket_anomaly',
+          source: 'Storage Doctor',
+          title: 'Storage Buckets Inaccessible',
+          category: 'Storage',
+          severity: 'WARNING',
+          rootCause: s.storageDoctor.error || 'Failed to list Supabase storage buckets',
+          impact: 'Document uploads, lead attachments, or audio recordings may fail.'
+        });
+      }
+    }
+
+    return list;
+  }, [componentList, serverAudit]);
+
+  const sChecks = serverAudit?.checks;
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1280px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ padding: '1.5rem', maxWidth: '1380px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       
       {/* Top Header Banner */}
       <div style={{
@@ -912,30 +1007,42 @@ export default function SystemStatusHealth() {
         justifyContent: 'space-between',
         alignItems: 'center',
         gap: '1rem',
-        marginBottom: '1.5rem',
+        marginBottom: '1.25rem',
         paddingBottom: '1rem',
         borderBottom: '1px solid var(--border-color, #e2e8f0)'
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
             <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              backgroundColor: overallState === 'healthy' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#2563eb'
+              color: overallState === 'healthy' ? '#10b981' : '#ef4444'
             }}>
               <Activity size={24} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                System Health & Live Status
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  System Health & Live Status
+                </h2>
+                <span style={{
+                  padding: '0.15rem 0.55rem',
+                  borderRadius: '12px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  backgroundColor: overallState === 'healthy' ? '#10b981' : overallState === 'degraded' ? '#f59e0b' : '#ef4444',
+                  color: '#ffffff'
+                }}>
+                  {overallState === 'healthy' ? 'ALL SYSTEMS NORMAL' : overallState === 'degraded' ? 'ANOMALIES DETECTED' : 'CRITICAL ISSUES'}
+                </span>
+              </div>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Real-time full-stack diagnostics: PostgreSQL, Realtime WebSockets, Calling Softphone, Offline Sync & Runtime Errors.
+                Comprehensive operational doctor: Leads, Telephony, Attendance, Tasks, WhatsApp, Storage & Live Exceptions.
               </p>
             </div>
           </div>
@@ -1028,7 +1135,7 @@ export default function SystemStatusHealth() {
           border: '1px solid #bfdbfe',
           color: '#1e40af',
           fontSize: '0.85rem',
-          fontWeight: 500,
+          fontWeight: 600,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -1048,618 +1155,873 @@ export default function SystemStatusHealth() {
         </div>
       )}
 
-      {/* CRITICAL ISSUE DETECTION HUB: "Issues Requiring Attention" */}
-      {issuesList.length > 0 ? (
-        <div style={{
-          padding: '1.25rem 1.5rem',
-          borderRadius: '10px',
-          backgroundColor: 'rgba(239, 68, 68, 0.04)',
-          border: '2px solid #ef4444',
-          marginBottom: '1.5rem',
-          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.08)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+      {/* Navigation Sub-Tabs */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        borderBottom: '2px solid var(--border-color, #e2e8f0)',
+        marginBottom: '1.5rem',
+        overflowX: 'auto',
+        paddingBottom: '2px'
+      }}>
+        {[
+          { id: 'overview', label: '🏥 Overview & Alerts', badge: allAnomalies.length },
+          { id: 'leads', label: '🎯 Lead Quality Doctor', badge: sChecks?.leadsDoctor?.unassignedLeads || null },
+          { id: 'telephony', label: '📞 Calling & Voice', badge: sChecks?.telephonyDoctor?.failedCallsToday || null },
+          { id: 'workforce', label: '👥 Attendance & Sessions', badge: sChecks?.attendanceDoctor?.unclosedPastShifts || null },
+          { id: 'infra', label: '⚙️ Database & Infrastructure', badge: null },
+          { id: 'errors', label: '🚨 Live Error Terminal', badge: runtimeErrors.length }
+        ].map(tab => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: '0.65rem 1.1rem',
+                border: 'none',
+                borderBottom: isActive ? '3px solid #2563eb' : '3px solid transparent',
+                backgroundColor: 'transparent',
+                color: isActive ? '#2563eb' : 'var(--text-secondary)',
+                fontWeight: isActive ? 700 : 500,
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>{tab.label}</span>
+              {typeof tab.badge === 'number' && tab.badge > 0 && (
+                <span style={{
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '10px',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  backgroundColor: tab.id === 'errors' ? '#ef4444' : '#f59e0b',
+                  color: '#ffffff'
+                }}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: OVERVIEW & EXECUTIVE PULSE                                         */}
+      {/* ========================================================================= */}
+      {activeTab === 'overview' && (
+        <div>
+          {/* Master Anomaly Center */}
+          {allAnomalies.length > 0 ? (
             <div style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '50%',
-              backgroundColor: '#ef4444',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              padding: '1.25rem 1.5rem',
+              borderRadius: '10px',
+              backgroundColor: 'rgba(239, 68, 68, 0.04)',
+              border: '2px solid #ef4444',
+              marginBottom: '1.5rem',
+              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.08)'
             }}>
-              <AlertTriangle size={16} />
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#b91c1c' }}>
-                Active Issues Detected ({issuesList.length}) — Attention Required!
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                The diagnostic scanner identified potential anomalies that may impact live employee operations.
-              </p>
-            </div>
-          </div>
-
-          {/* Issue Cards Grid */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {issuesList.map(issue => (
-              <div
-                key={issue.id}
-                style={{
-                  padding: '0.85rem 1rem',
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--card-bg, #ffffff)',
-                  border: `1px solid ${issue.status === 'error' ? '#fca5a5' : '#fcd34d'}`,
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
                   display: 'flex',
-                  flexWrap: 'wrap',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.75rem'
-                }}
-              >
-                <div style={{ flex: '1 1 300px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
-                    <span style={{
-                      padding: '0.15rem 0.45rem',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem',
-                      fontWeight: 800,
-                      backgroundColor: issue.status === 'error' ? '#ef4444' : '#f59e0b',
-                      color: '#ffffff'
-                    }}>
-                      {issue.status === 'error' ? 'CRITICAL' : 'WARNING'}
-                    </span>
-                    <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                      {issue.name}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      [{issue.category}]
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '0.82rem', color: issue.status === 'error' ? '#dc2626' : '#d97706', fontWeight: 500 }}>
-                    Root Cause: {issue.error || issue.details}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                    <strong>Impact:</strong> {issue.impact}
-                  </div>
+                  justifyContent: 'center'
+                }}>
+                  <AlertTriangle size={18} />
                 </div>
-
-                {/* Quick 1-Click Fix Button for Detected Issue */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {issue.id === 'sync_queue' && (
-                    <button
-                      type="button"
-                      onClick={handleFlushSyncQueue}
-                      style={{
-                        padding: '0.35rem 0.75rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#2563eb',
-                        color: '#fff',
-                        border: 'none',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Retry Sync Queue
-                    </button>
-                  )}
-                  {issue.id === 'indexed_db' && (
-                    <button
-                      type="button"
-                      onClick={handleClearCache}
-                      style={{
-                        padding: '0.35rem 0.75rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#dc2626',
-                        color: '#fff',
-                        border: 'none',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Reset Local Cache
-                    </button>
-                  )}
-                  {issue.id === 'microphone_permission' && (
-                    <button
-                      type="button"
-                      onClick={handleRequestMic}
-                      style={{
-                        padding: '0.35rem 0.75rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#059669',
-                        color: '#fff',
-                        border: 'none',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Request Mic Permission
-                    </button>
-                  )}
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#b91c1c' }}>
+                    Active Operational Anomalies Detected ({allAnomalies.length})
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    Immediate attention recommended — issues detected in core employee workflows or data pipelines.
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{
-          padding: '1rem 1.25rem',
-          borderRadius: '10px',
-          backgroundColor: 'rgba(16, 185, 129, 0.08)',
-          border: '1px solid #10b981',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem'
-        }}>
-          <CheckCircle2 size={24} color="#10b981" />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#065f46' }}>
-              All Systems Operational & Synchronized (0 Issues Detected)
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {allAnomalies.map(issue => (
+                  <div
+                    key={issue.id}
+                    style={{
+                      padding: '0.85rem 1rem',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--card-bg, #ffffff)',
+                      border: `1px solid ${issue.severity === 'CRITICAL' ? '#fca5a5' : '#fcd34d'}`,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem'
+                    }}
+                  >
+                    <div style={{ flex: '1 1 320px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                        <span style={{
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          backgroundColor: issue.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b',
+                          color: '#ffffff'
+                        }}>
+                          {issue.severity}
+                        </span>
+                        <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                          {issue.title}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          [{issue.category}]
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: issue.severity === 'CRITICAL' ? '#dc2626' : '#d97706', fontWeight: 500 }}>
+                        <strong>Cause:</strong> {issue.rootCause}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                        <strong>Impact:</strong> {issue.impact}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ fontSize: '0.8rem', color: '#047857' }}>
-              PostgreSQL, Realtime WebSockets, Calling Softphone, and Offline Storage are operating normally with zero active errors.
+          ) : (
+            <div style={{
+              padding: '1.15rem 1.5rem',
+              borderRadius: '10px',
+              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid #10b981',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <CheckCircle2 size={26} color="#10b981" />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#065f46' }}>
+                  All Core Systems & Operational Workflows Running Smoothly (0 Anomalies)
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#047857' }}>
+                  Leads assignment, Softphone calling, Attendance logging, and Database latency are within optimal SLAs.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Pulse Metric Strip */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{
+              padding: '1.1rem',
+              borderRadius: '10px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>SYSTEM HEALTH SCORE</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: healthScore > 85 ? '#10b981' : healthScore > 70 ? '#f59e0b' : '#ef4444', marginTop: '0.2rem' }}>
+                {healthScore}%
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {operationalCount} of {totalCount} systems optimal
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.1rem',
+              borderRadius: '10px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>LEADS IN PIPELINE</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#2563eb', marginTop: '0.2rem' }}>
+                {sChecks?.leadsDoctor?.totalLeads ? sChecks.leadsDoctor.totalLeads.toLocaleString() : 'Loading...'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: sChecks?.leadsDoctor?.unassignedLeads > 50 ? '#ef4444' : 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {sChecks?.leadsDoctor?.unassignedLeads || 0} Unassigned Leads
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.1rem',
+              borderRadius: '10px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CALLS LOGGED TODAY</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>
+                {sChecks?.telephonyDoctor?.callsToday || 0}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: sChecks?.telephonyDoctor?.failedCallsToday > 5 ? '#ef4444' : 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {sChecks?.telephonyDoctor?.failedCallsToday || 0} Failed / Dropped
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.1rem',
+              borderRadius: '10px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>ATTENDANCE TODAY</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>
+                {sChecks?.attendanceDoctor?.punchedInToday || 0}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: sChecks?.attendanceDoctor?.unclosedPastShifts > 0 ? '#ef4444' : 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {sChecks?.attendanceDoctor?.unclosedPastShifts || 0} Unclosed Past Shifts
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.1rem',
+              borderRadius: '10px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>DB LATENCY (PING)</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>
+                {components.db_connection.latency ? `${components.db_connection.latency}ms` : 'Checking...'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                PostgREST SLA benchmark
+              </div>
+            </div>
+          </div>
+
+          {/* Self-Healing Fast Actions Strip */}
+          <div style={{
+            padding: '0.9rem 1.25rem',
+            borderRadius: '8px',
+            backgroundColor: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <Wrench size={16} color="#2563eb" />
+              <span>Self-Healing Operations Toolkit:</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleClearCache}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  backgroundColor: 'var(--card-bg, #ffffff)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <Trash2 size={13} />
+                Purge & Re-index Cache
+              </button>
+              <button
+                type="button"
+                onClick={handleFlushSyncQueue}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  backgroundColor: 'var(--card-bg, #ffffff)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <RefreshCw size={13} />
+                Flush Offline Sync Queue
+              </button>
+              <button
+                type="button"
+                onClick={handleRequestMic}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  backgroundColor: 'var(--card-bg, #ffffff)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <Mic size={13} />
+                Test Microphone Device
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Overview Status & Metric Strip */}
-      <div style={{
-        padding: '1.25rem 1.5rem',
-        borderRadius: '10px',
-        backgroundColor: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        marginBottom: '1.5rem',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '1.25rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-      }}>
-        {/* Health Score Pill */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      {/* ========================================================================= */}
+      {/* TAB 2: LEAD PIPELINE & DATA QUALITY DOCTOR                                */}
+      {/* ========================================================================= */}
+      {activeTab === 'leads' && (
+        <div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
+              🎯 Lead Pipeline & Data Quality Diagnostics
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Continuous audit of lead distribution, unassigned bottlenecks, stale records, and lead note activity.
+            </p>
+          </div>
+
           <div style={{
-            width: '54px',
-            height: '54px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: overallState === 'healthy' ? '#10b981' : overallState === 'degraded' ? '#f59e0b' : '#ef4444',
-            color: '#ffffff',
-            fontWeight: 800,
-            fontSize: '1.15rem'
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
           }}>
-            {healthScore}%
-          </div>
-          <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              System Health Score
+            {/* Total Leads Card */}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL REPOSITORY LEADS</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.leadsDoctor?.totalLeads ? sChecks.leadsDoctor.totalLeads.toLocaleString() : '...'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 600 }}>
+                +{sChecks?.leadsDoctor?.leadsToday || 0} leads added today (IST)
+              </div>
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-              {operationalCount} of {totalCount} subsystems operating at 100% capacity
+
+            {/* Unassigned Leads Alert Card */}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: (sChecks?.leadsDoctor?.unassignedLeads || 0) > 50 ? 'rgba(239, 68, 68, 0.05)' : 'var(--card-bg, #ffffff)',
+              border: `1px solid ${(sChecks?.leadsDoctor?.unassignedLeads || 0) > 50 ? '#ef4444' : 'var(--border-color, #e2e8f0)'}`
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>UNASSIGNED LEADS (NO OWNER)</span>
+                {(sChecks?.leadsDoctor?.unassignedLeads || 0) > 50 && (
+                  <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 800, backgroundColor: '#ef4444', color: '#fff' }}>ATTENTION</span>
+                )}
+              </div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (sChecks?.leadsDoctor?.unassignedLeads || 0) > 50 ? '#dc2626' : 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.leadsDoctor?.unassignedLeads ? sChecks.leadsDoctor.unassignedLeads.toLocaleString() : '0'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {(sChecks?.leadsDoctor?.unassignedLeads || 0) > 0 ? 'Requires auto-distribution to sales agents' : 'All leads properly distributed'}
+              </div>
+            </div>
+
+            {/* Stale Leads Card */}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>STALE LEADS (&gt;14 DAYS NO TOUCH)</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (sChecks?.leadsDoctor?.staleLeads || 0) > 500 ? '#d97706' : 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.leadsDoctor?.staleLeads ? sChecks.leadsDoctor.staleLeads.toLocaleString() : '0'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Untouched in follow-up pipeline
+              </div>
+            </div>
+
+            {/* Freshness Card */}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>LATEST LEAD INFLOW</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0.6rem 0' }}>
+                {sChecks?.leadsDoctor?.latestLeadCreated ? formatISTTimestamp(new Date(sChecks.leadsDoctor.latestLeadCreated)) : 'N/A'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Notes table latency: {components.notes_table.latency ? `${components.notes_table.latency}ms` : 'OK'}
+              </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Filter Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('all')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '20px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              border: activeFilter === 'all' ? '2px solid #2563eb' : '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: activeFilter === 'all' ? 'rgba(37, 99, 235, 0.08)' : 'var(--card-bg, #ffffff)',
-              color: activeFilter === 'all' ? '#2563eb' : 'var(--text-primary)'
-            }}
-          >
-            All Subsystems ({totalCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('operational')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '20px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              border: activeFilter === 'operational' ? '2px solid #10b981' : '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: activeFilter === 'operational' ? 'rgba(16, 185, 129, 0.08)' : 'var(--card-bg, #ffffff)',
-              color: '#10b981'
-            }}
-          >
-            Operational ({operationalCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('issues')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '20px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              border: activeFilter === 'issues' ? '2px solid #ef4444' : '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: activeFilter === 'issues' ? 'rgba(239, 68, 68, 0.08)' : 'var(--card-bg, #ffffff)',
-              color: warningCount + errorCount > 0 ? '#ef4444' : 'var(--text-secondary)'
-            }}
-          >
-            Issues / Warnings ({warningCount + errorCount})
-          </button>
-        </div>
-      </div>
+      {/* ========================================================================= */}
+      {/* TAB 3: TELEPHONY, CALLING & VOICE HEALTH                                  */}
+      {/* ========================================================================= */}
+      {activeTab === 'telephony' && (
+        <div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
+              📞 Calling & Telephony Health Doctor
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Real-time monitoring of Plivo Softphone API, WebRTC audio hardware, SIP endpoints, and live call sessions.
+            </p>
+          </div>
 
-      {/* Self-Healing Fast Actions Strip */}
-      <div style={{
-        padding: '0.75rem 1rem',
-        borderRadius: '8px',
-        backgroundColor: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        marginBottom: '1.5rem',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '0.75rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-          <Wrench size={16} color="#2563eb" />
-          <span>Self-Healing Quick Tools:</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={handleClearCache}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color, #e2e8f0)',
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
               backgroundColor: 'var(--card-bg, #ffffff)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.3rem'
-            }}
-          >
-            <Trash2 size={13} />
-            Purge & Re-index Cache
-          </button>
-          <button
-            type="button"
-            onClick={handleFlushSyncQueue}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: 'var(--card-bg, #ffffff)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.3rem'
-            }}
-          >
-            <RefreshCw size={13} />
-            Force Flush Offline Queue
-          </button>
-          <button
-            type="button"
-            onClick={handleRequestMic}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: 'var(--card-bg, #ffffff)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.3rem'
-            }}
-          >
-            <Mic size={13} />
-            Test Microphone Device
-          </button>
-        </div>
-      </div>
-
-      {/* Grouped Component Cards by Category */}
-      {categories.map(category => {
-        const items = filteredComponents.filter(c => c.category === category);
-        if (items.length === 0) return null;
-
-        const CategoryIcon = category === 'Database'
-          ? Database
-          : category === 'Realtime & Telephony'
-            ? PhoneCall
-            : category === 'Client & Cache'
-              ? HardDrive
-              : Server;
-
-        return (
-          <div key={category} style={{ marginBottom: '1.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <CategoryIcon size={18} style={{ color: '#2563eb' }} />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {category} ({items.length})
-              </h3>
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>CALLS LOGGED TODAY</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#2563eb', margin: '0.4rem 0' }}>
+                {sChecks?.telephonyDoctor?.callsToday || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Across all softphone agents
+              </div>
             </div>
 
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-              gap: '1rem'
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: (sChecks?.telephonyDoctor?.failedCallsToday || 0) > 5 ? 'rgba(239, 68, 68, 0.05)' : 'var(--card-bg, #ffffff)',
+              border: `1px solid ${(sChecks?.telephonyDoctor?.failedCallsToday || 0) > 5 ? '#ef4444' : 'var(--border-color, #e2e8f0)'}`
             }}>
-              {items.map(item => {
-                const isOp = item.status === 'operational';
-                const isWarn = item.status === 'warning';
-                const isErr = item.status === 'error';
-                const isChecking = item.status === 'checking';
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      padding: '1rem',
-                      borderRadius: '8px',
-                      border: `1px solid ${isErr ? '#fca5a5' : isWarn ? '#fcd34d' : 'var(--border-color, #e2e8f0)'}`,
-                      backgroundColor: 'var(--card-bg, #ffffff)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <div>
-                      {/* Card Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '0.5rem' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.3 }}>
-                          {item.name}
-                        </div>
-
-                        {/* Status Badge */}
-                        <div style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          backgroundColor: isOp
-                            ? 'rgba(16, 185, 129, 0.12)'
-                            : isWarn
-                              ? 'rgba(245, 158, 11, 0.12)'
-                              : isErr
-                                ? 'rgba(239, 68, 68, 0.12)'
-                                : 'rgba(59, 130, 246, 0.12)',
-                          color: isOp ? '#059669' : isWarn ? '#d97706' : isErr ? '#dc2626' : '#2563eb',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {isOp && <Check size={12} strokeWidth={3} />}
-                          {isWarn && <AlertTriangle size={12} />}
-                          {isErr && <XCircle size={12} />}
-                          {isChecking && <RefreshCw size={12} className="spin" />}
-                          {isOp ? 'Working' : isWarn ? 'Degraded' : isErr ? 'Error' : 'Testing'}
-                        </div>
-                      </div>
-
-                      {/* Details Text */}
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '0.5rem' }}>
-                        {item.details}
-                      </div>
-
-                      {/* Impact Tag */}
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', opacity: 0.85 }}>
-                        <strong>Affects:</strong> {item.impact}
-                      </div>
-
-                      {/* Error Banner if any */}
-                      {item.error && (
-                        <div style={{
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: '6px',
-                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          fontSize: '0.75rem',
-                          color: '#b91c1c',
-                          marginBottom: '0.5rem',
-                          wordBreak: 'break-word',
-                          fontFamily: 'monospace'
-                        }}>
-                          {item.error}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card Footer: Latency & Individual Retest */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingTop: '0.5rem',
-                      borderTop: '1px solid var(--border-color, #f1f5f9)',
-                      fontSize: '0.75rem',
-                      color: 'var(--text-secondary)'
-                    }}>
-                      <div>
-                        {typeof item.latency === 'number' ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              width: '7px',
-                              height: '7px',
-                              borderRadius: '50%',
-                              backgroundColor: item.latency < 400 ? '#10b981' : item.latency < 1200 ? '#f59e0b' : '#ef4444'
-                            }} />
-                            {item.latency} ms
-                          </span>
-                        ) : (
-                          <span>Internal Subsystem</span>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          updateComponent(item.id, { status: 'checking' });
-                          if (item.id === 'network_connection') await testNetwork();
-                          else if (item.id === 'supabase_auth') await testSupabaseAuth();
-                          else if (item.id === 'db_connection') await testDbConnection();
-                          else if (item.id === 'leads_table') await testLeadsTable();
-                          else if (item.id === 'notes_table') await testNotesTable();
-                          else if (item.id === 'attendance_table') await testAttendanceTable();
-                          else if (item.id === 'roles_permissions') await testRolesPermissions();
-                          else if (item.id === 'tasks_checklists') await testTasksChecklists();
-                          else if (item.id === 'audit_logs') await testAuditLogs();
-                          else if (item.id === 'realtime_channel') await testRealtime();
-                          else if (item.id === 'microphone_permission') await testMicrophonePermission();
-                          else if (item.id === 'softphone_api') await testSoftphoneApi();
-                          else if (item.id === 'whatsapp_gateway') await testWhatsappGateway();
-                          else if (item.id === 'ai_service') await testAiService();
-                          else if (item.id === 'indexed_db') await testIndexedDb();
-                          else if (item.id === 'storage_quota') await testStorageQuota();
-                          else if (item.id === 'fast_snapshot') await testFastSnapshot();
-                          else if (item.id === 'sync_queue') await testSyncQueue();
-                          else if (item.id === 'local_storage') await testLocalStorage();
-                          else if (item.id === 'server_health') await testServerHealth();
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#2563eb',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.2rem',
-                          padding: '0.1rem 0.3rem'
-                        }}
-                      >
-                        <RefreshCw size={11} /> Re-Test
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>FAILED / DROPPED CALLS TODAY</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (sChecks?.telephonyDoctor?.failedCallsToday || 0) > 5 ? '#dc2626' : 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.telephonyDoctor?.failedCallsToday || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Busy, Rejected, or No-Answer calls
+              </div>
             </div>
-          </div>
-        );
-      })}
 
-      {/* LIVE APPLICATION ERROR & EXCEPTION FEED ("Kahi bhi issues ho yaha pakad me aa jaye") */}
-      <div style={{
-        marginTop: '2rem',
-        padding: '1.25rem 1.5rem',
-        borderRadius: '10px',
-        backgroundColor: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-      }}>
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '0.75rem',
-          marginBottom: '1rem',
-          paddingBottom: '0.75rem',
-          borderBottom: '1px solid var(--border-color, #e2e8f0)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Bug size={18} color={runtimeErrors.length > 0 ? '#ef4444' : '#10b981'} />
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              Live Application Exceptions & Error Catcher ({runtimeErrors.length})
-            </h3>
-          </div>
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>REGISTERED CALL AGENTS</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#059669', margin: '0.4rem 0' }}>
+                {sChecks?.telephonyDoctor?.totalRegisteredAgents || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Configured in Plivo Call Registry
+              </div>
+            </div>
 
-          {runtimeErrors.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setRuntimeErrors([])}
-              style={{
-                padding: '0.35rem 0.75rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-color, #e2e8f0)',
-                backgroundColor: 'transparent',
-                color: 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.3rem'
-              }}
-            >
-              <Trash2 size={12} /> Clear Log
-            </button>
-          )}
-        </div>
-
-        {runtimeErrors.length === 0 ? (
-          <div style={{
-            padding: '1.5rem',
-            textAlign: 'center',
-            color: 'var(--text-secondary)',
-            fontSize: '0.85rem'
-          }}>
-            <CheckCircle2 size={32} color="#10b981" style={{ margin: '0 auto 0.5rem' }} />
-            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No Runtime Exceptions Captured</div>
-            <div>No uncaught JavaScript errors or rejected promises have occurred during this browser session.</div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto' }}>
-            {runtimeErrors.map(err => (
-              <div
-                key={err.id}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: components.microphone_permission.status === 'error' ? 'rgba(239, 68, 68, 0.05)' : 'var(--card-bg, #ffffff)',
+              border: `1px solid ${components.microphone_permission.status === 'error' ? '#ef4444' : 'var(--border-color, #e2e8f0)'}`
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>BROWSER MICROPHONE STATUS</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: components.microphone_permission.status === 'operational' ? '#059669' : '#dc2626', margin: '0.6rem 0' }}>
+                {components.microphone_permission.status === 'operational' ? 'GRANTED & READY' : 'PERMISSION BLOCKED'}
+              </div>
+              <button
+                type="button"
+                onClick={handleRequestMic}
                 style={{
-                  padding: '0.75rem 1rem',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.05)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  fontSize: '0.8rem',
-                  fontFamily: 'monospace'
+                  padding: '0.3rem 0.6rem',
+                  borderRadius: '4px',
+                  backgroundColor: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                  <span style={{ fontWeight: 700, color: '#dc2626' }}>[{err.type}] {err.filename}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{err.timestamp}</span>
-                </div>
-                <div style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
-                  {err.message}
-                </div>
-                {err.lineno && (
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                    Line: {err.lineno}, Col: {err.colno}
-                  </div>
-                )}
-              </div>
-            ))}
+                Re-test Hardware Mic
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: ATTENDANCE, SESSIONS & WORKFORCE                                   */}
+      {/* ========================================================================= */}
+      {activeTab === 'workforce' && (
+        <div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
+              👥 Attendance, Sessions & Workforce Diagnostics
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Auditing employee presence, unclosed shifts, pending regularizations, and active browser sessions.
+            </p>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>PUNCHED IN TODAY (IST)</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#059669', margin: '0.4rem 0' }}>
+                {sChecks?.attendanceDoctor?.punchedInToday || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {sChecks?.attendanceDoctor?.punchedOutToday || 0} have already punched out
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: (sChecks?.attendanceDoctor?.unclosedPastShifts || 0) > 0 ? 'rgba(245, 158, 11, 0.05)' : 'var(--card-bg, #ffffff)',
+              border: `1px solid ${(sChecks?.attendanceDoctor?.unclosedPastShifts || 0) > 0 ? '#f59e0b' : 'var(--border-color, #e2e8f0)'}`
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>UNCLOSED PAST SHIFTS (NO OUT-PUNCH)</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (sChecks?.attendanceDoctor?.unclosedPastShifts || 0) > 0 ? '#d97706' : 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.attendanceDoctor?.unclosedPastShifts || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Employees who forgot to punch out on previous days
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>PENDING REGULARIZATIONS</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#2563eb', margin: '0.4rem 0' }}>
+                {sChecks?.attendanceDoctor?.pendingRegularizations || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Awaiting manager approval
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>OVERDUE OPERATIONAL TASKS</div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (sChecks?.tasksChecklistsDoctor?.overdueTasks || 0) > 10 ? '#dc2626' : 'var(--text-primary)', margin: '0.4rem 0' }}>
+                {sChecks?.tasksChecklistsDoctor?.overdueTasks || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {sChecks?.tasksChecklistsDoctor?.pendingTasks || 0} total active tasks pending
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: DATABASE, STORAGE & INFRASTRUCTURE                                 */}
+      {/* ========================================================================= */}
+      {activeTab === 'infra' && (
+        <div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
+              ⚙️ Database, Storage & Cloud Infrastructure
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Hardware metrics, storage buckets, offline caches, and individual subsystem latency benchmarks.
+            </p>
+          </div>
+
+          {/* Server Info Card */}
+          <div style={{
+            padding: '1.25rem',
+            borderRadius: '8px',
+            backgroundColor: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                Next.js Node Server Runtime ({sChecks?.server?.nodeVersion || 'Node.js'})
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                Server IST Clock: {sChecks?.server?.istTimestamp || 'Synchronized'} · Uptime: {Math.round((sChecks?.server?.uptimeSeconds || 0) / 60)} minutes
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>HEAP MEMORY</div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#2563eb' }}>
+                  {sChecks?.server?.memory?.heapUsedMb || 0} MB / {sChecks?.server?.memory?.heapTotalMb || 0} MB
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>STORAGE BUCKETS</div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#059669' }}>
+                  {sChecks?.storageDoctor?.bucketsCount || 0} Connected
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Subsystem Cards Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+            gap: '1rem'
+          }}>
+            {componentList.map(item => {
+              const isOp = item.status === 'operational';
+              const isWarn = item.status === 'warning';
+              const isErr = item.status === 'error';
+              const isChecking = item.status === 'checking';
+
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    border: `1px solid ${isErr ? '#fca5a5' : isWarn ? '#fcd34d' : 'var(--border-color, #e2e8f0)'}`,
+                    backgroundColor: 'var(--card-bg, #ffffff)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '0.5rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                        {item.name}
+                      </div>
+
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        backgroundColor: isOp
+                          ? 'rgba(16, 185, 129, 0.12)'
+                          : isWarn
+                            ? 'rgba(245, 158, 11, 0.12)'
+                            : isErr
+                              ? 'rgba(239, 68, 68, 0.12)'
+                              : 'rgba(59, 130, 246, 0.12)',
+                        color: isOp ? '#059669' : isWarn ? '#d97706' : isErr ? '#dc2626' : '#2563eb',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {isOp && <Check size={12} strokeWidth={3} />}
+                        {isWarn && <AlertTriangle size={12} />}
+                        {isErr && <XCircle size={12} />}
+                        {isChecking && <RefreshCw size={12} className="spin" />}
+                        {isOp ? 'Working' : isWarn ? 'Degraded' : isErr ? 'Error' : 'Testing'}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '0.5rem' }}>
+                      {item.details}
+                    </div>
+
+                    {item.error && (
+                      <div style={{
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        fontSize: '0.75rem',
+                        color: '#b91c1c',
+                        marginBottom: '0.5rem',
+                        wordBreak: 'break-word',
+                        fontFamily: 'monospace'
+                      }}>
+                        {item.error}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingTop: '0.5rem',
+                    borderTop: '1px solid var(--border-color, #f1f5f9)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <div>
+                      {typeof item.latency === 'number' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: item.latency < 400 ? '#10b981' : item.latency < 1200 ? '#f59e0b' : '#ef4444'
+                          }} />
+                          {item.latency} ms
+                        </span>
+                      ) : (
+                        <span>Internal Subsystem</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 6: LIVE ERROR & EXCEPTION TERMINAL                                    */}
+      {/* ========================================================================= */}
+      {activeTab === 'errors' && (
+        <div>
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            marginBottom: '1rem',
+            paddingBottom: '0.75rem',
+            borderBottom: '1px solid var(--border-color, #e2e8f0)'
+          }}>
+            <div>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
+                🚨 Live Application Exceptions & Error Terminal ({runtimeErrors.length})
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Automatic real-time trap for unhandled JavaScript errors, promise rejections, and network API drops across the app.
+              </p>
+            </div>
+
+            {runtimeErrors.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRuntimeErrors([])}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <Trash2 size={13} /> Clear Log
+              </button>
+            )}
+          </div>
+
+          {runtimeErrors.length === 0 ? (
+            <div style={{
+              padding: '3rem 1.5rem',
+              textAlign: 'center',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.9rem'
+            }}>
+              <CheckCircle2 size={40} color="#10b981" style={{ margin: '0 auto 0.75rem' }} />
+              <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                Zero Runtime Exceptions Captured
+              </div>
+              <div style={{ maxWidth: '500px', margin: '0.25rem auto 0', fontSize: '0.82rem' }}>
+                No unhandled JavaScript exceptions, network drops, or promise failures have been recorded during this session.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {runtimeErrors.map(err => (
+                <div
+                  key={err.id}
+                  style={{
+                    padding: '0.9rem 1.15rem',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    fontSize: '0.82rem',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <span style={{ fontWeight: 800, color: '#dc2626' }}>[{err.type}] {err.filename}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{err.timestamp}</span>
+                  </div>
+                  <div style={{ color: 'var(--text-primary)', wordBreak: 'break-word', fontWeight: 600 }}>
+                    {err.message}
+                  </div>
+                  {err.lineno && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                      Line: {err.lineno}, Col: {err.colno}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <style jsx>{`
         .spin {
