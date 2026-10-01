@@ -144,7 +144,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v1.0.649';
+const SOFTPHONE_VERSION = 'v1.0.662';
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -848,6 +848,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }
 
       const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok || !(res.headers.get('content-type') || '').includes('application/json')) return;
       const statusData = await res.json();
       if (statusData?.activeSession?.room_name && cancelledOutboundRoomsRef.current.has(statusData.activeSession.room_name)) return;
 
@@ -1002,6 +1003,23 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setErrorMessage('');
     try {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
+      const contentType = res.headers.get('content-type') || '';
+
+      if (!res.ok || !contentType.includes('application/json')) {
+        let errMsg = res.status === 401 
+          ? 'Session expired. Please log in again.' 
+          : `Connection endpoint unavailable (${res.status})`;
+        try {
+          if (contentType.includes('application/json')) {
+            const errJson = await res.json();
+            errMsg = errJson.error || errJson.message || errMsg;
+          }
+        } catch (_) {}
+        setConnectionState('error');
+        setErrorMessage(errMsg);
+        return;
+      }
+
       const data = await res.json();
       if (data.username && data.password) {
         clientInstance.login(data.username, data.password);
@@ -1200,6 +1218,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
               attempts++;
               try {
                 const res = await fetch(`/api/plivo/session-status?room=${encodeURIComponent(endedRoom)}&agent_id=${agentDataRef.current?.id}`, { cache: 'no-store' });
+                if (!res.ok || !(res.headers.get('content-type') || '').includes('application/json')) return;
                 const statusData = await res.json();
                 const sessionResult = statusData?.activeSession;
                 const cause = sessionResult?.hangup_cause;
@@ -1368,6 +1387,19 @@ export default function GlobalSoftphoneWidget({ userId }) {
           agentMobile: callingMode === 'mobile' ? agentMobile : undefined
         })
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        let errText = `Call failed (${res.status})`;
+        try {
+          if (contentType.includes('application/json')) {
+            const errJson = await res.json();
+            errText = errJson.error || errJson.message || errText;
+          }
+        } catch (_) {}
+        setCallStatus('failed');
+        setErrorMessage(errText);
+        return;
+      }
       const result = await res.json();
       if (cancelledOutboundRoomsRef.current.has(clientRoomName)) {
         for (let attempt = 0; attempt < 2; attempt++) {

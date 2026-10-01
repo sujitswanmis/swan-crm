@@ -7,7 +7,7 @@ export async function POST(req) {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized. Please login again.' }, { status: 401 });
     }
 
     const adminClient = require('@supabase/supabase-js').createClient(
@@ -29,7 +29,6 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Agent missing Plivo password in database. Please contact admin.' }, { status: 400 });
     }
 
-    console.log(`[Token API] Returning credentials for username: ${agentData.plivo_username}`);
     return NextResponse.json({
       username: agentData.plivo_username,
       password: agentData.plivo_password
@@ -37,6 +36,11 @@ export async function POST(req) {
 
   } catch (error) {
     console.error('Token error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function GET(req) {
+  return POST(req);
+}
+

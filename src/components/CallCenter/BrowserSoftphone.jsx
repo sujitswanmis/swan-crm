@@ -174,6 +174,23 @@ export default function BrowserSoftphone({ agentData, onStatusChange }) {
 
     try {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
+      const contentType = res.headers.get('content-type') || '';
+
+      if (!res.ok || !contentType.includes('application/json')) {
+        let errMsg = res.status === 401 
+          ? 'Session expired. Please log in again.' 
+          : `Connection endpoint unavailable (${res.status})`;
+        try {
+          if (contentType.includes('application/json')) {
+            const errJson = await res.json();
+            errMsg = errJson.error || errJson.message || errMsg;
+          }
+        } catch (_) {}
+        setConnectionState('error');
+        setErrorMessage(errMsg);
+        return;
+      }
+
       const data = await res.json();
       
       if (data.username && data.password) {
