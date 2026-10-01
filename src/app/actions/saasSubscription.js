@@ -1,6 +1,11 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import {
+  DEFAULT_TENANT_ID,
+  DEFAULT_PROCESS_CATALOG,
+  DEFAULT_CYCLE_DISCOUNTS
+} from '@/utils/saasEntitlements';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -8,93 +13,6 @@ const getAdminClient = () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 };
-
-export const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-
-/**
- * Master catalog of all 8 decoupled business processes
- */
-export const DEFAULT_PROCESS_CATALOG = [
-  {
-    process_code: 'LEADS_ONLY',
-    display_name: 'Lead Management Only',
-    category: 'SALES',
-    monthly_rate_per_user: 199.00,
-    description: 'Leads Table, Pipeline, Assignment, Activity Logs & Follow-up Reminders',
-    is_active: true,
-    sort_order: 1
-  },
-  {
-    process_code: 'CALLING_STANDALONE',
-    display_name: 'Cloud Calling (WebRTC + Softphone)',
-    category: 'TELEPHONY',
-    monthly_rate_per_user: 249.00,
-    description: 'Browser-based Softphone, WebRTC dialer, call logs, recording & duration tracking (Exclude calling usage)',
-    is_active: true,
-    sort_order: 2
-  },
-  {
-    process_code: 'LEADS_WITH_CALLING',
-    display_name: 'Lead Management + Direct Cloud Calling',
-    category: 'COMBO',
-    monthly_rate_per_user: 399.00,
-    description: 'Integrated Leads Table with 1-Click Browser Dialing, automatic duration logs & recordings (Exclude calling usage)',
-    is_active: true,
-    sort_order: 3
-  },
-  {
-    process_code: 'TASK_DELEGATION',
-    display_name: 'Task Delegation',
-    category: 'OPERATIONS',
-    monthly_rate_per_user: 99.00,
-    description: 'Task assignment to team members, deadlines, status tracker & approval workflows',
-    is_active: true,
-    sort_order: 4
-  },
-  {
-    process_code: 'SMART_CHECKLIST',
-    display_name: 'Smart Checklist',
-    category: 'OPERATIONS',
-    monthly_rate_per_user: 99.00,
-    description: 'Daily & recurring operational checklists, opening/closing SOPs & compliance monitoring',
-    is_active: true,
-    sort_order: 5
-  },
-  {
-    process_code: 'ATTENDANCE',
-    display_name: 'Attendance Management',
-    category: 'HR',
-    monthly_rate_per_user: 99.00,
-    description: 'Geo/mobile punch-in/out, shift management, leave approvals & regularization',
-    is_active: true,
-    sort_order: 6
-  },
-  {
-    process_code: 'RECRUITER',
-    display_name: 'Recruiter Management (ATS)',
-    category: 'HR',
-    monthly_rate_per_user: 149.00,
-    description: 'Job postings, public applicant portal, resume/CV upload & interview pipeline tracking',
-    is_active: true,
-    sort_order: 7
-  },
-  {
-    process_code: 'PARTY_MASTER',
-    display_name: 'Party Master Management',
-    category: 'OPERATIONS',
-    monthly_rate_per_user: 99.00,
-    description: 'Dealers, Distributors, Vendors, Clients directory, territory mapping & ledger accounts',
-    is_active: true,
-    sort_order: 8
-  }
-];
-
-export const DEFAULT_CYCLE_DISCOUNTS = [
-  { cycle_code: 'MONTHLY', display_name: 'Monthly (1 Month)', months_count: 1, discount_percent: 0 },
-  { cycle_code: 'QUARTERLY', display_name: 'Quarterly (3 Months)', months_count: 3, discount_percent: 5 },
-  { cycle_code: 'HALF_YEARLY', display_name: 'Half-Yearly (6 Months)', months_count: 6, discount_percent: 10 },
-  { cycle_code: 'YEARLY', display_name: 'Yearly (12 Months)', months_count: 12, discount_percent: 20 }
-];
 
 const CONFIG_ENTITLEMENT_KEY = 'SAAS_PRICING_CONFIG';
 

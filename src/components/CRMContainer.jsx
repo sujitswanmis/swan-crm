@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
+import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
@@ -171,7 +172,15 @@ const KeepAliveTab = React.memo(
   }
 );
 
-export function isTabPermitted(tabId, moduleAccess = {}, userRole = '') {
+export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEntitlements = null, tenantId = null) {
+  const activeEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
+  const activeTenantId = tenantId || moduleAccess?._tenantId || null;
+
+  // 1. SaaS Tenant Subscription Entitlement Gate
+  if (activeEntitlements && !isFeatureEntitled(tabId, activeEntitlements, activeTenantId)) {
+    return false;
+  }
+
   const isAdmin = typeof userRole === 'string' && (userRole.toLowerCase() === 'admin' || userRole.toLowerCase() === 'superadmin' || userRole.toLowerCase() === 'masteradmin');
   if (isAdmin) return true;
   if (!moduleAccess) return false;
@@ -291,7 +300,9 @@ export default function CRMContainer({
   impersonatedUser = null,
   initialRoute = '',
   initialSearchParams = null,
-  initialTheme = 'default'
+  initialTheme = 'default',
+  tenantId = null,
+  tenantEntitlements = null
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -347,6 +358,10 @@ export default function CRMContainer({
   }, [userId, supabase]);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
+  const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
+  const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
+
   const hasLeadsAccess = isAdmin || 
     !!(moduleAccess?.['leads']?.view || 
       moduleAccess?.['callcenter']?.view || 
@@ -4698,42 +4713,44 @@ export default function CRMContainer({
             )}
 
             {/* Softphone Launcher Button (Square Button Box) */}
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('toggle-softphone'));
-              }}
-              className="header-icon-btn desktop-only"
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-                transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: 'var(--shadow-xs)'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-                e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                e.currentTarget.style.color = 'var(--accent-color)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-light)';
-                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-              }}
-              title="Toggle CRM Softphone"
-            >
-              <PhoneCall size={17} />
-            </button>
+            {isCallingEntitled && (
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('toggle-softphone'));
+                }}
+                className="header-icon-btn desktop-only"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: 'var(--shadow-xs)'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-color)';
+                  e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
+                  e.currentTarget.style.color = 'var(--accent-color)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-light)';
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
+                }}
+                title="Toggle CRM Softphone"
+              >
+                <PhoneCall size={17} />
+              </button>
+            )}
 
             {/* Notifications Button (Square Button Box) */}
             <div style={{ position: 'relative', flexShrink: 0 }} ref={notificationMenuRef}>
@@ -6414,7 +6431,7 @@ export default function CRMContainer({
         </div>
         </div>
       </main>
-      <GlobalSoftphoneWidget userId={userId} />
+      {isCallingEntitled && <GlobalSoftphoneWidget userId={userId} />}
 
       {/* Intelligent Global Spotlight Command Palette */}
       <GlobalSpotlightModal

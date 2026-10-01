@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import CRMContainer from '@/components/CRMContainer';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import { getTenantEntitlements } from '@/app/actions/saasSubscription';
 
 // Next.js config to ensure this page stays dynamic (always fetches latest data)
 export const dynamic = 'force-dynamic';
@@ -73,7 +74,21 @@ export default async function Home({ params, searchParams }) {
   const canImportExport = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
   const canRead = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
   const canWrite = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
-  const moduleAccess = effectiveRoleData?.module_access || {};
+  const userTenantId = effectiveRoleData?.tenant_id || '00000000-0000-0000-0000-000000000001';
+  let tenantEntitlements = null;
+  try {
+    const entRes = await getTenantEntitlements(userTenantId);
+    tenantEntitlements = entRes?.entitlements || null;
+  } catch (_e) {
+    tenantEntitlements = null;
+  }
+
+  const rawModuleAccess = effectiveRoleData?.module_access || {};
+  const moduleAccess = {
+    ...rawModuleAccess,
+    _tenantEntitlements: tenantEntitlements,
+    _tenantId: userTenantId
+  };
   const isApproved = isMasterAdminUser || effectiveRoleData?.is_approved;
   const userCompany = effectiveRoleData?.company || '';
   const userName = effectiveRoleData?.emp_name || effectiveRoleData?.email?.split('@')[0] || 'User';
@@ -129,6 +144,8 @@ export default async function Home({ params, searchParams }) {
           initialRoute={Array.isArray(route) ? route.join('/') : (route || '')}
           initialSearchParams={resolvedSearchParams}
           initialTheme={initialTheme}
+          tenantId={userTenantId}
+          tenantEntitlements={tenantEntitlements}
         />
       </Suspense>
     </main>
