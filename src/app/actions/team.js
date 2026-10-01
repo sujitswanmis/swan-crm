@@ -150,9 +150,42 @@ export async function registerEmployeeDetails(userId, email, details) {
     }
   }
 
+  const targetTenantId = details.tenant_id || existingUser?.tenant_id || '00000000-0000-0000-0000-000000000001';
+
+  // SaaS Seat Limit Enforcement (Master Production New Swan Group is always exempt)
+  if (!isCustomer && targetTenantId !== '00000000-0000-0000-0000-000000000001') {
+    try {
+      const { data: sub } = await adminClient
+        .from('tenant_subscriptions')
+        .select('user_seat_limit')
+        .eq('tenant_id', targetTenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (sub && typeof sub.user_seat_limit === 'number') {
+        const { count: activeCount } = await adminClient
+          .from('user_roles')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('tenant_id', targetTenantId)
+          .neq('role', 'customer');
+
+        if (activeCount !== null && activeCount >= sub.user_seat_limit) {
+          return {
+            success: false,
+            error: `आपकी सीट सीमा (${sub.user_seat_limit} Users) समाप्त हो चुकी है। अतिरिक्त सदस्य जोड़ने के लिए कृपया सीट्स बढ़ाएं (Add-on Seats)।`
+          };
+        }
+      }
+    } catch (seatErr) {
+      console.warn('Seat enforcement check notice:', seatErr.message);
+    }
+  }
+
   if (existingUser) {
     // Just update the details, do NOT overwrite role or is_approved UNLESS they are a customer
     const updatePayload = {
+      tenant_id: targetTenantId,
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
       emp_name: details.emp_name,
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
@@ -218,6 +251,7 @@ export async function registerEmployeeDetails(userId, email, details) {
   } else {
     // Insert new user
     const insertPayload = {
+      tenant_id: targetTenantId,
       user_id: userId,
       email: email,
       role: isCustomer ? 'customer' : 'agent',

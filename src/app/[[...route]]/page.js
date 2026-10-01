@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import CRMContainer from '@/components/CRMContainer';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getTenantEntitlements } from '@/app/actions/saasSubscription';
+import { getTenantEntitlements, getTenantSubscription } from '@/app/actions/saasSubscription';
 
 // Next.js config to ensure this page stays dynamic (always fetches latest data)
 export const dynamic = 'force-dynamic';
@@ -76,11 +76,17 @@ export default async function Home({ params, searchParams }) {
   const canWrite = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
   const userTenantId = effectiveRoleData?.tenant_id || '00000000-0000-0000-0000-000000000001';
   let tenantEntitlements = null;
+  let tenantSubscription = null;
   try {
-    const entRes = await getTenantEntitlements(userTenantId);
+    const [entRes, subRes] = await Promise.all([
+      getTenantEntitlements(userTenantId),
+      getTenantSubscription(userTenantId)
+    ]);
     tenantEntitlements = entRes?.entitlements || null;
+    tenantSubscription = subRes?.subscription || null;
   } catch (_e) {
     tenantEntitlements = null;
+    tenantSubscription = null;
   }
 
   const rawModuleAccess = effectiveRoleData?.module_access || {};
@@ -146,6 +152,7 @@ export default async function Home({ params, searchParams }) {
           initialTheme={initialTheme}
           tenantId={userTenantId}
           tenantEntitlements={tenantEntitlements}
+          tenantSubscription={tenantSubscription}
         />
       </Suspense>
     </main>
