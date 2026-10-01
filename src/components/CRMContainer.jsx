@@ -8,6 +8,7 @@ import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
+import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
@@ -3324,6 +3325,11 @@ export default function CRMContainer({
       <ResponsiveTableResizer />
       <SubscriptionExpiryBanner subscription={tenantSubscription} />
       <SubscriptionExpiredModal subscription={tenantSubscription} />
+      <AddonPurchaseModal
+        tenantId={tenantId}
+        subscription={tenantSubscription}
+        entitlements={tenantEntitlements}
+      />
       {/* Mobile Overlay */}
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)}></div>
 

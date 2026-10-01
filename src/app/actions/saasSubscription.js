@@ -519,3 +519,284 @@ export async function updateTenantCustomRate(tenantId, processCode, customRate) 
   }
 }
 
+/**
+ * Self-Serve SaaS Provisioning: Create a new company workspace, admin user, subscription, and entitlements
+ */
+export async function createTenantWorkspace({
+  companyName,
+  adminEmail,
+  adminPassword,
+  adminName,
+  adminMobile = '',
+  processCodes = ['LEADS_WITH_CALLING'],
+  userSeats = 5,
+  cycleCode = 'YEARLY'
+}) {
+  try {
+    const admin = getAdminClient();
+
+    if (!companyName || !adminEmail || !adminPassword || !adminName) {
+      return { success: false, error: 'कृपया कंपनी का नाम, एडमिन का नाम, ईमेल और पासवर्ड भरें।' };
+    }
+
+    const cleanEmail = adminEmail.trim().toLowerCase();
+    const cleanCompany = companyName.trim();
+    const cleanName = adminName.trim();
+    const cleanMobile = adminMobile ? adminMobile.trim() : '';
+
+    // Generate unique slug tenant_code
+    const baseSlug = cleanCompany
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '_')
+      .replace(/__+/g, '_')
+      .substring(0, 14) || 'WORKSPACE';
+    const randSuffix = Math.floor(1000 + Math.random() * 9000);
+    const tenantCode = `${baseSlug}_${randSuffix}`;
+
+    // 1. Create tenant row
+    const { data: newTenant, error: tenantErr } = await admin
+      .from('tenants')
+      .insert([{
+        tenant_code: tenantCode,
+        name: cleanCompany,
+        primary_contact_email: cleanEmail,
+        primary_contact_mobile: cleanMobile || null,
+        status: 'ACTIVE'
+      }])
+      .select()
+      .single();
+
+    if (tenantErr) {
+      console.error('Tenant creation error:', tenantErr);
+      throw new Error(`कंपनी रजिस्टर करने में त्रुटि: ${tenantErr.message}`);
+    }
+
+    // 2. Create Auth User
+    let userId = null;
+    const { data: authData, error: authError } = await admin.auth.admin.createUser({
+      email: cleanEmail,
+      password: adminPassword,
+      email_confirm: true,
+      user_metadata: {
+        name: cleanName,
+        mobile: cleanMobile,
+        company: cleanCompany
+      }
+    });
+
+    if (authError) {
+      if (authError.message?.toLowerCase().includes('already registered')) {
+        const { data: userList } = await admin.auth.admin.listUsers();
+        const existing = userList?.users?.find(
+          u => u.email?.toLowerCase() === cleanEmail
+        );
+        if (existing) {
+          userId = existing.id;
+        } else {
+          throw new Error(`ईमेल पहले से सिस्टम में मौजूद है: ${authError.message}`);
+        }
+      } else {
+        throw new Error(`यूज़र क्रेडेंशियल बनाने में त्रुटि: ${authError.message}`);
+      }
+    } else if (authData?.user) {
+      userId = authData.user.id;
+    }
+
+    // 3. Setup Administrator in user_roles
+    const userRolePayload = {
+      user_id: userId,
+      tenant_id: newTenant.id,
+      role: 'admin',
+      is_approved: true,
+      can_read: true,
+      can_write: true,
+      emp_id: 'ADM-001',
+      emp_name: cleanName,
+      emp_official_mail_id: cleanEmail,
+      emp_mobile: cleanMobile,
+      emp_designation: 'Chief Administrator',
+      emp_department: 'Administration',
+      company: cleanCompany,
+      emp_status: 'Active'
+    };
+
+    const { error: roleError } = await admin
+      .from('user_roles')
+      .upsert(userRolePayload, { onConflict: 'user_id' });
+
+    if (roleError) {
+      console.warn('user_roles setup notice:', roleError.message);
+    }
+
+    // 4. Calculate Subscription Dates strictly in IST
+    const now = new Date();
+    let monthsToAdd = 1;
+    if (cycleCode === 'QUARTERLY') monthsToAdd = 3;
+    else if (cycleCode === 'HALF_YEARLY') monthsToAdd = 6;
+    else if (cycleCode === 'YEARLY') monthsToAdd = 12;
+
+    const expiryDate = new Date(now);
+    expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
+
+    // Calculate dynamic price
+    const priceRes = await calculatePlanPrice({
+      processCodes,
+      userSeats,
+      cycleCode,
+      tenantId: newTenant.id
+    });
+    const finalAmount = priceRes.success ? priceRes.final_amount : 0;
+
+    // 5. Insert Subscription Record
+    const { error: subError } = await admin
+      .from('tenant_subscriptions')
+      .insert([{
+        tenant_id: newTenant.id,
+        plan_name: 'SAAS_MODULAR',
+        user_seat_limit: Math.max(1, parseInt(userSeats, 10) || 5),
+        valid_from: now.toISOString(),
+        valid_until: expiryDate.toISOString(),
+        status: 'ACTIVE',
+        billing_cycle: cycleCode,
+        amount: finalAmount
+      }]);
+
+    if (subError) {
+      console.warn('Subscription creation notice:', subError.message);
+    }
+
+    // 6. Insert Tenant Entitlements for Chosen Modules
+    const entitlementsRows = (processCodes || []).map((code) => ({
+      tenant_id: newTenant.id,
+      module_key: code,
+      is_enabled: true,
+      config_json: {
+        activated_at: now.toISOString(),
+        plan: 'SAAS_MODULAR',
+        billing_cycle: cycleCode
+      }
+    }));
+
+    if (entitlementsRows.length > 0) {
+      const { error: entError } = await admin
+        .from('tenant_entitlements')
+        .upsert(entitlementsRows, { onConflict: 'tenant_id,module_key' });
+      if (entError) console.warn('Entitlements insert notice:', entError.message);
+    }
+
+    // 7. Insert default company record into companies table
+    try {
+      await admin.from('companies').insert([{
+        tenant_id: newTenant.id,
+        code: `${tenantCode}_MAIN`,
+        name: cleanCompany,
+        status: 'ACTIVE'
+      }]);
+    } catch (compErr) {
+      console.warn('Default company insert note:', compErr.message);
+    }
+
+    return {
+      success: true,
+      tenantId: newTenant.id,
+      tenantCode,
+      adminEmail: cleanEmail,
+      message: `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) सफलतापूर्वक सक्रिय हो गया!`
+    };
+  } catch (err) {
+    console.error('createTenantWorkspace error:', err);
+    return { success: false, error: err.message || 'कंपनी वर्कस्पेस बनाने में समस्या आई।' };
+  }
+}
+
+/**
+ * Tenant Self-Serve / Add-on: Purchase additional user seats
+ */
+export async function purchaseAddonSeats(tenantId, additionalSeats) {
+  try {
+    const admin = getAdminClient();
+    const addSeats = Math.max(1, parseInt(additionalSeats, 10) || 1);
+
+    const { data: sub, error: subErr } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (subErr) throw subErr;
+
+    const currentSeats = sub?.user_seat_limit || 5;
+    const newLimit = currentSeats + addSeats;
+
+    if (sub) {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .update({
+          user_seat_limit: newLimit,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sub.id);
+      if (error) throw error;
+    } else {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'SAAS_CUSTOM',
+          user_seat_limit: newLimit,
+          valid_from: new Date().toISOString(),
+          valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'ACTIVE',
+          billing_cycle: 'MONTHLY'
+        }]);
+      if (error) throw error;
+    }
+
+    return {
+      success: true,
+      newLimit,
+      message: `सफलतापूर्वक ${addSeats} अतिरिक्त सीट्स जोड़ दी गईं! कुल सीमा: ${newLimit} Users.`
+    };
+  } catch (err) {
+    console.error('purchaseAddonSeats error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Tenant Self-Serve / Add-on: Unlock an additional business process module
+ */
+export async function purchaseAddonModule(tenantId, processCode) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId || !processCode) {
+      return { success: false, error: 'Tenant ID or process code missing.' };
+    }
+
+    const { error } = await admin
+      .from('tenant_entitlements')
+      .upsert({
+        tenant_id: tenantId,
+        module_key: processCode,
+        is_enabled: true,
+        config_json: {
+          is_addon: true,
+          activated_at: new Date().toISOString()
+        }
+      }, { onConflict: 'tenant_id,module_key' });
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      message: `मॉड्यूल '${processCode}' सफलतापूर्वक अनलॉक हो गया है!`
+    };
+  } catch (err) {
+    console.error('purchaseAddonModule error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+

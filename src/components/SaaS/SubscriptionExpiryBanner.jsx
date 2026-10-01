@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertTriangle, X, ArrowRight, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, X, ArrowRight, ShieldAlert, UserPlus } from 'lucide-react';
 
 /**
  * SubscriptionExpiryBanner
@@ -45,7 +45,29 @@ export default function SubscriptionExpiryBanner({ subscription }) {
         </span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('open-addon-modal'));
+          }}
+          style={{
+            backgroundColor: '#ffffff',
+            color: isUrgent ? '#dc2626' : '#92400e',
+            border: `1px solid ${isUrgent ? '#fecaca' : '#fde68a'}`,
+            borderRadius: '6px',
+            padding: '0.35rem 0.65rem',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem'
+          }}
+        >
+          <UserPlus size={13} /> सीट्स जोड़ें / Add-ons
+        </button>
+
         <button
           type="button"
           onClick={() => {
