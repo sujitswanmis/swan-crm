@@ -24,6 +24,15 @@ export async function GET() {
     hour12: true
   }).format(now) + ' IST';
 
+  let projectRef = 'unknown';
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    try {
+      projectRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0];
+    } catch (e) {
+      projectRef = 'configured';
+    }
+  }
+
   const result = {
     server: {
       status: 'operational',
@@ -101,6 +110,27 @@ export async function GET() {
       totalProducts: 0,
       totalDepartments: 0,
       status: 'operational'
+    },
+    supabaseUsage: {
+      projectRef,
+      endpoint: process.env.NEXT_PUBLIC_SUPABASE_URL || 'Not Configured',
+      storageUsage: {
+        totalBuckets: 0,
+        totalFiles: 0,
+        totalBytes: 0,
+        totalMb: 0,
+        buckets: []
+      },
+      authUsers: {
+        totalAccounts: 0,
+        active24h: 0,
+        recentSignIns: []
+      },
+      databaseBreakdown: {
+        tables: [],
+        totalIndexedRows: 0
+      },
+      recentAuditLogs: []
     }
   };
 
@@ -150,7 +180,11 @@ export async function GET() {
       departmentsRes,
       waInstancesRes,
       waMessagesTodayRes,
-      storageBucketsRes
+      storageBucketsRes,
+      authUsersRes,
+      recentAuditLogsRes,
+      notesTotalRes,
+      auditTotalRes
     ] = await Promise.allSettled([
       // 0. Base Ping
       adminClient.from('leads').select('id, created_at').order('created_at', { ascending: false }).limit(1),
@@ -186,7 +220,14 @@ export async function GET() {
       adminClient.from('whatsapp_instances').select('id, status', { count: 'exact' }),
       adminClient.from('wa_messages').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC),
       // 8. Storage Buckets
-      adminClient.storage.listBuckets()
+      adminClient.storage.listBuckets(),
+      // 9. Supabase Auth Users
+      adminClient.auth.admin.listUsers({ page: 1, perPage: 100 }),
+      // 10. Recent 50 Supabase Audit Logs
+      adminClient.from('audit_logs').select('id, action, target, emp_name, email, ip_address, created_at').order('created_at', { ascending: false }).limit(50),
+      // 11. Extra counts for Table Volume Meter
+      adminClient.from('lead_notes').select('id', { count: 'exact', head: true }),
+      adminClient.from('audit_logs').select('id', { count: 'exact', head: true })
     ]);
 
     result.database.latencyMs = Math.round(performance.now() - dbPingStart);
@@ -284,16 +325,106 @@ export async function GET() {
       result.whatsappDoctor.messagesToday = waMessagesTodayRes.value.count || 0;
     }
 
-    // Unpack Storage Buckets
+    // Unpack Storage Buckets and calculate file sizes
     if (storageBucketsRes.status === 'fulfilled' && !storageBucketsRes.value.error) {
       const buckets = storageBucketsRes.value.data || [];
       result.storageDoctor.bucketsAvailable = buckets.map(b => b.name);
       result.storageDoctor.bucketsCount = buckets.length;
       result.storageDoctor.status = 'operational';
+
+      result.supabaseUsage.storageUsage.totalBuckets = buckets.length;
+
+      // Scan file sizes per bucket
+      const bucketScans = await Promise.allSettled(
+        buckets.map(b => adminClient.storage.from(b.name).list('', { limit: 1000 }))
+      );
+
+      let grandTotalBytes = 0;
+      let grandTotalFiles = 0;
+
+      bucketScans.forEach((scan, idx) => {
+        const bucketName = buckets[idx].name;
+        const isPublic = buckets[idx].public;
+        let bucketFilesCount = 0;
+        let bucketBytes = 0;
+
+        if (scan.status === 'fulfilled' && Array.isArray(scan.value.data)) {
+          bucketFilesCount = scan.value.data.length;
+          scan.value.data.forEach(f => {
+            bucketBytes += (f.metadata?.size || 0);
+          });
+        }
+
+        grandTotalBytes += bucketBytes;
+        grandTotalFiles += bucketFilesCount;
+
+        result.supabaseUsage.storageUsage.buckets.push({
+          name: bucketName,
+          public: isPublic,
+          filesCount: bucketFilesCount,
+          bytes: bucketBytes,
+          mb: Number((bucketBytes / (1024 * 1024)).toFixed(2))
+        });
+      });
+
+      result.supabaseUsage.storageUsage.totalFiles = grandTotalFiles;
+      result.supabaseUsage.storageUsage.totalBytes = grandTotalBytes;
+      result.supabaseUsage.storageUsage.totalMb = Number((grandTotalBytes / (1024 * 1024)).toFixed(2));
     } else {
       result.storageDoctor.status = 'warning';
       result.storageDoctor.error = storageBucketsRes.reason?.message || storageBucketsRes.value?.error?.message || 'Unable to list storage buckets';
     }
+
+    // Unpack Auth Users
+    if (authUsersRes.status === 'fulfilled' && authUsersRes.value?.data?.users) {
+      const usersList = authUsersRes.value.data.users;
+      result.supabaseUsage.authUsers.totalAccounts = usersList.length;
+
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const activeIn24h = usersList.filter(u => u.last_sign_in_at && new Date(u.last_sign_in_at).getTime() > oneDayAgo).length;
+      result.supabaseUsage.authUsers.active24h = activeIn24h;
+
+      // Recent 8 sign-ins
+      const sortedUsers = [...usersList]
+        .filter(u => u.last_sign_in_at)
+        .sort((a, b) => new Date(b.last_sign_in_at) - new Date(a.last_sign_in_at))
+        .slice(0, 8)
+        .map(u => ({
+          email: u.email || 'Anonymous',
+          lastSignIn: u.last_sign_in_at,
+          createdAt: u.created_at
+        }));
+
+      result.supabaseUsage.authUsers.recentSignIns = sortedUsers;
+    }
+
+    // Unpack Recent Audit Logs
+    if (recentAuditLogsRes.status === 'fulfilled' && !recentAuditLogsRes.value.error) {
+      result.supabaseUsage.recentAuditLogs = recentAuditLogsRes.value.data || [];
+    }
+
+    // Database Tables Volume Breakdown
+    const totalLeads = leadsTotalRes.status === 'fulfilled' ? leadsTotalRes.value.count || 0 : 0;
+    const totalNotes = notesTotalRes.status === 'fulfilled' ? notesTotalRes.value.count || 0 : 0;
+    const totalAudits = auditTotalRes.status === 'fulfilled' ? auditTotalRes.value.count || 0 : 0;
+    const totalTasks = tasksTotalRes.status === 'fulfilled' ? tasksTotalRes.value.count || 0 : 0;
+    const totalParties = partyRes.status === 'fulfilled' ? partyRes.value.count || 0 : 0;
+    const totalProducts = productsRes.status === 'fulfilled' ? productsRes.value.count || 0 : 0;
+    const totalUsers = userRolesRes.status === 'fulfilled' ? userRolesRes.value.count || 0 : 0;
+
+    const tableBreakdown = [
+      { table: 'leads', label: 'Leads Pipeline', count: totalLeads },
+      { table: 'lead_notes', label: 'Lead Notes & Remarks', count: totalNotes },
+      { table: 'audit_logs', label: 'System Audit Logs', count: totalAudits },
+      { table: 'delegation_tasks', label: 'Delegation Tasks', count: totalTasks },
+      { table: 'party_master', label: 'Parties / Clients', count: totalParties },
+      { table: 'products', label: 'Product Catalog', count: totalProducts },
+      { table: 'user_roles', label: 'Users & Roles', count: totalUsers }
+    ];
+
+    const grandTotalRows = tableBreakdown.reduce((sum, item) => sum + item.count, 0);
+    result.supabaseUsage.databaseBreakdown.tables = tableBreakdown;
+    result.supabaseUsage.databaseBreakdown.totalIndexedRows = grandTotalRows;
 
   } catch (err) {
     result.database.status = 'error';
