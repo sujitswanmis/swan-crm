@@ -1,54 +1,57 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
-import AnalyticsDashboard from '@/components/AnalyticsDashboard';
-import TeamManagement from '@/components/TeamManagement';
-import UserManagementContainer from '@/components/UserManagement/UserManagementContainer';
-import PublicUserManagement from '@/components/PublicUserManagement';
-import ClientRegistration from '@/components/ClientRegistration';
-import ClientReport from '@/components/ClientReport';
-import WhatsappOfficial from '@/components/WhatsappOfficial';
-import WhatsappUnofficialModule from './WhatsappUnofficial/WhatsappUnofficialModule';
-import AiAssistantModule from './AiAssistant/AiAssistantModule';
-import CallCenterModule from './CallCenter/CallCenterModule';
-import CallAdminModule from './CallCenter/CallAdminModule';
-import AiCallCenterModule from './AiCallCenter/AiCallCenterModule';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
-import AiAdminModule from './AiAdmin/AiAdminModule';
-import AIKnowledgeBaseModule from './AiAdmin/AIKnowledgeBaseModule';
 import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
 import { uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
-import html2canvas from 'html2canvas';
-import SettingsContainer from './Settings/SettingsContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { PremiumProgressLoader } from './PremiumProgressLoader';
-import RecruiterDashboard from './Recruiter/RecruiterDashboard';
-import UniversalWorkplaceModule from './Workplace/UniversalWorkplaceModule';
-import PartyMasterModule from './Party/PartyMasterModule';
-import LocationTerritoryModule from './Workplace/LocationTerritoryModule';
-import LocationManagementModule from './Location/LocationManagementModule';
-import AdminMessageConfig from './AdminMessageConfig/AdminMessageConfig';
-import EmailConfigModule from './EmailConfig/EmailConfigModule';
-import AttendanceModule from './Attendance/AttendanceModule';
-import ChecklistModule from './Checklist/ChecklistModule';
-import DelegationTaskModule from './Delegation/DelegationTaskModule';
+import WorkspaceSkeleton from './WorkspaceSkeleton';
+import ResponsiveTableResizer from './ResponsiveTableResizer';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
-import OfflineRuleModule from './Offline/OfflineRuleModule';
-import { saveLeadsLocally, getLocalLeads, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, clearLocalLeadsCache, getFastLeadsSnapshot, saveFastLeadsSnapshot } from '@/utils/offlineSync';
+import { saveLeadsLocally, getLocalLeads, getLocalLeadsPreview, saveLocalLeadsPreview, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, getFastLeadsSnapshot, saveFastLeadsSnapshot, setLeadCacheScope } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
+import { sameLeadList } from '@/utils/sameLeadList';
+
+const tabLoading = () => <WorkspaceSkeleton />;
+const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: tabLoading });
+const ClientRegistration = dynamic(() => import('@/components/ClientRegistration'), { loading: tabLoading });
+const CallCenterModule = dynamic(() => import('./CallCenter/CallCenterModule'), { loading: tabLoading });
+const PartyMasterModule = dynamic(() => import('./Party/PartyMasterModule'), { loading: tabLoading });
+const LocationManagementModule = dynamic(() => import('./Location/LocationManagementModule'), { loading: tabLoading });
+const AttendanceModule = dynamic(() => import('./Attendance/AttendanceModule'), { loading: tabLoading });
+const TeamManagement = dynamic(() => import('@/components/TeamManagement'), { loading: tabLoading });
+const UserManagementContainer = dynamic(() => import('@/components/UserManagement/UserManagementContainer'), { loading: tabLoading });
+const PublicUserManagement = dynamic(() => import('@/components/PublicUserManagement'), { loading: tabLoading });
+const ClientReport = dynamic(() => import('@/components/ClientReport'), { loading: tabLoading });
+const WhatsappOfficial = dynamic(() => import('@/components/WhatsappOfficial'), { loading: tabLoading });
+const WhatsappUnofficialModule = dynamic(() => import('./WhatsappUnofficial/WhatsappUnofficialModule'), { loading: tabLoading });
+const AiAssistantModule = dynamic(() => import('./AiAssistant/AiAssistantModule'), { loading: tabLoading });
+const CallAdminModule = dynamic(() => import('./CallCenter/CallAdminModule'), { loading: tabLoading });
+const AiCallCenterModule = dynamic(() => import('./AiCallCenter/AiCallCenterModule'), { loading: tabLoading });
+const AiAdminModule = dynamic(() => import('./AiAdmin/AiAdminModule'), { loading: tabLoading });
+const AIKnowledgeBaseModule = dynamic(() => import('./AiAdmin/AIKnowledgeBaseModule'), { loading: tabLoading });
+const SettingsContainer = dynamic(() => import('./Settings/SettingsContainer'), { loading: tabLoading });
+const RecruiterDashboard = dynamic(() => import('./Recruiter/RecruiterDashboard'), { loading: tabLoading });
+const UniversalWorkplaceModule = dynamic(() => import('./Workplace/UniversalWorkplaceModule'), { loading: tabLoading });
+const AdminMessageConfig = dynamic(() => import('./AdminMessageConfig/AdminMessageConfig'), { loading: tabLoading });
+const EmailConfigModule = dynamic(() => import('./EmailConfig/EmailConfigModule'), { loading: tabLoading });
+const ChecklistModule = dynamic(() => import('./Checklist/ChecklistModule'), { loading: tabLoading });
+const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskModule'), { loading: tabLoading });
+const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: tabLoading });
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
@@ -261,6 +264,14 @@ export const MODULE_DISPLAY_NAMES = {
   system_offline_rules: 'Offline Rule Settings'
 };
 
+function sameAlertItems(current, incoming) {
+  return current.length === incoming.length && current.every((item, index) => {
+    const next = incoming[index];
+    const keys = Object.keys(item);
+    return keys.length === Object.keys(next).length && keys.every(key => item[key] === next[key]);
+  });
+}
+
 export default function CRMContainer({ 
   initialLeads, 
   userRole, 
@@ -408,15 +419,27 @@ export default function CRMContainer({
 
   // Instant 0ms Client Cache Hydration on mount (avoids SSR hydration mismatch)
   useEffect(() => {
+    let active = true;
     setIsMounted(true);
-    const fast = getFastLeadsSnapshot();
+    setLeadCacheScope(userId);
+    const fast = getFastLeadsSnapshot(userId);
     if (Array.isArray(fast) && fast.length > 0) {
       setRawLeads(fast);
       setLeads(fast);
       rawLeadsRef.current = fast;
       setLoadingLeads(false);
+    } else {
+      getLocalLeadsPreview(userCompany, userRole).then(preview => {
+        if (!active || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
+        setRawLeads(preview);
+        setLeads(preview);
+        rawLeadsRef.current = preview;
+        setLoadingLeads(false);
+        saveFastLeadsSnapshot(preview, userId);
+      }).catch(() => {});
     }
-  }, []);
+    return () => { active = false; };
+  }, [userId, userCompany, userRole]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -1181,6 +1204,7 @@ export default function CRMContainer({
   }, []);
   
   const loadLeadsRef = useRef(null);
+  const leadSyncInFlightRef = useRef(false);
   const prevLeadsSigRef = useRef('');
   const initialSyncFinishedRef = useRef(false);
   const saveLeadsTimeoutRef = useRef(null);
@@ -1200,6 +1224,7 @@ export default function CRMContainer({
 
   const updateLeadsIfChanged = (newList) => {
     const listToProcess = Array.isArray(newList) ? newList : (newList ? [newList] : []);
+    if (sameLeadList(leads, listToProcess)) return;
     prevLeadsSigRef.current = '';
     setLeads(listToProcess);
   };
@@ -1214,20 +1239,41 @@ export default function CRMContainer({
 
     async function loadLeads(forceFull = false) {
       loadLeadsRef.current = loadLeads;
+      if (leadSyncInFlightRef.current) return;
+      leadSyncInFlightRef.current = true;
+      setLeadCacheScope(userId);
       setIsSyncing(true);
+      const syncStartedAt = new Date().toISOString();
       const supabase = createClient();
+      const cacheMetaKey = `crm_leads_complete_cache_v1_${userId}`;
+      let cacheMeta = null;
+      try {
+        cacheMeta = JSON.parse(localStorage.getItem(cacheMetaKey) || 'null');
+      } catch (e) {}
       
       // 0. Instant 0ms Cache Hydration from IndexedDB (skip if forceFull)
       let localCachedLeads = [];
-      if (!forceFull) {
+      if (!forceFull && cacheMeta?.userId === userId && cacheMeta?.userCompany === (userCompany || '') && cacheMeta?.userRole === userRole) {
         try {
-          localCachedLeads = await getLocalLeads();
+          localCachedLeads = await getLocalLeads({
+            onPreview: preview => {
+              if (rawLeadsRef.current?.length > 0 || preview.length === 0) return;
+              const firstLeads = preview.sort(sortLeadsByDateDesc);
+              rawLeadsRef.current = firstLeads;
+              setRawLeads(firstLeads);
+              setSyncLoadedCount(firstLeads.length);
+              setLoadingLeads(false);
+              saveFastLeadsSnapshot(firstLeads, userId);
+              saveLocalLeadsPreview(firstLeads, cacheMeta.generation, userCompany, userRole).catch(() => {});
+            }
+          });
           if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
             setRawLeads(localCachedLeads);
             rawLeadsRef.current = localCachedLeads;
             setSyncLoadedCount(localCachedLeads.length);
             setLoadingLeads(false);
-            saveFastLeadsSnapshot(localCachedLeads);
+            saveFastLeadsSnapshot(localCachedLeads, userId);
+            saveLocalLeadsPreview(localCachedLeads, cacheMeta.generation, userCompany, userRole).catch(() => {});
           } else {
             // Keep current view if fast cache already populated in memory
             setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
@@ -1237,7 +1283,7 @@ export default function CRMContainer({
           setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
         }
       } else {
-        setLoadingLeads(true);
+        setLoadingLeads(rawLeadsRef.current?.length > 0 ? false : true);
       }
 
       // ⚡ PERF FIX: Server-side company scoping for non-admin agents.
@@ -1346,11 +1392,39 @@ export default function CRMContainer({
         }
       };
 
+      const fetchAssignedLeads = async () => {
+        if (!_agentCompanyFilter || !userId) return [];
+        const assignees = [...new Set([userId, userName].filter(Boolean))];
+        const assigned = [];
+        for (let page = 0; page < 100; page++) {
+          const { data, error } = await supabase
+            .from('leads')
+            .select('*')
+            .in('assigned_to', assignees)
+            .order('created_at', { ascending: false })
+            .order('id')
+            .range(page * 1000, (page + 1) * 1000 - 1);
+          if (error) throw error;
+          assigned.push(...(data || []));
+          if (!data || data.length < 1000) break;
+          if (page === 99) throw new Error('Assigned leads exceeded 100 pages');
+        }
+        return assigned;
+      };
+
       try {
-        const hasValidLocalCache = !forceFull && (
-          (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) ||
-          (Array.isArray(rawLeadsRef.current) && rawLeadsRef.current.length > 0)
-        );
+        // A fast snapshot contains at most 300 rows. A partial IndexedDB write
+        // must never switch the first load into delta-only mode.
+        const hasValidLocalCache = !forceFull &&
+          cacheMeta?.userId === userId &&
+          cacheMeta?.userCompany === (userCompany || '') &&
+          cacheMeta?.userRole === userRole &&
+          cacheMeta?.count > 0 &&
+          cacheMeta?.generation &&
+          Array.isArray(localCachedLeads) &&
+          localCachedLeads.length === cacheMeta.count &&
+          Date.now() - Date.parse(cacheMeta.fullSyncedAt) < 24 * 60 * 60 * 1000 &&
+          Number.isFinite(Date.parse(cacheMeta.syncedAt));
 
         if (hasValidLocalCache) {
           // =========================================================================
@@ -1360,10 +1434,7 @@ export default function CRMContainer({
             ? localCachedLeads
             : (rawLeadsRef.current || []);
 
-          let lastSyncTime = null;
-          try {
-            lastSyncTime = localStorage.getItem('crm_last_lead_sync_timestamp');
-          } catch (e) {}
+          const lastSyncTime = cacheMeta.syncedAt;
 
           const lookbackMs = 15 * 60 * 1000;
           const deltaSince = lastSyncTime
@@ -1374,33 +1445,34 @@ export default function CRMContainer({
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);
 
           const fetchDeltaNotesPromise = (async () => {
-            try {
+            const allNotes = [];
+            for (let page = 0; page < 100; page++) {
               const { data: chunk, error: dNoteErr } = await supabase
                 .from('lead_notes')
                 .select('id, lead_id, created_at, note_text, created_by')
                 .gt('created_at', deltaSince)
                 .order('created_at', { ascending: false })
-                .limit(1000);
+                .order('id')
+                .range(page * 1000, (page + 1) * 1000 - 1);
 
-              if (dNoteErr) {
-                console.warn("Delta notes fetch error:", dNoteErr);
-                return [];
-              }
-              return Array.isArray(chunk) ? chunk : [];
-            } catch (e) {
-              console.warn("Delta notes fetch error:", e);
-              return [];
+              if (dNoteErr) throw dNoteErr;
+              allNotes.push(...(chunk || []));
+              if (!chunk || chunk.length < 1000) return allNotes;
             }
+            throw new Error('Delta notes exceeded 100 pages; retry without advancing sync time');
           })();
 
           const fetchDeltaLeadsPromise = (async () => {
-            try {
+            const allChangedLeads = [];
+            for (let page = 0; page < 100; page++) {
               let deltaQuery = supabase
                 .from('leads')
                 .select('*')
-                .or(`updated_at.gt.${deltaSince},created_at.gt.${deltaSince}`)
+                // The live leads table has no updated_at column. Existing lead
+                // edits are refreshed via recent page 0, notes, and assignments.
+                .gt('created_at', deltaSince)
                 .order('created_at', { ascending: false })
-                .limit(1000);
+                .order('id');
 
               if (_agentCompanyFilter) {
                 if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
@@ -1410,46 +1482,22 @@ export default function CRMContainer({
                 }
               }
 
-              const { data: chunk, error: dLeadErr } = await deltaQuery;
-              if (dLeadErr) {
-                console.warn("Delta leads .or query error, falling back to created_at:", dLeadErr);
-                let fallbackQuery = supabase
-                  .from('leads')
-                  .select('*')
-                  .gt('created_at', deltaSince)
-                  .order('created_at', { ascending: false })
-                  .limit(1000);
-                if (_agentCompanyFilter) {
-                  if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                    fallbackQuery = fallbackQuery.in('our_company', ['NSTL', 'NSTLP']);
-                  } else {
-                    fallbackQuery = fallbackQuery.eq('our_company', _agentCompanyFilter);
-                  }
-                }
-                const { data: fbChunk } = await fallbackQuery;
-                return Array.isArray(fbChunk) ? fbChunk : [];
-              }
-              return Array.isArray(chunk) ? chunk : [];
-            } catch (e) {
-              console.warn("Delta leads fetch error:", e);
-              return [];
+              const { data: chunk, error: dLeadErr } = await deltaQuery
+                .range(page * 1000, (page + 1) * 1000 - 1);
+              if (dLeadErr) throw dLeadErr;
+              allChangedLeads.push(...(chunk || []));
+              if (!chunk || chunk.length < 1000) return allChangedLeads;
             }
+            throw new Error('Delta leads exceeded 100 pages; retry without advancing sync time');
           })();
 
           const fetchAssignedLeadsPromise = (async () => {
-            if (!userId) return [];
             try {
-              const { data: assignedData, error: assignedErr } = await supabase
-                .from('leads')
-                .select('*')
-                .eq('assigned_to', userId);
-              if (!assignedErr && Array.isArray(assignedData)) {
-                return assignedData;
-              }
+              return await fetchAssignedLeads();
             } catch (e) {
               console.warn("Assigned leads delta fetch error:", e);
+              throw e;
             }
-            return [];
           })();
 
           const [page0Data, newNotes, newLeads, myAssignedLeads] = await Promise.all([
@@ -1551,10 +1599,7 @@ export default function CRMContainer({
           rawLeadsRef.current = finalMerged;
           setSyncLoadedCount(finalMerged.length);
 
-          try {
-            localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
-            saveFastLeadsSnapshot(finalMerged);
-          } catch (e) {}
+          saveFastLeadsSnapshot(finalMerged, userId);
 
           // Fast selective persistence: Only upsert changed leads (takes ~50ms instead of 10s for 45k leads)
           try {
@@ -1565,9 +1610,16 @@ export default function CRMContainer({
               ...touchedLeads
             ].map(l => leadsMap.get(l.id)).filter(Boolean);
 
-            if (changedLeads.length > 0) {
-              await upsertLeadsLocally(changedLeads);
+            if (changedLeads.length > 0 && !await upsertLeadsLocally(changedLeads)) {
+              throw new Error('IndexedDB delta write did not complete');
             }
+            localStorage.setItem(cacheMetaKey, JSON.stringify({
+              userId, userCompany: userCompany || '', userRole, count: finalMerged.length,
+              syncedAt: syncStartedAt, fullSyncedAt: cacheMeta.fullSyncedAt,
+              generation: cacheMeta.generation
+            }));
+            localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+            saveLocalLeadsPreview(finalMerged, cacheMeta.generation, userCompany, userRole).catch(() => {});
           } catch (e) {
             console.warn("Failed to upsert delta leads locally:", e);
           }
@@ -1585,7 +1637,8 @@ export default function CRMContainer({
           rawLeadsRef.current = initialChunk;
           setSyncLoadedCount(loadedLeads.length);
           setLoadingLeads(false);
-          saveFastLeadsSnapshot(initialChunk);
+          saveFastLeadsSnapshot(initialChunk, userId);
+          saveLocalLeadsPreview(initialChunk, syncStartedAt, userCompany, userRole).catch(() => {});
           upsertLeadsLocally(initialChunk).catch(() => {});
 
           // 2. Fetch remaining pages of leads in parallel batches of 5 (High Concurrency Background Sync)
@@ -1605,6 +1658,22 @@ export default function CRMContainer({
             // Updating rawLeads in every batch causes 10+ expensive full-table rerenders and Recharts recalculations!
           }
 
+          // A failed count request must not turn a 1,000-row first page into a
+          // supposedly complete cache.
+          if (total === 0 && page0Data.length === queryPageSize) {
+            for (let page = 1; page < 100; page++) {
+              const data = await fetchLeadsPageWithRetry(page);
+              loadedLeads = loadedLeads.concat(data);
+              setSyncLoadedCount(loadedLeads.length);
+              if (data.length < queryPageSize) break;
+              if (page === 99) throw new Error('Lead pagination exceeded 100 pages');
+            }
+          }
+
+          // Include leads assigned across company boundaries, including legacy
+          // assignments stored by employee name instead of user ID.
+          loadedLeads = loadedLeads.concat(await fetchAssignedLeads());
+
           // Deduplicate all leads once after pagination finishes
           const uniqueMap = new Map();
           for (const lead of loadedLeads) {
@@ -1616,14 +1685,23 @@ export default function CRMContainer({
           setRawLeads(finalLeads);
           rawLeadsRef.current = finalLeads;
           setSyncLoadedCount(finalLeads.length);
-          saveFastLeadsSnapshot(finalLeads);
+          saveFastLeadsSnapshot(finalLeads, userId);
 
           // Persist all fetched leads immediately to IndexedDB so cache is 100% valid on next reload!
           if (finalLeads.length > 0) {
-            await saveLeadsLocally(finalLeads);
-            try {
-              localStorage.setItem('crm_last_lead_sync_timestamp', new Date().toISOString());
-            } catch (e) {}
+            if (await saveLeadsLocally(finalLeads, syncStartedAt)) {
+              try {
+                localStorage.setItem(cacheMetaKey, JSON.stringify({
+                  userId, userCompany: userCompany || '', userRole, count: finalLeads.length,
+                  syncedAt: syncStartedAt, fullSyncedAt: syncStartedAt,
+                  generation: syncStartedAt
+                }));
+                localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+                saveLocalLeadsPreview(finalLeads, syncStartedAt, userCompany, userRole).catch(() => {});
+              } catch (e) {}
+            } else {
+              console.warn('Full lead cache write did not complete; next load will retry full sync');
+            }
           }
 
           // 3. Background Recent Notes Hydration (Non-blocking: fetch latest 1,000 notes in ~200ms)
@@ -1641,13 +1719,16 @@ export default function CRMContainer({
                 notesMap.get(note.lead_id).push(note);
               }
 
-              let touchedLeads = [];
+              const touchedLeads = [];
+              for (const lead of rawLeadsRef.current) {
+                const notes = notesMap.get(lead.id);
+                if (notes) touchedLeads.push({ ...lead, lead_notes: notes });
+              }
               setRawLeads(prev => {
                 const withNotes = prev.map(lead => {
                   const n = notesMap.get(lead.id);
                   if (n) {
                     const updated = { ...lead, lead_notes: n };
-                    touchedLeads.push(updated);
                     return updated;
                   }
                   return lead;
@@ -1666,7 +1747,11 @@ export default function CRMContainer({
         }
 
       } catch (err) {
-        console.error("Lead sync failed, falling back to local IndexedDB storage:", err);
+        console.warn("Lead sync failed; using local IndexedDB storage:", {
+          message: err?.message || String(err),
+          code: err?.code,
+          details: err?.details
+        });
         try {
           const localCache = await getLocalLeads();
           if (localCache && localCache.length > 0) {
@@ -1676,6 +1761,7 @@ export default function CRMContainer({
       } finally {
         setLoadingLeads(false);
         setIsSyncing(false);
+        leadSyncInFlightRef.current = false;
       }
     }
     loadLeads();
@@ -1778,12 +1864,9 @@ export default function CRMContainer({
     };
 
     const handleForceFullSync = async () => {
-      await clearLocalLeadsCache();
       if (typeof window !== 'undefined') {
         try {
-          sessionStorage.removeItem('supuja_fast_leads_snapshot');
-          localStorage.removeItem('supuja_fast_leads_snapshot');
-          localStorage.removeItem('crm_last_lead_sync_timestamp');
+          localStorage.setItem(`crm_leads_complete_cache_v1_${userId}`, 'null');
         } catch (e) {}
       }
       if (loadLeadsRef.current) {
@@ -1819,7 +1902,7 @@ export default function CRMContainer({
       window.removeEventListener('crm_leads_imported', handleLeadsImported);
       window.removeEventListener('crm_force_full_sync', handleForceFullSync);
     };
-  }, [hasLeadsAccess]);
+  }, [hasLeadsAccess, userId, userCompany, userName, userRole]);
 
   const handleOfflineSyncComplete = React.useCallback(() => {
     if (loadLeadsRef.current) {
@@ -1850,7 +1933,7 @@ export default function CRMContainer({
            const matchComp = (userCompany === 'NSTL' || userCompany === 'NSTLP')
              ? (l.our_company === 'NSTL' || l.our_company === 'NSTLP')
              : l.our_company === userCompany;
-           return matchComp || (userId && l.assigned_to === userId);
+            return matchComp || (userId && l.assigned_to === userId) || (userName && l.assigned_to === userName);
          });
       }
     }
@@ -1878,14 +1961,14 @@ export default function CRMContainer({
       const filteredLeads = preFilteredLeads.filter(lead => {
         const leadStage = getStageFromStatus(lead.status);
         return assignedSteps.includes(leadStage) && 
-               (lead.assigned_to === null || lead.assigned_to === undefined || lead.assigned_to === userId);
+                (lead.assigned_to === null || lead.assigned_to === undefined || lead.assigned_to === userId || lead.assigned_to === userName);
       });
       updateLeadsIfChanged(filteredLeads);
     } else {
       // If view is true but no steps assigned, they see nothing
       updateLeadsIfChanged([]);
     }
-  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, globalRolePermissions]);
+  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions]);
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = (updatedFilteredLeads) => {
@@ -1943,6 +2026,7 @@ export default function CRMContainer({
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
+  const screenCaptureRequestRef = useRef(0);
   const [leadsFilterStage, setLeadsFilterStage] = useState(() => {
     const stage = initialSearchParams?.stage;
     if (stage === 'all') return null;
@@ -2284,24 +2368,39 @@ export default function CRMContainer({
     }
   }, [moduleAccess, userRole, activeTab, isAdmin]);
 
-  const handleTabChange = async (tabId) => {
+  const handleTabChange = (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
-      try {
-        const canvas = await html2canvas(document.body, { scale: Math.min(window.devicePixelRatio || 1, 1.5) });
-        setLastScreenCapture(canvas.toDataURL('image/jpeg', 0.4));
-      } catch (err) {
-        console.error("Screenshot capture failed", err);
-      }
+      const requestId = ++screenCaptureRequestRef.current;
+      setLastScreenCapture(null);
+      const captureWhenIdle = () => {
+        if (screenCaptureRequestRef.current !== requestId) return;
+        import('html2canvas')
+          .then(({ default: html2canvas }) => html2canvas(document.body, {
+            scale: Math.min(window.devicePixelRatio || 1, 1.5)
+          }))
+          .then(canvas => {
+            if (screenCaptureRequestRef.current === requestId) {
+              setLastScreenCapture(canvas.toDataURL('image/jpeg', 0.4));
+            }
+          })
+          .catch(err => console.warn('Screenshot capture failed:', err));
+      };
+      window.requestAnimationFrame(() => {
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(captureWhenIdle, { timeout: 2500 });
+        } else {
+          window.setTimeout(captureWhenIdle, 0);
+        }
+      });
     } else if (tabId !== 'ai') {
+      screenCaptureRequestRef.current += 1;
       setLastScreenCapture(null);
     }
 
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tabId)) {
       const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
-      React.startTransition(() => {
-        setActiveTab('dashboard');
-        setDashboardSubTab(canonical);
-      });
+      setActiveTab('dashboard');
+      setDashboardSubTab(canonical);
       window.history.pushState(null, '', `/${canonical}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
@@ -2310,16 +2409,14 @@ export default function CRMContainer({
     }
 
     if (tabId === 'user_management_new') {
-      React.startTransition(() => setActiveTab(tabId));
+      setActiveTab(tabId);
       window.history.pushState(null, '', `/user_management_new?tab=${userManagementSubTab}`);
       if (window.innerWidth <= 768) setIsSidebarOpen(false);
       return;
     }
 
     if (tabId === 'calladmin') {
-      React.startTransition(() => {
-        setActiveTab('calladmin');
-      });
+      setActiveTab('calladmin');
       const targetSub = callAdminSubTab || 'agents';
       window.history.pushState(null, '', `/calladmin?tab=${targetSub}`);
       if (window.innerWidth <= 768) {
@@ -2329,9 +2426,7 @@ export default function CRMContainer({
     }
 
     if (tabId === 'party') {
-      React.startTransition(() => {
-        setActiveTab('party');
-      });
+      setActiveTab('party');
       const targetSub = partySubTab || 's00';
       const cleanTarget = (targetSub === 'r03' || targetSub === 'party-master-report') ? 'report' : targetSub;
       window.history.pushState(null, '', `/party/${cleanTarget}`);
@@ -2341,9 +2436,7 @@ export default function CRMContainer({
       return;
     }
 
-    React.startTransition(() => {
-      setActiveTab(tabId);
-    });
+    setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
     
@@ -2358,9 +2451,7 @@ export default function CRMContainer({
   const handleSettingSubTabChange = (subTabId) => {
     setCurrentSettingSubTab(subTabId);
     if (activeTab !== 'settings') {
-      React.startTransition(() => {
-        setActiveTab('settings');
-      });
+      setActiveTab('settings');
     }
     const newPath = `/settings?setting=${subTabId}`;
     window.history.pushState(null, '', newPath);
@@ -2374,9 +2465,7 @@ export default function CRMContainer({
   const handleAttendanceSubTabChange = (subTabId) => {
     setAttendanceSubTab(subTabId);
     if (activeTab !== 'attendance') {
-      React.startTransition(() => {
-        setActiveTab('attendance');
-      });
+      setActiveTab('attendance');
     }
     const newPath = `/attendance?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
@@ -2389,9 +2478,7 @@ export default function CRMContainer({
   const handleChecklistSubTabChange = (subTabId) => {
     setChecklistSubTab(subTabId);
     if (activeTab !== 'checklist') {
-      React.startTransition(() => {
-        setActiveTab('checklist');
-      });
+      setActiveTab('checklist');
     }
     const newPath = `/checklist?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
@@ -2404,9 +2491,7 @@ export default function CRMContainer({
   const handleDelegationSubTabChange = (subTabId) => {
     setDelegationSubTab(subTabId);
     if (activeTab !== 'delegation') {
-      React.startTransition(() => {
-        setActiveTab('delegation');
-      });
+      setActiveTab('delegation');
     }
     const newPath = `/delegation?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
@@ -2419,9 +2504,7 @@ export default function CRMContainer({
   const handleCallAdminSubTabChange = (subTabId) => {
     setCallAdminSubTab(subTabId);
     if (activeTab !== 'calladmin') {
-      React.startTransition(() => {
-        setActiveTab('calladmin');
-      });
+      setActiveTab('calladmin');
     }
     const newPath = `/calladmin?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
@@ -2436,9 +2519,7 @@ export default function CRMContainer({
     if (cleanSub === 'r03' || cleanSub === 'party-master-report') cleanSub = 'report';
     setPartySubTab(cleanSub);
     if (activeTab !== 'party') {
-      React.startTransition(() => {
-        setActiveTab('party');
-      });
+      setActiveTab('party');
     }
     const newPath = `/party/${cleanSub}`;
     window.history.pushState(null, '', newPath);
@@ -2927,8 +3008,8 @@ export default function CRMContainer({
       const tasks = Array.isArray(res.delegationTasks) ? res.delegationTasks : [];
       const slots = Array.isArray(res.checklistSlots) ? res.checklistSlots : [];
 
-      setUserDelegationTasks(tasks);
-      setUserChecklistSlots(slots);
+      setUserDelegationTasks(current => sameAlertItems(current, tasks) ? current : tasks);
+      setUserChecklistSlots(current => sameAlertItems(current, slots) ? current : slots);
 
       // Baseline establishment on first fetch
       if (!initialAlertSyncFinishedRef.current) {
@@ -3149,6 +3230,7 @@ export default function CRMContainer({
 
   return (
     <div className="app-layout">
+      <ResponsiveTableResizer />
       {/* Mobile Overlay */}
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)}></div>
 
@@ -5870,7 +5952,7 @@ export default function CRMContainer({
               <h2 style={{ color: 'var(--text-secondary)' }}>You do not have permission to view leads.</h2>
             </div>
           ) : !isMounted ? (
-            <PremiumProgressLoader message="Loading workspace" active={!isMounted} />
+            <WorkspaceSkeleton variant={activeTab === 'leads' ? 'table' : 'default'} />
           ) : !isCurrentTabAllowedOffline ? (
             <OfflineBlockScreen 
               moduleName={MODULE_DISPLAY_NAMES[activeTab] || 'This Module'} 
@@ -5881,7 +5963,7 @@ export default function CRMContainer({
               }}
             />
           ) : (
-            <>
+            <React.Suspense fallback={<WorkspaceSkeleton variant={activeTab === 'leads' ? 'table' : 'default'} />}>
               {/* Dashboard */}
               <KeepAliveTab 
                 isActive={activeTab === 'dashboard'} 
@@ -5926,7 +6008,7 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   {loadingLeads && (!leads || leads.length === 0) ? (
-                    <PremiumProgressLoader message="Loading Leads Database" active={loadingLeads} />
+                    <WorkspaceSkeleton variant="table" />
                   ) : (
                     <LeadTable 
                       initialData={leads} 
@@ -6264,7 +6346,7 @@ export default function CRMContainer({
                   <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
                 </ErrorBoundary>
               </KeepAliveTab>
-            </>
+            </React.Suspense>
           )}
         </div>
         </div>

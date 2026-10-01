@@ -529,7 +529,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
 
   const takeScreenshot = async () => {
     if (lastScreenCapture) {
-      setAttachments(prev => [...prev, { type: 'image', url: lastScreenCapture, name: 'Previous Tab Screenshot' }]);
+      setAttachments(prev => [...prev, { type: 'image', url: lastScreenCapture, name: 'Screen Screenshot' }]);
     } else {
       alert('No previous tab to capture. Navigate to a module (like Leads or Analytics) first, then click on AI Assistant.');
     }

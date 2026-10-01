@@ -6,6 +6,7 @@ export const MAX_OFFLINE_SECONDS_PER_DAY = 5 * 60 * 60; // Maximum 5 Hours Offli
 
 const DB_NAME = 'supuja_crm_offline_db';
 const DB_VERSION = 2;
+const LEAD_CACHE_SCOPE_KEY = 'supuja_leads_cache_scope';
 const STORES = {
   LEADS_CACHE: 'leads_cache',
   CHECKLIST_CACHE: 'checklist_cache',
@@ -397,7 +398,7 @@ export function openOfflineDB() {
  * Truncates lead_notes to the latest 15 notes so local storage size drops from 50MB to ~5MB,
  * preventing mobile WebKit IPC limit crashes and transaction timeouts.
  */
-function sanitizeLeadForLocalStore(lead) {
+function sanitizeLeadForLocalStore(lead, cacheScope, cacheGeneration) {
   if (!lead || typeof lead !== 'object' || lead.id === undefined || lead.id === null) return null;
   let notes = lead.lead_notes;
   if (Array.isArray(notes) && notes.length > 15) {
@@ -405,23 +406,125 @@ function sanitizeLeadForLocalStore(lead) {
   }
   return {
     ...lead,
-    lead_notes: notes || []
+    lead_notes: notes || [],
+    __cacheScope: cacheScope,
+    __cacheGeneration: cacheGeneration
   };
+}
+
+export function setLeadCacheScope(userId) {
+  if (typeof window === 'undefined' || !userId) return;
+  try { sessionStorage.setItem(LEAD_CACHE_SCOPE_KEY, String(userId)); } catch (e) {}
+}
+
+function getLeadCacheScope() {
+  if (typeof window === 'undefined') return null;
+  try { return sessionStorage.getItem(LEAD_CACHE_SCOPE_KEY); } catch (e) { return null; }
+}
+
+function getLeadCacheGeneration(cacheScope) {
+  if (!cacheScope || typeof window === 'undefined') return null;
+  try {
+    const meta = JSON.parse(localStorage.getItem(`crm_leads_complete_cache_v1_${cacheScope}`) || 'null');
+    return meta?.generation || null;
+  } catch (e) { return null; }
+}
+
+const leadPreviewKey = cacheScope => `__lead_preview_${cacheScope}`;
+
+function projectFastLeads(leads) {
+  return leads.slice(0, 300).map(l => ({
+    id: l.id,
+    lead_ref_id: l.lead_ref_id,
+    name: l.name,
+    company: l.company,
+    business_name: l.business_name,
+    phone: l.phone,
+    business_contact_1: l.business_contact_1,
+    email: l.email,
+    status: l.status,
+    stage: l.stage,
+    source: l.source,
+    priority: l.priority,
+    remarks: l.remarks,
+    our_company: l.our_company,
+    assigned_to: l.assigned_to,
+    assigned_to_name: l.assigned_to_name,
+    created_at: l.created_at,
+    updated_at: l.updated_at,
+    city: l.city,
+    district: l.district,
+    state: l.state,
+    lead_notes: []
+  }));
+}
+
+export async function getLocalLeadsPreview(userCompany, userRole) {
+  const cacheScope = getLeadCacheScope();
+  if (!cacheScope) return [];
+  try {
+    const db = await openOfflineDB();
+    if (!db) return [];
+    return await new Promise(resolve => {
+      const tx = db.transaction(STORES.LEADS_CACHE, 'readonly');
+      const request = tx.objectStore(STORES.LEADS_CACHE).get(leadPreviewKey(cacheScope));
+      request.onsuccess = () => {
+        const row = request.result;
+        resolve(row?.__cacheScope === cacheScope &&
+          row?.__userCompany === (userCompany || '') &&
+          row?.__userRole === userRole &&
+          Array.isArray(row.leads) ? row.leads : []);
+      };
+      request.onerror = () => resolve([]);
+      tx.onabort = () => resolve([]);
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function saveLocalLeadsPreview(leads, generation, userCompany, userRole) {
+  if (!Array.isArray(leads) || leads.length === 0) return false;
+  const cacheScope = getLeadCacheScope();
+  const cacheGeneration = generation || getLeadCacheGeneration(cacheScope);
+  if (!cacheScope || !cacheGeneration) return false;
+  try {
+    const db = await openOfflineDB();
+    if (!db) return false;
+    return await new Promise(resolve => {
+      const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
+      tx.objectStore(STORES.LEADS_CACHE).put({
+        id: leadPreviewKey(cacheScope),
+        __cacheScope: cacheScope,
+        __cacheGeneration: cacheGeneration,
+        __userCompany: userCompany || '',
+        __userRole: userRole,
+        leads: projectFastLeads(leads)
+      });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    });
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
  * Fast synchronous snapshot cache for instant 0ms hydration on page reload/F5.
  * Stored in sessionStorage which is preserved across refreshes in the same tab.
  */
-export function getFastLeadsSnapshot() {
+export function getFastLeadsSnapshot(userId) {
   if (typeof window === 'undefined') return [];
+  if (!userId) return [];
+  const key = `supuja_fast_leads_snapshot_${userId}`;
   try {
-    const rawSession = sessionStorage.getItem('supuja_fast_leads_snapshot');
+    const rawSession = sessionStorage.getItem(key);
     if (rawSession) {
       const parsed = JSON.parse(rawSession);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-    const rawLocal = localStorage.getItem('supuja_fast_leads_snapshot');
+    const rawLocal = localStorage.getItem(key);
     if (rawLocal) {
       const parsed = JSON.parse(rawLocal);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -434,43 +537,35 @@ export function getFastLeadsSnapshot() {
  * Saves top leads into both sessionStorage and localStorage for instant 0ms hydration on next refresh.
  * Uses compact minimal projections to guarantee payload is ~40KB (never throws QuotaExceededError).
  */
-export function saveFastLeadsSnapshot(leads) {
-  if (typeof window === 'undefined' || !Array.isArray(leads) || leads.length === 0) return;
+export function saveFastLeadsSnapshot(leads, userId) {
+  if (typeof window === 'undefined' || !userId || !Array.isArray(leads) || leads.length === 0) return;
+  const key = `supuja_fast_leads_snapshot_${userId}`;
   try {
-    const subset = leads.slice(0, 300).map(l => ({
+    const subset = projectFastLeads(leads);
+    const compact = subset.slice(0, 100).map(l => ({
       id: l.id,
+      lead_ref_id: l.lead_ref_id,
       name: l.name,
+      company: l.company,
       phone: l.phone,
-      email: l.email,
       status: l.status,
-      stage: l.stage,
       our_company: l.our_company,
       assigned_to: l.assigned_to,
-      assigned_to_name: l.assigned_to_name,
       created_at: l.created_at,
-      updated_at: l.updated_at,
-      city: l.city,
-      state: l.state,
       lead_notes: []
     }));
-    const serialized = JSON.stringify(subset);
-    try { sessionStorage.setItem('supuja_fast_leads_snapshot', serialized); } catch (e) {}
-    try { localStorage.setItem('supuja_fast_leads_snapshot', serialized); } catch (e) {}
+    // setItem can fail when an older snapshot has filled the storage quota.
+    // Retry each storage with smaller payloads so refresh still has a preview.
+    for (const storage of [sessionStorage, localStorage]) {
+      for (const candidate of [subset, subset.slice(0, 100), compact, compact.slice(0, 25), compact.slice(0, 10), compact.slice(0, 1)]) {
+        try {
+          storage.setItem(key, JSON.stringify(candidate));
+          break;
+        } catch (e) {}
+      }
+    }
   } catch (e) {
-    try {
-      const smaller = leads.slice(0, 100).map(l => ({
-        id: l.id,
-        name: l.name,
-        phone: l.phone,
-        status: l.status,
-        our_company: l.our_company,
-        created_at: l.created_at,
-        lead_notes: []
-      }));
-      const smallSer = JSON.stringify(smaller);
-      try { sessionStorage.setItem('supuja_fast_leads_snapshot', smallSer); } catch (e) {}
-      try { localStorage.setItem('supuja_fast_leads_snapshot', smallSer); } catch (e) {}
-    } catch (inner) {}
+    // IndexedDB remains the source for the complete cache when storage is unavailable.
   }
 }
 
@@ -478,25 +573,27 @@ export function saveFastLeadsSnapshot(leads) {
  * Cache current leads array to IndexedDB using safe mobile-optimized chunked writing
  * Prevents transaction timeouts, IPC buffer limits, and memory crashes on mobile browsers
  */
-export async function saveLeadsLocally(leads) {
+export async function saveLeadsLocally(leads, generation) {
   if (!Array.isArray(leads) || leads.length === 0) return false;
   try {
     const db = await openOfflineDB();
     if (!db) return false;
+    const cacheScope = getLeadCacheScope();
+    const cacheGeneration = generation || getLeadCacheGeneration(cacheScope);
+    if (!cacheScope || !cacheGeneration) return false;
 
     // Chunk size: 1500 items per transaction to stay well under mobile RAM & transaction timeout limits
     const CHUNK_SIZE = 1500;
     for (let i = 0; i < leads.length; i += CHUNK_SIZE) {
       const chunk = leads.slice(i, i + CHUNK_SIZE);
-      await new Promise((resolve) => {
+      const saved = await new Promise((resolve) => {
         try {
           const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
           const store = tx.objectStore(STORES.LEADS_CACHE);
           
           for (const lead of chunk) {
-            if (lead && lead.id) {
-              store.put(lead);
-            }
+            const cachedLead = sanitizeLeadForLocalStore(lead, cacheScope, cacheGeneration);
+            if (cachedLead) store.put(cachedLead);
           }
 
           tx.oncomplete = () => resolve(true);
@@ -513,6 +610,7 @@ export async function saveLeadsLocally(leads) {
           resolve(false);
         }
       });
+      if (!saved) return false;
 
       // Yield briefly to mobile browser main thread to maintain smooth 60fps UI
       if (leads.length > CHUNK_SIZE) {
@@ -537,19 +635,21 @@ export async function upsertLeadsLocally(leadsToUpsert) {
   try {
     const db = await openOfflineDB();
     if (!db) return false;
+    const cacheScope = getLeadCacheScope();
+    const cacheGeneration = getLeadCacheGeneration(cacheScope);
+    if (!cacheScope || !cacheGeneration) return false;
 
     const CHUNK_SIZE = 1500;
     for (let i = 0; i < arr.length; i += CHUNK_SIZE) {
       const chunk = arr.slice(i, i + CHUNK_SIZE);
-      await new Promise((resolve) => {
+      const saved = await new Promise((resolve) => {
         try {
           const tx = db.transaction(STORES.LEADS_CACHE, 'readwrite');
           const store = tx.objectStore(STORES.LEADS_CACHE);
           
           for (const lead of chunk) {
-            if (lead && lead.id) {
-              store.put(lead);
-            }
+            const cachedLead = sanitizeLeadForLocalStore(lead, cacheScope, cacheGeneration);
+            if (cachedLead) store.put(cachedLead);
           }
 
           tx.oncomplete = () => resolve(true);
@@ -559,6 +659,7 @@ export async function upsertLeadsLocally(leadsToUpsert) {
           resolve(false);
         }
       });
+      if (!saved) return false;
 
       if (arr.length > CHUNK_SIZE) {
         await new Promise(r => setTimeout(r, 0));
@@ -618,56 +719,87 @@ export async function clearLocalLeadsCache() {
 /**
  * Read cached leads from IndexedDB with cursor stream fallback for mobile WebKit IPC limits
  */
-export async function getLocalLeads() {
+export async function getLocalLeads({ onPreview } = {}) {
   try {
     const db = await openOfflineDB();
     if (!db) return [];
 
     return new Promise((resolve) => {
       let isResolved = false;
+      let cursorStarted = false;
+      let previewDelivered = false;
+      let fallbackTimer;
+      let hardTimer;
       const safeResolve = (val) => {
         if (!isResolved) {
           isResolved = true;
-          resolve(val);
+          clearTimeout(fallbackTimer);
+          clearTimeout(hardTimer);
+          const scope = getLeadCacheScope();
+          const generation = getLeadCacheGeneration(scope);
+          resolve(scope && generation
+            ? val.filter(lead => !String(lead?.id).startsWith('__lead_preview_') && lead?.__cacheScope === scope && lead?.__cacheGeneration === generation)
+            : []);
         }
       };
 
-      const safetyTimer = setTimeout(() => {
-        console.warn('[IndexedDB] getLocalLeads safety timeout fired');
-        safeResolve([]);
-      }, 3000);
-
       const readWithCursor = () => {
+        if (cursorStarted || isResolved) return;
+        cursorStarted = true;
         try {
           const cursorTx = db.transaction(STORES.LEADS_CACHE, 'readonly');
           const cursorStore = cursorTx.objectStore(STORES.LEADS_CACHE);
           const cursorReq = cursorStore.openCursor();
           const items = [];
+          const previewScope = getLeadCacheScope();
+          const previewGeneration = getLeadCacheGeneration(previewScope);
+          const append = (lead) => {
+            if (typeof onPreview === 'function' &&
+                (lead?.__cacheScope !== previewScope || lead?.__cacheGeneration !== previewGeneration)) return;
+            items.push(lead);
+          };
           cursorReq.onsuccess = (ev) => {
+            if (isResolved) return;
             const cursor = ev.target.result;
             if (cursor) {
-              if (cursor.value && cursor.value.id && !String(cursor.value.id).startsWith('__bucket_')) {
-                items.push(cursor.value);
+              if (cursor.value && cursor.value.id && !String(cursor.value.id).startsWith('__bucket_') && !String(cursor.value.id).startsWith('__lead_preview_')) {
+                append(cursor.value);
               } else if (cursor.value && Array.isArray(cursor.value.leads)) {
-                items.push(...cursor.value.leads);
+                cursor.value.leads.forEach(append);
+              }
+              if (!previewDelivered && typeof onPreview === 'function' && items.length >= 100) {
+                previewDelivered = true;
+                try { onPreview(items.slice(0, 100)); } catch (e) {}
               }
               cursor.continue();
             } else {
-              clearTimeout(safetyTimer);
               safeResolve(items);
             }
           };
           cursorReq.onerror = (e) => {
             console.warn('[IndexedDB] cursor streaming error:', e);
-            clearTimeout(safetyTimer);
             safeResolve(items);
           };
         } catch (cursorErr) {
           console.warn('[IndexedDB] cursor fallback exception:', cursorErr);
-          clearTimeout(safetyTimer);
           safeResolve([]);
         }
       };
+
+      // Large getAll() results can stall mobile browsers. Try a cursor before
+      // treating a slow read as an empty cache and triggering a full download.
+      fallbackTimer = setTimeout(readWithCursor, 3000);
+      hardTimer = setTimeout(() => {
+        console.warn('[IndexedDB] getLocalLeads read timed out');
+        safeResolve([]);
+      }, 30000);
+
+      // A cursor can show the first cached rows before a large getAll() would
+      // finish cloning the entire database into memory.
+      if (typeof onPreview === 'function') {
+        readWithCursor();
+        return;
+      }
 
       try {
         const tx = db.transaction(STORES.LEADS_CACHE, 'readonly');
@@ -682,7 +814,6 @@ export async function getLocalLeads() {
         }
 
         request.onsuccess = () => {
-          clearTimeout(safetyTimer);
           const res = request.result || [];
           if (Array.isArray(res) && res.some(r => r && typeof r.id === 'string' && r.id.startsWith('__bucket_'))) {
             let unpacked = [];
