@@ -1111,8 +1111,61 @@ export default function LeadTable({
     }, 120);
   };
   
+  const prevInitialDataRef = useRef(null);
+  const prevTeamMembersRef = useRef(teamMembers);
+
   useEffect(() => {
     const rows = initialData || [];
+    const prevRows = prevInitialDataRef.current;
+    const teamMembersChanged = prevTeamMembersRef.current !== teamMembers;
+    prevTeamMembersRef.current = teamMembers;
+
+    // Fast-path 1: Exact reference match and team members unchanged -> nothing to do
+    if (prevRows === rows && !teamMembersChanged) {
+      return;
+    }
+
+    // Fast-path 2: Same total length and team members unchanged -> check for targeted row changes
+    if (prevRows && prevRows.length === rows.length && !teamMembersChanged) {
+      let changedCount = 0;
+      const changedIndices = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i] !== prevRows[i]) {
+          changedCount++;
+          changedIndices.push(i);
+          if (changedCount > 25) {
+            // More than 25 items changed at once (e.g. bulk update, re-sorting) -> fallback to full batch
+            break;
+          }
+        }
+      }
+
+      if (changedCount === 0) {
+        prevInitialDataRef.current = rows;
+        return;
+      }
+
+      if (changedCount <= 25) {
+        // Targeted in-place update! Only format and patch the specific rows that changed
+        prevInitialDataRef.current = rows;
+        setData(current => {
+          if (!current || current.length !== rows.length) return current;
+          const next = [...current];
+          for (const idx of changedIndices) {
+            const rawLead = rows[idx];
+            const processed = processLeads([rawLead], teamMembers, idx)[0] || rawLead;
+            next[idx] = processed;
+          }
+          return next;
+        });
+        return;
+      }
+    }
+
+    // Full batch processing path: Initial load, stage tab switch, company filter switch, or bulk import
+    prevInitialDataRef.current = rows;
+
     if (rows.length <= 400) {
       setData(processLeads(rows, teamMembers));
       return;
@@ -2127,12 +2180,6 @@ export default function LeadTable({
             userName={userName}
             stages={stages}
             onLeadUpdate={(updatedLead) => {
-              const processed = processLeads([updatedLead], teamMembers)[0] || updatedLead;
-              setData(curr => curr.map(item => item.id === processed.id ? { ...item, ...processed } : item));
-              setSelectedLead(processed);
-              if (onLeadsChange) onLeadsChange(processed);
-            }}
-            onUpdateLead={(updatedLead) => {
               const processed = processLeads([updatedLead], teamMembers)[0] || updatedLead;
               setData(curr => curr.map(item => item.id === processed.id ? { ...item, ...processed } : item));
               setSelectedLead(processed);
@@ -3413,14 +3460,6 @@ export default function LeadTable({
              // Since processLeads expects an array of raw leads, we can pass it
              // and merge back into our data state
              const processed = processLeads([updatedRawLead], teamMembers)[0];
-             setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
-             setSelectedLead(processed);
-             if (onLeadsChange) {
-               onLeadsChange(processed);
-             }
-          }}
-          onUpdateLead={(updatedRawLead) => {
-             const processed = processLeads([updatedRawLead], teamMembers)[0] || updatedRawLead;
              setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
              setSelectedLead(processed);
              if (onLeadsChange) {

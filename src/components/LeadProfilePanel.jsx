@@ -510,8 +510,11 @@ export default function LeadProfilePanel({
 
   const notifyLeadUpdate = (updatedLeadObj) => {
     setActiveLead(prev => ({ ...(prev || {}), ...updatedLeadObj }));
-    if (onLeadUpdate) onLeadUpdate(updatedLeadObj);
-    if (onUpdateLead) onUpdateLead(updatedLeadObj);
+    if (onLeadUpdate) {
+      onLeadUpdate(updatedLeadObj);
+    } else if (onUpdateLead) {
+      onUpdateLead(updatedLeadObj);
+    }
   };
 
   // Keyboard navigation: Alt+Left / Alt+Right for Prev/Next lead, Esc to close
