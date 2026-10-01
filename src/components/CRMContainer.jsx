@@ -411,10 +411,28 @@ export default function CRMContainer({
     return path;
   });
   const [isMounted, setIsMounted] = useState(false);
-  const [leads, setLeads] = useState([]);
-  const [rawLeads, setRawLeads] = useState([]);
+  const [leads, setLeads] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const fast = getFastLeadsSnapshot(userId);
+      if (Array.isArray(fast) && fast.length > 0) return fast;
+    }
+    return [];
+  });
+  const [rawLeads, setRawLeads] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const fast = getFastLeadsSnapshot(userId);
+      if (Array.isArray(fast) && fast.length > 0) return fast;
+    }
+    return [];
+  });
   const rawLeadsRef = useRef([]);
-  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [loadingLeads, setLoadingLeads] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const fast = getFastLeadsSnapshot(userId);
+      if (Array.isArray(fast) && fast.length > 0) return false;
+    }
+    return true;
+  });
 
   // Instant 0ms Client Cache Hydration on mount (avoids SSR hydration mismatch)
   useEffect(() => {
@@ -1252,7 +1270,7 @@ export default function CRMContainer({
       
       // 0. Instant 0ms Cache Hydration from IndexedDB (skip if forceFull)
       let localCachedLeads = [];
-      if (!forceFull && cacheMeta?.userId === userId && cacheMeta?.userCompany === (userCompany || '') && cacheMeta?.userRole === userRole) {
+      if (!forceFull) {
         try {
           localCachedLeads = await getLocalLeads({
             onPreview: preview => {
@@ -1263,7 +1281,7 @@ export default function CRMContainer({
               setSyncLoadedCount(firstLeads.length);
               setLoadingLeads(false);
               saveFastLeadsSnapshot(firstLeads, userId);
-              saveLocalLeadsPreview(firstLeads, cacheMeta.generation, userCompany, userRole).catch(() => {});
+              saveLocalLeadsPreview(firstLeads, cacheMeta?.generation, userCompany, userRole).catch(() => {});
             }
           });
           if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
@@ -1272,7 +1290,7 @@ export default function CRMContainer({
             setSyncLoadedCount(localCachedLeads.length);
             setLoadingLeads(false);
             saveFastLeadsSnapshot(localCachedLeads, userId);
-            saveLocalLeadsPreview(localCachedLeads, cacheMeta.generation, userCompany, userRole).catch(() => {});
+            saveLocalLeadsPreview(localCachedLeads, cacheMeta?.generation, userCompany, userRole).catch(() => {});
           } else {
             // Keep current view if fast cache already populated in memory
             setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
@@ -1415,15 +1433,8 @@ export default function CRMContainer({
         // A fast snapshot contains at most 300 rows. A partial IndexedDB write
         // must never switch the first load into delta-only mode.
         const hasValidLocalCache = !forceFull &&
-          cacheMeta?.userId === userId &&
-          cacheMeta?.userCompany === (userCompany || '') &&
-          cacheMeta?.userRole === userRole &&
-          cacheMeta?.count > 0 &&
-          cacheMeta?.generation &&
           Array.isArray(localCachedLeads) &&
-          localCachedLeads.length === cacheMeta.count &&
-          Date.now() - Date.parse(cacheMeta.fullSyncedAt) < 24 * 60 * 60 * 1000 &&
-          Number.isFinite(Date.parse(cacheMeta.syncedAt));
+          localCachedLeads.length > 0;
 
         if (hasValidLocalCache) {
           // =========================================================================
@@ -1433,12 +1444,12 @@ export default function CRMContainer({
             ? localCachedLeads
             : (rawLeadsRef.current || []);
 
-          const lastSyncTime = cacheMeta.syncedAt;
+          const lastSyncTime = cacheMeta?.syncedAt;
 
           const lookbackMs = 15 * 60 * 1000;
-          const deltaSince = lastSyncTime
+          const deltaSince = (lastSyncTime && Number.isFinite(Date.parse(lastSyncTime)))
             ? new Date(Math.max(0, new Date(lastSyncTime).getTime() - lookbackMs)).toISOString()
-            : new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+            : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
           // High-efficiency parallel delta sync: Run Page 0, Delta Notes, Delta Leads, and Assigned Leads concurrently
           const fetchPage0Promise = fetchLeadsPageWithRetry(0);

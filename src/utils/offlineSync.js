@@ -404,22 +404,27 @@ function sanitizeLeadForLocalStore(lead, cacheScope, cacheGeneration) {
   if (Array.isArray(notes) && notes.length > 15) {
     notes = notes.slice(0, 15);
   }
+  const scope = cacheScope || getLeadCacheScope() || 'default';
+  const gen = cacheGeneration || getLeadCacheGeneration(scope) || 'default';
   return {
     ...lead,
     lead_notes: notes || [],
-    __cacheScope: cacheScope,
-    __cacheGeneration: cacheGeneration
+    __cacheScope: scope,
+    __cacheGeneration: gen
   };
 }
 
 export function setLeadCacheScope(userId) {
   if (typeof window === 'undefined' || !userId) return;
   try { sessionStorage.setItem(LEAD_CACHE_SCOPE_KEY, String(userId)); } catch (e) {}
+  try { localStorage.setItem(LEAD_CACHE_SCOPE_KEY, String(userId)); } catch (e) {}
 }
 
 function getLeadCacheScope() {
   if (typeof window === 'undefined') return null;
-  try { return sessionStorage.getItem(LEAD_CACHE_SCOPE_KEY); } catch (e) { return null; }
+  try { 
+    return sessionStorage.getItem(LEAD_CACHE_SCOPE_KEY) || localStorage.getItem(LEAD_CACHE_SCOPE_KEY) || null; 
+  } catch (e) { return null; }
 }
 
 function getLeadCacheGeneration(cacheScope) {
@@ -516,8 +521,7 @@ export async function saveLocalLeadsPreview(leads, generation, userCompany, user
  */
 export function getFastLeadsSnapshot(userId) {
   if (typeof window === 'undefined') return [];
-  if (!userId) return [];
-  const key = `supuja_fast_leads_snapshot_${userId}`;
+  const key = userId ? `supuja_fast_leads_snapshot_${userId}` : 'supuja_fast_leads_snapshot';
   try {
     const rawSession = sessionStorage.getItem(key);
     if (rawSession) {
@@ -538,8 +542,8 @@ export function getFastLeadsSnapshot(userId) {
  * Uses compact minimal projections to guarantee payload is ~40KB (never throws QuotaExceededError).
  */
 export function saveFastLeadsSnapshot(leads, userId) {
-  if (typeof window === 'undefined' || !userId || !Array.isArray(leads) || leads.length === 0) return;
-  const key = `supuja_fast_leads_snapshot_${userId}`;
+  if (typeof window === 'undefined' || !Array.isArray(leads) || leads.length === 0) return;
+  const key = userId ? `supuja_fast_leads_snapshot_${userId}` : 'supuja_fast_leads_snapshot';
   try {
     const subset = projectFastLeads(leads);
     const compact = subset.slice(0, 100).map(l => ({
@@ -578,9 +582,8 @@ export async function saveLeadsLocally(leads, generation) {
   try {
     const db = await openOfflineDB();
     if (!db) return false;
-    const cacheScope = getLeadCacheScope();
-    const cacheGeneration = generation || getLeadCacheGeneration(cacheScope);
-    if (!cacheScope || !cacheGeneration) return false;
+    const cacheScope = getLeadCacheScope() || 'default';
+    const cacheGeneration = generation || getLeadCacheGeneration(cacheScope) || 'default';
 
     // Chunk size: 1500 items per transaction to stay well under mobile RAM & transaction timeout limits
     const CHUNK_SIZE = 1500;
@@ -635,9 +638,8 @@ export async function upsertLeadsLocally(leadsToUpsert) {
   try {
     const db = await openOfflineDB();
     if (!db) return false;
-    const cacheScope = getLeadCacheScope();
-    const cacheGeneration = getLeadCacheGeneration(cacheScope);
-    if (!cacheScope || !cacheGeneration) return false;
+    const cacheScope = getLeadCacheScope() || 'default';
+    const cacheGeneration = getLeadCacheGeneration(cacheScope) || 'default';
 
     const CHUNK_SIZE = 1500;
     for (let i = 0; i < arr.length; i += CHUNK_SIZE) {
@@ -737,9 +739,16 @@ export async function getLocalLeads({ onPreview } = {}) {
           clearTimeout(hardTimer);
           const scope = getLeadCacheScope();
           const generation = getLeadCacheGeneration(scope);
-          resolve(scope && generation
-            ? val.filter(lead => !String(lead?.id).startsWith('__lead_preview_') && lead?.__cacheScope === scope && lead?.__cacheGeneration === generation)
-            : []);
+          const clean = (val || []).filter(lead => lead && lead.id && !String(lead.id).startsWith('__'));
+          if (scope && generation) {
+            resolve(clean.filter(lead => lead.__cacheScope === scope && lead.__cacheGeneration === generation));
+            return;
+          }
+          if (scope) {
+            resolve(clean.filter(lead => lead.__cacheScope === scope));
+            return;
+          }
+          resolve(clean);
         }
       };
 
@@ -752,11 +761,14 @@ export async function getLocalLeads({ onPreview } = {}) {
           const cursorReq = cursorStore.openCursor();
           const items = [];
           const previewScope = getLeadCacheScope();
-          const previewGeneration = getLeadCacheGeneration(previewScope);
           const append = (lead) => {
-            if (typeof onPreview === 'function' &&
-                (lead?.__cacheScope !== previewScope || lead?.__cacheGeneration !== previewGeneration)) return;
+            if (!lead || !lead.id || String(lead.id).startsWith('__')) return;
+            if (previewScope && lead.__cacheScope && lead.__cacheScope !== previewScope) return;
             items.push(lead);
+            if (!previewDelivered && typeof onPreview === 'function' && items.length >= 100) {
+              previewDelivered = true;
+              try { onPreview(items.slice(0, 100)); } catch (e) {}
+            }
           };
           cursorReq.onsuccess = (ev) => {
             if (isResolved) return;
@@ -766,10 +778,6 @@ export async function getLocalLeads({ onPreview } = {}) {
                 append(cursor.value);
               } else if (cursor.value && Array.isArray(cursor.value.leads)) {
                 cursor.value.leads.forEach(append);
-              }
-              if (!previewDelivered && typeof onPreview === 'function' && items.length >= 100) {
-                previewDelivered = true;
-                try { onPreview(items.slice(0, 100)); } catch (e) {}
               }
               cursor.continue();
             } else {
