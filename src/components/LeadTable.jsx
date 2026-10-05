@@ -1566,8 +1566,8 @@ export default function LeadTable({
     setFilterRules({});
     setActiveFilterColumn(null);
     setFilterSearchText('');
-    table.resetColumnFilters();
-    table.resetGlobalFilter();
+    table?.resetColumnFilters?.();
+    table?.resetGlobalFilter?.();
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('crm_lead_table_column_filters');
@@ -1616,7 +1616,7 @@ export default function LeadTable({
     let val = String(row.getValue(columnId) || '');
     
     if (columnId === 'assigned_to') {
-      const tmMap = table.options.meta?.teamMemberMap || teamMemberMap;
+      const tmMap = teamMemberMap;
       val = tmMap ? (tmMap.get(val) || (val ? 'Unknown' : 'Open Lead (Unassigned)')) : val;
     } else if (columnId === 'state_name') {
       val = normalizeStateName(val || row.original.state_name || row.original.state || row.original.business_state);
@@ -1631,7 +1631,7 @@ export default function LeadTable({
       const set = getNormalizedFilterSet(columnId, filterValue, null);
       return set ? set.has(val) : false;
     } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
-      const teamMembersList = table.options.meta?.teamMembers || teamMembers;
+      const teamMembersList = teamMembers;
       val = normalizeEmployeeName(val || row.original[columnId], teamMembersList);
       const set = getNormalizedFilterSet(columnId, filterValue, teamMembersList);
       return set ? set.has(val) : false;
@@ -1676,80 +1676,6 @@ export default function LeadTable({
     return set ? set.has(val) : false;
   };
 
-  const getUniqueValues = (columnId) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    const formatDateTime = (val) => {
-      if (!val) return '';
-      const d = new Date(val);
-      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
-
-    let candidateRows = table.getCoreRowModel().rows;
-
-    // Apply global filter to candidate rows if present
-    const currentGlobalFilter = table.getState().globalFilter;
-    if (currentGlobalFilter && String(currentGlobalFilter).trim() !== '') {
-      candidateRows = candidateRows.filter(row => customGlobalFilterFn(row, null, currentGlobalFilter));
-    }
-
-    // Apply all OTHER active column filters except this columnId
-    const activeColumnFilters = table.getState().columnFilters || [];
-    const otherFilters = activeColumnFilters.filter(f => 
-      f.id !== columnId && f.value !== undefined && f.value !== null && 
-      (Array.isArray(f.value) ? f.value.length > 0 : f.value !== '')
-    );
-
-    if (otherFilters.length > 0) {
-      candidateRows = candidateRows.filter(row => 
-        otherFilters.every(f => multiSelectFilter(row, f.id, f.value))
-      );
-    }
-
-    const uniqueSet = new Set();
-    for (let i = 0; i < candidateRows.length; i++) {
-      const row = candidateRows[i];
-      let formattedVal = '';
-      if (columnId === 'assigned_to') {
-        const val = row.original[columnId];
-        const tmMap = table.options.meta?.teamMemberMap || teamMemberMap;
-        formattedVal = tmMap ? (tmMap.get(val) || (val ? 'Unknown' : 'Open Lead (Unassigned)')) : val;
-      } else if (columnId === 'state_name') {
-        formattedVal = normalizeStateName(row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state);
-      } else if (columnId === 'district_name') {
-        formattedVal = normalizeDistrictName(row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district);
-      } else if (columnId === 'city_name') {
-        formattedVal = normalizeCityName(row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city);
-      } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
-        const teamMembersList = table.options.meta?.teamMembers || teamMembers;
-        formattedVal = normalizeEmployeeName(row.getValue(columnId) || row.original[columnId], teamMembersList);
-      } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
-        formattedVal = formatDateTime(row.original[columnId]);
-      } else if (columnId === 'lead_date') {
-        const val = row.original[columnId];
-        if (val) {
-          try {
-            const parts = val.split('-');
-            if (parts.length === 3) {
-              formattedVal = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-            } else {
-              formattedVal = val;
-            }
-          } catch (e) {
-            formattedVal = val;
-          }
-        }
-      } else {
-        const val = row.getValue(columnId);
-        formattedVal = (val !== null && val !== undefined && val !== '') ? String(val) : '';
-      }
-      if (formattedVal) {
-        uniqueSet.add(formattedVal);
-      }
-    }
-
-    return Array.from(uniqueSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  };
-  
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
   // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
@@ -1812,17 +1738,6 @@ export default function LeadTable({
 
     return result;
   }, [data, stageFilter, filterRules, filterConditionType, teamMemberMap]);
-
-  const activeColumnUniqueValues = useMemo(() => {
-    if (!activeFilterColumn) return [];
-    return getUniqueValues(activeFilterColumn);
-  }, [activeFilterColumn, stageFilteredData, columnFilters, globalFilter, teamMemberMap]);
-
-  const filteredActiveColumnValues = useMemo(() => {
-    if (!filterSearchText.trim()) return activeColumnUniqueValues;
-    const query = filterSearchText.toLowerCase().trim();
-    return activeColumnUniqueValues.filter(v => v.toLowerCase().includes(query));
-  }, [activeColumnUniqueValues, filterSearchText]);
 
   // Cleanly reset any active column filters when navigating between stage tabs (skip initial mount/refresh)
   const isInitialMount = useRef(true);
@@ -1905,6 +1820,91 @@ export default function LeadTable({
       }
     }
   });
+
+  const getUniqueValues = (columnId) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    const formatDateTime = (val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
+    let candidateRows = table.getCoreRowModel().rows;
+
+    // Apply global filter to candidate rows if present
+    const currentGlobalFilter = table.getState().globalFilter;
+    if (currentGlobalFilter && String(currentGlobalFilter).trim() !== '') {
+      candidateRows = candidateRows.filter(row => customGlobalFilterFn(row, null, currentGlobalFilter));
+    }
+
+    // Apply all OTHER active column filters except this columnId
+    const activeColumnFilters = table.getState().columnFilters || [];
+    const otherFilters = activeColumnFilters.filter(f => 
+      f.id !== columnId && f.value !== undefined && f.value !== null && 
+      (Array.isArray(f.value) ? f.value.length > 0 : f.value !== '')
+    );
+
+    if (otherFilters.length > 0) {
+      candidateRows = candidateRows.filter(row => 
+        otherFilters.every(f => multiSelectFilter(row, f.id, f.value))
+      );
+    }
+
+    const uniqueSet = new Set();
+    for (let i = 0; i < candidateRows.length; i++) {
+      const row = candidateRows[i];
+      let formattedVal = '';
+      if (columnId === 'assigned_to') {
+        const val = row.original[columnId];
+        const tmMap = teamMemberMap;
+        formattedVal = tmMap ? (tmMap.get(val) || (val ? 'Unknown' : 'Open Lead (Unassigned)')) : val;
+      } else if (columnId === 'state_name') {
+        formattedVal = normalizeStateName(row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state);
+      } else if (columnId === 'district_name') {
+        formattedVal = normalizeDistrictName(row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district);
+      } else if (columnId === 'city_name') {
+        formattedVal = normalizeCityName(row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city);
+      } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+        const teamMembersList = teamMembers;
+        formattedVal = normalizeEmployeeName(row.getValue(columnId) || row.original[columnId], teamMembersList);
+      } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
+        formattedVal = formatDateTime(row.original[columnId]);
+      } else if (columnId === 'lead_date') {
+        const val = row.original[columnId];
+        if (val) {
+          try {
+            const parts = val.split('-');
+            if (parts.length === 3) {
+              formattedVal = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            } else {
+              formattedVal = val;
+            }
+          } catch (e) {
+            formattedVal = val;
+          }
+        }
+      } else {
+        const val = row.getValue(columnId);
+        formattedVal = (val !== null && val !== undefined && val !== '') ? String(val) : '';
+      }
+      if (formattedVal) {
+        uniqueSet.add(formattedVal);
+      }
+    }
+
+    return Array.from(uniqueSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  };
+
+  const activeColumnUniqueValues = useMemo(() => {
+    if (!activeFilterColumn) return [];
+    return getUniqueValues(activeFilterColumn);
+  }, [activeFilterColumn, stageFilteredData, columnFilters, globalFilter, teamMemberMap]);
+
+  const filteredActiveColumnValues = useMemo(() => {
+    if (!filterSearchText.trim()) return activeColumnUniqueValues;
+    const query = filterSearchText.toLowerCase().trim();
+    return activeColumnUniqueValues.filter(v => v.toLowerCase().includes(query));
+  }, [activeColumnUniqueValues, filterSearchText]);
 
   const exportToCSV = () => {
     const canExport = (userRole === 'admin' || userRole === 'Admin' || moduleAccess?.can_export_data === true || canImportExport || moduleAccess?.can_import_export === true || globalRolePermissions?.export);
