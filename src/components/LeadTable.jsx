@@ -1029,6 +1029,23 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
   );
 };
 
+const isLeadContentChanged = (a, b) => {
+  if (a === b) return false;
+  if (!a || !b) return true;
+  if (a.id !== b.id) return true;
+  if (a.status !== b.status) return true;
+  if (a.updated_at !== b.updated_at) return true;
+  if (a.assigned_to !== b.assigned_to) return true;
+  if (a.follow_up_date !== b.follow_up_date) return true;
+  if (a.client_status !== b.client_status) return true;
+  if (a.priority !== b.priority) return true;
+  if (a.latest_remark !== b.latest_remark) return true;
+  const aNotesLen = Array.isArray(a.lead_notes) ? a.lead_notes.length : 0;
+  const bNotesLen = Array.isArray(b.lead_notes) ? b.lead_notes.length : 0;
+  if (aNotesLen !== bNotesLen) return true;
+  return false;
+};
+
 export default function LeadTable({ 
   initialData = [], 
   canImportExport, 
@@ -1131,7 +1148,7 @@ export default function LeadTable({
       const changedIndices = [];
 
       for (let i = 0; i < rows.length; i++) {
-        if (rows[i] !== prevRows[i]) {
+        if (rows[i] !== prevRows[i] && isLeadContentChanged(rows[i], prevRows[i])) {
           changedCount++;
           changedIndices.push(i);
           if (changedCount > 25) {
@@ -1142,6 +1159,7 @@ export default function LeadTable({
       }
 
       if (changedCount === 0) {
+        // Zero content changes! Keep existing processed data completely (prevents table flickering/refresh)
         prevInitialDataRef.current = rows;
         return;
       }

@@ -1612,17 +1612,46 @@ export default function CRMContainer({
             }
           }
 
-          // 6. Merge cleanly: Preserve existing notes, apply fresh Page 0 updates, add new leads & notes
+          // 6. Merge cleanly: Check if any updates actually arrived from delta sync
+          const hasNewLeads = newLeads.length > 0;
+          const hasNewNotes = newNotes.length > 0;
+          const hasTouchedLeads = touchedLeads.length > 0;
+          const hasAssignedChanges = myAssignedLeads.some(al => {
+            const cur = baseLeads.find(l => l.id === al.id);
+            return !cur || cur.status !== al.status || cur.assigned_to !== al.assigned_to || cur.updated_at !== al.updated_at;
+          });
+          const hasPage0Changes = page0Data.some((rl, idx) => {
+            const cur = baseLeads[idx];
+            return !cur || cur.id !== rl.id || cur.status !== rl.status || cur.updated_at !== rl.updated_at;
+          });
+
+          const hasRealChanges = hasNewLeads || hasNewNotes || hasTouchedLeads || hasAssignedChanges || hasPage0Changes;
+
+          if (!hasRealChanges) {
+            // Absolutely zero changes on server: Preserve exact object references and avoid triggering full table re-render!
+            networkPublished = true;
+            try {
+              localStorage.setItem(cacheMetaKey, JSON.stringify({
+                userId, userCompany: userCompany || '', userRole, count: baseLeads.length,
+                syncedAt: syncStartedAt, fullSyncedAt: cacheMeta?.fullSyncedAt || syncStartedAt,
+                generation: cacheMeta?.generation || syncStartedAt
+              }));
+              localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+            } catch (e) {}
+            return;
+          }
+
           const leadsMap = new Map();
           for (const l of baseLeads) {
-            leadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
+            // Retain original object references for untouched leads (avoid cloning all 45,000 rows)
+            leadsMap.set(l.id, l);
           }
 
           // Merge recent page 0 leads (preserves existing notes)
           for (const rl of page0Data) {
             const existing = leadsMap.get(rl.id);
             if (existing) {
-              leadsMap.set(rl.id, { ...existing, ...rl, lead_notes: existing.lead_notes });
+              leadsMap.set(rl.id, { ...existing, ...rl, lead_notes: existing.lead_notes || [] });
             } else {
               leadsMap.set(rl.id, { ...rl, lead_notes: [] });
             }
@@ -2106,7 +2135,7 @@ export default function CRMContainer({
     });
   };
 
-  const [currentTime, setCurrentTime] = useState(null);
+  const [currentTime] = useState(() => Date.now());
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'yesterday' | 'today' | 'tomorrow' | 'overdue' | 'upcoming'
   const [notifSearch, setNotifSearch] = useState('');
@@ -2114,6 +2143,10 @@ export default function CRMContainer({
   const [notifMainTab, setNotifMainTab] = useState('all'); // 'all' | 'checklist' | 'delegation' | 'leads'
   const [userDelegationTasks, setUserDelegationTasks] = useState([]);
   const [userChecklistSlots, setUserChecklistSlots] = useState([]);
+  const userChecklistSlotsRef = useRef(userChecklistSlots);
+  useEffect(() => {
+    userChecklistSlotsRef.current = userChecklistSlots;
+  }, [userChecklistSlots]);
   const [pendingLeadToOpen, setPendingLeadToOpen] = useState(null);
   const [pendingChecklistSlot, setPendingChecklistSlot] = useState(null);
   const [activeCornerToast, setActiveCornerToast] = useState(null);
@@ -2311,12 +2344,6 @@ export default function CRMContainer({
       if (savedStage) setLeadsFilterStage(savedStage);
     }
 
-    // Set client-safe current time
-    setCurrentTime(Date.now());
-
-    // Keep track of time every 10 seconds to trigger exact-time notifications
-    const interval = setInterval(() => setCurrentTime(Date.now()), 10000);
-    return () => clearInterval(interval);
   }, []);
 
   // Listen for browser back/forward popstate events
@@ -3285,28 +3312,35 @@ export default function CRMContainer({
     };
   }, [userEmail]);
 
-  // Periodic check for checklist slot times (runs purely in-memory against local state, ZERO network calls)
+  // Periodic check for checklist slot times (runs purely in-memory against local state, ZERO network calls & ZERO rerenders)
   useEffect(() => {
-    if (!currentTime || !userChecklistSlots || userChecklistSlots.length === 0) return;
-    for (const s of userChecklistSlots) {
-      if (s.isExpired || s.isBeforeStart || s.canExecute === false) continue;
-      const slotKey = `${s.templateId}_${s.periodKey}`;
-      if (!notifiedChecklistKeysRef.current.has(slotKey)) {
-        notifiedChecklistKeysRef.current.add(slotKey);
-        triggerUnifiedAlert({
-          id: slotKey,
-          type: 'checklist',
-          title: `📋 Checklist Due: ${s.baseTitle}`,
-          subtitle: `${s.slotLabel} (Due: ${s.dueTime})`,
-          details: 'Your scheduled checklist is open and awaiting submission.',
-          dueTime: s.dueTime,
-          targetTab: 'checklist',
-          rawItem: s,
-          isUrgent: true
-        });
+    const checkChecklistSlots = () => {
+      const slots = userChecklistSlotsRef.current;
+      if (!slots || slots.length === 0) return;
+      for (const s of slots) {
+        if (s.isExpired || s.isBeforeStart || s.canExecute === false) continue;
+        const slotKey = `${s.templateId}_${s.periodKey}`;
+        if (!notifiedChecklistKeysRef.current.has(slotKey)) {
+          notifiedChecklistKeysRef.current.add(slotKey);
+          triggerUnifiedAlert({
+            id: slotKey,
+            type: 'checklist',
+            title: `📋 Checklist Due: ${s.baseTitle}`,
+            subtitle: `${s.slotLabel} (Due: ${s.dueTime})`,
+            details: 'Your scheduled checklist is open and awaiting submission.',
+            dueTime: s.dueTime,
+            targetTab: 'checklist',
+            rawItem: s,
+            isUrgent: true
+          });
+        }
       }
-    }
-  }, [currentTime, userChecklistSlots]);
+    };
+
+    checkChecklistSlots();
+    const checklistTimer = setInterval(checkChecklistSlots, 10000);
+    return () => clearInterval(checklistTimer);
+  }, []);
 
   if (userRole === 'customer') {
     return (
