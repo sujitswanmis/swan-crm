@@ -12,6 +12,59 @@ import {
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const CALL_ADMIN_DB_DEFAULT_COL_WIDTHS = {
+  time: 170,
+  call_uuid: 130,
+  agent: 140,
+  customer: 140,
+  direction: 110,
+  status: 110,
+  start_time: 160,
+  answer_time: 160,
+  end_time: 160,
+  ringing: 110,
+  talk: 110,
+  recording: 110,
+  room: 130
+};
+
+const CALL_ADMIN_DB_MIN_COL_WIDTHS = {
+  time: 120,
+  call_uuid: 80,
+  agent: 90,
+  customer: 100,
+  direction: 80,
+  status: 80,
+  start_time: 110,
+  answer_time: 110,
+  end_time: 110,
+  ringing: 80,
+  talk: 80,
+  recording: 80,
+  room: 80
+};
+
+const CALL_ADMIN_PLIVO_DEFAULT_COL_WIDTHS = {
+  time: 170,
+  from: 140,
+  to: 160,
+  direction: 110,
+  duration: 110,
+  hangup: 160,
+  cost: 110
+};
+
+const CALL_ADMIN_PLIVO_MIN_COL_WIDTHS = {
+  time: 120,
+  from: 100,
+  to: 100,
+  direction: 80,
+  duration: 80,
+  hangup: 100,
+  cost: 80
+};
 
 // ─── Helpers ────────────────────────────────────────────────
 const TABS = [
@@ -413,6 +466,19 @@ function TabCallLogs() {
   const [source, setSource] = useState('db');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+
+  // Column Resizing for DB and Plivo tables
+  const dbColResize = useTableColumnResize(
+    'calladmin_db_col_widths',
+    CALL_ADMIN_DB_DEFAULT_COL_WIDTHS,
+    CALL_ADMIN_DB_MIN_COL_WIDTHS
+  );
+
+  const plivoColResize = useTableColumnResize(
+    'calladmin_plivo_col_widths',
+    CALL_ADMIN_PLIVO_DEFAULT_COL_WIDTHS,
+    CALL_ADMIN_PLIVO_MIN_COL_WIDTHS
+  );
 
   // Lead Data Page Size settings (from crmPageNavSettings)
   const [pageSize, setPageSize] = useState(() => {
@@ -927,125 +993,155 @@ function TabCallLogs() {
         </div>
       )}
 
-      {/* Main Table */}
-      <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
-              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
-                {source === 'db' && (
-                  <th style={{ padding:'0.75rem 1rem', width:'40px', textAlign:'center' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={isAllCurrentPageSelected} 
-                      onChange={toggleSelectAllCurrentPage} 
-                      style={{ cursor:'pointer' }}
-                      title="Select / Deselect all records on this page"
-                    />
-                  </th>
-                )}
-                {source === 'db'
-                  ? ['Time (IST)','CallUUID','Agent','Customer','Direction','Status','StartTime (IST)','AnswerTime (IST)','EndTime (IST)','Ringing (s)','Talk (s)','Recording','Room'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap' }}>{h}</th>)
-                  : ['Time (IST)','From','To','Direction','Duration','Hangup Cause','Cost'].map(h => <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap' }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
-              ) : source === 'db' ? filtered.map((c, i) => {
-                const rowSelectId = c.id || c.call_uuid || `row-${i}`;
-                const rowKey = `db-${c.id || c.agent_call_uuid || c.customer_call_uuid || i}`;
-                return (
-                  <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                    <td style={{ padding:'0.85rem 1rem', textAlign:'center' }}>
+        {/* Main Table */}
+        <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
+              <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
+                <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
+                  {source === 'db' && (
+                    <th style={{ padding:'0.75rem 1rem', width:'40px', textAlign:'center', boxSizing:'border-box' }}>
                       <input 
                         type="checkbox" 
-                        checked={selectedCallsMap.has(rowSelectId)} 
-                        onChange={() => toggleSelectRow(c, rowSelectId)} 
+                        checked={isAllCurrentPageSelected} 
+                        onChange={toggleSelectAllCurrentPage} 
                         style={{ cursor:'pointer' }}
+                        title="Select / Deselect all records on this page"
                       />
-                    </td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.created_at)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'100px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:600, whiteSpace:'nowrap' }}>{c.call_agents?.display_name || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.customer_number || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.direction || 'outbound')}</td>
-                    <td style={{ padding:'0.85rem 1rem' }}>{callStatusBadge(c.status)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.start_time)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.end_time)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap' }}>
-                      {c.recording_url ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <button 
-                            onClick={() => togglePlay(c.id, c.recording_url)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '50%',
-                              border: 'none',
-                              background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
-                              color: 'white',
-                              cursor: 'pointer',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                              transition: 'all 0.2s'
-                            }}
-                            title={playingCallId === c.id ? "Pause Recording" : "Play Recording"}
-                          >
-                            {playingCallId === c.id ? <Pause size={12} /> : <Play size={12} />}
-                          </button>
-                          
-                          <a 
-                            href={c.recording_url} 
-                            download={`recording_${c.id || i}.mp3`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '50%',
-                              border: '1px solid #cbd5e1',
-                              background: 'white',
-                              color: '#475569',
-                              cursor: 'pointer',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                              transition: 'all 0.2s'
-                            }}
-                            title="Download Recording"
-                          >
-                            <Download size={12} />
-                          </a>
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', maxWidth:'120px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.room_name || '—'}</td>
-                  </tr>
-                );
-              }) : filtered.map((c, i) => {
-                const rowKey = `plivo-${c.call_uuid || c.id || i}`;
-                return (
-                  <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap' }}>{fmtDate(c.initiation_time)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem' }}>{c.from_number || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.to_number || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem' }}>{directionBadge(c.call_direction)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.82rem' }}>{fmtDur(c.call_duration)}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#dc2626' }}>{c.hangup_cause_name || '—'}</td>
-                    <td style={{ padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#475569' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
+                    </th>
+                  )}
+                  {source === 'db' ? [
+                    { id: 'time', label: 'Time (IST)' },
+                    { id: 'call_uuid', label: 'CallUUID' },
+                    { id: 'agent', label: 'Agent' },
+                    { id: 'customer', label: 'Customer' },
+                    { id: 'direction', label: 'Direction' },
+                    { id: 'status', label: 'Status' },
+                    { id: 'start_time', label: 'StartTime (IST)' },
+                    { id: 'answer_time', label: 'AnswerTime (IST)' },
+                    { id: 'end_time', label: 'EndTime (IST)' },
+                    { id: 'ringing', label: 'Ringing (s)' },
+                    { id: 'talk', label: 'Talk (s)' },
+                    { id: 'recording', label: 'Recording' },
+                    { id: 'room', label: 'Room' }
+                  ].map(h => (
+                    <th key={h.id} style={{ width: `${dbColResize.colWidths[h.id]}px`, padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap', position:'relative', boxSizing:'border-box' }}>
+                      {h.label}
+                      <ColumnResizer colKey={h.id} isResizing={dbColResize.resizingCol === h.id} onResizeStart={dbColResize.handleResizeStart} onReset={dbColResize.resetColWidth} />
+                    </th>
+                  )) : [
+                    { id: 'time', label: 'Time (IST)' },
+                    { id: 'from', label: 'From' },
+                    { id: 'to', label: 'To' },
+                    { id: 'direction', label: 'Direction' },
+                    { id: 'duration', label: 'Duration' },
+                    { id: 'hangup', label: 'Hangup Cause' },
+                    { id: 'cost', label: 'Cost' }
+                  ].map(h => (
+                    <th key={h.id} style={{ width: `${plivoColResize.colWidths[h.id]}px`, padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap', position:'relative', boxSizing:'border-box' }}>
+                      {h.label}
+                      <ColumnResizer colKey={h.id} isResizing={plivoColResize.resizingCol === h.id} onResizeStart={plivoColResize.handleResizeStart} onReset={plivoColResize.resetColWidth} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
+                ) : source === 'db' ? filtered.map((c, i) => {
+                  const rowSelectId = c.id || c.call_uuid || `row-${i}`;
+                  const rowKey = `db-${c.id || c.agent_call_uuid || c.customer_call_uuid || i}`;
+                  return (
+                    <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                      <td style={{ padding:'0.85rem 1rem', textAlign:'center', width:'40px', boxSizing:'border-box' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedCallsMap.has(rowSelectId)} 
+                          onChange={() => toggleSelectRow(c, rowSelectId)} 
+                          style={{ cursor:'pointer' }}
+                        />
+                      </td>
+                      <td style={{ width: `${dbColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.created_at)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.call_uuid}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.agent}px`, padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.call_agents?.display_name || '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.customer}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.customer_number || '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.direction}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{directionBadge(c.direction || 'outbound')}</td>
+                      <td style={{ width: `${dbColResize.colWidths.status}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{callStatusBadge(c.status)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.start_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.start_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.answer_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.end_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.end_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.ringing}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.talk}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.recording}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>
+                        {c.recording_url ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button 
+                              onClick={() => togglePlay(c.id, c.recording_url)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                border: 'none',
+                                background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
+                                color: 'white',
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                transition: 'all 0.2s'
+                              }}
+                              title={playingCallId === c.id ? "Pause Recording" : "Play Recording"}
+                            >
+                              {playingCallId === c.id ? <Pause size={12} /> : <Play size={12} />}
+                            </button>
+                            
+                            <a 
+                              href={c.recording_url} 
+                              download={`recording_${c.id || i}.mp3`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                border: '1px solid #cbd5e1',
+                                background: 'white',
+                                color: '#475569',
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                                transition: 'all 0.2s'
+                              }}
+                              title="Download Recording"
+                            >
+                              <Download size={12} />
+                            </a>
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td style={{ width: `${dbColResize.colWidths.room}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.room_name || '—'}</td>
+                    </tr>
+                  );
+                }) : filtered.map((c, i) => {
+                  const rowKey = `plivo-${c.call_uuid || c.id || i}`;
+                  return (
+                    <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                      <td style={{ width: `${plivoColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.initiation_time)}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.from}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.from_number || '—'}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.to}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.to_number || '—'}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.direction}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{directionBadge(c.call_direction)}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.duration}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{fmtDur(c.call_duration)}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.hangup}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#dc2626', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.hangup_cause_name || '—'}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.cost}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#475569', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
           </table>
         </div>
 

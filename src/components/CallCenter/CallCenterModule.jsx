@@ -6,6 +6,31 @@ import {
   Download, PhoneIncoming, PhoneOutgoing
 } from 'lucide-react';
 import { getAgentProfile, getRecentCalls, updateCallAgentAdmin } from '@/app/actions/team';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const CALL_CENTER_DEFAULT_COL_WIDTHS = {
+  time: 175,
+  direction: 110,
+  customer: 155,
+  status: 125,
+  answer_time: 175,
+  end_time: 175,
+  ringing: 130,
+  talk: 130,
+  recording: 110
+};
+
+const CALL_CENTER_MIN_COL_WIDTHS = {
+  time: 120,
+  direction: 80,
+  customer: 110,
+  status: 90,
+  answer_time: 120,
+  end_time: 120,
+  ringing: 90,
+  talk: 90,
+  recording: 80
+};
 
 // ─── Strict IST Helpers ───────────────────────────────────────────
 const fmtDate = (d) => {
@@ -127,6 +152,19 @@ export default function CallCenterModule({ userId }) {
   const [recentCalls, setRecentCalls] = useState([]);
   const [totalCalls, setTotalCalls] = useState(0);
   const [page, setPage] = useState(0);
+
+  // Interactive Column Resizing
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'callcenter_agent_col_widths',
+    CALL_CENTER_DEFAULT_COL_WIDTHS,
+    CALL_CENTER_MIN_COL_WIDTHS
+  );
 
   // Rows per page (synced with crmPageNavSettings)
   const [pageSize, setPageSize] = useState(() => {
@@ -480,20 +518,47 @@ export default function CallCenterModule({ userId }) {
           </span>
         </div>
 
-        {/* Responsive Table */}
+        {/* Responsive Table with Draggable Resizable Columns */}
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+          <table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Calling Timestamp</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Direction</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Customer Number</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Status</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Answer Time (IST)</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>End Time (IST)</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Ringing Duration</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Talk Duration</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Recording</th>
+                <th style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Calling Timestamp
+                  <ColumnResizer colKey="time" isResizing={resizingCol === 'time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.direction}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Direction
+                  <ColumnResizer colKey="direction" isResizing={resizingCol === 'direction'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Customer Number
+                  <ColumnResizer colKey="customer" isResizing={resizingCol === 'customer'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Status
+                  <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Answer Time (IST)
+                  <ColumnResizer colKey="answer_time" isResizing={resizingCol === 'answer_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  End Time (IST)
+                  <ColumnResizer colKey="end_time" isResizing={resizingCol === 'end_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Ringing Duration
+                  <ColumnResizer colKey="ringing" isResizing={resizingCol === 'ringing'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Talk Duration
+                  <ColumnResizer colKey="talk" isResizing={resizingCol === 'talk'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.recording}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
+                  Recording
+                  <ColumnResizer colKey="recording" isResizing={resizingCol === 'recording'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -514,47 +579,47 @@ export default function CallCenterModule({ userId }) {
                 recentCalls.map((call, idx) => (
                   <tr key={call.id || `call-${idx}`} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
                     {/* Calling Timestamp */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
+                    <td style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {fmtDate(call.created_at || call.start_time)}
                     </td>
 
                     {/* Direction */}
-                    <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.direction}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                       {directionBadge(call.direction || 'outbound')}
                     </td>
 
                     {/* Customer */}
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {call.customer_number || '—'}
                     </td>
 
                     {/* Status */}
-                    <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                       {callStatusBadge(call.status)}
                     </td>
 
                     {/* Answer Time (IST) */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
+                    <td style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {fmtDate(call.agent_answer_time || call.customer_answer_time)}
                     </td>
 
                     {/* End Time (IST) */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
+                    <td style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {fmtDate(call.end_time)}
                     </td>
 
                     {/* Ringing Duration */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}
                     </td>
 
                     {/* Talk Duration */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#0f172a', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', color: '#0f172a', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
                       {call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}
                     </td>
 
                     {/* Recording Audio & Download */}
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.recording}px`, padding: '0.75rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                       {call.recording_url ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <button

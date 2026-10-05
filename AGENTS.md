@@ -40,4 +40,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **No Cache, Build, or Temp Folder Purging**: Never delete `.next`, `node_modules`, `.git`, or temporary folders. Deleting runtime or build directories can break active dev servers, corrupt in-memory Turbopack state, and lead to fatal application crashes.
 - **Safe Alternatives Only**: If code needs cleanup or space is tight, archive, comment out, create non-destructive additive changes, or instruct the user to handle disk cleanup manually outside the agent environment.
 
+# Mandatory Table Column Resizing Rule (Lead Data Pattern)
+- **Interactive Column Resizing Across All Tables**: Every tabular data grid / table across the CRM (whether using TanStack Table or standard HTML `<table>`) MUST provide interactive column resizing capability on each column header (`<th>`), allowing users to expand or shrink column widths (`chhota bada krna`), exactly as implemented in Lead Data (`LeadTable.jsx`).
+- **Standard Resizer Requirements**:
+  1. **Visual Draggable Handle**: A dedicated vertical divider handle on the right edge of each header (`cursor: col-resize`, `user-select: none`, `touch-action: none`).
+  2. **Active Drag Feedback**: The resizer bar must visibly highlight (e.g. `var(--accent-color, #2563eb)`) while actively dragging.
+  3. **Reset on Double-Click**: Double-clicking the resizer handle resets that column back to its default width.
+  4. **Persistence & Safe Constraints**: Enforce sensible minimum widths (`minWidth`, e.g. 60px–110px) to prevent column collapse, and persist user-adjusted column widths in `localStorage` so settings survive page navigation and refresh.
+
 
