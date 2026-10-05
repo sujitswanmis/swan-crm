@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.0.693",
+  "version": "1.0.694",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -25,8 +25,8 @@
     "plivo": "4.79.0",
     "plivo-browser-sdk": "^2.2.21",
     "qrcode.react": "^4.2.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-draggable": "^4.6.0",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
