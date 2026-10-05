@@ -1568,7 +1568,7 @@ export default function LeadDashboard({
   }, [drilldownItems, drilldownSearch]);
 
   return (
-    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-primary, #f8fafc)', minHeight: '100%' }}>
+    <div style={{ padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'var(--bg-primary, #f8fafc)', minHeight: '100%' }}>
       
       {/* Top Header & Interactive Filter Bar */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>

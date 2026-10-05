@@ -194,7 +194,7 @@ export default function AiAdminModule() {
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px' }}>
+    <div style={{ width: '100%' }}>
       <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>

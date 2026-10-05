@@ -47,7 +47,7 @@ export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' })
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', background: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ width: '100%', background: '#f8fafc', minHeight: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <div style={{ background: '#3b82f6', padding: '0.75rem', borderRadius: '12px', color: 'white' }}>
           <Bot size={28} />

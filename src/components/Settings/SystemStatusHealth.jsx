@@ -1029,7 +1029,7 @@ export default function SystemStatusHealth() {
   }, [supaUsage?.recentAuditLogs, supabaseLogFilter, supabaseLogSearch]);
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', boxSizing: 'border-box' }}>
       
       {/* Top Header Banner */}
       <div style={{

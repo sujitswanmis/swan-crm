@@ -2061,7 +2061,7 @@ export default function PartyMasterModule({
   // Note: getStageApprovalStatus moved above resumeWizard for consistent stage routing
 
   return (
-    <div style={{ padding: '1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100vh' }}>
+    <div style={{ padding: 0, color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%' }}>
       
       {/* ========================================================= */}
       {/* SUBMENU TAB DASHBOARD: PARTY MASTER DASHBOARD */}

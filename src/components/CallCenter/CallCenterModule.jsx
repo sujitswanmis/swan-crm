@@ -109,7 +109,7 @@ export default function CallCenterModule({ userId }) {
   }
 
   return (
-    <div style={{ padding: '2rem', height: '100%', overflowY: 'auto', background: '#f8fafc' }}>
+    <div style={{ padding: '0.5rem 0.75rem', height: '100%', overflowY: 'auto', background: '#f8fafc' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

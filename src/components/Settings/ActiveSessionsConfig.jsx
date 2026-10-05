@@ -742,7 +742,7 @@ export default function ActiveSessionsConfig() {
   const targetCompletedCount = dailyEmployees.filter(e => e.isTargetMet).length;
 
   return (
-    <div style={{ padding: '1.5rem', width: '100%', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxSizing: 'border-box' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>

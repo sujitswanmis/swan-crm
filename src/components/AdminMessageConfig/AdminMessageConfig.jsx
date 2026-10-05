@@ -127,7 +127,7 @@ export default function AdminMessageConfig({ moduleAccess = {}, userRole = '' })
   const emailPreview = getEmailPreview();
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       
       {/* Header Banner */}
       <div style={{

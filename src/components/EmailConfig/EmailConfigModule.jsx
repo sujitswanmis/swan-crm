@@ -295,7 +295,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
   });
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '3rem' }}>
+    <div style={{ width: '100%', paddingBottom: '3rem' }}>
       
       {/* Header Banner */}
       <div className="card" style={{ padding: '1.75rem', marginBottom: '1.5rem', borderRadius: '16px', background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-primary) 100%)', border: '1px solid var(--border-light)' }}>

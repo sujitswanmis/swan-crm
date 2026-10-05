@@ -1515,7 +1515,7 @@ export default function ChecklistModule({
   };
 
   return (
-    <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto' }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto' }}>
       
       {/* Toast Alert */}
       {successMsg && (

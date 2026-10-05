@@ -1326,7 +1326,7 @@ export default function AttendanceModule({
   };
 
   return (
-    <div style={{ padding: '1.25rem', maxWidth: '1440px', margin: '0 auto', width: '100%', color: 'var(--text-primary)' }}>
+    <div style={{ padding: 0, width: '100%', color: 'var(--text-primary)' }}>
 
       {/* ===================== Punch Confirm Modal ===================== */}
       {punchConfirm && (
