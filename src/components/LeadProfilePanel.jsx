@@ -860,9 +860,8 @@ export default function LeadProfilePanel({
       setStatusUpdateSuccess(true);
       setTimeout(() => setStatusUpdateSuccess(false), 2000);
     } catch (err) {
-      console.error('Status update failed:', err?.message || err?.details || JSON.stringify(err));
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (isOffline) {
+      console.error('Status update failed, enqueueing offline fallback:', err?.message || err?.details || JSON.stringify(err));
+      try {
         const check = canPerformOfflineAction('leadStatusUpdate');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', {
@@ -875,6 +874,8 @@ export default function LeadProfilePanel({
             created_by: actor
           });
         }
+      } catch (queueErr) {
+        console.warn('Offline fallback queue error:', queueErr);
       }
     } finally {
       setIsUpdatingStatus(false);
@@ -953,9 +954,8 @@ export default function LeadProfilePanel({
       setSavedFieldSuccess(fieldKey);
       setTimeout(() => setSavedFieldSuccess(null), 2000);
     } catch (err) {
-      console.error(`${fieldKey} update failed:`, err?.message || err?.details || JSON.stringify(err));
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (isOffline) {
+      console.error(`${fieldKey} update failed, enqueueing offline fallback:`, err?.message || err?.details || JSON.stringify(err));
+      try {
         const check = canPerformOfflineAction('leadAttributeUpdate');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', {
@@ -968,6 +968,8 @@ export default function LeadProfilePanel({
             created_by: actor
           });
         }
+      } catch (queueErr) {
+        console.warn('Offline fallback queue error:', queueErr);
       }
     } finally {
       setSavingField(null);
@@ -1429,9 +1431,8 @@ export default function LeadProfilePanel({
         }
       }
     } catch (netErr) {
-      console.warn('Network addNote/status update failed, checking offline fallback:', netErr?.message || netErr);
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (isOffline) {
+      console.warn('Network addNote/status update failed, enqueueing offline fallback:', netErr?.message || netErr);
+      try {
         if (noteContent) {
           const check = canPerformOfflineAction('leadNotes');
           if (check.allowed) {
@@ -1444,6 +1445,8 @@ export default function LeadProfilePanel({
             await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
           }
         }
+      } catch (queueErr) {
+        console.warn('Offline fallback queue error:', queueErr);
       }
     }
   };

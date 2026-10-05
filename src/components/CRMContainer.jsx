@@ -1342,7 +1342,7 @@ export default function CRMContainer({
           const cacheRead = await Promise.race([
             cacheReadPromise.then(leads => ({ complete: true, leads })),
             new Promise(resolve => {
-              cacheWaitTimer = setTimeout(() => resolve({ complete: false, leads: [] }), 1500);
+              cacheWaitTimer = setTimeout(() => resolve({ complete: false, leads: [] }), 3500);
             })
           ]);
           clearTimeout(cacheWaitTimer);
@@ -1376,27 +1376,44 @@ export default function CRMContainer({
         setLoadingLeads(rawLeadsRef.current?.length > 0 ? false : true);
       }
 
-      // ⚡ PERF FIX: Server-side company scoping for non-admin agents.
-      // Previously ALL 12,430 leads were downloaded to every user's browser, including agents.
-      // Now agents only download their company's leads from the DB — reducing download by ~90%.
-      // Admins still get all leads; managers/viewAll users get all leads too.
+      // ⚡ PERF FIX (Option 2): Server-side company + assignment scoping for regular agents.
+      // Regular agents only download: (1) leads assigned to them + (2) open pool (unassigned) leads.
+      // Admins, managers, and viewAll users still download all leads.
       const _isAdminUser = userRole === 'admin' || userRole === 'Admin';
+      const _isPrivilegedUser = _isAdminUser || Boolean(moduleAccess?.leads?.is_manager) || Boolean(globalRolePermissions?.viewAll);
       const _agentCompanyFilter = (!_isAdminUser && userCompany && userCompany.trim() !== '')
         ? userCompany.trim()
         : null;
+      const _agentAssignees = (!_isPrivilegedUser && (userId || userName))
+        ? [...new Set([userId, userName].filter(Boolean))]
+        : null;
+
+      const applyLeadScope = (query) => {
+        let q = query;
+        if (_agentCompanyFilter) {
+          if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+            q = q.in('our_company', ['NSTL', 'NSTLP']);
+          } else {
+            q = q.eq('our_company', _agentCompanyFilter);
+          }
+        }
+        if (_agentAssignees && _agentAssignees.length > 0) {
+          const orParts = ['assigned_to.is.null'];
+          for (const a of _agentAssignees) {
+            const clean = String(a).replace(/"/g, '').trim();
+            if (clean) orParts.push(`assigned_to.eq."${clean}"`);
+          }
+          q = q.or(orParts.join(','));
+        }
+        return q;
+      };
 
       const fetchLeadCount = async () => {
         try {
           let countQuery = supabase
             .from('leads')
             .select('*', { count: 'exact', head: true });
-          if (_agentCompanyFilter) {
-            if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-              countQuery = countQuery.in('our_company', ['NSTL', 'NSTLP']);
-            } else {
-              countQuery = countQuery.eq('our_company', _agentCompanyFilter);
-            }
-          }
+          countQuery = applyLeadScope(countQuery);
           const { count, error: countError } = await countQuery;
           if (countError) throw countError;
           if (Number.isSafeInteger(count)) setSyncTotalCount(count);
@@ -1439,14 +1456,7 @@ export default function CRMContainer({
               .select('*')
               .order('created_at', { ascending: false })
               .order('id');
-            // ⚡ PERF FIX: Apply company filter server-side for agents to avoid downloading all 12,430 leads
-            if (_agentCompanyFilter) {
-              if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-                query = query.in('our_company', ['NSTL', 'NSTLP']);
-              } else {
-                query = query.eq('our_company', _agentCompanyFilter);
-              }
-            }
+            query = applyLeadScope(query);
             query = query.range(p * queryPageSize, (p + 1) * queryPageSize - 1);
 
             const { data, error } = await query;
@@ -1557,11 +1567,7 @@ export default function CRMContainer({
                   .gt(column, deltaSince)
                   .order(column, { ascending: false })
                   .order('id');
-                if (_agentCompanyFilter) {
-                  deltaQuery = (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP')
-                    ? deltaQuery.in('our_company', ['NSTL', 'NSTLP'])
-                    : deltaQuery.eq('our_company', _agentCompanyFilter);
-                }
+                deltaQuery = applyLeadScope(deltaQuery);
                 return deltaQuery.range(page * 1000, (page + 1) * 1000 - 1);
               };
               let { data: chunk, error: dLeadErr } = await fetchChangedPage(changeColumn);
@@ -1913,6 +1919,11 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         const updatedRow = payload.new;
         if (!updatedRow || !updatedRow.id) return;
+        // Skip echo if lead was recently updated by this client locally (< 8 seconds ago)
+        const lastLocalLeadUpdate = recentLocalUpdatesRef.current.get(updatedRow.id);
+        if (lastLocalLeadUpdate && (Date.now() - lastLocalLeadUpdate < 8000)) {
+          return;
+        }
         setRawLeads((current) => {
           const existing = current.find(item => item.id === updatedRow.id);
           // If row in memory already has matching status, updated_at and assigned_to, skip redundant update
@@ -1961,6 +1972,11 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notes' }, (payload) => {
         const incoming = payload.new;
         if (!incoming || !incoming.lead_id) return;
+        // Skip echo if this lead was recently updated by this client locally (< 8 seconds ago)
+        const lastLocalNoteUpdate = recentLocalUpdatesRef.current.get(incoming.lead_id);
+        if (lastLocalNoteUpdate && (Date.now() - lastLocalNoteUpdate < 8000)) {
+          return;
+        }
         setRawLeads((current) => {
           const targetLead = current.find(item => item.id === incoming.lead_id);
           if (targetLead) {
