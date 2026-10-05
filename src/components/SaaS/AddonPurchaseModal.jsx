@@ -127,10 +127,10 @@ export default function AddonPurchaseModal({
           window.location.reload();
         }, 1200);
       } else {
-        setErrorMsg(res.error || 'सीट जोड़ने में समस्या आई।');
+        setErrorMsg(res.error || 'Failed to add seats.');
       }
     } catch (err) {
-      setErrorMsg(err.message || 'त्रुटि हुई।');
+      setErrorMsg(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -153,10 +153,10 @@ export default function AddonPurchaseModal({
           window.location.reload();
         }, 1200);
       } else {
-        setErrorMsg(res.error || 'मॉड्यूल अनलॉक करने में समस्या आई।');
+        setErrorMsg(res.error || 'Failed to unlock module.');
       }
     } catch (err) {
-      setErrorMsg(err.message || 'त्रुटि हुई।');
+      setErrorMsg(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -223,10 +223,10 @@ export default function AddonPurchaseModal({
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
-                ऐड-ऑन सीट्स एवं मॉड्यूल मैनेजर (SaaS Add-ons)
+                Add-on Seats & Module Manager (SaaS Add-ons)
               </h3>
               <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
-                वर्तमान एक्टिव सीट्स: <strong>{currentSeatLimit} Users</strong> | शेष वैधता: <strong>{daysRemaining} दिन</strong>
+                Current Active Seats: <strong>{currentSeatLimit} Users</strong> | Remaining Term: <strong>{daysRemaining} Days</strong>
               </p>
             </div>
           </div>
@@ -317,7 +317,7 @@ export default function AddonPurchaseModal({
               cursor: 'pointer'
             }}
           >
-            <UserPlus size={16} /> अतिरिक्त सीट्स जोड़ें (Add Seats)
+            <UserPlus size={16} /> Add Extra Seats
           </button>
 
           <button
@@ -337,7 +337,7 @@ export default function AddonPurchaseModal({
               cursor: 'pointer'
             }}
           >
-            <Layers size={16} /> नए मॉड्यूल अनलॉक करें (Unlock Modules)
+            <Layers size={16} /> Unlock Additional Modules
           </button>
         </div>
 
@@ -355,10 +355,10 @@ export default function AddonPurchaseModal({
                 }}
               >
                 <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
-                  कितनी नई सीट्स जोड़नी हैं?
+                  How many additional seats do you need?
                 </label>
                 <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', marginBottom: '0.85rem' }}>
-                  नई सीट्स तुरंत एक्टिव हो जाएंगी और नए कर्मचारियों को सीधे रजिस्टर करने की अनुमति देंगी।
+                  New seats activate immediately, allowing additional team members to be onboarded.
                 </p>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
@@ -420,7 +420,7 @@ export default function AddonPurchaseModal({
                   </button>
 
                   <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
-                    अतिरिक्त सीट्स (+{additionalSeats})
+                    Additional Seats (+{additionalSeats})
                   </span>
                 </div>
 
@@ -463,13 +463,13 @@ export default function AddonPurchaseModal({
               >
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 600 }}>
-                    प्रो-राटा अनुमानित लागत (Remaining {daysRemaining} Days):
+                    Prorated Estimated Cost (Remaining {daysRemaining} Days):
                   </div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e3a8a' }}>
                     ₹{estimatedSeatAddonCost.toLocaleString('en-IN')}
                   </div>
                   <div style={{ fontSize: '0.74rem', color: '#60a5fa' }}>
-                    नई कुल सीमा होगी: {currentSeatLimit + additionalSeats} Users
+                    New total capacity: {currentSeatLimit + additionalSeats} Users
                   </div>
                 </div>
 
@@ -492,7 +492,7 @@ export default function AddonPurchaseModal({
                   }}
                 >
                   {loading ? <RefreshCw size={16} className="animate-spin" /> : <UserPlus size={16} />}
-                  {loading ? 'प्रक्रिया जारी है...' : `सीट्स जोड़ें (+${additionalSeats})`}
+                  {loading ? 'Processing...' : `Add Seats (+${additionalSeats})`}
                 </button>
               </div>
             </div>
@@ -501,7 +501,7 @@ export default function AddonPurchaseModal({
           {activeTab === 'MODULES' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                अपने वर्कस्पेस में नए फीचर्स तुरंत अनलॉक करें:
+                Unlock features instantly for your entire workspace:
               </div>
 
               {catalog.map((proc) => {
@@ -542,7 +542,7 @@ export default function AddonPurchaseModal({
                           {proc.display_name}
                         </div>
                         <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                          ₹{proc.monthly_rate_per_user} / यूज़र / माह
+                          ₹{proc.monthly_rate_per_user} / user / mo
                         </div>
                       </div>
                     </div>
@@ -561,7 +561,7 @@ export default function AddonPurchaseModal({
                           borderRadius: '6px'
                         }}
                       >
-                        <CheckCircle2 size={14} /> एक्टिव (Active)
+                        <CheckCircle2 size={14} /> Active
                       </span>
                     ) : (
                       <button
@@ -582,7 +582,7 @@ export default function AddonPurchaseModal({
                           gap: '0.35rem'
                         }}
                       >
-                        <Sparkles size={14} /> अनलॉक करें
+                        <Sparkles size={14} /> Unlock Module
                       </button>
                     )}
                   </div>
@@ -606,7 +606,7 @@ export default function AddonPurchaseModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <ShieldCheck size={14} style={{ color: '#10b981' }} />
-            <span>सुरक्षित मल्टी-टेनेंट SaaS लाइसेंसिंग</span>
+            <span>Enterprise Multi-Tenant SaaS Licensing</span>
           </div>
 
           <button
@@ -623,7 +623,7 @@ export default function AddonPurchaseModal({
               color: '#475569'
             }}
           >
-            बंद करें (Close)
+            Close
           </button>
         </div>
       </div>

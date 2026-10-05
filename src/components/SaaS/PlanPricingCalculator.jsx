@@ -177,11 +177,11 @@ export default function PlanPricingCalculator({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
             <Sparkles size={20} style={{ color: '#4f46e5' }} />
             <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>
-              कस्टम SaaS प्लान एवं प्राइसिंग कैलकुलेटर
+              Custom SaaS Plan & Pricing Calculator
             </h3>
           </div>
           <p style={{ margin: 0, fontSize: '0.86rem', color: '#64748b' }}>
-            अपनी आवश्यकता अनुसार केवल वही मॉड्यूल चुनें जिनकी आपके व्यवसाय को ज़रूरत है। कभी भी बदलें या अपग्रेड करें।
+            Select only the modules your organization requires. Scale, add seats, or upgrade anytime.
           </p>
         </div>
       )}
@@ -200,7 +200,7 @@ export default function PlanPricingCalculator({
         }}
       >
         <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
-          मॉड्यूल चुनें ({selectedProcesses.length} चयनित):
+          Select Modules ({selectedProcesses.length} Selected):
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button
@@ -336,7 +336,7 @@ export default function PlanPricingCalculator({
                   borderTop: '1px solid #f1f5f9'
                 }}
               >
-                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>प्रति यूज़र / माह:</div>
+                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Per User / Month:</div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
                   ₹{proc.monthly_rate_per_user}
                 </div>
@@ -364,11 +364,11 @@ export default function PlanPricingCalculator({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
             <Users size={16} style={{ color: '#4f46e5' }} />
             <label style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1e293b' }}>
-              यूज़र सीट्स की संख्या (User Seats):
+              Number of User Seats:
             </label>
           </div>
           <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', marginBottom: '0.65rem' }}>
-            जितने कर्मचारी इस CRM को इस्तेमाल करेंगे
+            Total team members who will access the CRM
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
@@ -459,11 +459,11 @@ export default function PlanPricingCalculator({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
             <Calendar size={16} style={{ color: '#4f46e5' }} />
             <label style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1e293b' }}>
-              बिलिंग साइकल (अवधि):
+              Billing Cycle & Term:
             </label>
           </div>
           <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', marginBottom: '0.65rem' }}>
-            लंबी अवधि पर विशेष छूट प्राप्त करें
+            Longer commitments receive higher discounts
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.45rem' }}>
@@ -485,7 +485,7 @@ export default function PlanPricingCalculator({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: isSelected ? 700 : 600, color: '#1e293b' }}>
-                      {cyc.display_name}
+                       {cyc.display_name}
                     </span>
                     {hasDiscount && (
                       <span
@@ -498,7 +498,7 @@ export default function PlanPricingCalculator({
                           borderRadius: '4px'
                         }}
                       >
-                        {cyc.discount_percent}% छूट
+                        {cyc.discount_percent}% OFF
                       </span>
                     )}
                   </div>
@@ -535,7 +535,7 @@ export default function PlanPricingCalculator({
         >
           <div>
             <div style={{ fontSize: '0.8rem', color: '#c7d2fe', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              कुल अनुमानित बिलिंग (Plan Pricing Summary)
+              Plan Pricing Summary & Estimated Total
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.2rem' }}>
               <span style={{ fontSize: '2.1rem', fontWeight: 800 }}>₹{netTotal.toLocaleString('en-IN')}</span>
@@ -546,9 +546,9 @@ export default function PlanPricingCalculator({
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.78rem', color: '#c7d2fe' }}>प्रभावी दर प्रति यूज़र:</div>
+            <div style={{ fontSize: '0.78rem', color: '#c7d2fe' }}>Effective Rate Per User:</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#34d399' }}>
-              ₹{effectiveMonthlyPerSeat} / माह
+              ₹{effectiveMonthlyPerSeat} / mo
             </div>
           </div>
         </div>
@@ -564,21 +564,21 @@ export default function PlanPricingCalculator({
           }}
         >
           <div>
-            <span style={{ opacity: 0.75 }}>चयनित मॉड्यूल दर:</span>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>₹{ratePerSeatMonthly} / यूज़र / माह</div>
+            <span style={{ opacity: 0.75 }}>Selected Module Rate:</span>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>₹{ratePerSeatMonthly} / user / mo</div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>सकल राशि (Gross):</span>
+            <span style={{ opacity: 0.75 }}>Gross Amount:</span>
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>₹{grossTotal.toLocaleString('en-IN')}</div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>अवधि छूट ({discountPercent}%):</span>
+            <span style={{ opacity: 0.75 }}>Term Discount ({discountPercent}%):</span>
             <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#86efac' }}>
               - ₹{discountAmount.toLocaleString('en-IN')}
             </div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>कुल शुद्ध देय (Net):</span>
+            <span style={{ opacity: 0.75 }}>Net Total Payable:</span>
             <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#ffffff' }}>
               ₹{netTotal.toLocaleString('en-IN')}
             </div>
@@ -600,7 +600,7 @@ export default function PlanPricingCalculator({
         >
           <ShieldCheck size={16} style={{ color: '#38bdf8', flexShrink: 0 }} />
           <span>
-            <strong>नोट:</strong> इसमें सॉफ़्टवेयर व वेबआरटीसी (WebRTC) प्लेटफ़ॉर्म लाइसेंस शामिल है। क्लाउड कॉलिंग के वास्तविक मिनट/कैरियर शुल्क Plivo द्वारा अलग से देय हैं।
+            <strong>Note:</strong> Includes software & WebRTC platform license. Cloud telephony carrier minute charges are billed separately.
           </span>
         </div>
 

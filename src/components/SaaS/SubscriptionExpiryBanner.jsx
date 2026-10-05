@@ -40,8 +40,8 @@ export default function SubscriptionExpiryBanner({ subscription }) {
           <AlertTriangle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
         )}
         <span>
-          <strong>सब्सक्रिप्शन अलर्ट:</strong> आपका प्लान{' '}
-          <strong style={{ textDecoration: 'underline' }}>{daysRemaining} दिनों</strong> में समाप्त हो रहा है। निर्बाध कॉलिंग, लीड्स और सर्विस के लिए कृपया समय पर रिन्यू करें।
+          <strong>Subscription Alert:</strong> Your plan expires in{' '}
+          <strong style={{ textDecoration: 'underline' }}>{daysRemaining} day{daysRemaining > 1 ? 's' : ''}</strong>. Please renew in advance to ensure uninterrupted calling, leads, and services.
         </span>
       </div>
 
@@ -65,7 +65,7 @@ export default function SubscriptionExpiryBanner({ subscription }) {
             gap: '0.3rem'
           }}
         >
-          <UserPlus size={13} /> सीट्स जोड़ें / Add-ons
+          <UserPlus size={13} /> Add Seats / Add-ons
         </button>
 
         <button
@@ -90,7 +90,7 @@ export default function SubscriptionExpiryBanner({ subscription }) {
           onMouseOver={(e) => (e.currentTarget.style.opacity = '0.9')}
           onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
         >
-          अभी रिन्यू करें <ArrowRight size={13} />
+          Renew Now <ArrowRight size={13} />
         </button>
 
         <button

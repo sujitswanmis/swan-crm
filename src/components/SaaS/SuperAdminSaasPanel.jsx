@@ -154,7 +154,7 @@ export default function SuperAdminSaasPanel() {
   const handleSavePrice = async (processCode) => {
     const rate = customRates[processCode];
     if (isNaN(rate) || rate < 0) {
-      showNotification('कृपया मान्य राशि दर्ज करें', true);
+      showNotification('Please enter a valid rate amount', true);
       return;
     }
     setSavingCode(processCode);
@@ -163,7 +163,7 @@ export default function SuperAdminSaasPanel() {
       if (res.success) {
         showNotification(res.message);
       } else {
-        showNotification(res.error || 'अपडेट करने में विफल', true);
+        showNotification(res.error || 'Failed to update process rate', true);
       }
     } catch (err) {
       showNotification(err.message, true);
@@ -175,7 +175,7 @@ export default function SuperAdminSaasPanel() {
   const handleSaveDiscount = async (cycleCode) => {
     const disc = discountInputs[cycleCode];
     if (isNaN(disc) || disc < 0 || disc > 100) {
-      showNotification('कृपया 0 से 100 के बीच प्रतिशत दर्ज करें', true);
+      showNotification('Please enter a discount percentage between 0 and 100', true);
       return;
     }
     setSavingCode(cycleCode);
@@ -201,7 +201,7 @@ export default function SuperAdminSaasPanel() {
         showNotification(res.message);
         await loadData();
       } else {
-        showNotification(res.error || 'वैलिडिटी बढ़ाने में विफल', true);
+        showNotification(res.error || 'Failed to extend subscription validity', true);
       }
     } catch (err) {
       showNotification(err.message, true);
@@ -258,10 +258,10 @@ export default function SuperAdminSaasPanel() {
           setCreateSuccess(null);
         }, 1500);
       } else {
-        setCreateError(res.error || 'वर्कस्पेस बनाने में समस्या आई।');
+        setCreateError(res.error || 'Failed to create workspace.');
       }
     } catch (err) {
-      setCreateError(err.message || 'त्रुटि हुई।');
+      setCreateError(err.message || 'An error occurred.');
     } finally {
       setCreateLoading(false);
     }
@@ -279,7 +279,7 @@ export default function SuperAdminSaasPanel() {
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
-            लाइव प्रॉडक्ट प्राइसिंग, 8-मॉड्यूल कैटलॉग, डिस्काउंट और सभी टेनेंट्स का केंद्रीय प्रबंधन
+            Live product pricing, 8-module catalog, discount rules, and central tenant management
           </p>
         </div>
 
@@ -298,7 +298,7 @@ export default function SuperAdminSaasPanel() {
             fontSize: '0.85rem'
           }}
         >
-          <RefreshCw size={15} className={loading ? 'spin' : ''} /> रिफ्रेश करें
+          <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
         </button>
       </div>
 
@@ -326,7 +326,7 @@ export default function SuperAdminSaasPanel() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-            <span>कुल टेनेंट्स (Companies)</span>
+            <span>Total Tenants (Workspaces)</span>
             <Building size={18} style={{ color: '#3b82f6' }} />
           </div>
           <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{tenants.length}</div>
@@ -335,7 +335,7 @@ export default function SuperAdminSaasPanel() {
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-            <span>एक्टिव बिजनेस प्रोसेस</span>
+            <span>Active Business Modules</span>
             <Award size={18} style={{ color: '#8b5cf6' }} />
           </div>
           <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>8 Modules</div>
@@ -344,7 +344,7 @@ export default function SuperAdminSaasPanel() {
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-            <span>मास्टर प्रोडक्शन टेनेंट</span>
+            <span>Master Production Tenant</span>
             <ShieldCheck size={18} style={{ color: '#10b981' }} />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#10b981' }}>New Swan Group</div>
@@ -368,7 +368,7 @@ export default function SuperAdminSaasPanel() {
           }}
         >
           <DollarSign size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          डायनामिक प्राइसिंग व कैटलॉग एडिटर
+          Dynamic Pricing & Module Catalog
         </button>
 
         <button
@@ -385,7 +385,7 @@ export default function SuperAdminSaasPanel() {
           }}
         >
           <Building size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          कंपनी टेनेंट्स व सब्सक्रिप्शन ({tenants.length})
+          Client Workspaces & Subscriptions ({tenants.length})
         </button>
       </div>
 
@@ -395,22 +395,22 @@ export default function SuperAdminSaasPanel() {
           {/* Process Catalog Table */}
           <div className="card" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-              8 बिजनेस प्रोसेस - मंथली रेट एडिटर (₹ / यूज़र / माह)
+              8 Business Modules — Monthly Rate Editor (₹ / User / Mo)
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              यहाँ कोई भी बदलाव करने पर वेबसाइट के कैलकुलेटर और नए सब्सक्रिप्शन इनवॉइस में तुरंत नया दाम लागू हो जाएगा।
+              Any price adjustments made here will immediately reflect in the pricing calculator and client invoices.
             </p>
 
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '0.75rem 1rem' }}>कोड</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>प्रोसेस का नाम</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>कैटेगरी</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>विवरण</th>
-                    <th style={{ padding: '0.75rem 1rem', width: '200px' }}>रेट (₹ / यूज़र / माह)</th>
-                    <th style={{ padding: '0.75rem 1rem', width: '120px' }}>एक्शन</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Code</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Module Name</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Category</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Description</th>
+                    <th style={{ padding: '0.75rem 1rem', width: '200px' }}>Rate (₹ / User / Mo)</th>
+                    <th style={{ padding: '0.75rem 1rem', width: '120px' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -480,10 +480,10 @@ export default function SuperAdminSaasPanel() {
           {/* Billing Cycle Discounts */}
           <div className="card" style={{ padding: '1.5rem' }}>
             <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-              बिलिंग साइकिल्स और डिस्काउंट प्रतिशत (%)
+              Billing Cycles & Discount Percentage (%)
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              क्लाइंट जितने लंबी अवधि का प्लान लेगा, उसे उतना डिस्काउंट मिलेगा।
+              Tenants selecting longer billing commitments automatically receive these cycle discounts.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
@@ -536,9 +536,9 @@ export default function SuperAdminSaasPanel() {
         <div className="card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>कंपनी टेनेंट्स और एक्टिव प्लान्स</h2>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>Client Workspaces & Active Plans</h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
-                किसी भी क्लाइंट की वैलिडिटी (महीने) आगे बढ़ाएं या सीट्स कोटा अपडेट करें।
+                Manage client workspaces, extend subscription validity, and configure seat limits.
               </p>
             </div>
 
@@ -565,7 +565,7 @@ export default function SuperAdminSaasPanel() {
                 boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
               }}
             >
-              <PlusCircle size={16} /> + नया क्लाइंट वर्कस्पेस बनाएं (Create Client Workspace)
+              <PlusCircle size={16} /> + Create Client Workspace
             </button>
           </div>
 
@@ -573,12 +573,12 @@ export default function SuperAdminSaasPanel() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>कंपनी का नाम</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>स्टेटस</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>सीट्स (Active / Limit)</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>सक्रिय मॉड्यूल्स</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>एक्सपायरी डेट (IST)</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '280px' }}>क्विक एक्शन्स</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Company / Workspace</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Seats (Active / Limit)</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Active Modules</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Expiry Date (IST)</th>
+                  <th style={{ padding: '0.75rem 1rem', width: '280px' }}>Quick Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -659,7 +659,7 @@ export default function SuperAdminSaasPanel() {
                         <div>{expiryFormatted}</div>
                         {sub?.days_remaining !== null && !isDefault && (
                           <div style={{ fontSize: '0.75rem', color: sub?.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)' }}>
-                            {sub.days_remaining > 0 ? `(${sub.days_remaining} दिन बाकी)` : '(समाप्त हो चुका)'}
+                            {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
                           </div>
                         )}
                       </td>
@@ -745,13 +745,13 @@ export default function SuperAdminSaasPanel() {
           zIndex: 100000
         }}>
           <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '400px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>सीट लिमिट बदलें</h3>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Update Seat Limit</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              कंपनी: <strong>{seatModalTenant.name}</strong>
+              Company: <strong>{seatModalTenant.name}</strong>
             </p>
 
             <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.4rem', fontWeight: 500 }}>
-              स्वीकृत कुल सीट्स (User Limit):
+              Authorized Total Seats (User Limit):
             </label>
             <input
               type="number"
@@ -775,13 +775,13 @@ export default function SuperAdminSaasPanel() {
                 onClick={() => setSeatModalTenant(null)}
                 style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer' }}
               >
-                रद्द करें
+                Cancel
               </button>
               <button
                 onClick={handleUpdateSeats}
                 style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
               >
-                सेव करें
+                Save Changes
               </button>
             </div>
           </div>
@@ -828,13 +828,13 @@ export default function SuperAdminSaasPanel() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Building size={22} style={{ color: '#4338ca' }} />
                   <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-                    नया क्लाइंट वर्कस्पेस ऑनबोर्डिंग
+                    Client Workspace Onboarding
                   </h3>
                 </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.25rem 0 0 0' }}>
                   {createStep === 1
-                    ? 'Step 1 of 2: क्लाइंट कंपनी एवं एडमिन की जानकारी भरें'
-                    : 'Step 2 of 2: इस क्लाइंट के लिए स्वीकृत मॉड्यूल्स एवं सीट्स चुनें'}
+                    ? 'Step 1 of 2: Company & Primary Administrator Details'
+                    : 'Step 2 of 2: Configure Modules, Seats & Billing Terms'}
                 </p>
               </div>
 
@@ -873,13 +873,13 @@ export default function SuperAdminSaasPanel() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                    क्लाइंट कंपनी / संस्था का नाम *
+                    Client Company / Organization Name *
                   </label>
                   <input
                     type="text"
                     value={newCompanyName}
                     onChange={(e) => setNewCompanyName(e.target.value)}
-                    placeholder="उदा. ABC Motors Pvt Ltd"
+                    placeholder="e.g. Acme Corporation Pvt Ltd"
                     style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                   />
                 </div>
@@ -887,20 +887,20 @@ export default function SuperAdminSaasPanel() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                      क्लाइंट मुख्य एडमिन का नाम *
+                      Primary Administrator Full Name *
                     </label>
                     <input
                       type="text"
                       value={newAdminName}
                       onChange={(e) => setNewAdminName(e.target.value)}
-                      placeholder="उदा. राहुल शर्मा"
+                      placeholder="e.g. John Doe"
                       style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     />
                   </div>
 
                   <div>
                     <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                      एडमिन मोबाइल नंबर
+                      Admin Mobile Number (Optional)
                     </label>
                     <input
                       type="tel"
@@ -914,27 +914,27 @@ export default function SuperAdminSaasPanel() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                    क्लाइंट आधिकारिक ईमेल (Login Work Email) *
+                    Work Email (Login Username) *
                   </label>
                   <input
                     type="email"
                     value={newAdminEmail}
                     onChange={(e) => setNewAdminEmail(e.target.value)}
-                    placeholder="admin@abcmotors.com"
+                    placeholder="admin@acmecorp.com"
                     style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                   />
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                    प्रारंभिक पासवर्ड (Initial Password) *
+                    Initial Password *
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type={showNewPassword ? "text" : "password"}
                       value={newAdminPassword}
                       onChange={(e) => setNewAdminPassword(e.target.value)}
-                      placeholder="न्यूनतम 6 अक्षर"
+                      placeholder="Minimum 6 characters"
                       style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     />
                     <button
@@ -954,18 +954,18 @@ export default function SuperAdminSaasPanel() {
                     onClick={() => setShowCreateTenantModal(false)}
                     style={{ padding: '0.65rem 1.25rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontWeight: 600 }}
                   >
-                    रद्द करें
+                    Cancel
                   </button>
 
                   <button
                     type="button"
                     onClick={() => {
                       if (!newCompanyName.trim() || !newAdminName.trim() || !newAdminEmail.trim() || !newAdminPassword) {
-                        setCreateError('कृपया कंपनी का नाम, एडमिन का नाम, ईमेल और पासवर्ड भरें।');
+                        setCreateError('Please enter company name, administrator name, work email and password.');
                         return;
                       }
                       if (newAdminPassword.length < 6) {
-                        setCreateError('पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
+                        setCreateError('Password must be at least 6 characters long.');
                         return;
                       }
                       setCreateError(null);
@@ -984,7 +984,7 @@ export default function SuperAdminSaasPanel() {
                       gap: '0.4rem'
                     }}
                   >
-                    Next: मॉड्यूल्स व प्लान चुनें <ArrowRight size={16} />
+                    Next: Select Plan & Modules <ArrowRight size={16} />
                   </button>
                 </div>
               </div>
@@ -996,7 +996,7 @@ export default function SuperAdminSaasPanel() {
                   initialCycle="YEARLY"
                   showHeading={true}
                   onProceed={handleCreateClientWorkspace}
-                  proceedButtonText={createLoading ? "वर्कस्पेस तैयार हो रहा है..." : "क्लाइंट वर्कस्पेस सक्रिय करें 🚀"}
+                  proceedButtonText={createLoading ? "Provisioning Workspace..." : "Activate Client Workspace 🚀"}
                 />
 
                 <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1rem' }}>
@@ -1017,7 +1017,7 @@ export default function SuperAdminSaasPanel() {
                       gap: '0.4rem'
                     }}
                   >
-                    <ArrowLeft size={16} /> ← कंपनी विवरण में संशोधन करें
+                    <ArrowLeft size={16} /> ← Edit Company Details
                   </button>
                 </div>
               </div>

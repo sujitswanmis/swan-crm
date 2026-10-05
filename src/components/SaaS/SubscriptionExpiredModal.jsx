@@ -67,10 +67,10 @@ export default function SubscriptionExpiredModal({ subscription }) {
         </div>
 
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', marginBottom: '0.75rem' }}>
-          सब्सक्रिप्शन समाप्त हो गया है
+          Subscription Expired
         </h2>
         <p style={{ color: '#4b5563', fontSize: '0.92rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
-          आपकी कंपनी का CRM प्लान <strong>{validUntilFormatted}</strong> को समाप्त हो गया है। आपका डेटा 100% सुरक्षित है। आगे काम जारी रखने के लिए कृपया अपने प्लान को रिन्यू करें।
+          Your company's CRM subscription expired on <strong>{validUntilFormatted}</strong>. Your data is 100% safe and secure. Please renew your plan to restore access.
         </p>
 
         <div
@@ -85,15 +85,15 @@ export default function SubscriptionExpiredModal({ subscription }) {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-            <span style={{ color: '#6b7280' }}>प्लान का नाम:</span>
+            <span style={{ color: '#6b7280' }}>Plan Name:</span>
             <strong style={{ color: '#111827' }}>{subscription.plan_name || 'Standard Plan'}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-            <span style={{ color: '#6b7280' }}>स्वीकृत सीट्स (Users):</span>
+            <span style={{ color: '#6b7280' }}>Authorized Seats (Users):</span>
             <strong style={{ color: '#111827' }}>{subscription.user_seat_limit || 1}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#6b7280' }}>अंतिम वैलिडिटी:</span>
+            <span style={{ color: '#6b7280' }}>Expiration Date:</span>
             <strong style={{ color: '#dc2626' }}>{validUntilFormatted}</strong>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function SubscriptionExpiredModal({ subscription }) {
               boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)'
             }}
           >
-            <CreditCard size={18} /> अभी रिन्यू करें (Renew Plan)
+            <CreditCard size={18} /> Renew Subscription
           </button>
 
           <form action="/auth/logout" method="POST" style={{ width: '100%' }}>
@@ -142,7 +142,7 @@ export default function SubscriptionExpiredModal({ subscription }) {
                 gap: '0.4rem'
               }}
             >
-              <LogOut size={16} /> लॉगआउट करें (Logout)
+              <LogOut size={16} /> Logout
             </button>
           </form>
         </div>
