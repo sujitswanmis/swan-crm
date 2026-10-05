@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.0.691",
+  "version": "1.0.692",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -18,7 +18,7 @@
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
-    "next": "16.2.6",
+    "next": "16.3.8",
     "nodemailer": "^9.0.5",
     "papaparse": "^5.5.3",
     "pdf-parse": "^2.4.5",
@@ -34,6 +34,6 @@
   },
   "devDependencies": {
     "eslint": "^9",
-    "eslint-config-next": "16.2.6"
+    "eslint-config-next": "16.3.8"
   }
 }
