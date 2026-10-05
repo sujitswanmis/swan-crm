@@ -827,15 +827,45 @@ export async function getAgentProfile(userId) {
   return { data: agentData, error: null };
 }
 
-export async function getRecentCalls(agentId) {
-  const adminClient = getAdminClient();
-  const { data } = await adminClient
-    .from('call_sessions')
-    .select('*')
-    .eq('agent_id', agentId)
-    .order('created_at', { ascending: false })
-    .limit(10);
-  return { data: data || [] };
+export async function getRecentCalls(agentId, options = {}) {
+  try {
+    const adminClient = getAdminClient();
+    const limit = options.limit !== undefined ? options.limit : 10;
+    const offset = options.offset || 0;
+    const { startDate, endDate, search } = options;
+
+    let query = adminClient
+      .from('call_sessions')
+      .select('*', { count: 'exact' })
+      .eq('agent_id', agentId);
+
+    if (startDate) {
+      query = query.gte('created_at', startDate);
+    }
+    if (endDate) {
+      query = query.lte('created_at', endDate);
+    }
+    if (search && typeof search === 'string' && search.trim()) {
+      const s = search.trim();
+      query = query.or(`customer_number.ilike.%${s}%,room_name.ilike.%${s}%`);
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    if (limit !== 'all' && limit !== 10000 && limit > 0) {
+      query = query.range(offset, offset + limit - 1);
+    }
+
+    const { data, count, error } = await query;
+    if (error) {
+      console.error('getRecentCalls query error:', error);
+      return { data: [], total: 0, error: error.message };
+    }
+    return { data: data || [], total: count || 0 };
+  } catch (err) {
+    console.error('getRecentCalls error:', err);
+    return { data: [], total: 0, error: err.message };
+  }
 }
 
 export async function getLeadCallHistory(phoneNumbers = []) {
