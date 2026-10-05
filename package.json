@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.0.692",
+  "version": "1.0.693",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,8 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.10.3",
-    "@supabase/supabase-js": "^2.106.2",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
     "@tanstack/react-table": "^8.21.3",
     "cheerio": "^1.2.0",
     "exceljs": "^4.4.0",
@@ -22,7 +22,7 @@
     "nodemailer": "^9.0.5",
     "papaparse": "^5.5.3",
     "pdf-parse": "^2.4.5",
-    "plivo": "^4.77.1",
+    "plivo": "4.79.0",
     "plivo-browser-sdk": "^2.2.21",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
