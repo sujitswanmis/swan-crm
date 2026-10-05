@@ -5,6 +5,61 @@ import { createClient } from '@/utils/supabase/client';
 import { Plus, Briefcase, Users, Search, ChevronRight, UserPlus, Filter, RefreshCw, Calendar, FileText, CheckCircle2, ClipboardList } from 'lucide-react';
 import CandidateProfilePanel from './CandidateProfilePanel';
 import { getRecruitersList } from '@/app/actions/team';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const RECRUITER_POSITIONS_DEFAULT_COL_WIDTHS = {
+  title: 220,
+  position_id: 130,
+  department: 160,
+  openings: 100,
+  salary: 160,
+  status: 120,
+  deadline: 130,
+  interviewer: 160,
+  recruiter: 170,
+  jd: 240,
+  apply_link: 160,
+  created_by: 130,
+  actions: 220
+};
+
+const RECRUITER_POSITIONS_MIN_COL_WIDTHS = {
+  title: 120,
+  position_id: 90,
+  department: 100,
+  openings: 70,
+  salary: 110,
+  status: 90,
+  deadline: 90,
+  interviewer: 100,
+  recruiter: 110,
+  jd: 130,
+  apply_link: 100,
+  created_by: 90,
+  actions: 140
+};
+
+const RECRUITER_CANDIDATES_DEFAULT_COL_WIDTHS = {
+  name: 200,
+  applying_for: 180,
+  resume: 120,
+  stage: 100,
+  status: 185,
+  details: 240,
+  date: 130,
+  actions: 130
+};
+
+const RECRUITER_CANDIDATES_MIN_COL_WIDTHS = {
+  name: 120,
+  applying_for: 110,
+  resume: 80,
+  stage: 70,
+  status: 120,
+  details: 140,
+  date: 90,
+  actions: 90
+};
 
 const getStatusOptions = (stage) => {
   switch (stage) {
@@ -71,6 +126,31 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recruitersList, setRecruitersList] = useState([]);
+
+  // Column Resizing Hooks (Lead Data Pattern)
+  const {
+    colWidths: posColWidths,
+    resizingCol: posResizingCol,
+    handleResizeStart: handlePosResizeStart,
+    resetColWidth: resetPosColWidth,
+    getTotalTableWidth: getPosTotalTableWidth
+  } = useTableColumnResize(
+    'recruiter_positions_table_col_widths',
+    RECRUITER_POSITIONS_DEFAULT_COL_WIDTHS,
+    RECRUITER_POSITIONS_MIN_COL_WIDTHS
+  );
+
+  const {
+    colWidths: candColWidths,
+    resizingCol: candResizingCol,
+    handleResizeStart: handleCandResizeStart,
+    resetColWidth: resetCandColWidth,
+    getTotalTableWidth: getCandTotalTableWidth
+  } = useTableColumnResize(
+    'recruiter_candidates_table_col_widths',
+    RECRUITER_CANDIDATES_DEFAULT_COL_WIDTHS,
+    RECRUITER_CANDIDATES_MIN_COL_WIDTHS
+  );
   
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -734,31 +814,98 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <p>Either create a new position or shift existing positions to change their status.</p>
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <table style={{ width: `${Math.max(1200, getPosTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Job Title</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px' }}>Position ID</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Department</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '100px' }}>Openings</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Salary Range</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px' }}>Status</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '130px' }}>Deadline Date</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>Interviewer</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>🎯 Recruiter Assigned</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Job Description (JD Summary)</th>
-                  {selectedStage === 'S01' && <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '160px' }}>🔗 Apply Link</th>}
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '130px' }}>Created By</th>
-                  <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '220px', textAlign: 'center' }}>Actions</th>
+                  <th style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Job Title</span>
+                    </div>
+                    <ColumnResizer colKey="title" isResizing={posResizingCol === 'title'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Position ID</span>
+                    </div>
+                    <ColumnResizer colKey="position_id" isResizing={posResizingCol === 'position_id'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department</span>
+                    </div>
+                    <ColumnResizer colKey="department" isResizing={posResizingCol === 'department'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Openings</span>
+                    </div>
+                    <ColumnResizer colKey="openings" isResizing={posResizingCol === 'openings'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Salary Range</span>
+                    </div>
+                    <ColumnResizer colKey="salary" isResizing={posResizingCol === 'salary'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</span>
+                    </div>
+                    <ColumnResizer colKey="status" isResizing={posResizingCol === 'status'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Deadline Date</span>
+                    </div>
+                    <ColumnResizer colKey="deadline" isResizing={posResizingCol === 'deadline'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Interviewer</span>
+                    </div>
+                    <ColumnResizer colKey="interviewer" isResizing={posResizingCol === 'interviewer'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>🎯 Recruiter Assigned</span>
+                    </div>
+                    <ColumnResizer colKey="recruiter" isResizing={posResizingCol === 'recruiter'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.jd}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Job Description (JD)</span>
+                    </div>
+                    <ColumnResizer colKey="jd" isResizing={posResizingCol === 'jd'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  {selectedStage === 'S01' && (
+                    <th style={{ width: `${posColWidths.apply_link}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>🔗 Apply Link</span>
+                      </div>
+                      <ColumnResizer colKey="apply_link" isResizing={posResizingCol === 'apply_link'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                    </th>
+                  )}
+                  <th style={{ width: `${posColWidths.created_by}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Created By</span>
+                    </div>
+                    <ColumnResizer colKey="created_by" isResizing={posResizingCol === 'created_by'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.actions}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
+                    </div>
+                    <ColumnResizer colKey="actions" isResizing={posResizingCol === 'actions'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredPositions.map(pos => (
                   <tr key={pos.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{pos.title}</td>
-                    <td style={{ padding: '1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
+                    <td style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.title}>{pos.title}</td>
+                    <td style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)', boxSizing: 'border-box' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden' }}>
+                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
                         {pos.id && (
                           <button
                             onClick={() => {
@@ -767,7 +914,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             }}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.25rem',
-                              color: 'var(--text-secondary)', fontSize: '0.75rem'
+                              color: 'var(--text-secondary)', fontSize: '0.75rem', flexShrink: 0
                             }}
                             title="Copy Position Code"
                           >
@@ -776,55 +923,59 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         )}
                       </div>
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.department}</td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{pos.openings}</td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.department}>{pos.department}</td>
+                    <td style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>{pos.openings}</td>
+                    <td style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {pos.salary_min || pos.salary_max ? (
-                        <span>
+                        <span title={`${pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - ${pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month`}>
                           {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month
                         </span>
                       ) : (
                         <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Disclosed</span>
                       )}
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                    <td style={{ width: `${posColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
                       <span style={{ 
                         fontSize: '0.7rem', 
                         padding: '0.2rem 0.5rem', 
                         borderRadius: '12px', 
                         fontWeight: 'bold',
                         background: pos.status === 'S00' ? '#fee2e2' : '#dcfce7',
-                        color: pos.status === 'S00' ? '#991b1b' : '#166534'
+                        color: pos.status === 'S00' ? '#991b1b' : '#166534',
+                        display: 'inline-block',
+                        whiteSpace: 'nowrap'
                       }}>
                         {pos.status === 'S00' ? 'S00: Requirement' : 'S01: Posted & JD Prepared'}
                       </span>
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
                       {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString() : <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>None</span>}
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.interviewer_name || 'Not Assigned'}>
                       {pos.interviewer_name || <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Assigned</span>}
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                    <td style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
                       {pos.recruiter_assigned && pos.recruiter_assigned !== 'All' ? (
                         <span style={{ 
                           display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
                           padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
-                          background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem'
-                        }}>👤 {pos.recruiter_assigned}</span>
+                          background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem',
+                          maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                        }} title={pos.recruiter_assigned}>👤 {pos.recruiter_assigned}</span>
                       ) : (
                         <span style={{ 
                           display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
                           padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
-                          background: '#fef9c3', color: '#854d0e', fontSize: '0.75rem'
+                          background: '#fef9c3', color: '#854d0e', fontSize: '0.75rem',
+                          whiteSpace: 'nowrap'
                         }}>📢 All Recruiters</span>
                       )}
                     </td>
-                    <td style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={pos.jd_text}>
+                    <td style={{ width: `${posColWidths.jd}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={pos.jd_text}>
                       {pos.jd_text || <span style={{ fontStyle: 'italic', color: '#c2410c' }}>⚠️ No JD logged — please edit.</span>}
                     </td>
                     {selectedStage === 'S01' && (
-                      <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                      <td style={{ width: `${posColWidths.apply_link}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
                         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                           <button
                             onClick={() => {
@@ -851,8 +1002,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         </div>
                       </td>
                     )}
-                    <td style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{pos.created_by || 'System'}</td>
-                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                    <td style={{ width: `${posColWidths.created_by}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.created_by || 'System'}>{pos.created_by || 'System'}</td>
+                    <td style={{ width: `${posColWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                       <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <button
                           onClick={() => handleOpenEditPosition(pos)}
@@ -966,17 +1117,57 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
             </div>
           ) : (
             <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <table style={{ width: `${Math.max(1100, getCandTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Candidate Name</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Applying For</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px', textAlign: 'center' }}>Resume</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '100px' }}>Stage</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '185px' }}>Candidate Status</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Stage Details / Remarks</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px' }}>Date Applied</th>
-                    <th style={{ padding: '1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', width: '120px', textAlign: 'center' }}>Actions</th>
+                    <th style={{ width: `${candColWidths.name}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Candidate Name</span>
+                      </div>
+                      <ColumnResizer colKey="name" isResizing={candResizingCol === 'name'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.applying_for}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Applying For</span>
+                      </div>
+                      <ColumnResizer colKey="applying_for" isResizing={candResizingCol === 'applying_for'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.resume}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Resume</span>
+                      </div>
+                      <ColumnResizer colKey="resume" isResizing={candResizingCol === 'resume'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.stage}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Stage</span>
+                      </div>
+                      <ColumnResizer colKey="stage" isResizing={candResizingCol === 'stage'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Candidate Status</span>
+                      </div>
+                      <ColumnResizer colKey="status" isResizing={candResizingCol === 'status'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.details}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Stage Details / Remarks</span>
+                      </div>
+                      <ColumnResizer colKey="details" isResizing={candResizingCol === 'details'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.date}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Date Applied</span>
+                      </div>
+                      <ColumnResizer colKey="date" isResizing={candResizingCol === 'date'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.actions}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
+                      </div>
+                      <ColumnResizer colKey="actions" isResizing={candResizingCol === 'actions'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1047,11 +1238,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         key={cand.id} 
                         style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}
                       >
-                        <td style={{ padding: '1rem' }}>
+                        <td style={{ width: `${candColWidths.name}px`, padding: '0.85rem 1rem', boxSizing: 'border-box' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                             <span 
                               onClick={() => { setSelectedCandidate(cand); setIsProfileOpen(true); }}
                               style={{ fontWeight: 600, color: 'var(--accent-color)', cursor: 'pointer', fontSize: '0.875rem' }}
+                              title={cand.name}
                             >
                               {cand.name}
                             </span>
@@ -1076,23 +1268,23 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                          <div>{cand.recruitment_positions?.title || 'Unknown'}</div>
+                        <td style={{ width: `${candColWidths.applying_for}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cand.recruitment_positions?.title || 'Unknown'}>{cand.recruitment_positions?.title || 'Unknown'}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.2rem' }}>
-                            <span>{cand.recruitment_positions?.department}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cand.recruitment_positions?.department}</span>
                             {cand.position_id && (
                               <span style={{ 
                                 fontSize: '0.68rem', fontFamily: 'monospace', 
                                 padding: '0.1rem 0.35rem', borderRadius: '4px',
                                 background: 'var(--bg-surface-variant)', border: '1px solid var(--border-light)',
-                                color: 'var(--text-secondary)'
+                                color: 'var(--text-secondary)', flexShrink: 0
                               }} title={`Full Position ID: ${cand.position_id}`}>
                                 {`POS-${cand.position_id.substring(0, 8).toUpperCase()}`}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <td style={{ width: `${candColWidths.resume}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                           {cand.resume_url ? (
                             <a 
                               href={cand.resume_url} 
@@ -1118,7 +1310,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>No Resume</span>
                           )}
                         </td>
-                        <td style={{ padding: '1rem' }}>
+                        <td style={{ width: `${candColWidths.stage}px`, padding: '0.85rem 1rem', boxSizing: 'border-box' }}>
                           <select 
                             value={cand.current_stage || 'S02'}
                             onChange={(e) => handleUpdateCandidateStage(cand.id, e.target.value)}
@@ -1145,7 +1337,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             <option value="S09">S09</option>
                           </select>
                         </td>
-                        <td style={{ padding: '1rem' }}>
+                        <td style={{ width: `${candColWidths.status}px`, padding: '0.85rem 1rem', boxSizing: 'border-box' }}>
                           <select 
                             value={cand.candidate_status || getStatusOptions(cand.current_stage || 'S02')[0]}
                             onChange={(e) => handleUpdateCandidateStatus(cand.id, e.target.value)}
@@ -1161,7 +1353,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                               background: cand.candidate_status?.includes('Rejected') || cand.candidate_status?.includes('Failed') || cand.candidate_status?.includes('Dropped') || cand.candidate_status?.includes('No Show') ? '#fee2e2' : cand.candidate_status?.includes('Cleared') || cand.candidate_status?.includes('Passed') || cand.candidate_status?.includes('Approved') || cand.candidate_status?.includes('Agreed') || cand.candidate_status?.includes('Shortlisted') || cand.candidate_status?.includes('Joined') || cand.candidate_status?.includes('Selected') ? '#dcfce7' : '#fef9c3',
                               color: cand.candidate_status?.includes('Rejected') || cand.candidate_status?.includes('Failed') || cand.candidate_status?.includes('Dropped') || cand.candidate_status?.includes('No Show') ? '#991b1b' : cand.candidate_status?.includes('Cleared') || cand.candidate_status?.includes('Passed') || cand.candidate_status?.includes('Approved') || cand.candidate_status?.includes('Agreed') || cand.candidate_status?.includes('Shortlisted') || cand.candidate_status?.includes('Joined') || cand.candidate_status?.includes('Selected') ? '#166534' : '#854d0e',
                               outline: 'none',
-                              textAlign: 'center'
+                              textAlign: 'center',
+                              maxWidth: '100%'
                             }}
                           >
                             {getStatusOptions(cand.current_stage || 'S02').map(opt => (
@@ -1169,13 +1362,13 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             ))}
                           </select>
                         </td>
-                        <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                        <td style={{ width: `${candColWidths.details}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>
                           {stageDetailsText}
                         </td>
-                        <td style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        <td style={{ width: `${candColWidths.date}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
                           {new Date(cand.created_at).toLocaleDateString()}
                         </td>
-                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <td style={{ width: `${candColWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                           <button 
                             onClick={() => { setSelectedCandidate(cand); setIsProfileOpen(true); }}
                             style={{ 
