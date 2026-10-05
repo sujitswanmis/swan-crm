@@ -144,7 +144,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v1.0.662';
+const SOFTPHONE_VERSION = 'v1.0.691';
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -297,8 +297,26 @@ function speakOutcome(hindiText, englishText) {
 }
 
 export default function GlobalSoftphoneWidget({ userId }) {
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('softphone_minimized');
+        if (saved !== null) return saved === 'true';
+      } catch (e) {}
+    }
+    return false;
+  });
+
+  const [isHidden, setIsHidden] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('softphone_hidden');
+        if (saved !== null) return saved === 'true';
+      } catch (e) {}
+    }
+    return true; // Default to docked pill so softphone never intrudes or flashes on refresh
+  });
+
   const supabase = createClient();
   const [plivoClient, setPlivoClient] = useState(null);
   const [connectionState, setConnectionState] = useState('offline'); // offline, connecting, online, error
@@ -316,7 +334,20 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
   const [agentMobile, setAgentMobile] = useState('');
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [position, setPosition] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedPos = localStorage.getItem('softphone_position');
+        if (savedPos) {
+          const parsed = JSON.parse(savedPos);
+          if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+            return { x: parsed.x, y: parsed.y };
+          }
+        }
+      } catch (e) {}
+    }
+    return { x: 0, y: 0 };
+  });
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
@@ -514,7 +545,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     return () => window.removeEventListener('resize', updateBounds);
   }, [updateBounds]);
 
-  // Load saved position, hidden state, and minimized state on mount
+  // Keep saved position clamped within screen boundaries on mount or resize
   useEffect(() => {
     try {
       const savedPos = localStorage.getItem('softphone_position');
@@ -530,21 +561,15 @@ export default function GlobalSoftphoneWidget({ userId }) {
           const maxY = 20 - margin;
           const safeX = Math.max(minX, Math.min(maxX, parsed.x));
           const safeY = Math.max(minY, Math.min(maxY, parsed.y));
-          setPosition({ x: safeX, y: safeY });
+          if (safeX !== parsed.x || safeY !== parsed.y) {
+            setPosition({ x: safeX, y: safeY });
+          }
         }
       }
-      const savedHidden = localStorage.getItem('softphone_hidden');
-      if (savedHidden !== null) {
-        setIsHidden(savedHidden === 'true');
-      }
-      const savedMinimized = localStorage.getItem('softphone_minimized');
-      if (savedMinimized !== null) {
-        setIsMinimized(savedMinimized === 'true');
-      }
     } catch (e) {
-      console.error("Error loading softphone preferences:", e);
+      console.error("Error clamping softphone position:", e);
     }
-  }, []);
+  }, [isMinimized]);
 
   // Listen for custom events to toggle or open softphone from anywhere in the app
   useEffect(() => {
@@ -869,7 +894,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
           const endedData = statusData.activeSession || prev || (activeRoom ? { room_name: activeRoom, hangup_cause: statusData.hangupCause } : null);
           if (endedData) {
             recentEndedSessionRef.current = { roomName: endedData.room_name || activeRoom, session: endedData, time: Date.now() };
-            handleSessionTerminationAnnouncement(endedData);
+            // Guard: Stale sessions from prior calls on page load/refresh must never trigger announcement or unhide
+            if (activeSessionRef.current || optimisticCallRef.current || activeRoom) {
+              handleSessionTerminationAnnouncement(endedData);
+            }
           }
           updateActiveSession(null);
           setOptimisticCall(null);
