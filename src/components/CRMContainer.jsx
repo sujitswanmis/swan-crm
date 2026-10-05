@@ -21,7 +21,7 @@ import ResponsiveTableResizer from './ResponsiveTableResizer';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
 import OfflineSyncCenter from './OfflineSyncCenter';
-import { saveLeadsLocally, getLocalLeads, getLocalLeadsPreview, saveLocalLeadsPreview, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, getFastLeadsSnapshot, saveFastLeadsSnapshot, setLeadCacheScope } from '@/utils/offlineSync';
+import { saveLeadsLocally, getLocalLeads, getLocalLeadsPreview, saveLocalLeadsPreview, isModuleAllowedOffline, upsertLeadsLocally, deleteLeadLocally, getFastLeadsSnapshot, saveFastLeadsSnapshot, setLeadCacheScope, getLeadStagePreview, markLeadStartupTiming } from '@/utils/offlineSync';
 import { getUserPendingAlerts } from '@/app/actions/userAlerts';
 import UserNotificationPreferencesModal from '@/components/common/UserNotificationPreferencesModal';
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
@@ -29,7 +29,7 @@ import { getTransferredLeads } from '@/app/actions/partyHandoff';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
-import { isCompleteLeadCache } from '@/utils/leadCachePolicy';
+import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
@@ -58,6 +58,8 @@ const ChecklistModule = dynamic(() => import('./Checklist/ChecklistModule'), { l
 const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
 const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const SuperAdminSaasPanel = dynamic(() => import('./SaaS/SuperAdminSaasPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
+
+markLeadStartupTiming('crm-module-ready');
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
@@ -445,16 +447,24 @@ export default function CRMContainer({
     return path;
   });
   const [isMounted, setIsMounted] = useState(false);
+  const [initialLeadStage] = useState(() => {
+    if (initialSearchParams?.stage === 'all') return null;
+    if (initialSearchParams?.stage) return initialSearchParams.stage;
+    try {
+      return typeof window !== 'undefined' ? localStorage.getItem('crmActiveStage') || null : null;
+    } catch (_e) { return null; }
+  });
+  const stagePreviewStateRef = useRef(null);
   const [leads, setLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: initialLeadStage });
       if (Array.isArray(fast) && fast.length > 0) return fast;
     }
     return [];
   });
   const [rawLeads, setRawLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: initialLeadStage });
       if (Array.isArray(fast) && fast.length > 0) return fast;
     }
     return [];
@@ -462,35 +472,39 @@ export default function CRMContainer({
   const rawLeadsRef = useRef([]);
   const [loadingLeads, setLoadingLeads] = useState(() => {
     if (typeof window !== 'undefined') {
-      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
+      const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: initialLeadStage });
       if (Array.isArray(fast) && fast.length > 0) return false;
     }
     return true;
   });
 
-  // Instant 0ms Client Cache Hydration on mount (avoids SSR hydration mismatch)
-  useEffect(() => {
+  // Publish the hydration gate in the layout commit so cached rows do not
+  // wait for passive/background startup work.
+  React.useLayoutEffect(() => {
     let active = true;
     setIsMounted(true);
+    markLeadStartupTiming('app-mounted', { pathname: window.location.pathname });
     setLeadCacheScope(userId);
-    const fast = getFastLeadsSnapshot(userId, { userCompany, userRole });
+    const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: initialLeadStage });
     if (Array.isArray(fast) && fast.length > 0) {
       setRawLeads(fast);
       setLeads(fast);
       rawLeadsRef.current = fast;
       setLoadingLeads(false);
+      markLeadStartupTiming('preview-restored', { source: 'web-storage', count: fast.length });
     } else {
-      getLocalLeadsPreview(userCompany, userRole).then(preview => {
+      getLocalLeadsPreview(userCompany, userRole, initialLeadStage).then(preview => {
         if (!active || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
         setRawLeads(preview);
         setLeads(preview);
         rawLeadsRef.current = preview;
         setLoadingLeads(false);
-        saveFastLeadsSnapshot(preview, userId, { userCompany, userRole });
+        saveFastLeadsSnapshot(preview, userId, { userCompany, userRole, stageKey: initialLeadStage });
+        markLeadStartupTiming('preview-restored', { source: 'indexeddb', count: preview.length });
       }).catch(() => {});
     }
     return () => { active = false; };
-  }, [userId, userCompany, userRole]);
+  }, [userId, userCompany, userRole, initialLeadStage]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -1292,6 +1306,7 @@ export default function CRMContainer({
     if (sameLeadList(leads, listToProcess)) return;
     prevLeadsSigRef.current = '';
     setLeads(listToProcess);
+    markLeadStartupTiming('filtered-leads-published', { count: listToProcess.length });
   };
 
   // Client-side fetch of all leads (Progressive Loading with sync tracking)
@@ -1302,6 +1317,15 @@ export default function CRMContainer({
       return;
     }
     let effectActive = true;
+    const removedDuringSync = new Set();
+    const changedDuringSync = new Set();
+    const refreshStagePreview = generation => {
+      const preview = stagePreviewStateRef.current;
+      if (!preview?.stageKey || !preview.leads.length || preview.userId !== userId ||
+        preview.userCompany !== userCompany || preview.userRole !== userRole) return;
+      saveFastLeadsSnapshot(preview.leads, userId, { userCompany, userRole, stageKey: preview.stageKey });
+      saveLocalLeadsPreview(preview.leads, generation, userCompany, userRole, preview.stageKey).catch(() => {});
+    };
 
     async function loadLeads(forceFull = false) {
       if (!effectActive) return;
@@ -1311,207 +1335,203 @@ export default function CRMContainer({
         return;
       }
       leadSyncInFlightRef.current = true;
+      removedDuringSync.clear();
+      changedDuringSync.clear();
       setLeadCacheScope(userId);
       setIsSyncing(true);
+      markLeadStartupTiming('sync-start', { forceFull });
       const syncStartedAt = new Date().toISOString();
+      const syncStartedMs = Date.parse(syncStartedAt);
+      const protectedIds = () => new Set([...changedDuringSync, ...[...recentLocalUpdatesRef.current]
+        .filter(([, updatedAt]) => updatedAt >= syncStartedMs).map(([id]) => id)]);
       const supabase = createClient();
       const cacheMetaKey = `crm_leads_complete_cache_v1_${userId}`;
       let cacheMeta = null;
       let networkPublished = false;
       try {
-        cacheMeta = JSON.parse(localStorage.getItem(cacheMetaKey) || 'null');
-      } catch (e) {}
-      
-      // Show a cached preview first; never wait 30 seconds for a full IDB scan
-      // before starting the network recovery path.
-      let localCachedLeads = [];
-      if (!forceFull) {
         try {
-          const cacheReadPromise = getLocalLeads({
-            onPreview: preview => {
-              if (!effectActive || networkPublished || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
-              const firstLeads = preview.sort(sortLeadsByDateDesc);
-              rawLeadsRef.current = firstLeads;
-              setRawLeads(firstLeads);
-              setSyncLoadedCount(firstLeads.length);
+          cacheMeta = JSON.parse(localStorage.getItem(cacheMetaKey) || 'null');
+        } catch (e) {}
+
+        // Restore the full local cache before choosing delta/full sync. A slow
+        // read is not an empty database; the reader has its own bounded fallback.
+        let localCachedLeads = [];
+        if (!forceFull) {
+          try {
+            const cacheContext = { userId, userCompany, userRole };
+            const canRestoreCache = matchesLeadCacheContext(cacheMeta, cacheContext);
+            localCachedLeads = await getLocalLeads({
+              onPreview: preview => {
+                if (!effectActive || !canRestoreCache || networkPublished || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
+                const firstLeads = preview.sort(sortLeadsByDateDesc);
+                rawLeadsRef.current = firstLeads;
+                setRawLeads(firstLeads);
+                setSyncLoadedCount(firstLeads.length);
+                setLoadingLeads(false);
+                saveFastLeadsSnapshot(firstLeads, userId, { userCompany, userRole });
+              }
+            });
+            if (!effectActive) return;
+            if (!canRestoreCache) localCachedLeads = [];
+            if (localCachedLeads.length > 0) {
+              const restored = mergeLeadCacheForDisplay(localCachedLeads, rawLeadsRef.current, {
+                protectedIds: protectedIds(), removedIds: removedDuringSync
+              }).sort(sortLeadsByDateDesc);
+              setRawLeads(restored);
+              rawLeadsRef.current = restored;
+              setSyncLoadedCount(restored.length);
               setLoadingLeads(false);
-              saveFastLeadsSnapshot(firstLeads, userId, { userCompany, userRole });
+              markLeadStartupTiming('full-cache-restored', { count: restored.length });
+              saveFastLeadsSnapshot(restored, userId, { userCompany, userRole });
+              saveLocalLeadsPreview(restored, cacheMeta?.generation, userCompany, userRole).catch(() => {});
+            } else {
+              // Keep current view if fast cache already populated in memory
+              setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
             }
-          });
-          let cacheWaitTimer;
-          const cacheRead = await Promise.race([
-            cacheReadPromise.then(leads => ({ complete: true, leads })),
-            new Promise(resolve => {
-              cacheWaitTimer = setTimeout(() => resolve({ complete: false, leads: [] }), 3500);
-            })
-          ]);
-          clearTimeout(cacheWaitTimer);
-          localCachedLeads = cacheRead.leads;
-          if (!cacheRead.complete) {
-            cacheReadPromise.then(leads => {
-              if (!effectActive || networkPublished || !Array.isArray(leads) || leads.length <= rawLeadsRef.current.length) return;
-              rawLeadsRef.current = leads;
-              setRawLeads(leads);
-              setSyncLoadedCount(leads.length);
-              setLoadingLeads(false);
-              saveFastLeadsSnapshot(leads, userId, { userCompany, userRole });
-            }).catch(() => {});
-          }
-          if (Array.isArray(localCachedLeads) && localCachedLeads.length > 0) {
-            setRawLeads(localCachedLeads);
-            rawLeadsRef.current = localCachedLeads;
-            setSyncLoadedCount(localCachedLeads.length);
-            setLoadingLeads(false);
-            saveFastLeadsSnapshot(localCachedLeads, userId, { userCompany, userRole });
-            saveLocalLeadsPreview(localCachedLeads, cacheMeta?.generation, userCompany, userRole).catch(() => {});
-          } else {
-            // Keep current view if fast cache already populated in memory
+          } catch (cacheErr) {
+            console.warn("Local leads cache read error:", cacheErr);
             setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
           }
-        } catch (cacheErr) {
-          console.warn("Local leads cache read error:", cacheErr);
-          setLoadingLeads(rawLeadsRef.current && rawLeadsRef.current.length > 0 ? false : true);
+        } else {
+          setLoadingLeads(rawLeadsRef.current?.length > 0 ? false : true);
         }
-      } else {
-        setLoadingLeads(rawLeadsRef.current?.length > 0 ? false : true);
-      }
 
-      // ⚡ PERF FIX (Option 2): Server-side company + assignment scoping for regular agents.
-      // Regular agents only download: (1) leads assigned to them + (2) open pool (unassigned) leads.
-      // Admins, managers, and viewAll users still download all leads.
-      const _isAdminUser = userRole === 'admin' || userRole === 'Admin';
-      const _isPrivilegedUser = _isAdminUser || Boolean(moduleAccess?.leads?.is_manager) || Boolean(globalRolePermissions?.viewAll);
-      const _agentCompanyFilter = (!_isAdminUser && userCompany && userCompany.trim() !== '')
-        ? userCompany.trim()
-        : null;
-      const _agentAssignees = (!_isPrivilegedUser && (userId || userName))
-        ? [...new Set([userId, userName].filter(Boolean))]
-        : null;
+        // ⚡ PERF FIX (Option 2): Server-side company + assignment scoping for regular agents.
+        // Regular agents only download: (1) leads assigned to them + (2) open pool (unassigned) leads.
+        // Admins, managers, and viewAll users still download all leads.
+        const _isAdminUser = userRole === 'admin' || userRole === 'Admin';
+        const _isPrivilegedUser = _isAdminUser || Boolean(moduleAccess?.leads?.is_manager) || Boolean(globalRolePermissions?.viewAll);
+        const _agentCompanyFilter = (!_isAdminUser && userCompany && userCompany.trim() !== '')
+          ? userCompany.trim()
+          : null;
+        const _agentAssignees = (!_isPrivilegedUser && (userId || userName))
+          ? [...new Set([userId, userName].filter(Boolean))]
+          : null;
 
-      const applyLeadScope = (query) => {
-        let q = query;
-        if (_agentCompanyFilter) {
-          if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-            q = q.in('our_company', ['NSTL', 'NSTLP']);
-          } else {
-            q = q.eq('our_company', _agentCompanyFilter);
-          }
-        }
-        if (_agentAssignees && _agentAssignees.length > 0) {
-          const orParts = ['assigned_to.is.null'];
-          for (const a of _agentAssignees) {
-            const clean = String(a).replace(/"/g, '').trim();
-            if (clean) orParts.push(`assigned_to.eq."${clean}"`);
-          }
-          q = q.or(orParts.join(','));
-        }
-        return q;
-      };
-
-      const fetchLeadCount = async () => {
-        try {
-          let countQuery = supabase
-            .from('leads')
-            .select('*', { count: 'exact', head: true });
-          countQuery = applyLeadScope(countQuery);
-          const { count, error: countError } = await countQuery;
-          if (countError) throw countError;
-          if (Number.isSafeInteger(count)) setSyncTotalCount(count);
-          return Number.isSafeInteger(count) ? count : 0;
-        } catch (e) {
-          console.warn("Failed to fetch leads count:", e);
-          return 0;
-        }
-      };
-
-      // Default to optimal 1000 pageSize to minimize HTTP requests
-      let pageSize = 1000;
-      try {
-        const saved = localStorage.getItem('crm_config');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.leadSyncChunkSize) {
-            if (parsed.leadSyncChunkSize === 'all') {
-              pageSize = 100000;
+        const applyLeadScope = (query) => {
+          let q = query;
+          if (_agentCompanyFilter) {
+            if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
+              q = q.in('our_company', ['NSTL', 'NSTLP']);
             } else {
-              pageSize = parseInt(parsed.leadSyncChunkSize, 10) || 1000;
+              q = q.eq('our_company', _agentCompanyFilter);
             }
           }
-        }
-      } catch (e) {
-        console.error("Failed to load leadSyncChunkSize:", e);
-      }
-      
-      // Cap at Supabase page size limit (1000)
-      const queryPageSize = Math.min(1000, pageSize);
-      
-      let loadedLeads = [];
-      
-      // Helper function to fetch a single page of leads with retry logic
-      const fetchLeadsPageWithRetry = async (p, retries = 3) => {
-        for (let attempt = 1; attempt <= retries; attempt++) {
+          if (_agentAssignees && _agentAssignees.length > 0) {
+            const orParts = ['assigned_to.is.null'];
+            for (const a of _agentAssignees) {
+              const clean = String(a).replace(/"/g, '').trim();
+              if (clean) orParts.push(`assigned_to.eq."${clean}"`);
+            }
+            q = q.or(orParts.join(','));
+          }
+          return q;
+        };
+
+        const fetchLeadCount = async () => {
           try {
-            let query = supabase
+            let countQuery = supabase
+              .from('leads')
+              .select('*', { count: 'exact', head: true });
+            countQuery = applyLeadScope(countQuery);
+            const { count, error: countError } = await countQuery;
+            if (countError) throw countError;
+            if (Number.isSafeInteger(count)) setSyncTotalCount(count);
+            return Number.isSafeInteger(count) ? count : 0;
+          } catch (e) {
+            console.warn("Failed to fetch leads count:", e);
+            return 0;
+          }
+        };
+
+        // Default to optimal 1000 pageSize to minimize HTTP requests
+        let pageSize = 1000;
+        try {
+          const saved = localStorage.getItem('crm_config');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.leadSyncChunkSize) {
+              if (parsed.leadSyncChunkSize === 'all') {
+                pageSize = 100000;
+              } else {
+                pageSize = parseInt(parsed.leadSyncChunkSize, 10) || 1000;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load leadSyncChunkSize:", e);
+        }
+
+        // Cap at Supabase page size limit (1000)
+        const queryPageSize = Math.min(1000, pageSize);
+
+        let loadedLeads = [];
+
+        // Helper function to fetch a single page of leads with retry logic
+        const fetchLeadsPageWithRetry = async (p, retries = 3) => {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              let query = supabase
+                .from('leads')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .order('id');
+              query = applyLeadScope(query);
+              query = query.range(p * queryPageSize, (p + 1) * queryPageSize - 1);
+
+              const { data, error } = await query;
+
+              if (error) throw error;
+              return data || [];
+            } catch (err) {
+              console.warn(`Attempt ${attempt} failed for leads Page ${p}:`, err);
+              if (attempt === retries) throw err;
+              await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+          }
+        };
+
+        // Helper function to fetch a single page of notes with retry logic
+        const fetchNotesPageWithRetry = async (p, notesPageSize, retries = 3) => {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              const { data, error } = await supabase
+                .from('lead_notes')
+                .select('id, lead_id, created_at, note_text, created_by')
+                .order('created_at', { ascending: false })
+                .range(p * notesPageSize, (p + 1) * notesPageSize - 1);
+
+              if (error) throw error;
+              return data || [];
+            } catch (err) {
+              console.warn(`Attempt ${attempt} failed for notes Page ${p}:`, err);
+              if (attempt === retries) throw err;
+              await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+          }
+        };
+
+        const fetchAssignedLeads = async () => {
+          if (!_agentCompanyFilter || !userId) return [];
+          const assignees = [...new Set([userId, userName].filter(Boolean))];
+          const assigned = [];
+          for (let page = 0; page < 100; page++) {
+            const { data, error } = await supabase
               .from('leads')
               .select('*')
+              .in('assigned_to', assignees)
               .order('created_at', { ascending: false })
-              .order('id');
-            query = applyLeadScope(query);
-            query = query.range(p * queryPageSize, (p + 1) * queryPageSize - 1);
-
-            const { data, error } = await query;
-            
+              .order('id')
+              .range(page * 1000, (page + 1) * 1000 - 1);
             if (error) throw error;
-            return data || [];
-          } catch (err) {
-            console.warn(`Attempt ${attempt} failed for leads Page ${p}:`, err);
-            if (attempt === retries) throw err;
-            await new Promise(r => setTimeout(r, 1000 * attempt));
+            assigned.push(...(data || []));
+            if (!data || data.length < 1000) break;
+            if (page === 99) throw new Error('Assigned leads exceeded 100 pages');
           }
-        }
-      };
+          return assigned;
+        };
 
-      // Helper function to fetch a single page of notes with retry logic
-      const fetchNotesPageWithRetry = async (p, notesPageSize, retries = 3) => {
-        for (let attempt = 1; attempt <= retries; attempt++) {
-          try {
-            const { data, error } = await supabase
-              .from('lead_notes')
-              .select('id, lead_id, created_at, note_text, created_by')
-              .order('created_at', { ascending: false })
-              .range(p * notesPageSize, (p + 1) * notesPageSize - 1);
-            
-            if (error) throw error;
-            return data || [];
-          } catch (err) {
-            console.warn(`Attempt ${attempt} failed for notes Page ${p}:`, err);
-            if (attempt === retries) throw err;
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      };
-
-      const fetchAssignedLeads = async () => {
-        if (!_agentCompanyFilter || !userId) return [];
-        const assignees = [...new Set([userId, userName].filter(Boolean))];
-        const assigned = [];
-        for (let page = 0; page < 100; page++) {
-          const { data, error } = await supabase
-            .from('leads')
-            .select('*')
-            .in('assigned_to', assignees)
-            .order('created_at', { ascending: false })
-            .order('id')
-            .range(page * 1000, (page + 1) * 1000 - 1);
-          if (error) throw error;
-          assigned.push(...(data || []));
-          if (!data || data.length < 1000) break;
-          if (page === 99) throw new Error('Assigned leads exceeded 100 pages');
-        }
-        return assigned;
-      };
-
-      try {
+        if (!effectActive) return;
         // A fast snapshot contains at most 300 rows. A partial IndexedDB write
         // must never switch the first load into delta-only mode.
         const hasValidLocalCache = !forceFull && isCompleteLeadCache(cacheMeta, localCachedLeads, {
@@ -1522,9 +1542,7 @@ export default function CRMContainer({
           // =========================================================================
           // HIGH-EFFICIENCY DELTA SYNC (Conserves 99% Supabase Egress & Eliminates Lag)
           // =========================================================================
-          const baseLeads = (Array.isArray(localCachedLeads) && localCachedLeads.length > 0)
-            ? localCachedLeads
-            : (rawLeadsRef.current || []);
+          const baseLeads = rawLeadsRef.current || localCachedLeads;
 
           const lastSyncTime = cacheMeta?.syncedAt;
 
@@ -1655,6 +1673,7 @@ export default function CRMContainer({
                 generation: cacheMeta?.generation || syncStartedAt
               }));
               localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+              refreshStagePreview(cacheMeta.generation);
             } catch (e) {}
             return;
           }
@@ -1718,7 +1737,10 @@ export default function CRMContainer({
             }
           }
 
-          const finalMerged = Array.from(leadsMap.values()).sort(sortLeadsByDateDesc);
+          if (!effectActive) return;
+          const finalMerged = mergeLeadCacheForDisplay(Array.from(leadsMap.values()), rawLeadsRef.current, {
+            protectedIds: protectedIds(), removedIds: removedDuringSync, keepMissing: false
+          }).sort(sortLeadsByDateDesc);
           networkPublished = true;
           setRawLeads(finalMerged);
           rawLeadsRef.current = finalMerged;
@@ -1744,6 +1766,7 @@ export default function CRMContainer({
               generation: cacheMeta.generation
             }));
             localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+            refreshStagePreview(cacheMeta.generation);
             saveLocalLeadsPreview(finalMerged, cacheMeta.generation, userCompany, userRole).catch(() => {});
           } catch (e) {
             console.warn("Failed to upsert delta leads locally:", e);
@@ -1755,18 +1778,25 @@ export default function CRMContainer({
           // 1. Fetch Page 0 of leads first for instant UI response (top 1000 in ~250ms)
           const countPromise = fetchLeadCount();
           const page0Data = await fetchLeadsPageWithRetry(0);
+          if (!effectActive) return;
           loadedLeads = [...page0Data];
           
           // Render first chunk immediately so table and dashboard display immediately
           const initialChunk = loadedLeads.map(l => ({ ...l, lead_notes: [] }));
           networkPublished = true;
-          setRawLeads(initialChunk);
-          rawLeadsRef.current = initialChunk;
-          setSyncLoadedCount(loadedLeads.length);
+          // Keep a complete (including aged) cache on screen until the full
+          // replacement is available. Never shrink it to the first server page.
+          if (rawLeadsRef.current.length <= initialChunk.length) {
+            const firstPage = mergeLeadCacheForDisplay(initialChunk, rawLeadsRef.current, {
+              protectedIds: protectedIds(), removedIds: removedDuringSync
+            }).sort(sortLeadsByDateDesc);
+            setRawLeads(firstPage);
+            rawLeadsRef.current = firstPage;
+          }
+          setSyncLoadedCount(rawLeadsRef.current.length);
           setLoadingLeads(false);
-          saveFastLeadsSnapshot(initialChunk, userId, { userCompany, userRole });
-          saveLocalLeadsPreview(initialChunk, syncStartedAt, userCompany, userRole).catch(() => {});
-          upsertLeadsLocally(initialChunk).catch(() => {});
+          saveFastLeadsSnapshot(rawLeadsRef.current, userId, { userCompany, userRole });
+          // Publish the new cache generation only after the complete write.
 
           // 2. Fetch remaining pages of leads in parallel batches of 5 (High Concurrency Background Sync)
           const total = await countPromise;
@@ -1810,7 +1840,10 @@ export default function CRMContainer({
               uniqueMap.set(lead.id, { ...lead, lead_notes: [] });
             }
           }
-          const finalLeads = Array.from(uniqueMap.values()).sort(sortLeadsByDateDesc);
+          if (!effectActive) return;
+          const finalLeads = mergeLeadCacheForDisplay(Array.from(uniqueMap.values()), rawLeadsRef.current, {
+            protectedIds: protectedIds(), removedIds: removedDuringSync, keepMissing: false
+          }).sort(sortLeadsByDateDesc);
           setRawLeads(finalLeads);
           rawLeadsRef.current = finalLeads;
           setSyncLoadedCount(finalLeads.length);
@@ -1825,6 +1858,7 @@ export default function CRMContainer({
                   generation: syncStartedAt
                 }));
                 localStorage.setItem('crm_last_lead_sync_timestamp', syncStartedAt);
+                refreshStagePreview(syncStartedAt);
                 saveFastLeadsSnapshot(finalLeads, userId, { userCompany, userRole });
                 saveLocalLeadsPreview(finalLeads, syncStartedAt, userCompany, userRole).catch(() => {});
               } catch (e) {}
@@ -1883,13 +1917,20 @@ export default function CRMContainer({
         });
         try {
           const localCache = await getLocalLeads();
-          if (localCache && localCache.length > 0) {
-            setRawLeads(localCache);
+          if (effectActive && matchesLeadCacheContext(cacheMeta, { userId, userCompany, userRole }) && localCache.length > 0) {
+            const restored = mergeLeadCacheForDisplay(localCache, rawLeadsRef.current, {
+              protectedIds: protectedIds(), removedIds: removedDuringSync
+            }).sort(sortLeadsByDateDesc);
+            rawLeadsRef.current = restored;
+            setRawLeads(restored);
           }
         } catch (e) {}
       } finally {
-        setLoadingLeads(false);
-        setIsSyncing(false);
+        markLeadStartupTiming('sync-complete');
+        if (effectActive) {
+          setLoadingLeads(false);
+          setIsSyncing(false);
+        }
         leadSyncInFlightRef.current = false;
         if (pendingLeadSyncRef.current !== null) {
           const nextForceFull = pendingLeadSyncRef.current;
@@ -1906,6 +1947,7 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         const newRow = payload.new;
         if (!newRow || !newRow.id) return;
+        if (leadSyncInFlightRef.current) changedDuringSync.add(newRow.id);
         upsertLeadsLocally([{ ...newRow, lead_notes: [] }]);
         setRawLeads((current) => {
           if (current.some(item => item.id === newRow.id)) return current;
@@ -1919,6 +1961,7 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         const updatedRow = payload.new;
         if (!updatedRow || !updatedRow.id) return;
+        if (leadSyncInFlightRef.current) changedDuringSync.add(updatedRow.id);
         // Skip echo if lead was recently updated by this client locally (< 8 seconds ago)
         const lastLocalLeadUpdate = recentLocalUpdatesRef.current.get(updatedRow.id);
         if (lastLocalLeadUpdate && (Date.now() - lastLocalLeadUpdate < 8000)) {
@@ -1964,6 +2007,7 @@ export default function CRMContainer({
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         const deletedId = payload?.old?.id;
         if (deletedId) {
+          if (leadSyncInFlightRef.current) removedDuringSync.add(deletedId);
           deleteLeadLocally(deletedId);
           setRawLeads((current) => current.filter(item => item.id !== deletedId));
           setLeads((current) => current.filter(item => item.id !== deletedId));
@@ -2224,10 +2268,16 @@ export default function CRMContainer({
   const [lastScreenCapture, setLastScreenCapture] = useState(null);
   const screenCaptureRequestRef = useRef(0);
   const [leadsFilterStage, setLeadsFilterStage] = useState(() => {
-    const stage = initialSearchParams?.stage;
-    if (stage === 'all') return null;
-    return stage || null;
+    return initialLeadStage;
   });
+  useEffect(() => {
+    if (activeTab !== 'leads' || !leadsFilterStage || leads.length === 0) return;
+    const preview = getLeadStagePreview(leads, leadsFilterStage);
+    stagePreviewStateRef.current = { stageKey: leadsFilterStage, leads: preview, userId, userCompany, userRole };
+    if (preview.length === 0) return;
+    saveFastLeadsSnapshot(preview, userId, { userCompany, userRole, stageKey: leadsFilterStage });
+    saveLocalLeadsPreview(preview, undefined, userCompany, userRole, leadsFilterStage).catch(() => {});
+  }, [leads, leadsFilterStage, activeTab, userId, userCompany, userRole]);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
 
   // Global Keyboard shortcut for Intelligent Spotlight Search (Cmd+K / Ctrl+K)
@@ -2309,8 +2359,6 @@ export default function CRMContainer({
   }, [leadsFilterStage]);
 
   useEffect(() => {
-    setIsMounted(true);
-    
     // Sync initial sidebar collapse state from localStorage on mount
     const collapsed = localStorage.getItem('crm-sidebar-collapsed') === 'true';
     setIsSidebarCollapsed(collapsed);
@@ -3411,6 +3459,12 @@ export default function CRMContainer({
     const checklistTimer = setInterval(checkChecklistSlots, 10000);
     return () => clearInterval(checklistTimer);
   }, []);
+
+  useEffect(() => {
+    markLeadStartupTiming('content-gate', { isMounted, activeTab, loadingLeads,
+      count: leads.length, offlineAllowed: isCurrentTabAllowedOffline,
+      leadsVisited: visitedTabs.has('leads') });
+  }, [isMounted, activeTab, loadingLeads, leads.length, isCurrentTabAllowedOffline, visitedTabs]);
 
   if (userRole === 'customer') {
     return (
@@ -6271,23 +6325,27 @@ export default function CRMContainer({
                   {loadingLeads && (!leads || leads.length === 0) ? (
                     <WorkspaceSkeleton variant="table" />
                   ) : (
-                    <LeadTable 
-                      initialData={leads} 
-                      canImportExport={canImportExport} 
-                      canWrite={canWrite} 
-                      onLeadsChange={handleLeadsChange} 
-                      searchQuery={activeSearchQuery} 
-                      stageFilter={leadsFilterStage} 
-                      onStageChange={handleStageChange} 
-                      teamMembers={teamMembers} 
-                      userRole={userRole} 
-                      userId={userId} 
-                      userName={userName} 
-                      moduleAccess={moduleAccess} 
-                      globalRolePermissions={globalRolePermissions}
-                      pendingLeadToOpen={pendingLeadToOpen}
-                      onLeadOpened={() => setPendingLeadToOpen(null)}
-                    />
+                    <React.Profiler id="lead-table" onRender={(_id, phase, duration) => {
+                      markLeadStartupTiming('table-render', { renderPhase: phase, durationMs: Math.round(duration), sourceCount: leads.length });
+                    }}>
+                      <LeadTable
+                        initialData={leads}
+                        canImportExport={canImportExport}
+                        canWrite={canWrite}
+                        onLeadsChange={handleLeadsChange}
+                        searchQuery={activeSearchQuery}
+                        stageFilter={leadsFilterStage}
+                        onStageChange={handleStageChange}
+                        teamMembers={teamMembers}
+                        userRole={userRole}
+                        userId={userId}
+                        userName={userName}
+                        moduleAccess={moduleAccess}
+                        globalRolePermissions={globalRolePermissions}
+                        pendingLeadToOpen={pendingLeadToOpen}
+                        onLeadOpened={() => setPendingLeadToOpen(null)}
+                      />
+                    </React.Profiler>
                   )}
                 </ErrorBoundary>
               </KeepAliveTab>

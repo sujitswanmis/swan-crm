@@ -16,7 +16,7 @@ import {
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
-import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally, matchesLeadPreviewStage, markLeadStartupTiming } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import Papa from 'papaparse';
@@ -1077,6 +1077,44 @@ const isLeadContentChanged = (a, b) => {
   return false;
 };
 
+// Publish a bounded first batch immediately, then prepare each remaining row
+// once. Cancellation prevents an older dataset from replacing newer edits.
+export function prepareLeadTableRows(rows, teamMembers, {
+  seed = [], onPreview, onComplete, processRows = processLeads,
+  onError = error => console.warn('Lead table background preparation failed:', error),
+  schedule = callback => setTimeout(callback, 0), cancel = clearTimeout
+} = {}) {
+  let cancelled = false;
+  let timer;
+  const processed = [...seed];
+  let offset = seed.length;
+  if (offset === 0) {
+    const nextOffset = Math.min(400, rows.length);
+    processed.push(...processRows(rows.slice(0, nextOffset), teamMembers, 0));
+    offset = nextOffset;
+  }
+  onPreview?.([...processed]);
+  const processBatch = () => {
+    if (cancelled) return;
+    try {
+      const nextOffset = Math.min(offset + 400, rows.length);
+      processed.push(...processRows(rows.slice(offset, nextOffset), teamMembers, offset));
+      offset = nextOffset;
+      if (offset < rows.length) timer = schedule(processBatch);
+      else onComplete(processed);
+    } catch (error) {
+      cancelled = true;
+      onError(error);
+    }
+  };
+  if (offset < rows.length) timer = schedule(processBatch);
+  else onComplete(processed);
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) cancel(timer);
+  };
+}
+
 export default function LeadTable({ 
   initialData = [], 
   canImportExport, 
@@ -1097,7 +1135,11 @@ export default function LeadTable({
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
 
-  const [data, setData] = useState(() => processLeads(initialData || [], teamMembers));
+  const [initialPreparation] = useState(() => ({
+    rows: initialData, teamMembers,
+    prepared: processLeads((initialData || []).slice(0, 400), teamMembers)
+  }));
+  const [data, setData] = useState(initialPreparation.prepared);
 
   const stagePrefix = stageFilter ? stageFilter.split(' - ')[0].replace(/^0/, '') + ';' : null;
   const showStage = (prefix) => !stagePrefix || stagePrefix === prefix;
@@ -1159,15 +1201,17 @@ export default function LeadTable({
     }, 120);
   };
   
-  const prevInitialDataRef = useRef(null);
+  // A partial preparation must never qualify for the targeted-update shortcut.
+  const prevInitialDataRef = useRef(initialPreparation.rows?.length <= 400 ? initialPreparation.rows : null);
   const prevTeamMembersRef = useRef(teamMembers);
   const localUpdatedLeadIdsRef = useRef(new Set());
+  const latestTableDataRef = useRef(data);
+  useEffect(() => { latestTableDataRef.current = data; }, [data]);
 
   useEffect(() => {
     const rows = initialData || [];
     const prevRows = prevInitialDataRef.current;
     const teamMembersChanged = prevTeamMembersRef.current !== teamMembers;
-    prevTeamMembersRef.current = teamMembers;
 
     // Fast-path 1: Exact reference match and team members unchanged -> nothing to do
     if (prevRows === rows && !teamMembersChanged) {
@@ -1220,35 +1264,34 @@ export default function LeadTable({
       }
     }
 
-    // Full batch processing path: Initial load, stage tab switch, company filter switch, or bulk import
-    prevInitialDataRef.current = rows;
-
-    if (rows.length <= 400) {
-      setData(processLeads(rows, teamMembers));
-      return;
-    }
-
-    let cancelled = false;
-    let timer;
-    let offset = 0;
-    const processed = [];
-    const processBatch = () => {
-      if (cancelled) return;
-      const nextOffset = Math.min(offset + 400, rows.length);
-      processed.push(...processLeads(rows.slice(offset, nextOffset), teamMembers, offset));
-      offset = nextOffset;
-      if (offset < rows.length) {
-        timer = setTimeout(processBatch, 0);
-      } else {
-        setData(processed);
+    // Initial rows were already prepared for the first render; reuse them.
+    const seed = rows === initialPreparation.rows && teamMembers === initialPreparation.teamMembers
+      ? initialPreparation.prepared : [];
+    const startedAt = performance.now();
+    const localRowsAtStart = new Map(latestTableDataRef.current
+      .filter(row => localUpdatedLeadIdsRef.current.has(row.id)).map(row => [row.id, row]));
+    markLeadStartupTiming('table-preparation-start', { count: rows.length });
+    return prepareLeadTableRows(rows, teamMembers, {
+      seed,
+      // Keep the selected stage's cached rows visible until the entire new
+      // list is ready; its first 400 rows can belong to a different stage.
+      onPreview: preview => setData(current => current.length > 0 ? current : preview),
+      onComplete: processed => {
+        prevInitialDataRef.current = rows;
+        prevTeamMembersRef.current = teamMembers;
+        setData(current => {
+          if (localUpdatedLeadIdsRef.current.size === 0) return processed;
+          const localRows = new Map(current.filter(row => localUpdatedLeadIdsRef.current.has(row.id) &&
+            localRowsAtStart.get(row.id) !== row)
+            .map(row => [row.id, row]));
+          return processed.map(row => localRows.get(row.id) || row);
+        });
+        markLeadStartupTiming('table-preparation-complete', {
+          count: processed.length, durationMs: Math.round(performance.now() - startedAt)
+        });
       }
-    };
-    timer = setTimeout(processBatch, 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [initialData, teamMembers]);
+    });
+  }, [initialData, teamMembers, initialPreparation]);
 
   useEffect(() => {
     if (searchQuery !== undefined && searchQuery !== null) {
@@ -1682,12 +1725,7 @@ export default function LeadTable({
   const stageFilteredData = useMemo(() => {
     let result = data;
     if (stageFilter && stageFilter !== 'all' && stageFilter !== 'lead_dashboard' && stageFilter !== 'dashboard' && stageFilter !== 'hourly_work') {
-      const prefix = stageFilter.split(' - ')[0].replace(/^0/, '') + ';';
-      result = result.filter(lead => {
-        const st = lead.status || '';
-        if (prefix === '1;' && (!st || !/^[1-7];/.test(st))) return true;
-        return st.startsWith(prefix) || st === stageFilter;
-      });
+      result = result.filter(lead => matchesLeadPreviewStage(lead, stageFilter));
     }
 
     // Apply Advanced Multi-Column Rules (with AND / OR short-circuit logic)
@@ -1820,6 +1858,14 @@ export default function LeadTable({
       }
     }
   });
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    markLeadStartupTiming('table-committed', {
+      count: data.length, sourceCount: initialData.length,
+      visibleRows: table.getRowModel().rows.length, pageSize: table.getState().pagination.pageSize
+    });
+  }, [data, initialData.length, table]);
 
   const getUniqueValues = (columnId) => {
     const pad = (n) => String(n).padStart(2, '0');
