@@ -1269,6 +1269,7 @@ export default function CRMContainer({
   const pendingLeadSyncRef = useRef(null);
   const realtimeNeedsCatchupRef = useRef(false);
   const prevLeadsSigRef = useRef('');
+  const initialSyncFinishedRef = useRef(false);
   const saveLeadsTimeoutRef = useRef(null);
   const recentLocalUpdatesRef = useRef(new Map());
   const isLocalLeadsUpdateRef = useRef(false);
