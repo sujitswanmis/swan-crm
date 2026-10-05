@@ -4,6 +4,23 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
 import { formatISTDateTime } from '../utils/userManagementUtils';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_AUDIT_LOGS_COL_WIDTHS = {
+  user: 220,
+  action: 160,
+  target: 320,
+  source: 150,
+  timestamp: 190
+};
+
+const MIN_AUDIT_LOGS_COL_WIDTHS = {
+  user: 140,
+  action: 110,
+  target: 180,
+  source: 100,
+  timestamp: 140
+};
 
 export default function AuditLogsTab() {
   const [logs, setLogs] = useState([]);
@@ -13,6 +30,19 @@ export default function AuditLogsTab() {
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
   const pageSize = 25;
+
+  // Column Resizing Hook (Lead Data Pattern)
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'audit_logs_tab_col_widths',
+    DEFAULT_AUDIT_LOGS_COL_WIDTHS,
+    MIN_AUDIT_LOGS_COL_WIDTHS
+  );
 
   const fetchLogs = async (page = currentPage) => {
     setLoading(true);
@@ -151,7 +181,7 @@ export default function AuditLogsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${Math.max(1040, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -164,11 +194,36 @@ export default function AuditLogsTab() {
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.75rem 1rem', width: '220px' }}>User / Performer</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Action</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Target & Details</th>
-                <th style={{ padding: '0.75rem 1rem', width: '140px' }}>IP / Source</th>
-                <th style={{ padding: '0.75rem 1rem', width: '190px' }}>Timestamp (IST)</th>
+                <th style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>User / Performer</span>
+                  </div>
+                  <ColumnResizer colKey="user" isResizing={resizingCol === 'user'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</span>
+                  </div>
+                  <ColumnResizer colKey="action" isResizing={resizingCol === 'action'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Target & Details</span>
+                  </div>
+                  <ColumnResizer colKey="target" isResizing={resizingCol === 'target'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>IP / Source</span>
+                  </div>
+                  <ColumnResizer colKey="source" isResizing={resizingCol === 'source'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Timestamp (IST)</span>
+                  </div>
+                  <ColumnResizer colKey="timestamp" isResizing={resizingCol === 'timestamp'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -190,16 +245,16 @@ export default function AuditLogsTab() {
                       backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
                     }}
                   >
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.emp_name || 'System User'}>
                         {log.emp_name || 'System User'}
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.email || 'system@internal'}>
                         {log.email || 'system@internal'}
                       </div>
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    <td style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', boxSizing: 'border-box' }}>
                       <span style={{
                         fontSize: '0.72rem',
                         fontWeight: 700,
@@ -207,26 +262,28 @@ export default function AuditLogsTab() {
                         borderRadius: '6px',
                         backgroundColor: '#f1f5f9',
                         color: '#334155',
-                        border: '1px solid #cbd5e1'
+                        border: '1px solid #cbd5e1',
+                        display: 'inline-block',
+                        whiteSpace: 'nowrap'
                       }}>
                         {log.action || 'Action'}
                       </span>
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                      <div style={{ fontWeight: 500 }}>{log.target || 'N/A'}</div>
+                    <td style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.4, boxSizing: 'border-box' }}>
+                      <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.target || 'N/A'}>{log.target || 'N/A'}</div>
                       {log.details && typeof log.details === 'string' && log.details !== log.target && (
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.details}>
                           {log.details}
                         </div>
                       )}
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.ip_address || log.ip || '—'}>
                       {log.ip_address || log.ip || '—'}
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
                       {formatISTDateTime(log.created_at || log.timestamp)}
                     </td>
                   </tr>

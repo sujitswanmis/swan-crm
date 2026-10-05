@@ -7,6 +7,23 @@ import {
 } from 'lucide-react';
 import { toggleUserApproval, updateEmployeeDetailsAdmin } from '@/app/actions/team';
 import { HoverIconButton, formatISTDateTime } from '../utils/userManagementUtils';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_PUBLIC_USERS_COL_WIDTHS = {
+  customer: 240,
+  contact: 180,
+  registered_date: 160,
+  approval: 160,
+  actions: 140
+};
+
+const MIN_PUBLIC_USERS_COL_WIDTHS = {
+  customer: 140,
+  contact: 120,
+  registered_date: 110,
+  approval: 120,
+  actions: 100
+};
 
 export default function PublicUsersTab({
   users = [],
@@ -16,6 +33,19 @@ export default function PublicUsersTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterApproved, setFilterApproved] = useState('All'); // 'All' | 'Approved' | 'Pending'
   const [togglingId, setTogglingId] = useState(null);
+
+  // Column Resizing Hook (Lead Data Pattern)
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'public_users_table_col_widths',
+    DEFAULT_PUBLIC_USERS_COL_WIDTHS,
+    MIN_PUBLIC_USERS_COL_WIDTHS
+  );
 
   // Edit Public User Modal State
   const [editingUser, setEditingUser] = useState(null);
@@ -208,7 +238,7 @@ export default function PublicUsersTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${Math.max(880, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -221,11 +251,36 @@ export default function PublicUsersTab({
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.75rem 1rem' }}>Customer / Client</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Contact</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Registered Date</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Portal Approval</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Actions</th>
+                <th style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Customer / Client</span>
+                  </div>
+                  <ColumnResizer colKey="customer" isResizing={resizingCol === 'customer'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.contact}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Contact</span>
+                  </div>
+                  <ColumnResizer colKey="contact" isResizing={resizingCol === 'contact'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.registered_date}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Registered Date</span>
+                  </div>
+                  <ColumnResizer colKey="registered_date" isResizing={resizingCol === 'registered_date'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.approval}px`, padding: '0.75rem 1rem', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Portal Approval</span>
+                  </div>
+                  <ColumnResizer colKey="approval" isResizing={resizingCol === 'approval'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
+                  </div>
+                  <ColumnResizer colKey="actions" isResizing={resizingCol === 'actions'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -247,26 +302,26 @@ export default function PublicUsersTab({
                       backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
                     }}
                   >
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.emp_name || 'Unnamed Client'}>
                         {u.emp_name || 'Unnamed Client'}
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.email}>
                         {u.email}
                       </div>
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>
+                    <td style={{ width: `${colWidths.contact}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.emp_mobile || 'No phone'}>
                         {u.emp_mobile ? `📞 ${u.emp_mobile}` : 'No phone'}
                       </div>
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    <td style={{ width: `${colWidths.registered_date}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={formatISTDateTime(u.created_at)}>
                       {formatISTDateTime(u.created_at)}
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    <td style={{ width: `${colWidths.approval}px`, padding: '0.75rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                       <button
                         type="button"
                         disabled={togglingId === u.user_id}
@@ -290,7 +345,7 @@ export default function PublicUsersTab({
                       </button>
                     </td>
 
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    <td style={{ width: `${colWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
                         <HoverIconButton
                           icon={Pencil}

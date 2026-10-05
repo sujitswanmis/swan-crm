@@ -1,6 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_AI_USERS_COL_WIDTHS = {
+  employee: 240,
+  role: 120,
+  token_usage: 220,
+  token_limit: 130,
+  premium_limit: 130,
+  ai_models: 260,
+  actions: 120
+};
+
+const MIN_AI_USERS_COL_WIDTHS = {
+  employee: 140,
+  role: 80,
+  token_usage: 150,
+  token_limit: 90,
+  premium_limit: 90,
+  ai_models: 160,
+  actions: 90
+};
 
 export default function AiAdminModule() {
   const [users, setUsers] = useState([]);
@@ -18,11 +39,23 @@ export default function AiAdminModule() {
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [customModelInput, setCustomModelInput] = useState("");
 
-  // Knowledge Base State
   const [documents, setDocuments] = useState([]);
   const [docTitle, setDocTitle] = useState("");
   const [docContent, setDocContent] = useState("");
   const [uploadingDoc, setUploadingDoc] = useState(false);
+
+  // Column Resizing Hook (Lead Data Pattern)
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'ai_admin_users_col_widths',
+    DEFAULT_AI_USERS_COL_WIDTHS,
+    MIN_AI_USERS_COL_WIDTHS
+  );
 
   const dropdownRef = useRef(null);
 
@@ -275,16 +308,51 @@ export default function AiAdminModule() {
       </div>
 
       <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left' }}>
+        <table style={{ width: `${Math.max(1220, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', tableLayout: 'fixed' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Employee</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Role</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Usage</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Token Limit</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Premium Limit</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Models</th>
-              <th style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Actions</th>
+              <th style={{ width: `${colWidths.employee}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee</span>
+                </div>
+                <ColumnResizer colKey="employee" isResizing={resizingCol === 'employee'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.role}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Role</span>
+                </div>
+                <ColumnResizer colKey="role" isResizing={resizingCol === 'role'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.token_usage}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Token Usage</span>
+                </div>
+                <ColumnResizer colKey="token_usage" isResizing={resizingCol === 'token_usage'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.token_limit}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Token Limit</span>
+                </div>
+                <ColumnResizer colKey="token_limit" isResizing={resizingCol === 'token_limit'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.premium_limit}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Premium Limit</span>
+                </div>
+                <ColumnResizer colKey="premium_limit" isResizing={resizingCol === 'premium_limit'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.ai_models}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>AI Models</span>
+                </div>
+                <ColumnResizer colKey="ai_models" isResizing={resizingCol === 'ai_models'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
+              <th style={{ width: `${colWidths.actions}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                  <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
+                </div>
+                <ColumnResizer colKey="actions" isResizing={resizingCol === 'actions'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -302,17 +370,17 @@ export default function AiAdminModule() {
 
               return (
                 <tr key={user.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <td style={{ padding: '1rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.name || 'Unknown User'}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{user.email}</div>
+                  <td style={{ width: `${colWidths.employee}px`, padding: '1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.name || 'Unknown User'}>{user.name || 'Unknown User'}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.email}>{user.email}</div>
                   </td>
-                  <td style={{ padding: '1rem' }}>
+                  <td style={{ width: `${colWidths.role}px`, padding: '1rem', boxSizing: 'border-box' }}>
                     <span style={{ padding: '0.25rem 0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', textTransform: 'capitalize' }}>
                       {user.role}
                     </span>
                   </td>
-                  <td style={{ padding: '1rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '180px' }}>
+                  <td style={{ width: `${colWidths.token_usage}px`, padding: '1rem', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                         <span style={{ fontWeight: 600, color: isDanger ? '#ef4444' : 'var(--text-primary)' }}>{user.total_tokens.toLocaleString()}</span>
                         <span style={{ color: 'var(--text-secondary)' }}>{usagePercent}%</span>
@@ -322,7 +390,7 @@ export default function AiAdminModule() {
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '1rem' }}>
+                  <td style={{ width: `${colWidths.token_limit}px`, padding: '1rem', boxSizing: 'border-box' }}>
                     {editingLimit === user.id ? (
                       <input 
                         type="number" 
@@ -334,7 +402,7 @@ export default function AiAdminModule() {
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.token_limit.toLocaleString()}</span>
                     )}
                   </td>
-                  <td style={{ padding: '1rem' }}>
+                  <td style={{ width: `${colWidths.premium_limit}px`, padding: '1rem', boxSizing: 'border-box' }}>
                     {editingLimit === user.id ? (
                       <input 
                         type="number" 
@@ -349,7 +417,7 @@ export default function AiAdminModule() {
                   </td>
                   
                   {/* Multi-Select Dropdown Column */}
-                  <td style={{ padding: '1rem', position: 'relative' }}>
+                  <td style={{ width: `${colWidths.ai_models}px`, padding: '1rem', position: 'relative', boxSizing: 'border-box' }}>
                     <div 
                       onClick={() => {
                         setModelSearch("");
@@ -558,7 +626,7 @@ export default function AiAdminModule() {
                     )}
                   </td>
 
-                  <td style={{ padding: '1rem' }}>
+                  <td style={{ width: `${colWidths.actions}px`, padding: '1rem', boxSizing: 'border-box' }}>
                     {editingLimit === user.id ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <button 

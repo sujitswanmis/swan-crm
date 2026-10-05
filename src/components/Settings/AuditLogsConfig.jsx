@@ -972,14 +972,15 @@ export default function AuditLogsConfig() {
                           padding: '0.85rem 1rem',
                           fontWeight: 600,
                           textAlign: col.align || 'left',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          boxSizing: 'border-box',
+                          verticalAlign: 'middle',
                           background: 'var(--th-bg)',
                           boxShadow: 'inset 0 -1px 0 var(--border-light), 0 2px 4px rgba(0,0,0,0.03)'
                         }}
                       >
-                        <span>{col.label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: col.align === 'center' ? 'center' : 'space-between', paddingRight: '8px' }}>
+                          <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>{col.label}</span>
+                        </div>
 
                         {/* Draggable Resizer between columns */}
                         {idx < DEFAULT_COLUMNS.length - 1 && (

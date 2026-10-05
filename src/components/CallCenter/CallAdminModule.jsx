@@ -66,6 +66,40 @@ const CALL_ADMIN_PLIVO_MIN_COL_WIDTHS = {
   cost: 80
 };
 
+const CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS = {
+  agent: 200,
+  calling_mode: 180,
+  sip_endpoint: 240,
+  password_set: 130,
+  status: 120,
+  actions: 90
+};
+
+const CALL_ADMIN_AGENTS_MIN_COL_WIDTHS = {
+  agent: 130,
+  calling_mode: 130,
+  sip_endpoint: 160,
+  password_set: 90,
+  status: 80,
+  actions: 70
+};
+
+const CALL_ADMIN_ENDPOINTS_DEFAULT_COL_WIDTHS = {
+  alias: 180,
+  username: 200,
+  sip_uri: 260,
+  app_linked: 140,
+  status: 140
+};
+
+const CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS = {
+  alias: 120,
+  username: 130,
+  sip_uri: 160,
+  app_linked: 100,
+  status: 100
+};
+
 // ─── Helpers ────────────────────────────────────────────────
 const TABS = [
   { id: 'agents',    label: 'Agents & Endpoints', icon: Users },
@@ -216,6 +250,19 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   const [adding, setAdding] = useState(false);
   const unassigned = users.filter(u => !agents.some(a => a.user_id === u.user_id));
 
+  // Column Resizing Hook (Lead Data Pattern)
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'calladmin_agents_col_widths',
+    CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS,
+    CALL_ADMIN_AGENTS_MIN_COL_WIDTHS
+  );
+
   const handleAdd = async () => {
     if (!selectedUserId) return;
     setAdding(true);
@@ -294,37 +341,70 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
           </h3>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+          <table style={{ width: `${Math.max(960, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
-              <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)', letterSpacing:'0.05em' }}>
-                {['Agent','Calling Mode','SIP Endpoint','Password Set','Status','Actions'].map(h => (
-                  <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>
-                ))}
+              <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
+                <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Agent</span>
+                  </div>
+                  <ColumnResizer colKey="agent" isResizing={resizingCol === 'agent'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.calling_mode}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Calling Mode</span>
+                  </div>
+                  <ColumnResizer colKey="calling_mode" isResizing={resizingCol === 'calling_mode'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.sip_endpoint}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>SIP Endpoint</span>
+                  </div>
+                  <ColumnResizer colKey="sip_endpoint" isResizing={resizingCol === 'sip_endpoint'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.password_set}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Password Set</span>
+                  </div>
+                  <ColumnResizer colKey="password_set" isResizing={resizingCol === 'password_set'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</span>
+                  </div>
+                  <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
+                  </div>
+                  <ColumnResizer colKey="actions" isResizing={resizingCol === 'actions'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
               </tr>
             </thead>
             <tbody>
               {agents.map((agent, i) => (
                 <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', whiteSpace:'nowrap' }}>
-                    <div>{agent.display_name}</div>
-                    {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8' }}>{agent.mobile_number}</div>}
+                  <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace:'nowrap' }} title={agent.display_name}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.display_name}</div>
+                    {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.mobile_number}</div>}
                   </td>
-                  <td style={{ padding:'1rem' }}>
+                  <td style={{ width: `${colWidths.calling_mode}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
                       value={agent.default_calling_mode || 'browser_webrtc'}
                       onChange={e => handleUpdate(agent.id, 'default_calling_mode', e.target.value)}
-                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', cursor:'pointer' }}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
                     >
                       <option value="browser_webrtc">🖥️ Browser WebRTC</option>
                       <option value="mobile">📱 Mobile Number</option>
                       <option value="external_softphone">☎️ External Softphone</option>
                     </select>
                   </td>
-                  <td style={{ padding:'1rem' }}>
+                  <td style={{ width: `${colWidths.sip_endpoint}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
                       value={agent.plivo_endpoint_key || ''}
                       onChange={e => handleEndpoint(agent.id, e.target.value)}
-                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', minWidth:'200px', cursor:'pointer' }}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', width: '100%', maxWidth: '100%', cursor:'pointer' }}
                     >
                       <option value="">— No Endpoint —</option>
                       {endpoints.map((ep, epIdx) => {
@@ -333,12 +413,12 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       })}
                     </select>
                     {agent.plivo_sip_uri && (
-                      <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace' }}>
+                      <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={agent.plivo_sip_uri}>
                         {agent.plivo_sip_uri}
                       </div>
                     )}
                   </td>
-                  <td style={{ padding:'1rem' }}>
+                  <td style={{ width: `${colWidths.password_set}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
                       {agent.plivo_password
                         ? <CheckCircle size={18} color="#16a34a" />
@@ -352,8 +432,8 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       </button>
                     </div>
                   </td>
-                  <td style={{ padding:'1rem' }}>{statusBadge(agent.status)}</td>
-                  <td style={{ padding:'1rem' }}>
+                  <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>{statusBadge(agent.status)}</td>
+                  <td style={{ width: `${colWidths.actions}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {saving[agent.id]
                       ? <Loader2 size={16} className="spin" color="#3b82f6" />
                       : <CheckCircle size={16} color="#16a34a" />}
@@ -376,6 +456,18 @@ function TabEndpoints() {
   const [endpoints, setEndpoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'calladmin_endpoints_col_widths',
+    CALL_ADMIN_ENDPOINTS_DEFAULT_COL_WIDTHS,
+    CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS
+  );
 
   const fetchEndpoints = useCallback(async () => {
     setLoading(true);
@@ -426,11 +518,45 @@ function TabEndpoints() {
           </div>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+          <table style={{ width: `${Math.max(920, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
-                {['Alias','Username','SIP URI','App Linked','Status'].map(h => (
-                  <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:600 }}>{h}</th>
+                {[
+                  { key: 'alias', label: 'Alias', width: colWidths.alias },
+                  { key: 'username', label: 'Username', width: colWidths.username },
+                  { key: 'sip_uri', label: 'SIP URI', width: colWidths.sip_uri },
+                  { key: 'app_linked', label: 'App Linked', width: colWidths.app_linked },
+                  { key: 'status', label: 'Status', width: colWidths.status },
+                ].map(col => (
+                  <th
+                    key={col.key}
+                    style={{
+                      width: `${col.width}px`,
+                      padding: '0.75rem 1rem',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      position: 'relative',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      whiteSpace: 'normal',
+                      wordBreak: 'break-word',
+                      lineHeight: 1.25,
+                      paddingRight: '10px'
+                    }}>
+                      <span>{col.label}</span>
+                    </div>
+                    <ColumnResizer
+                      colKey={col.key}
+                      isResizing={resizingCol === col.key}
+                      onResizeStart={handleResizeStart}
+                      onReset={resetColWidth}
+                    />
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -439,17 +565,20 @@ function TabEndpoints() {
                 <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : endpoints.map((ep, i) => (
                 <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ padding:'1rem', fontWeight:600, color:'#1e293b' }}>{ep.alias}</td>
-                  <td style={{ padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', maxWidth:'220px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ep.username}</td>
-                  <td style={{ padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', maxWidth:'260px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ep.sip_uri}</td>
-                  <td style={{ padding:'1rem' }}>
+                  <td style={{ width: `${colWidths.alias}px`, padding:'1rem', fontWeight:600, color:'#1e293b', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.alias}>{ep.alias}</td>
+                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.username}>{ep.username}</td>
+                  <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.sip_uri}>{ep.sip_uri}</td>
+                  <td style={{ width: `${colWidths.app_linked}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {ep.application
                       ? <span style={{ color:'#16a34a', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><CheckCircle size={13}/>Linked</span>
                       : <span style={{ color:'#dc2626', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><XCircle size={13}/>No App</span>}
                   </td>
-                  <td style={{ padding:'1rem' }}>{sipBadge(ep.sip_registered)}</td>
+                  <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>{sipBadge(ep.sip_registered)}</td>
                 </tr>
               ))}
+              {endpoints.length === 0 && !loading && (
+                <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No endpoints found.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
