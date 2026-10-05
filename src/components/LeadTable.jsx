@@ -990,7 +990,38 @@ const columns = [
   { accessorKey: 'last_follow_up_duration', header: 'Last Follow-UP Duration in Minute', size: 180, minSize: 90, maxSize: 350 }
 ];
 
-const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
+const filterNormalizedSetMap = new WeakMap();
+
+function getNormalizedFilterSet(columnId, filterValue, teamMembers) {
+  if (typeof filterValue !== 'object' || filterValue === null) {
+    return null;
+  }
+  let cached = filterNormalizedSetMap.get(filterValue);
+  if (cached && cached[columnId]) {
+    return cached[columnId];
+  }
+  const rawArray = Array.isArray(filterValue) ? filterValue : [filterValue];
+  let set;
+  if (columnId === 'state_name') {
+    set = new Set(rawArray.map(f => normalizeStateName(f)));
+  } else if (columnId === 'district_name') {
+    set = new Set(rawArray.map(f => normalizeDistrictName(f)));
+  } else if (columnId === 'city_name') {
+    set = new Set(rawArray.map(f => normalizeCityName(f)));
+  } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+    set = new Set(rawArray.map(f => normalizeEmployeeName(f, teamMembers)));
+  } else {
+    set = new Set(rawArray.map(f => String(f)));
+  }
+  if (!cached) {
+    cached = {};
+    filterNormalizedSetMap.set(filterValue, cached);
+  }
+  cached[columnId] = set;
+  return set;
+}
+
+const LeadTableRow = React.memo(({ row, activeRowId, idx, onRowClick }) => {
   const isActive = activeRowId === row.id;
   return (
     <tr 
@@ -1027,7 +1058,7 @@ const LeadTableRow = ({ row, activeRowId, idx, onRowClick }) => {
       ))}
     </tr>
   );
-};
+});
 
 const isLeadContentChanged = (a, b) => {
   if (a === b) return false;
@@ -1130,6 +1161,7 @@ export default function LeadTable({
   
   const prevInitialDataRef = useRef(null);
   const prevTeamMembersRef = useRef(teamMembers);
+  const localUpdatedLeadIdsRef = useRef(new Set());
 
   useEffect(() => {
     const rows = initialData || [];
@@ -1146,11 +1178,15 @@ export default function LeadTable({
     if (prevRows && prevRows.length === rows.length && !teamMembersChanged) {
       let changedCount = 0;
       const changedIndices = [];
+      let onlyLocalChanges = true;
 
       for (let i = 0; i < rows.length; i++) {
         if (rows[i] !== prevRows[i] && isLeadContentChanged(rows[i], prevRows[i])) {
           changedCount++;
           changedIndices.push(i);
+          if (!localUpdatedLeadIdsRef.current.has(rows[i].id)) {
+            onlyLocalChanges = false;
+          }
           if (changedCount > 25) {
             // More than 25 items changed at once (e.g. bulk update, re-sorting) -> fallback to full batch
             break;
@@ -1158,8 +1194,11 @@ export default function LeadTable({
         }
       }
 
-      if (changedCount === 0) {
-        // Zero content changes! Keep existing processed data completely (prevents table flickering/refresh)
+      if (changedCount === 0 || (changedCount > 0 && changedCount <= 25 && onlyLocalChanges)) {
+        // Zero external content changes! Either untouched or already applied locally in data state.
+        for (const idx of changedIndices) {
+          localUpdatedLeadIdsRef.current.delete(rows[idx].id);
+        }
         prevInitialDataRef.current = rows;
         return;
       }
@@ -1562,32 +1601,40 @@ export default function LeadTable({
   };
 
 
+  // ⚡ PERF FIX: O(1) team member map — build once per teamMembers change instead of linear .find() per row per rule
+  const teamMemberMap = useMemo(() => {
+    const m = new Map();
+    for (const tm of teamMembers) {
+      if (tm.user_id) m.set(tm.user_id, tm.emp_name);
+    }
+    return m;
+  }, [teamMembers]);
+
   const multiSelectFilter = (row, columnId, filterValue) => {
     if (!filterValue || filterValue.length === 0) return true;
     
     let val = String(row.getValue(columnId) || '');
     
     if (columnId === 'assigned_to') {
-      const teamMembers = table.options.meta?.teamMembers || [];
-      const member = teamMembers.find(m => m.user_id === val);
-      val = member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
+      const tmMap = table.options.meta?.teamMemberMap || teamMemberMap;
+      val = tmMap ? (tmMap.get(val) || (val ? 'Unknown' : 'Open Lead (Unassigned)')) : val;
     } else if (columnId === 'state_name') {
       val = normalizeStateName(val || row.original.state_name || row.original.state || row.original.business_state);
-      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeStateName(f));
-      return normalizedFilters.includes(val);
+      const set = getNormalizedFilterSet(columnId, filterValue, null);
+      return set ? set.has(val) : false;
     } else if (columnId === 'district_name') {
       val = normalizeDistrictName(val || row.original.district_name || row.original.district || row.original.business_district);
-      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeDistrictName(f));
-      return normalizedFilters.includes(val);
+      const set = getNormalizedFilterSet(columnId, filterValue, null);
+      return set ? set.has(val) : false;
     } else if (columnId === 'city_name') {
       val = normalizeCityName(val || row.original.city_name || row.original.city || row.original.business_city);
-      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeCityName(f));
-      return normalizedFilters.includes(val);
+      const set = getNormalizedFilterSet(columnId, filterValue, null);
+      return set ? set.has(val) : false;
     } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
-      const teamMembers = table.options.meta?.teamMembers || [];
-      val = normalizeEmployeeName(val || row.original[columnId], teamMembers);
-      const normalizedFilters = (Array.isArray(filterValue) ? filterValue : [filterValue]).map(f => normalizeEmployeeName(f, teamMembers));
-      return normalizedFilters.includes(val);
+      const teamMembersList = table.options.meta?.teamMembers || teamMembers;
+      val = normalizeEmployeeName(val || row.original[columnId], teamMembersList);
+      const set = getNormalizedFilterSet(columnId, filterValue, teamMembersList);
+      return set ? set.has(val) : false;
     } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
       if (typeof filterValue === 'string' && filterValue.includes('-')) {
         const rawDate = row.original[columnId];
@@ -1617,15 +1664,16 @@ export default function LeadTable({
       }
     }
     
-    const filters = Array.isArray(filterValue) ? filterValue : [filterValue];
-    
     if (columnId === 'status') {
+      const filters = Array.isArray(filterValue) ? filterValue : [filterValue];
       return filters.some(f => {
         if (f === '1;' && (!val || !/^[1-7];/.test(val))) return true;
         return val.startsWith(f) || val === f;
       });
     }
-    return filters.includes(val);
+
+    const set = getNormalizedFilterSet(columnId, filterValue, null);
+    return set ? set.has(val) : false;
   };
 
   const getUniqueValues = (columnId) => {
@@ -1657,62 +1705,63 @@ export default function LeadTable({
       );
     }
 
-    const vals = candidateRows.map(row => {
+    const uniqueSet = new Set();
+    for (let i = 0; i < candidateRows.length; i++) {
+      const row = candidateRows[i];
+      let formattedVal = '';
       if (columnId === 'assigned_to') {
-        const teamMembers = table.options.meta?.teamMembers || [];
         const val = row.original[columnId];
-        const member = teamMembers.find(m => m.user_id === val);
-        return member ? member.emp_name : (val ? 'Unknown' : 'Open Lead (Unassigned)');
-      }
-      if (columnId === 'state_name') {
-        const val = row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state;
-        return normalizeStateName(val);
-      }
-      if (columnId === 'district_name') {
-        const val = row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district;
-        return normalizeDistrictName(val);
-      }
-      if (columnId === 'city_name') {
-        const val = row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city;
-        return normalizeCityName(val);
-      }
-      if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
-        const teamMembers = table.options.meta?.teamMembers || [];
-        const val = row.getValue(columnId) || row.original[columnId];
-        return normalizeEmployeeName(val, teamMembers);
-      }
-      if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
-        return formatDateTime(row.original[columnId]);
-      }
-      if (columnId === 'lead_date') {
+        const tmMap = table.options.meta?.teamMemberMap || teamMemberMap;
+        formattedVal = tmMap ? (tmMap.get(val) || (val ? 'Unknown' : 'Open Lead (Unassigned)')) : val;
+      } else if (columnId === 'state_name') {
+        formattedVal = normalizeStateName(row.getValue(columnId) || row.original.state_name || row.original.state || row.original.business_state);
+      } else if (columnId === 'district_name') {
+        formattedVal = normalizeDistrictName(row.getValue(columnId) || row.original.district_name || row.original.district || row.original.business_district);
+      } else if (columnId === 'city_name') {
+        formattedVal = normalizeCityName(row.getValue(columnId) || row.original.city_name || row.original.city || row.original.business_city);
+      } else if (columnId === 'latest_emp_name' || columnId === 'entry_by' || columnId === 'created_by') {
+        const teamMembersList = table.options.meta?.teamMembers || teamMembers;
+        formattedVal = normalizeEmployeeName(row.getValue(columnId) || row.original[columnId], teamMembersList);
+      } else if (columnId === 'last_timestamp' || columnId === 'next_follow_up_date') {
+        formattedVal = formatDateTime(row.original[columnId]);
+      } else if (columnId === 'lead_date') {
         const val = row.original[columnId];
-        if (!val) return '';
-        try {
-          const parts = val.split('-');
-          if (parts.length === 3) {
-            return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`; // YYYY-MM-DD
+        if (val) {
+          try {
+            const parts = val.split('-');
+            if (parts.length === 3) {
+              formattedVal = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            } else {
+              formattedVal = val;
+            }
+          } catch (e) {
+            formattedVal = val;
           }
-        } catch (e) {}
-        return val;
+        }
+      } else {
+        const val = row.getValue(columnId);
+        formattedVal = (val !== null && val !== undefined && val !== '') ? String(val) : '';
       }
-      
-      const val = row.getValue(columnId);
-      return val !== null && val !== undefined && val !== '' ? String(val) : '';
-    });
-    
-    return [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      if (formattedVal) {
+        uniqueSet.add(formattedVal);
+      }
+    }
+
+    return Array.from(uniqueSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   };
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
-  // ⚡ PERF FIX: O(1) team member map — build once per teamMembers change instead of linear .find() per row per rule
-  const teamMemberMap = useMemo(() => {
-    const m = new Map();
-    for (const tm of teamMembers) {
-      if (tm.user_id) m.set(tm.user_id, tm.emp_name);
-    }
-    return m;
-  }, [teamMembers]);
+  const activeColumnUniqueValues = useMemo(() => {
+    if (!activeFilterColumn) return [];
+    return getUniqueValues(activeFilterColumn);
+  }, [activeFilterColumn, stageFilteredData, columnFilters, globalFilter, teamMemberMap]);
+
+  const filteredActiveColumnValues = useMemo(() => {
+    if (!filterSearchText.trim()) return activeColumnUniqueValues;
+    const query = filterSearchText.toLowerCase().trim();
+    return activeColumnUniqueValues.filter(v => v.toLowerCase().includes(query));
+  }, [activeColumnUniqueValues, filterSearchText]);
 
   // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
   const stageFilteredData = useMemo(() => {
@@ -1826,6 +1875,7 @@ export default function LeadTable({
     getPaginationRowModel: getPaginationRowModel(),
     meta: {
       teamMembers,
+      teamMemberMap,
       stages,
       userRole,
       userName,
@@ -1840,6 +1890,9 @@ export default function LeadTable({
         setWhatsappModalLead(lead);
       },
       updateLeadInState: (processedLead) => {
+        if (processedLead?.id) {
+          localUpdatedLeadIdsRef.current.add(processedLead.id);
+        }
         setData((current) => {
           return current.map(item => item.id === processedLead.id ? { ...item, ...processedLead } : item);
         });
@@ -3160,7 +3213,7 @@ export default function LeadTable({
                                       style={{ width: '100%', padding: '0.4rem', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
                                     />
                                     <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                      {getUniqueValues(header.id).filter(v => v.toLowerCase().includes(filterSearchText.toLowerCase())).map(val => {
+                                      {filteredActiveColumnValues.map(val => {
                                         const rawFilterValue = header.column.getFilterValue();
                                         const currentFilterValue = Array.isArray(rawFilterValue) ? rawFilterValue : (rawFilterValue ? [rawFilterValue] : []);
                                         const isChecked = currentFilterValue.includes(val);
@@ -3478,6 +3531,9 @@ export default function LeadTable({
              // Since processLeads expects an array of raw leads, we can pass it
              // and merge back into our data state
              const processed = processLeads([updatedRawLead], teamMembers)[0];
+             if (processed?.id) {
+               localUpdatedLeadIdsRef.current.add(processed.id);
+             }
              setData((current) => current.map(item => item.id === processed.id ? { ...item, ...processed } : item));
              setSelectedLead(processed);
              if (onLeadsChange) {

@@ -1269,8 +1269,9 @@ export default function CRMContainer({
   const pendingLeadSyncRef = useRef(null);
   const realtimeNeedsCatchupRef = useRef(false);
   const prevLeadsSigRef = useRef('');
-  const initialSyncFinishedRef = useRef(false);
   const saveLeadsTimeoutRef = useRef(null);
+  const recentLocalUpdatesRef = useRef(new Map());
+  const isLocalLeadsUpdateRef = useRef(false);
 
   const debouncedSaveLeadsLocally = (updatedLeads) => {
     if (saveLeadsTimeoutRef.current) {
@@ -1622,13 +1623,17 @@ export default function CRMContainer({
           const hasNewLeads = newLeads.length > 0;
           const hasNewNotes = newNotes.length > 0;
           const hasTouchedLeads = touchedLeads.length > 0;
+          const baseLeadMap = new Map();
+          for (let i = 0; i < baseLeads.length; i++) {
+            baseLeadMap.set(baseLeads[i].id, baseLeads[i]);
+          }
           const hasAssignedChanges = myAssignedLeads.some(al => {
-            const cur = baseLeads.find(l => l.id === al.id);
+            const cur = baseLeadMap.get(al.id);
             return !cur || cur.status !== al.status || cur.assigned_to !== al.assigned_to || cur.updated_at !== al.updated_at;
           });
-          const hasPage0Changes = page0Data.some((rl, idx) => {
-            const cur = baseLeads[idx];
-            return !cur || cur.id !== rl.id || cur.status !== rl.status || cur.updated_at !== rl.updated_at;
+          const hasPage0Changes = page0Data.some(rl => {
+            const cur = baseLeadMap.get(rl.id);
+            return !cur || cur.status !== rl.status || cur.updated_at !== rl.updated_at;
           });
 
           const hasRealChanges = hasNewLeads || hasNewNotes || hasTouchedLeads || hasAssignedChanges || hasPage0Changes;
@@ -1908,10 +1913,14 @@ export default function CRMContainer({
         const updatedRow = payload.new;
         if (!updatedRow || !updatedRow.id) return;
         setRawLeads((current) => {
-          const exists = current.some(item => item.id === updatedRow.id);
+          const existing = current.find(item => item.id === updatedRow.id);
+          // If row in memory already has matching status, updated_at and assigned_to, skip redundant update
+          if (existing && existing.status === updatedRow.status && existing.updated_at === updatedRow.updated_at && existing.assigned_to === updatedRow.assigned_to) {
+            return current;
+          }
           let target = null;
           let updated;
-          if (exists) {
+          if (existing) {
             updated = current.map(item => {
               if (item.id === updatedRow.id) {
                 target = { ...item, ...updatedRow, lead_notes: item.lead_notes || [] };
@@ -1929,8 +1938,11 @@ export default function CRMContainer({
           return updated;
         });
         setLeads((current) => {
-          const exists = current.some(item => item.id === updatedRow.id);
-          if (exists) {
+          const existing = current.find(item => item.id === updatedRow.id);
+          if (existing && existing.status === updatedRow.status && existing.updated_at === updatedRow.updated_at && existing.assigned_to === updatedRow.assigned_to) {
+            return current;
+          }
+          if (existing) {
             return current.map(item => item.id === updatedRow.id ? { ...item, ...updatedRow, lead_notes: item.lead_notes || [] } : item);
           } else {
             return [{ ...updatedRow, lead_notes: [] }, ...current];
@@ -1949,6 +1961,13 @@ export default function CRMContainer({
         const incoming = payload.new;
         if (!incoming || !incoming.lead_id) return;
         setRawLeads((current) => {
+          const targetLead = current.find(item => item.id === incoming.lead_id);
+          if (targetLead) {
+            const existingNotes = targetLead.lead_notes || [];
+            if (existingNotes.some(n => n.id === incoming.id || (n.note_text === incoming.note_text && Math.abs(new Date(n.created_at || 0) - new Date(incoming.created_at || 0)) < 3000))) {
+              return current;
+            }
+          }
           let updatedTarget = null;
           const updated = current.map(item => {
             if (item.id !== incoming.lead_id) return item;
@@ -1962,12 +1981,21 @@ export default function CRMContainer({
           }
           return updated;
         });
-        setLeads((current) => current.map(item => {
-          if (item.id !== incoming.lead_id) return item;
-          const existingNotes = item.lead_notes || [];
-          if (existingNotes.some(n => n.id === incoming.id)) return item;
-          return { ...item, lead_notes: [incoming, ...existingNotes] };
-        }));
+        setLeads((current) => {
+          const targetLead = current.find(item => item.id === incoming.lead_id);
+          if (targetLead) {
+            const existingNotes = targetLead.lead_notes || [];
+            if (existingNotes.some(n => n.id === incoming.id || (n.note_text === incoming.note_text && Math.abs(new Date(n.created_at || 0) - new Date(incoming.created_at || 0)) < 3000))) {
+              return current;
+            }
+          }
+          return current.map(item => {
+            if (item.id !== incoming.lead_id) return item;
+            const existingNotes = item.lead_notes || [];
+            if (existingNotes.some(n => n.id === incoming.id)) return item;
+            return { ...item, lead_notes: [incoming, ...existingNotes] };
+          });
+        });
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED' && realtimeNeedsCatchupRef.current) {
@@ -2046,6 +2074,11 @@ export default function CRMContainer({
   // Filter leads based on company and step assignments
   useEffect(() => {
     if (loadingLeads && (!rawLeads || rawLeads.length === 0)) return;
+
+    if (isLocalLeadsUpdateRef.current) {
+      isLocalLeadsUpdateRef.current = false;
+      return; // setLeads was already updated in handleLeadsChange! Avoid 45k-row diff & bounce
+    }
     
     let preFilteredLeads = rawLeads;
     
@@ -2107,6 +2140,15 @@ export default function CRMContainer({
   const handleLeadsChange = (updatedFilteredLeads) => {
     const leadsArray = Array.isArray(updatedFilteredLeads) ? updatedFilteredLeads : (updatedFilteredLeads ? [updatedFilteredLeads] : []);
     if (leadsArray.length === 0) return;
+
+    // Track recently updated leads so subsequent Realtime broadcast doesn't re-trigger
+    const now = Date.now();
+    for (const l of leadsArray) {
+      if (l && l.id) {
+        recentLocalUpdatesRef.current.set(l.id, now);
+      }
+    }
+    isLocalLeadsUpdateRef.current = true;
 
     // Invalidate probe signature so next filter run never drops this update
     prevLeadsSigRef.current = '';
