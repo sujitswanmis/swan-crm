@@ -4,6 +4,16 @@ import React, { useState, useEffect } from 'react';
 import { MapPin, Globe, Map, Compass, UserCheck, ShieldAlert, Plus, RefreshCw, CheckCircle2, Search, ArrowRight, Layers, Building, X } from 'lucide-react';
 import { getStates, createState, getDistricts, createDistrict, createSubdistrict, resolveLocationAlias, createLocationRequest } from '@/app/actions/locationMaster';
 import { getTerritories, createTerritory, assignTerritoryEmployee } from '@/app/actions/territoryBuilder';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_TERRITORY_COL_WIDTHS = {
+  code: 160,
+  name: 200,
+  type: 140,
+  state: 180,
+  assigned: 220,
+  status: 120
+};
 
 export default function LocationTerritoryModule() {
   const [subTab, setSubTab] = useState('locations'); // 'locations' | 'territories' | 'alias'
@@ -15,6 +25,16 @@ export default function LocationTerritoryModule() {
   const [selectedDistrict, setSelectedDistrict] = useState(null);
 
   const [territories, setTerritories] = useState([]);
+
+  // Column resizing hook for Territory table
+  const {
+    columnWidths: territoryColWidths,
+    isResizing: isTerritoryResizing,
+    handleMouseDown: handleTerritoryResizeStart,
+    handleTouchStart: handleTerritoryTouchStart,
+    handleDoubleClickReset: handleTerritoryReset,
+    getTableTotalWidth: getTerritoryTotalWidth
+  } = useTableColumnResize(DEFAULT_TERRITORY_COL_WIDTHS, 'workplace_territory_col_widths');
 
   // Modals for Registration
   const [showAddStateModal, setShowAddStateModal] = useState(false);
@@ -320,15 +340,33 @@ export default function LocationTerritoryModule() {
           </div>
 
           <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <table style={{ width: `${Math.max(980, getTerritoryTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ background: '#1e293b', color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Territory Code</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Territory Name</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Type</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>State / Region</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Assigned RSM / ASM</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Status</th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.code}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Territory Code</div>
+                    <ColumnResizer columnKey="code" isResizing={isTerritoryResizing('code')} onMouseDown={(e) => handleTerritoryResizeStart('code', e)} onTouchStart={(e) => handleTerritoryTouchStart('code', e)} onDoubleClick={() => handleTerritoryReset('code')} />
+                  </th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.name}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Territory Name</div>
+                    <ColumnResizer columnKey="name" isResizing={isTerritoryResizing('name')} onMouseDown={(e) => handleTerritoryResizeStart('name', e)} onTouchStart={(e) => handleTerritoryTouchStart('name', e)} onDoubleClick={() => handleTerritoryReset('name')} />
+                  </th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.type}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Type</div>
+                    <ColumnResizer columnKey="type" isResizing={isTerritoryResizing('type')} onMouseDown={(e) => handleTerritoryResizeStart('type', e)} onTouchStart={(e) => handleTerritoryTouchStart('type', e)} onDoubleClick={() => handleTerritoryReset('type')} />
+                  </th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.state}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>State / Region</div>
+                    <ColumnResizer columnKey="state" isResizing={isTerritoryResizing('state')} onMouseDown={(e) => handleTerritoryResizeStart('state', e)} onTouchStart={(e) => handleTerritoryTouchStart('state', e)} onDoubleClick={() => handleTerritoryReset('state')} />
+                  </th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.assigned}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Assigned RSM / ASM</div>
+                    <ColumnResizer columnKey="assigned" isResizing={isTerritoryResizing('assigned')} onMouseDown={(e) => handleTerritoryResizeStart('assigned', e)} onTouchStart={(e) => handleTerritoryTouchStart('assigned', e)} onDoubleClick={() => handleTerritoryReset('assigned')} />
+                  </th>
+                  <th style={{ position: 'relative', width: `${territoryColWidths.status}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
+                    <ColumnResizer columnKey="status" isResizing={isTerritoryResizing('status')} onMouseDown={(e) => handleTerritoryResizeStart('status', e)} onTouchStart={(e) => handleTerritoryTouchStart('status', e)} onDoubleClick={() => handleTerritoryReset('status')} />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -341,11 +379,11 @@ export default function LocationTerritoryModule() {
                 ) : (
                   territories.map(t => (
                     <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#f8fafc' }}>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#38bdf8' }}>{t.territory_code}</td>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{t.territory_name}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>{t.territory_type}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>{t.state_name || 'Multi-State'}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#34d399' }}>{t.territory_employee_assignments?.[0]?.employee?.emp_name || 'Unassigned'}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#38bdf8', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.territory_code}>{t.territory_code}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.territory_name}>{t.territory_name}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.territory_type}>{t.territory_type}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.state_name || 'Multi-State'}>{t.state_name || 'Multi-State'}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#34d399', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.territory_employee_assignments?.[0]?.employee?.emp_name || 'Unassigned'}>{t.territory_employee_assignments?.[0]?.employee?.emp_name || 'Unassigned'}</td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: 700, background: 'rgba(16,185,129,0.2)', color: '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>Active</span>
                       </td>

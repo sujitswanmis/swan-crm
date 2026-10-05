@@ -9,6 +9,16 @@ import {
 import { 
   getStatusBadgeStyle, HoverIconButton, isMasterAdmin, EMP_STATUS_OPTIONS 
 } from '../utils/userManagementUtils';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_USER_MANAGE_COL_WIDTHS = {
+  user_employee: 260,
+  dept_role: 180,
+  location: 160,
+  reporting: 180,
+  status: 120,
+  actions: 180
+};
 
 export default function UserManageTab({
   users = [],
@@ -32,6 +42,16 @@ export default function UserManageTab({
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+
+  // Column resizing hook for User Manage Table
+  const {
+    columnWidths: userColWidths,
+    isResizing: isUserResizing,
+    handleMouseDown: handleUserResizeStart,
+    handleTouchStart: handleUserTouchStart,
+    handleDoubleClickReset: handleUserReset,
+    getTableTotalWidth: getUserTotalWidth
+  } = useTableColumnResize(DEFAULT_USER_MANAGE_COL_WIDTHS, 'user_mgmt_tab_col_widths');
 
   // Status Counts
   const statusCounts = useMemo(() => {
@@ -311,7 +331,7 @@ export default function UserManageTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${Math.max(1050, getUserTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -324,12 +344,30 @@ export default function UserManageTab({
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.75rem 1rem', width: '260px' }}>User / Employee</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Department & Role</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Location</th>
-                <th style={{ padding: '0.75rem 1rem', width: '180px' }}>Reporting Structure</th>
-                <th style={{ padding: '0.75rem 1rem', width: '110px' }}>Status</th>
-                <th style={{ padding: '0.75rem 1rem', width: '180px', textAlign: 'center' }}>Actions</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.user_employee}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>User / Employee</div>
+                  <ColumnResizer columnKey="user_employee" isResizing={isUserResizing('user_employee')} onMouseDown={(e) => handleUserResizeStart('user_employee', e)} onTouchStart={(e) => handleUserTouchStart('user_employee', e)} onDoubleClick={() => handleUserReset('user_employee')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.dept_role}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Role</div>
+                  <ColumnResizer columnKey="dept_role" isResizing={isUserResizing('dept_role')} onMouseDown={(e) => handleUserResizeStart('dept_role', e)} onTouchStart={(e) => handleUserTouchStart('dept_role', e)} onDoubleClick={() => handleUserReset('dept_role')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.location}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Location</div>
+                  <ColumnResizer columnKey="location" isResizing={isUserResizing('location')} onMouseDown={(e) => handleUserResizeStart('location', e)} onTouchStart={(e) => handleUserTouchStart('location', e)} onDoubleClick={() => handleUserReset('location')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.reporting}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Reporting Structure</div>
+                  <ColumnResizer columnKey="reporting" isResizing={isUserResizing('reporting')} onMouseDown={(e) => handleUserResizeStart('reporting', e)} onTouchStart={(e) => handleUserTouchStart('reporting', e)} onDoubleClick={() => handleUserReset('reporting')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.status}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
+                  <ColumnResizer columnKey="status" isResizing={isUserResizing('status')} onMouseDown={(e) => handleUserResizeStart('status', e)} onTouchStart={(e) => handleUserTouchStart('status', e)} onDoubleClick={() => handleUserReset('status')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.actions}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
+                  <ColumnResizer columnKey="actions" isResizing={isUserResizing('actions')} onMouseDown={(e) => handleUserResizeStart('actions', e)} onTouchStart={(e) => handleUserTouchStart('actions', e)} onDoubleClick={() => handleUserReset('actions')} />
+                </th>
               </tr>
             </thead>
             <tbody>

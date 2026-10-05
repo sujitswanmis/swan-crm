@@ -9,6 +9,18 @@ import {
 import { createClient } from '@/utils/supabase/client';
 import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
 import { forceLogoutSession } from '@/app/actions/audit';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS = {
+  user_employee: 250,
+  dept_role: 160,
+  first_login: 150,
+  last_seen: 150,
+  active_time: 140,
+  live_status: 160,
+  device_ip: 170,
+  session_action: 130
+};
 
 function getTodayDateStr() {
   try {
@@ -92,6 +104,16 @@ export default function ActiveSessionsTab() {
   const [revokingId, setRevokingId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [currentUserEmail, setCurrentUserEmail] = useState('');
+
+  // Column resizing hook for Active Sessions Table
+  const {
+    columnWidths: sessionColWidths,
+    isResizing: isSessionResizing,
+    handleMouseDown: handleSessionResizeStart,
+    handleTouchStart: handleSessionTouchStart,
+    handleDoubleClickReset: handleSessionReset,
+    getTableTotalWidth: getSessionTotalWidth
+  } = useTableColumnResize(DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS, 'active_sessions_tab_col_widths');
 
   // Fetch current user email
   useEffect(() => {
@@ -598,7 +620,7 @@ export default function ActiveSessionsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${Math.max(1200, getSessionTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -611,14 +633,38 @@ export default function ActiveSessionsTab() {
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ padding: '0.8rem 1rem', width: '250px' }}>Employee / User</th>
-                <th style={{ padding: '0.8rem 1rem', width: '160px' }}>Department & Role</th>
-                <th style={{ padding: '0.8rem 1rem', width: '140px' }}>First Login (In-Time)</th>
-                <th style={{ padding: '0.8rem 1rem', width: '150px' }}>Last Seen (Out-Time)</th>
-                <th style={{ padding: '0.8rem 1rem', width: '140px' }}>Active Work Time</th>
-                <th style={{ padding: '0.8rem 1rem', width: '160px', textAlign: 'center' }}>Live Status</th>
-                <th style={{ padding: '0.8rem 1rem', width: '170px' }}>Device & IP</th>
-                <th style={{ padding: '0.8rem 1rem', width: '120px', textAlign: 'center' }}>Session Action</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.user_employee}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee / User</div>
+                  <ColumnResizer columnKey="user_employee" isResizing={isSessionResizing('user_employee')} onMouseDown={(e) => handleSessionResizeStart('user_employee', e)} onTouchStart={(e) => handleSessionTouchStart('user_employee', e)} onDoubleClick={() => handleSessionReset('user_employee')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.dept_role}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Role</div>
+                  <ColumnResizer columnKey="dept_role" isResizing={isSessionResizing('dept_role')} onMouseDown={(e) => handleSessionResizeStart('dept_role', e)} onTouchStart={(e) => handleSessionTouchStart('dept_role', e)} onDoubleClick={() => handleSessionReset('dept_role')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.first_login}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>First Login (In-Time)</div>
+                  <ColumnResizer columnKey="first_login" isResizing={isSessionResizing('first_login')} onMouseDown={(e) => handleSessionResizeStart('first_login', e)} onTouchStart={(e) => handleSessionTouchStart('first_login', e)} onDoubleClick={() => handleSessionReset('first_login')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.last_seen}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Last Seen (Out-Time)</div>
+                  <ColumnResizer columnKey="last_seen" isResizing={isSessionResizing('last_seen')} onMouseDown={(e) => handleSessionResizeStart('last_seen', e)} onTouchStart={(e) => handleSessionTouchStart('last_seen', e)} onDoubleClick={() => handleSessionReset('last_seen')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.active_time}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Active Work Time</div>
+                  <ColumnResizer columnKey="active_time" isResizing={isSessionResizing('active_time')} onMouseDown={(e) => handleSessionResizeStart('active_time', e)} onTouchStart={(e) => handleSessionTouchStart('active_time', e)} onDoubleClick={() => handleSessionReset('active_time')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.live_status}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Live Status</div>
+                  <ColumnResizer columnKey="live_status" isResizing={isSessionResizing('live_status')} onMouseDown={(e) => handleSessionResizeStart('live_status', e)} onTouchStart={(e) => handleSessionTouchStart('live_status', e)} onDoubleClick={() => handleSessionReset('live_status')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.device_ip}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Device & IP</div>
+                  <ColumnResizer columnKey="device_ip" isResizing={isSessionResizing('device_ip')} onMouseDown={(e) => handleSessionResizeStart('device_ip', e)} onTouchStart={(e) => handleSessionTouchStart('device_ip', e)} onDoubleClick={() => handleSessionReset('device_ip')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.session_action}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Session Action</div>
+                  <ColumnResizer columnKey="session_action" isResizing={isSessionResizing('session_action')} onMouseDown={(e) => handleSessionResizeStart('session_action', e)} onTouchStart={(e) => handleSessionTouchStart('session_action', e)} onDoubleClick={() => handleSessionReset('session_action')} />
+                </th>
               </tr>
             </thead>
             <tbody>
