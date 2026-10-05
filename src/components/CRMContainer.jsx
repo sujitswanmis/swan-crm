@@ -6243,7 +6243,7 @@ export default function CRMContainer({
         <div 
           className="page-content" 
           style={{ 
-            padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 2rem)', 
+            padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 0.5rem)', 
             display: 'flex', 
             flexDirection: 'column', 
             height: '100%',

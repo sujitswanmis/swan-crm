@@ -48,7 +48,7 @@
   --chart-5: #ec4899;
   --chart-6: #06b6d4;
   --chart-7: #f97316;
-  --content-padding: 2rem;
+  --content-padding: 0.5rem;
 
   /* Executive Multi-Tier Elevation Shadows */
   --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
@@ -1238,7 +1238,7 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 
 .page-content {
   flex: 1;
-  padding: 1.5rem;
+  padding: var(--content-padding, 0.5rem);
   overflow-y: auto;
 }
 
@@ -1376,7 +1376,7 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 /* Mobile (max-width: 768px) */
 @media (max-width: 768px) {
   :root {
-    --content-padding: 0.75rem;
+    --content-padding: 0.5rem;
   }
 
   .page-content {

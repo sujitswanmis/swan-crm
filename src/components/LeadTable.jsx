@@ -2267,7 +2267,7 @@ export default function LeadTable({
 
   if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
     return (
-      <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+      <div className="card" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minHeight: 0 }}>
         <LeadDashboard
           leads={initialData}
           teamMembers={teamMembers}
@@ -2315,7 +2315,7 @@ export default function LeadTable({
   }
 
   return (
-    <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+    <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minHeight: 0 }}>
       
       {/* Search, Filters, and Export Header */}
       <div style={{ padding: isMobile ? '0.65rem 0.75rem' : '0.85rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '0.5rem 0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--bg-surface)' }}>
