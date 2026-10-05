@@ -1752,17 +1752,6 @@ export default function LeadTable({
   
   const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
 
-  const activeColumnUniqueValues = useMemo(() => {
-    if (!activeFilterColumn) return [];
-    return getUniqueValues(activeFilterColumn);
-  }, [activeFilterColumn, stageFilteredData, columnFilters, globalFilter, teamMemberMap]);
-
-  const filteredActiveColumnValues = useMemo(() => {
-    if (!filterSearchText.trim()) return activeColumnUniqueValues;
-    const query = filterSearchText.toLowerCase().trim();
-    return activeColumnUniqueValues.filter(v => v.toLowerCase().includes(query));
-  }, [activeColumnUniqueValues, filterSearchText]);
-
   // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
   const stageFilteredData = useMemo(() => {
     let result = data;
@@ -1823,6 +1812,17 @@ export default function LeadTable({
 
     return result;
   }, [data, stageFilter, filterRules, filterConditionType, teamMemberMap]);
+
+  const activeColumnUniqueValues = useMemo(() => {
+    if (!activeFilterColumn) return [];
+    return getUniqueValues(activeFilterColumn);
+  }, [activeFilterColumn, stageFilteredData, columnFilters, globalFilter, teamMemberMap]);
+
+  const filteredActiveColumnValues = useMemo(() => {
+    if (!filterSearchText.trim()) return activeColumnUniqueValues;
+    const query = filterSearchText.toLowerCase().trim();
+    return activeColumnUniqueValues.filter(v => v.toLowerCase().includes(query));
+  }, [activeColumnUniqueValues, filterSearchText]);
 
   // Cleanly reset any active column filters when navigating between stage tabs (skip initial mount/refresh)
   const isInitialMount = useRef(true);
