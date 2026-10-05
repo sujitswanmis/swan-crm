@@ -176,13 +176,20 @@ const KeepAliveTab = React.memo(
   }
 );
 
-export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEntitlements = null, tenantId = null) {
+export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEntitlements = null, tenantId = null, userEmail = '') {
   const activeEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const activeTenantId = tenantId || moduleAccess?._tenantId || null;
 
   // 1. SaaS Tenant Subscription Entitlement Gate
   if (activeEntitlements && !isFeatureEntitled(tabId, activeEntitlements, activeTenantId)) {
     return false;
+  }
+
+  // 2. SaaS Studio Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
+  if (tabId === 'saas_studio') {
+    const isMaster = (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
+                     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
+    return isMaster;
   }
 
   const isAdmin = typeof userRole === 'string' && (userRole.toLowerCase() === 'admin' || userRole.toLowerCase() === 'superadmin' || userRole.toLowerCase() === 'masteradmin');
@@ -222,7 +229,6 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (tabId === 'email_config') return moduleAccess['email_config']?.view === true;
   if (tabId === 'admin_message_config') return moduleAccess['admin_message_config']?.view === true;
   if (tabId === 'settings') return moduleAccess['settings']?.view === true;
-  if (tabId === 'saas_studio') return isAdmin;
 
   return moduleAccess[tabId]?.view === true;
 }
@@ -417,7 +423,7 @@ export default function CRMContainer({
       return 'party';
     }
     if (['saas-studio', 'saas_studio', 'saasstudio'].includes(path)) {
-      return 'saas_studio';
+      return isMasterAdmin ? 'saas_studio' : 'dashboard';
     }
 
     if (!path) {
@@ -2477,21 +2483,25 @@ export default function CRMContainer({
     }
   }, [moduleAccess, userRole, activeTab, leadsFilterStage]);
 
-  // Live Active Tab Access Guard: If current active tab is revoked by Admin, immediately switch to first allowed tab
+  // Live Active Tab Access Guard: If current active tab is revoked or unauthorized (e.g. non-master trying to access saas_studio), immediately switch to allowed tab
   useEffect(() => {
+    if (activeTab === 'saas_studio' && !isMasterAdmin) {
+      handleTabChange('dashboard');
+      return;
+    }
     if (isAdmin) return;
-    if (!isTabPermitted(activeTab, moduleAccess, userRole)) {
+    if (!isTabPermitted(activeTab, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail)) {
       const allPossibleTabs = [
         'dashboard', 'leads', 'registration', 'report', 'orders', 'mrp', 'mrp_against',
         'recruiter', 'joining', 'party', 'workplace', 'callcenter', 'whatsapp_official',
         'whatsapp_unofficial', 'calladmin', 'aicallcenter', 'email_config', 'admin_message_config', 'settings'
       ];
-      const nextAllowedTab = allPossibleTabs.find(t => isTabPermitted(t, moduleAccess, userRole));
+      const nextAllowedTab = allPossibleTabs.find(t => isTabPermitted(t, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail));
       if (nextAllowedTab) {
         handleTabChange(nextAllowedTab);
       }
     }
-  }, [moduleAccess, userRole, activeTab, isAdmin]);
+  }, [moduleAccess, userRole, activeTab, isAdmin, isMasterAdmin, effectiveTenantEntitlements, effectiveTenantId, userEmail]);
 
   const handleTabChange = (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
@@ -2562,6 +2572,7 @@ export default function CRMContainer({
     }
 
     if (tabId === 'saas_studio') {
+      if (!isMasterAdmin) return;
       setActiveTab('saas_studio');
       window.history.pushState(null, '', '/saas-studio');
       if (window.innerWidth <= 768) {
@@ -3464,8 +3475,8 @@ export default function CRMContainer({
           </button>
         </div>
         <nav className="nav-list">
-          {/* Master Admin / Admin Top-Level SaaS Studio */}
-          {(isMasterAdmin || isAdmin) && (
+          {/* Master Admin Only Top-Level SaaS Studio */}
+          {isMasterAdmin && (
             <button 
               onClick={() => handleTabChange('saas_studio')}
               className="nav-item" 
@@ -6538,13 +6549,13 @@ export default function CRMContainer({
                 </ErrorBoundary>
               </KeepAliveTab>
 
-              {/* SaaS Studio (Multi-Tenant & Master Billing) */}
+              {/* SaaS Studio (Multi-Tenant & Master Billing - Strictly Master Admin) */}
               <KeepAliveTab 
                 isActive={activeTab === 'saas_studio'} 
-                isVisited={(isMasterAdmin || isAdmin) && (visitedTabs.has('saas_studio') || activeTab === 'saas_studio')}
+                isVisited={isMasterAdmin && (visitedTabs.has('saas_studio') || activeTab === 'saas_studio')}
               >
                 <ErrorBoundary>
-                  <SuperAdminSaasPanel />
+                  {isMasterAdmin ? <SuperAdminSaasPanel /> : null}
                 </ErrorBoundary>
               </KeepAliveTab>
             </React.Suspense>
