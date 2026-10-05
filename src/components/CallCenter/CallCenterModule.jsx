@@ -280,11 +280,10 @@ export default function CallCenterModule({ userId }) {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('My Call Logs');
       worksheet.columns = [
-        { header: 'Call Date/Time (IST)', key: 'time', width: 22 },
+        { header: 'Calling Timestamp', key: 'time', width: 22 },
         { header: 'Customer Number', key: 'customer', width: 18 },
         { header: 'Direction', key: 'direction', width: 14 },
         { header: 'Status', key: 'status', width: 14 },
-        { header: 'Start Time (IST)', key: 'start_time', width: 22 },
         { header: 'Answer Time (IST)', key: 'answer_time', width: 22 },
         { header: 'End Time (IST)', key: 'end_time', width: 22 },
         { header: 'Ringing (s)', key: 'ringing', width: 14 },
@@ -294,11 +293,10 @@ export default function CallCenterModule({ userId }) {
 
       recentCalls.forEach(c => {
         worksheet.addRow({
-          time: fmtDate(c.created_at),
+          time: fmtDate(c.created_at || c.start_time),
           customer: c.customer_number || '—',
           direction: (c.direction || 'outbound').toUpperCase(),
           status: (c.status || '—').toUpperCase(),
-          start_time: fmtDate(c.start_time),
           answer_time: fmtDate(c.agent_answer_time || c.customer_answer_time),
           end_time: fmtDate(c.end_time),
           ringing: c.ringing_duration_sec != null ? c.ringing_duration_sec : '—',
@@ -487,11 +485,10 @@ export default function CallCenterModule({ userId }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Date & Time (IST)</th>
+                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Calling Timestamp</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Direction</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Customer Number</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Status</th>
-                <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Start Time (IST)</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Answer Time (IST)</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>End Time (IST)</th>
                 <th style={{ padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Ringing Duration</th>
@@ -502,23 +499,23 @@ export default function CallCenterModule({ userId }) {
             <tbody>
               {callsLoading ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: '3rem', textAlign: 'center' }}>
+                  <td colSpan={9} style={{ padding: '3rem', textAlign: 'center' }}>
                     <Loader2 className="spin" size={24} color="#3b82f6" style={{ margin: '0 auto 0.5rem' }} />
                     <div style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading call records...</div>
                   </td>
                 </tr>
               ) : recentCalls.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                  <td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                     No call records found for the selected criteria.
                   </td>
                 </tr>
               ) : (
                 recentCalls.map((call, idx) => (
                   <tr key={call.id || `call-${idx}`} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
-                    {/* Date & Time */}
+                    {/* Calling Timestamp */}
                     <td style={{ padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
-                      {fmtDate(call.created_at)}
+                      {fmtDate(call.created_at || call.start_time)}
                     </td>
 
                     {/* Direction */}
@@ -534,11 +531,6 @@ export default function CallCenterModule({ userId }) {
                     {/* Status */}
                     <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
                       {callStatusBadge(call.status)}
-                    </td>
-
-                    {/* Start Time (IST) */}
-                    <td style={{ padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
-                      {fmtDate(call.start_time)}
                     </td>
 
                     {/* Answer Time (IST) */}
