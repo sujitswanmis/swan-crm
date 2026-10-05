@@ -21,6 +21,31 @@ import {
 import { getEmployeesMaster } from '@/app/actions/employee';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { enqueueOfflineAction, canPerformOfflineAction, saveDelegationTasksLocally, getLocalDelegationTasks } from '@/utils/offlineSync';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const DELEGATION_DEFAULT_COL_WIDTHS = {
+  task: 270,
+  category: 130,
+  delegated_by: 150,
+  assigned_to: 150,
+  checkpoints: 120,
+  deadline: 150,
+  status: 130,
+  rating: 110,
+  actions: 110
+};
+
+const DELEGATION_MIN_COL_WIDTHS = {
+  task: 160,
+  category: 90,
+  delegated_by: 100,
+  assigned_to: 100,
+  checkpoints: 90,
+  deadline: 110,
+  status: 90,
+  rating: 80,
+  actions: 90
+};
 
 const PRIORITY_CONFIG = {
   URGENT: { label: 'Urgent', color: '#ef4444', bg: '#fee2e2', icon: '🔥' },
@@ -80,6 +105,19 @@ export default function DelegationTaskModule({
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [employeesList, setEmployeesList] = useState([]);
   const [teamBoardFilter, setTeamBoardFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
+
+  // Interactive Column Resizing
+  const {
+    colWidths: taskColWidths,
+    resizingCol: taskResizingCol,
+    handleResizeStart: handleTaskResizeStart,
+    resetColWidth: resetTaskColWidth,
+    getTotalTableWidth: getTaskTotalWidth
+  } = useTableColumnResize(
+    'delegation_task_master_col_widths',
+    DELEGATION_DEFAULT_COL_WIDTHS,
+    DELEGATION_MIN_COL_WIDTHS
+  );
 
   // Dashboard specific filters
   const [dashboardScope, setDashboardScope] = useState(isAdmin ? 'COMPANY_WIDE' : 'MY_DELEGATIONS');
@@ -2493,18 +2531,63 @@ export default function DelegationTaskModule({
           boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
         }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <table style={{ width: `${Math.max(1220, getTaskTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <th style={{ padding: '0.85rem 1rem' }}>Task & Priority</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Category</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Delegated By</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Assigned To</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Checkpoints</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Due Deadline</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Rating</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Actions</th>
+                  <th style={{ width: `${taskColWidths.task}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Task & Priority</span>
+                    </div>
+                    <ColumnResizer colKey="task" isResizing={taskResizingCol === 'task'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.category}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Category</span>
+                    </div>
+                    <ColumnResizer colKey="category" isResizing={taskResizingCol === 'category'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.delegated_by}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Delegated By</span>
+                    </div>
+                    <ColumnResizer colKey="delegated_by" isResizing={taskResizingCol === 'delegated_by'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.assigned_to}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Assigned To</span>
+                    </div>
+                    <ColumnResizer colKey="assigned_to" isResizing={taskResizingCol === 'assigned_to'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.checkpoints}px`, padding: '0.75rem 0.85rem', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Checkpoints</span>
+                    </div>
+                    <ColumnResizer colKey="checkpoints" isResizing={taskResizingCol === 'checkpoints'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.deadline}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Due Deadline</span>
+                    </div>
+                    <ColumnResizer colKey="deadline" isResizing={taskResizingCol === 'deadline'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.status}px`, padding: '0.75rem 0.85rem', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Status</span>
+                    </div>
+                    <ColumnResizer colKey="status" isResizing={taskResizingCol === 'status'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.rating}px`, padding: '0.75rem 0.85rem', textAlign: 'center', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Rating</span>
+                    </div>
+                    <ColumnResizer colKey="rating" isResizing={taskResizingCol === 'rating'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
+                  <th style={{ width: `${taskColWidths.actions}px`, padding: '0.75rem 0.85rem', textAlign: 'right', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.75rem' }}>Actions</span>
+                    </div>
+                    <ColumnResizer colKey="actions" isResizing={taskResizingCol === 'actions'} onResizeStart={handleTaskResizeStart} onReset={resetTaskColWidth} />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -2529,7 +2612,7 @@ export default function DelegationTaskModule({
                       onMouseLeave={(e) => e.currentTarget.style.background = deadlineBadge.isLate && task.status !== 'COMPLETED' ? '#fffbfb' : 'transparent'}
                     >
                       {/* Task Code, Priority & Title */}
-                      <td style={{ padding: '0.85rem 1rem', maxWidth: '280px' }}>
+                      <td style={{ width: `${taskColWidths.task}px`, padding: '0.85rem 1rem', boxSizing: 'border-box', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
                           <span style={{
                             background: prio.bg,
@@ -2547,39 +2630,39 @@ export default function DelegationTaskModule({
                         </div>
                         <div
                           onClick={() => handleOpenDrawer(task)}
-                          style={{ fontWeight: 600, color: '#1e293b', cursor: 'pointer', fontSize: '0.9rem' }}
-                          title="Click to view full details"
+                          style={{ fontWeight: 600, color: '#1e293b', cursor: 'pointer', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={task.title}
                         >
                           {task.title}
                         </div>
                         {task.description && (
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.description}>
                             {task.description}
                           </div>
                         )}
                       </td>
 
                       {/* Category */}
-                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                      <td style={{ width: `${taskColWidths.category}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.category}>
                         <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>
                           {task.category}
                         </span>
                       </td>
 
                       {/* Delegated By */}
-                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{task.delegated_by_name}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{task.delegated_by_email}</div>
+                      <td style={{ width: `${taskColWidths.delegated_by}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${task.delegated_by_name} (${task.delegated_by_email})`}>
+                        <div style={{ fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.delegated_by_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.delegated_by_email}</div>
                       </td>
 
                       {/* Assigned To */}
-                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{task.assigned_to_name}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{task.assigned_to_email}</div>
+                      <td style={{ width: `${taskColWidths.assigned_to}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${task.assigned_to_name} (${task.assigned_to_email})`}>
+                        <div style={{ fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.assigned_to_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.assigned_to_email}</div>
                       </td>
 
                       {/* Checkpoints */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', minWidth: '120px' }}>
+                      <td style={{ width: `${taskColWidths.checkpoints}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
                         {totalSubtasks > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
@@ -2600,7 +2683,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Due Deadline */}
-                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                      <td style={{ width: `${taskColWidths.deadline}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                           <span style={{
                             fontSize: '0.75rem',
@@ -2621,7 +2704,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Status */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <td style={{ width: `${taskColWidths.status}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                         <span style={{
                           fontSize: '0.72rem',
                           fontWeight: 700,
@@ -2636,7 +2719,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Rating */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <td style={{ width: `${taskColWidths.rating}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                         {task.status === 'COMPLETED' && task.rating ? (
                           <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.82rem' }}>
                             {'⭐'.repeat(task.rating)}
@@ -2647,7 +2730,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Actions */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td style={{ width: `${taskColWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'right', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                         <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           {/* Assignee Actions */}
                           {isAssignedToMe && task.status === 'PENDING' && (

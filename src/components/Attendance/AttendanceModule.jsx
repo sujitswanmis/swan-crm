@@ -33,6 +33,33 @@ import {
 } from '@/utils/attendanceUtils';
 import { getCurrentGPSLocation } from '@/utils/geoAttendance';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+
+const ATTENDANCE_TEAM_DEFAULT_COL_WIDTHS = {
+  emp_code: 100,
+  emp_name: 160,
+  date: 120,
+  email: 180,
+  department: 130,
+  in_time: 110,
+  out_time: 110,
+  duration: 110,
+  status: 140,
+  regularization: 130
+};
+
+const ATTENDANCE_TEAM_MIN_COL_WIDTHS = {
+  emp_code: 75,
+  emp_name: 110,
+  date: 90,
+  email: 120,
+  department: 90,
+  in_time: 80,
+  out_time: 80,
+  duration: 80,
+  status: 100,
+  regularization: 90
+};
 
 const REASON_CATEGORIES = [
   'Forgot to Punch In / Out',
@@ -92,6 +119,19 @@ export default function AttendanceModule({
     setActiveTab(tab);
     if (onSubTabChange) onSubTabChange(tab);
   };
+
+  // Team Attendance Table Column Resizing
+  const {
+    colWidths: teamColWidths,
+    resizingCol: teamResizingCol,
+    handleResizeStart: handleTeamResizeStart,
+    resetColWidth: resetTeamColWidth,
+    getTotalTableWidth: getTeamTotalWidth
+  } = useTableColumnResize(
+    'attendance_team_master_col_widths',
+    ATTENDANCE_TEAM_DEFAULT_COL_WIDTHS,
+    ATTENDANCE_TEAM_MIN_COL_WIDTHS
+  );
 
   // Today's punch state (with 0ms instant localStorage cache synced on mount)
   const [todayRecord, setTodayRecord] = useState(null);
@@ -3102,21 +3142,71 @@ export default function AttendanceModule({
               {/* Master Team Attendance Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+                  <table style={{ width: `${Math.max(1200, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Emp ID</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name</th>
+                        <th style={{ width: `${teamColWidths.emp_code}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Emp ID</span>
+                          </div>
+                          <ColumnResizer colKey="emp_code" isResizing={teamResizingCol === 'emp_code'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.emp_name}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Employee Name</span>
+                          </div>
+                          <ColumnResizer colKey="emp_name" isResizing={teamResizingCol === 'emp_name'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
                         {teamStartDate !== teamEndDate && (
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date</th>
+                          <th style={{ width: `${teamColWidths.date}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                              <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Date</span>
+                            </div>
+                            <ColumnResizer colKey="date" isResizing={teamResizingCol === 'date'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                          </th>
                         )}
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Department</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Punch In</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Punch Out</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Duration</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Regularization</th>
+                        <th style={{ width: `${teamColWidths.email}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Email</span>
+                          </div>
+                          <ColumnResizer colKey="email" isResizing={teamResizingCol === 'email'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.department}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Department</span>
+                          </div>
+                          <ColumnResizer colKey="department" isResizing={teamResizingCol === 'department'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.in_time}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Punch In</span>
+                          </div>
+                          <ColumnResizer colKey="in_time" isResizing={teamResizingCol === 'in_time'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.out_time}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Punch Out</span>
+                          </div>
+                          <ColumnResizer colKey="out_time" isResizing={teamResizingCol === 'out_time'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.duration}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Duration</span>
+                          </div>
+                          <ColumnResizer colKey="duration" isResizing={teamResizingCol === 'duration'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.status}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Status</span>
+                          </div>
+                          <ColumnResizer colKey="status" isResizing={teamResizingCol === 'status'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
+                        <th style={{ width: `${teamColWidths.regularization}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Regularization</span>
+                          </div>
+                          <ColumnResizer colKey="regularization" isResizing={teamResizingCol === 'regularization'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3129,36 +3219,42 @@ export default function AttendanceModule({
                       ) : (
                         filteredTeamRecords.map((r, idx) => (
                           <tr key={r.id || `${r.email}_${r.attendance_date}_${idx}`} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', fontSize: '0.82rem' }}>
+                            <td style={{ width: `${teamColWidths.emp_code}px`, padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', fontSize: '0.82rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.emp_code || '—'}>
                               {r.emp_code || '—'}
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{r.emp_name}</td>
+                            <td style={{ width: `${teamColWidths.emp_name}px`, padding: '0.75rem 1rem', fontWeight: 600, boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.emp_name}>
+                              {r.emp_name}
+                            </td>
                             {teamStartDate !== teamEndDate && (
-                              <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
+                              <td style={{ width: `${teamColWidths.date}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.attendance_date}>
                                 {r.attendance_date}
                               </td>
                             )}
-                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.email}</td>
-                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{r.department || 'General'}</td>
-                            <td style={{ padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400 }}>
+                            <td style={{ width: `${teamColWidths.email}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.email}>
+                              {r.email}
+                            </td>
+                            <td style={{ width: `${teamColWidths.department}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.department || 'General'}>
+                              {r.department || 'General'}
+                            </td>
+                            <td style={{ width: `${teamColWidths.in_time}px`, padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={r.in_time ? formatTimeIST(r.in_time) : '—'}>
                               {r.in_time ? formatTimeIST(r.in_time) : '—'}
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400 }}>
+                            <td style={{ width: `${teamColWidths.out_time}px`, padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={r.out_time ? formatTimeIST(r.out_time) : '—'}>
                               {r.out_time 
                                 ? formatTimeIST(r.out_time) 
                                 : (r.attendance_date === getTodayDateString() ? (r.in_time ? 'Working...' : '—') : (r.in_time ? 'Missed Out' : '—'))
                               }
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)' }}>
+                            <td style={{ width: `${teamColWidths.duration}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={formatMinutesToHours(r.total_working_minutes)}>
                               {formatMinutesToHours(r.total_working_minutes)}
                             </td>
-                            <td style={{ padding: '0.75rem 1rem' }}>
+                            <td style={{ width: `${teamColWidths.status}px`, padding: '0.75rem 1rem', boxSizing: 'border-box' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
                                 {renderStatusBadge(r.status, r.is_regularized, r.remarks)}
                                 {renderShortLeaveBadge(r)}
                               </div>
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            <td style={{ width: `${teamColWidths.regularization}px`, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.is_regularized ? 'Yes (HOD Approved)' : 'No'}>
                               {r.is_regularized ? 'Yes (HOD Approved)' : 'No'}
                             </td>
                           </tr>

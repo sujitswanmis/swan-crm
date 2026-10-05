@@ -523,40 +523,58 @@ export default function CallCenterModule({ userId }) {
           <table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
-                <th style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Calling Timestamp
+                <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Calling Timestamp</span>
+                  </div>
                   <ColumnResizer colKey="time" isResizing={resizingCol === 'time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.direction}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Direction
+                <th style={{ width: `${colWidths.direction}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Direction</span>
+                  </div>
                   <ColumnResizer colKey="direction" isResizing={resizingCol === 'direction'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Customer Number
+                <th style={{ width: `${colWidths.customer}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Customer Number</span>
+                  </div>
                   <ColumnResizer colKey="customer" isResizing={resizingCol === 'customer'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Status
+                <th style={{ width: `${colWidths.status}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Status</span>
+                  </div>
                   <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Answer Time (IST)
+                <th style={{ width: `${colWidths.answer_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Answer Time (IST)</span>
+                  </div>
                   <ColumnResizer colKey="answer_time" isResizing={resizingCol === 'answer_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  End Time (IST)
+                <th style={{ width: `${colWidths.end_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>End Time (IST)</span>
+                  </div>
                   <ColumnResizer colKey="end_time" isResizing={resizingCol === 'end_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Ringing Duration
+                <th style={{ width: `${colWidths.ringing}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Ringing Duration</span>
+                  </div>
                   <ColumnResizer colKey="ringing" isResizing={resizingCol === 'ringing'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Talk Duration
+                <th style={{ width: `${colWidths.talk}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Talk Duration</span>
+                  </div>
                   <ColumnResizer colKey="talk" isResizing={resizingCol === 'talk'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.recording}px`, padding: '0.75rem 1rem', fontWeight: 700, whiteSpace: 'nowrap', position: 'relative', boxSizing: 'border-box' }}>
-                  Recording
+                <th style={{ width: `${colWidths.recording}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Recording</span>
+                  </div>
                   <ColumnResizer colKey="recording" isResizing={resizingCol === 'recording'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
               </tr>
@@ -579,42 +597,42 @@ export default function CallCenterModule({ userId }) {
                 recentCalls.map((call, idx) => (
                   <tr key={call.id || `call-${idx}`} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
                     {/* Calling Timestamp */}
-                    <td style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.created_at || call.start_time)}>
                       {fmtDate(call.created_at || call.start_time)}
                     </td>
 
                     {/* Direction */}
-                    <td style={{ width: `${colWidths.direction}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.direction}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={call.direction || 'outbound'}>
                       {directionBadge(call.direction || 'outbound')}
                     </td>
 
                     {/* Customer */}
-                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.customer_number || '—'}>
                       {call.customer_number || '—'}
                     </td>
 
                     {/* Status */}
-                    <td style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={call.status || '—'}>
                       {callStatusBadge(call.status)}
                     </td>
 
                     {/* Answer Time (IST) */}
-                    <td style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.agent_answer_time || call.customer_answer_time)}>
                       {fmtDate(call.agent_answer_time || call.customer_answer_time)}
                     </td>
 
                     {/* End Time (IST) */}
-                    <td style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.end_time)}>
                       {fmtDate(call.end_time)}
                     </td>
 
                     {/* Ringing Duration */}
-                    <td style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}>
                       {call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}
                     </td>
 
                     {/* Talk Duration */}
-                    <td style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', color: '#0f172a', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', color: '#0f172a', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}>
                       {call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}
                     </td>
 

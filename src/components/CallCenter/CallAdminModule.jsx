@@ -1025,8 +1025,10 @@ function TabCallLogs() {
                     { id: 'recording', label: 'Recording' },
                     { id: 'room', label: 'Room' }
                   ].map(h => (
-                    <th key={h.id} style={{ width: `${dbColResize.colWidths[h.id]}px`, padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap', position:'relative', boxSizing:'border-box' }}>
-                      {h.label}
+                    <th key={h.id} style={{ width: `${dbColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, position:'relative', boxSizing:'border-box', verticalAlign:'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>{h.label}</span>
+                      </div>
                       <ColumnResizer colKey={h.id} isResizing={dbColResize.resizingCol === h.id} onResizeStart={dbColResize.handleResizeStart} onReset={dbColResize.resetColWidth} />
                     </th>
                   )) : [
@@ -1038,8 +1040,10 @@ function TabCallLogs() {
                     { id: 'hangup', label: 'Hangup Cause' },
                     { id: 'cost', label: 'Cost' }
                   ].map(h => (
-                    <th key={h.id} style={{ width: `${plivoColResize.colWidths[h.id]}px`, padding:'0.75rem 1rem', textAlign:'left', fontWeight:700, whiteSpace:'nowrap', position:'relative', boxSizing:'border-box' }}>
-                      {h.label}
+                    <th key={h.id} style={{ width: `${plivoColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, position:'relative', boxSizing:'border-box', verticalAlign:'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>{h.label}</span>
+                      </div>
                       <ColumnResizer colKey={h.id} isResizing={plivoColResize.resizingCol === h.id} onResizeStart={plivoColResize.handleResizeStart} onReset={plivoColResize.resetColWidth} />
                     </th>
                   ))}
