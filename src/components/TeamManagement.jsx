@@ -9,6 +9,19 @@ import { PremiumProgressLoader } from './PremiumProgressLoader';
 import { createClient } from '@/utils/supabase/client';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_TEAM_COL_WIDTHS = {
+  emp_id: 110,
+  emp_status: 140,
+  name_contact: 260,
+  dept_desig: 220,
+  company: 140,
+  approval_status: 130,
+  role: 140,
+  permissions: 160,
+  actions: 140
+};
 
 const DEFAULT_DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
@@ -123,6 +136,16 @@ const WORK_LOCATION_TYPES = [
 export default function TeamManagement({ initialUsers = [] }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
+
+  // Column resizing hook for Team Management Table
+  const {
+    columnWidths: teamColWidths,
+    isResizing: isTeamResizing,
+    handleMouseDown: handleTeamResizeStart,
+    handleTouchStart: handleTeamTouchStart,
+    handleDoubleClickReset: handleTeamReset,
+    getTableTotalWidth: getTeamTotalWidth
+  } = useTableColumnResize(DEFAULT_TEAM_COL_WIDTHS, 'team_management_col_widths');
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
@@ -1522,18 +1545,45 @@ export default function TeamManagement({ initialUsers = [] }) {
       </div>
 
       <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-        <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+        <table style={{ width: `${Math.max(1100, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp ID</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Emp Status</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Name, Email & Mobile</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Dept / Desig</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Company</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Approval Status</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Role</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Permissions</th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Actions</th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.emp_id}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Emp ID</div>
+              <ColumnResizer columnKey="emp_id" isResizing={isTeamResizing('emp_id')} onMouseDown={(e) => handleTeamResizeStart('emp_id', e)} onTouchStart={(e) => handleTeamTouchStart('emp_id', e)} onDoubleClick={() => handleTeamReset('emp_id')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.emp_status}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Emp Status</div>
+              <ColumnResizer columnKey="emp_status" isResizing={isTeamResizing('emp_status')} onMouseDown={(e) => handleTeamResizeStart('emp_status', e)} onTouchStart={(e) => handleTeamTouchStart('emp_status', e)} onDoubleClick={() => handleTeamReset('emp_status')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.name_contact}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Name, Email & Mobile</div>
+              <ColumnResizer columnKey="name_contact" isResizing={isTeamResizing('name_contact')} onMouseDown={(e) => handleTeamResizeStart('name_contact', e)} onTouchStart={(e) => handleTeamTouchStart('name_contact', e)} onDoubleClick={() => handleTeamReset('name_contact')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.dept_desig}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Dept / Desig</div>
+              <ColumnResizer columnKey="dept_desig" isResizing={isTeamResizing('dept_desig')} onMouseDown={(e) => handleTeamResizeStart('dept_desig', e)} onTouchStart={(e) => handleTeamTouchStart('dept_desig', e)} onDoubleClick={() => handleTeamReset('dept_desig')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.company}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Company</div>
+              <ColumnResizer columnKey="company" isResizing={isTeamResizing('company')} onMouseDown={(e) => handleTeamResizeStart('company', e)} onTouchStart={(e) => handleTeamTouchStart('company', e)} onDoubleClick={() => handleTeamReset('company')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.approval_status}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Approval Status</div>
+              <ColumnResizer columnKey="approval_status" isResizing={isTeamResizing('approval_status')} onMouseDown={(e) => handleTeamResizeStart('approval_status', e)} onTouchStart={(e) => handleTeamTouchStart('approval_status', e)} onDoubleClick={() => handleTeamReset('approval_status')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.role}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Role</div>
+              <ColumnResizer columnKey="role" isResizing={isTeamResizing('role')} onMouseDown={(e) => handleTeamResizeStart('role', e)} onTouchStart={(e) => handleTeamTouchStart('role', e)} onDoubleClick={() => handleTeamReset('role')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.permissions}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Permissions</div>
+              <ColumnResizer columnKey="permissions" isResizing={isTeamResizing('permissions')} onMouseDown={(e) => handleTeamResizeStart('permissions', e)} onTouchStart={(e) => handleTeamTouchStart('permissions', e)} onDoubleClick={() => handleTeamReset('permissions')} />
+            </th>
+            <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.actions}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
+              <ColumnResizer columnKey="actions" isResizing={isTeamResizing('actions')} onMouseDown={(e) => handleTeamResizeStart('actions', e)} onTouchStart={(e) => handleTeamTouchStart('actions', e)} onDoubleClick={() => handleTeamReset('actions')} />
+            </th>
           </tr>
         </thead>
         <tbody>

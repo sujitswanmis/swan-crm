@@ -10,7 +10,21 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
  * - LocalStorage persistence
  * - Safe minWidth constraints
  */
-export function useTableColumnResize(storageKey, defaultWidths, minWidths = {}) {
+export function useTableColumnResize(arg1, arg2, arg3 = {}) {
+  let storageKey = '';
+  let defaultWidths = {};
+  let minWidths = {};
+
+  if (typeof arg1 === 'string') {
+    storageKey = arg1;
+    defaultWidths = arg2 || {};
+    minWidths = arg3 || {};
+  } else if (typeof arg1 === 'object' && arg1 !== null) {
+    defaultWidths = arg1;
+    storageKey = typeof arg2 === 'string' ? arg2 : '';
+    minWidths = typeof arg3 === 'object' && arg3 !== null ? arg3 : {};
+  }
+
   const [colWidths, setColWidths] = useState(() => {
     if (typeof window !== 'undefined' && storageKey) {
       try {
@@ -121,11 +135,17 @@ export function useTableColumnResize(storageKey, defaultWidths, minWidths = {}) 
 
   return {
     colWidths,
+    columnWidths: colWidths,
     resizingCol,
+    isResizing: (key) => resizingCol === key,
     handleResizeStart,
+    handleMouseDown: (key, e) => handleResizeStart(e, key),
+    handleTouchStart: (key, e) => handleResizeStart(e, key),
     resetColWidth,
+    handleDoubleClickReset: (key) => resetColWidth(key),
     resetAllColWidths,
-    getTotalTableWidth
+    getTotalTableWidth,
+    getTableTotalWidth: getTotalTableWidth
   };
 }
 
@@ -134,17 +154,39 @@ export function useTableColumnResize(storageKey, defaultWidths, minWidths = {}) 
  */
 export function ColumnResizer({
   colKey,
+  columnKey,
   isResizing,
   onResizeStart,
-  onReset
+  onMouseDown,
+  onTouchStart,
+  onReset,
+  onDoubleClick
 }) {
+  const targetKey = colKey || columnKey;
+  const isResizingActive = typeof isResizing === 'boolean' ? isResizing : false;
+
+  const handleStart = (e) => {
+    if (onResizeStart) {
+      onResizeStart(e, targetKey);
+    } else if (e.type === 'touchstart' && onTouchStart) {
+      onTouchStart(e);
+    } else if (onMouseDown) {
+      onMouseDown(e);
+    }
+  };
+
+  const handleDblClick = () => {
+    if (onReset) onReset(targetKey);
+    else if (onDoubleClick) onDoubleClick();
+  };
+
   return (
     <div
-      onMouseDown={(e) => onResizeStart(e, colKey)}
-      onTouchStart={(e) => onResizeStart(e, colKey)}
+      onMouseDown={handleStart}
+      onTouchStart={handleStart}
       onClick={(e) => e.stopPropagation()}
-      onDoubleClick={() => onReset && onReset(colKey)}
-      className={`column-resizer ${isResizing ? 'is-resizing' : ''}`}
+      onDoubleClick={handleDblClick}
+      className={`column-resizer ${isResizingActive ? 'is-resizing' : ''}`}
       title="Drag to resize column width | Double-click to reset"
       style={{
         position: 'absolute',
@@ -164,14 +206,17 @@ export function ColumnResizer({
       <div
         className="resizer-bar"
         style={{
-          width: isResizing ? '4px' : '2px',
+          width: isResizingActive ? '4px' : '2px',
           height: '70%',
-          backgroundColor: isResizing ? 'var(--accent-color, #2563eb)' : '#cbd5e1',
+          backgroundColor: isResizingActive ? 'var(--accent-color, #2563eb)' : '#cbd5e1',
           borderRadius: '2px',
-          boxShadow: isResizing ? '0 0 5px var(--accent-color, #2563eb)' : 'none',
+          boxShadow: isResizingActive ? '0 0 5px var(--accent-color, #2563eb)' : 'none',
           transition: 'background-color 0.15s ease, width 0.15s ease'
         }}
       />
     </div>
   );
 }
+
+export default useTableColumnResize;
+

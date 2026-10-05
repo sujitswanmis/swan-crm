@@ -42,6 +42,38 @@ import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSele
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import { createClient } from '@/utils/supabase/client';
 import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, getLocalChecklists } from '@/utils/offlineSync';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+
+const DEFAULT_MY_CHECKLIST_COL_WIDTHS = {
+  title: 300,
+  frequency: 200,
+  period: 150,
+  cutoff: 210,
+  progress: 140,
+  status: 160,
+  action: 120
+};
+
+const DEFAULT_TEMPLATE_COL_WIDTHS = {
+  title: 300,
+  frequency: 180,
+  timing: 200,
+  assigned: 190,
+  questions: 150,
+  status: 120,
+  actions: 140
+};
+
+const DEFAULT_LOGS_COL_WIDTHS = {
+  employee: 200,
+  checklist: 240,
+  period: 150,
+  submitted_at: 170,
+  timing: 170,
+  score: 110,
+  verification: 150,
+  action: 120
+};
 
 const generateSubmissionUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -140,6 +172,34 @@ export default function ChecklistModule({
 
   // View Mode for My Checklists: 'table' (default on desktop) | 'tiles' (default on mobile)
   const [myChecklistsViewMode, setMyChecklistsViewMode] = useState('table');
+
+  // Column resizing hooks for Checklist tables
+  const {
+    columnWidths: myChecklistColWidths,
+    isResizing: isMyChecklistResizing,
+    handleMouseDown: handleMyChecklistResizeStart,
+    handleTouchStart: handleMyChecklistTouchStart,
+    handleDoubleClickReset: handleMyChecklistReset,
+    getTableTotalWidth: getMyChecklistTotalWidth
+  } = useTableColumnResize(DEFAULT_MY_CHECKLIST_COL_WIDTHS, 'checklist_execution_col_widths');
+
+  const {
+    columnWidths: templateColWidths,
+    isResizing: isTemplateResizing,
+    handleMouseDown: handleTemplateResizeStart,
+    handleTouchStart: handleTemplateTouchStart,
+    handleDoubleClickReset: handleTemplateReset,
+    getTableTotalWidth: getTemplateTotalWidth
+  } = useTableColumnResize(DEFAULT_TEMPLATE_COL_WIDTHS, 'checklist_templates_col_widths');
+
+  const {
+    columnWidths: logsColWidths,
+    isResizing: isLogsResizing,
+    handleMouseDown: handleLogsResizeStart,
+    handleTouchStart: handleLogsTouchStart,
+    handleDoubleClickReset: handleLogsReset,
+    getTableTotalWidth: getLogsTotalWidth
+  } = useTableColumnResize(DEFAULT_LOGS_COL_WIDTHS, 'checklist_logs_col_widths');
 
   // Auto-detect mobile devices to default to 'tiles' on mobile, keeping 'table' for desktop
   useEffect(() => {
@@ -3418,16 +3478,37 @@ export default function ChecklistModule({
               {/* 2. TABLE VIEW */}
               {myChecklistsViewMode === 'table' && (
                 <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                  <table style={{ width: `${Math.max(1100, getMyChecklistTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                        <th style={{ padding: '0.75rem 1rem' }}>Checklist Title</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Frequency & Department</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Period / Date</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Cutoff / Time Window</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Progress</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.title}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Checklist Title</div>
+                          <ColumnResizer columnKey="title" isResizing={isMyChecklistResizing('title')} onMouseDown={(e) => handleMyChecklistResizeStart('title', e)} onTouchStart={(e) => handleMyChecklistTouchStart('title', e)} onDoubleClick={() => handleMyChecklistReset('title')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.frequency}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Frequency & Department</div>
+                          <ColumnResizer columnKey="frequency" isResizing={isMyChecklistResizing('frequency')} onMouseDown={(e) => handleMyChecklistResizeStart('frequency', e)} onTouchStart={(e) => handleMyChecklistTouchStart('frequency', e)} onDoubleClick={() => handleMyChecklistReset('frequency')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.period}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Period / Date</div>
+                          <ColumnResizer columnKey="period" isResizing={isMyChecklistResizing('period')} onMouseDown={(e) => handleMyChecklistResizeStart('period', e)} onTouchStart={(e) => handleMyChecklistTouchStart('period', e)} onDoubleClick={() => handleMyChecklistReset('period')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.cutoff}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Cutoff / Time Window</div>
+                          <ColumnResizer columnKey="cutoff" isResizing={isMyChecklistResizing('cutoff')} onMouseDown={(e) => handleMyChecklistResizeStart('cutoff', e)} onTouchStart={(e) => handleMyChecklistTouchStart('cutoff', e)} onDoubleClick={() => handleMyChecklistReset('cutoff')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.progress}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Progress</div>
+                          <ColumnResizer columnKey="progress" isResizing={isMyChecklistResizing('progress')} onMouseDown={(e) => handleMyChecklistResizeStart('progress', e)} onTouchStart={(e) => handleMyChecklistTouchStart('progress', e)} onDoubleClick={() => handleMyChecklistReset('progress')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.status}px`, padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
+                          <ColumnResizer columnKey="status" isResizing={isMyChecklistResizing('status')} onMouseDown={(e) => handleMyChecklistResizeStart('status', e)} onTouchStart={(e) => handleMyChecklistTouchStart('status', e)} onDoubleClick={() => handleMyChecklistReset('status')} />
+                        </th>
+                        <th style={{ position: 'relative', width: `${myChecklistColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</div>
+                          <ColumnResizer columnKey="action" isResizing={isMyChecklistResizing('action')} onMouseDown={(e) => handleMyChecklistResizeStart('action', e)} onTouchStart={(e) => handleMyChecklistTouchStart('action', e)} onDoubleClick={() => handleMyChecklistReset('action')} />
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3460,14 +3541,14 @@ export default function ChecklistModule({
                               opacity: isLocked ? 0.82 : 1
                             }}
                           >
-                            <td style={{ padding: '0.85rem 1rem' }}>
-                              <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                            <td style={{ padding: '0.85rem 1rem', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${tmpl.title} - ${tmpl.description || tmpl.department}`}>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tmpl.title}</div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {tmpl.description || tmpl.department}
                               </div>
                             </td>
-                            <td style={{ padding: '0.85rem 1rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <td style={{ padding: '0.85rem 1rem', overflow: 'hidden' }} title={`${tmpl.frequency} | ${tmpl.department}`}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                                 <span style={{
                                   background: `${freqMeta.badgeColor}15`,
                                   color: freqMeta.badgeColor,
@@ -3477,15 +3558,16 @@ export default function ChecklistModule({
                                   fontWeight: 700,
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '0.25rem'
+                                  gap: '0.25rem',
+                                  whiteSpace: 'nowrap'
                                 }}>
                                   {freqMeta.icon} {tmpl.frequency}
                                 </span>
-                                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{tmpl.department}</span>
+                                <span style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tmpl.department}</span>
                               </div>
                             </td>
-                            <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', fontWeight: 600 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', fontWeight: 600, overflow: 'hidden' }} title={humanPeriod}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}>
                                 <Calendar size={13} color="#f59e0b" />
                                 <span>{humanPeriod}</span>
                               </div>
@@ -3494,8 +3576,9 @@ export default function ChecklistModule({
                               padding: '0.85rem 1rem',
                               fontSize: '0.85rem',
                               fontWeight: isExpired ? 700 : 600,
-                              color: isExpired ? '#991b1b' : isActive ? '#166534' : 'inherit'
-                            }}>
+                              color: isExpired ? '#991b1b' : isActive ? '#166534' : 'inherit',
+                              overflow: 'hidden'
+                            }} title={`${delayInfo.formattedStart || tmpl.due_time || '18:00'} - ${delayInfo.formattedExpire || '18:20'}`}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                 <Clock size={13} />
                                 <span>{delayInfo.formattedStart || tmpl.due_time || '18:00'} - {delayInfo.formattedExpire || '18:20'}</span>
@@ -3760,16 +3843,37 @@ export default function ChecklistModule({
             </div>
 
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <table style={{ width: `${Math.max(1100, getTemplateTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                    <th style={{ padding: '0.75rem 1rem' }}>Title & Description</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Recurrence Frequency</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Time / Days / Date</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Assigned To</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Questions / Items</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.title}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Title & Description</div>
+                      <ColumnResizer columnKey="title" isResizing={isTemplateResizing('title')} onMouseDown={(e) => handleTemplateResizeStart('title', e)} onTouchStart={(e) => handleTemplateTouchStart('title', e)} onDoubleClick={() => handleTemplateReset('title')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.frequency}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Recurrence Frequency</div>
+                      <ColumnResizer columnKey="frequency" isResizing={isTemplateResizing('frequency')} onMouseDown={(e) => handleTemplateResizeStart('frequency', e)} onTouchStart={(e) => handleTemplateTouchStart('frequency', e)} onDoubleClick={() => handleTemplateReset('frequency')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.timing}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Time / Days / Date</div>
+                      <ColumnResizer columnKey="timing" isResizing={isTemplateResizing('timing')} onMouseDown={(e) => handleTemplateResizeStart('timing', e)} onTouchStart={(e) => handleTemplateTouchStart('timing', e)} onDoubleClick={() => handleTemplateReset('timing')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.assigned}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Assigned To</div>
+                      <ColumnResizer columnKey="assigned" isResizing={isTemplateResizing('assigned')} onMouseDown={(e) => handleTemplateResizeStart('assigned', e)} onTouchStart={(e) => handleTemplateTouchStart('assigned', e)} onDoubleClick={() => handleTemplateReset('assigned')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.questions}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Questions / Items</div>
+                      <ColumnResizer columnKey="questions" isResizing={isTemplateResizing('questions')} onMouseDown={(e) => handleTemplateResizeStart('questions', e)} onTouchStart={(e) => handleTemplateTouchStart('questions', e)} onDoubleClick={() => handleTemplateReset('questions')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.status}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
+                      <ColumnResizer columnKey="status" isResizing={isTemplateResizing('status')} onMouseDown={(e) => handleTemplateResizeStart('status', e)} onTouchStart={(e) => handleTemplateTouchStart('status', e)} onDoubleClick={() => handleTemplateReset('status')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${templateColWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
+                      <ColumnResizer columnKey="actions" isResizing={isTemplateResizing('actions')} onMouseDown={(e) => handleTemplateResizeStart('actions', e)} onTouchStart={(e) => handleTemplateTouchStart('actions', e)} onDoubleClick={() => handleTemplateReset('actions')} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4367,17 +4471,41 @@ export default function ChecklistModule({
 
             {/* Submissions Table */}
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <table style={{ width: `${Math.max(1100, getLogsTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                    <th style={{ padding: '0.75rem 1rem' }}>Employee</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Checklist</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Period</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Submitted At</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Timing & Delay</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Score</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Verification</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Action</th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.employee}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee</div>
+                      <ColumnResizer columnKey="employee" isResizing={isLogsResizing('employee')} onMouseDown={(e) => handleLogsResizeStart('employee', e)} onTouchStart={(e) => handleLogsTouchStart('employee', e)} onDoubleClick={() => handleLogsReset('employee')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.checklist}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Checklist</div>
+                      <ColumnResizer columnKey="checklist" isResizing={isLogsResizing('checklist')} onMouseDown={(e) => handleLogsResizeStart('checklist', e)} onTouchStart={(e) => handleLogsTouchStart('checklist', e)} onDoubleClick={() => handleLogsReset('checklist')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.period}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Period</div>
+                      <ColumnResizer columnKey="period" isResizing={isLogsResizing('period')} onMouseDown={(e) => handleLogsResizeStart('period', e)} onTouchStart={(e) => handleLogsTouchStart('period', e)} onDoubleClick={() => handleLogsReset('period')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.submitted_at}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Submitted At</div>
+                      <ColumnResizer columnKey="submitted_at" isResizing={isLogsResizing('submitted_at')} onMouseDown={(e) => handleLogsResizeStart('submitted_at', e)} onTouchStart={(e) => handleLogsTouchStart('submitted_at', e)} onDoubleClick={() => handleLogsReset('submitted_at')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.timing}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Timing & Delay</div>
+                      <ColumnResizer columnKey="timing" isResizing={isLogsResizing('timing')} onMouseDown={(e) => handleLogsResizeStart('timing', e)} onTouchStart={(e) => handleLogsTouchStart('timing', e)} onDoubleClick={() => handleLogsReset('timing')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.score}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Score</div>
+                      <ColumnResizer columnKey="score" isResizing={isLogsResizing('score')} onMouseDown={(e) => handleLogsResizeStart('score', e)} onTouchStart={(e) => handleLogsTouchStart('score', e)} onDoubleClick={() => handleLogsReset('score')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.verification}px`, padding: '0.75rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Verification</div>
+                      <ColumnResizer columnKey="verification" isResizing={isLogsResizing('verification')} onMouseDown={(e) => handleLogsResizeStart('verification', e)} onTouchStart={(e) => handleLogsTouchStart('verification', e)} onDoubleClick={() => handleLogsReset('verification')} />
+                    </th>
+                    <th style={{ position: 'relative', width: `${logsColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</div>
+                      <ColumnResizer columnKey="action" isResizing={isLogsResizing('action')} onMouseDown={(e) => handleLogsResizeStart('action', e)} onTouchStart={(e) => handleLogsTouchStart('action', e)} onDoubleClick={() => handleLogsReset('action')} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

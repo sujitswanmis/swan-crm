@@ -39,7 +39,20 @@ import StageConfigModal from './StageConfigModal';
 import PartyMasterDashboard from './PartyMasterDashboard';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 const INDIAN_STATES = ALL_INDIAN_STATES;
+
+const DEFAULT_PARTY_COL_WIDTHS = {
+  select: 40,
+  index: 50,
+  party_code: 180,
+  firm_name: 260,
+  company_state: 180,
+  current_stage: 160,
+  pipeline: 340,
+  status: 110,
+  actions: 110
+};
 
 const ALL_CLIENT_TEAM_ROLES = [
   { id: 'NSM', label: 'NSM (National Sales Manager)' },
@@ -194,6 +207,16 @@ export default function PartyMasterModule({
   const [activeTab, setActiveTab] = useState(activeSubTab || initialSubTab || 'dashboard');
   // Stage Configuration Modal State (S01 to S08 popup on table action)
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+
+  // Column resizing hook for Party Master Table
+  const {
+    columnWidths: partyColWidths,
+    isResizing: isPartyResizing,
+    handleMouseDown: handlePartyResizeStart,
+    handleTouchStart: handlePartyTouchStart,
+    handleDoubleClickReset: handlePartyReset,
+    getTableTotalWidth: getPartyTotalWidth
+  } = useTableColumnResize(DEFAULT_PARTY_COL_WIDTHS, 'party_master_col_widths');
 
   useEffect(() => {
     if (activeSubTab && activeSubTab !== activeTab) {
@@ -2461,10 +2484,10 @@ export default function PartyMasterModule({
 
           {/* Table */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+            <table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.85rem 0.75rem', width: '40px', textAlign: 'center' }}>
+                  <th style={{ position: 'relative', padding: '0.85rem 0.75rem', width: `${partyColWidths.select}px`, textAlign: 'center' }}>
                     <input
                       type="checkbox"
                       checked={isAllAllStageSelected}
@@ -2472,15 +2495,40 @@ export default function PartyMasterModule({
                       title="Select all on this page"
                       style={{ cursor: 'pointer', width: '15px', height: '15px' }}
                     />
+                    <ColumnResizer columnKey="select" isResizing={isPartyResizing('select')} onMouseDown={(e) => handlePartyResizeStart('select', e)} onTouchStart={(e) => handlePartyTouchStart('select', e)} onDoubleClick={() => handlePartyReset('select')} />
                   </th>
-                  <th style={{ padding: '0.85rem 0.6rem', width: '50px', textAlign: 'center' }}>#</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Party Code &amp; Tier</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Firm Name &amp; Contact</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Company / State</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Current Stage</th>
-                  <th style={{ padding: '0.85rem 1rem', minWidth: '320px' }}>8-Stage Onboarding Progress Pipeline</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
-                  <th style={{ padding: '0.85rem 0.6rem', textAlign: 'center', width: '110px' }}>Actions</th>
+                  <th style={{ position: 'relative', padding: '0.85rem 0.6rem', width: `${partyColWidths.index}px`, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>#</div>
+                    <ColumnResizer columnKey="index" isResizing={isPartyResizing('index')} onMouseDown={(e) => handlePartyResizeStart('index', e)} onTouchStart={(e) => handlePartyTouchStart('index', e)} onDoubleClick={() => handlePartyReset('index')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.party_code}px` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Party Code & Tier</div>
+                    <ColumnResizer columnKey="party_code" isResizing={isPartyResizing('party_code')} onMouseDown={(e) => handlePartyResizeStart('party_code', e)} onTouchStart={(e) => handlePartyTouchStart('party_code', e)} onDoubleClick={() => handlePartyReset('party_code')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.firm_name}px` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Firm Name & Contact</div>
+                    <ColumnResizer columnKey="firm_name" isResizing={isPartyResizing('firm_name')} onMouseDown={(e) => handlePartyResizeStart('firm_name', e)} onTouchStart={(e) => handlePartyTouchStart('firm_name', e)} onDoubleClick={() => handlePartyReset('firm_name')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.company_state}px` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Company / State</div>
+                    <ColumnResizer columnKey="company_state" isResizing={isPartyResizing('company_state')} onMouseDown={(e) => handlePartyResizeStart('company_state', e)} onTouchStart={(e) => handlePartyTouchStart('company_state', e)} onDoubleClick={() => handlePartyReset('company_state')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.current_stage}px` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Current Stage</div>
+                    <ColumnResizer columnKey="current_stage" isResizing={isPartyResizing('current_stage')} onMouseDown={(e) => handlePartyResizeStart('current_stage', e)} onTouchStart={(e) => handlePartyTouchStart('current_stage', e)} onDoubleClick={() => handlePartyReset('current_stage')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.pipeline}px` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>8-Stage Onboarding Progress Pipeline</div>
+                    <ColumnResizer columnKey="pipeline" isResizing={isPartyResizing('pipeline')} onMouseDown={(e) => handlePartyResizeStart('pipeline', e)} onTouchStart={(e) => handlePartyTouchStart('pipeline', e)} onDoubleClick={() => handlePartyReset('pipeline')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.status}px`, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
+                    <ColumnResizer columnKey="status" isResizing={isPartyResizing('status')} onMouseDown={(e) => handlePartyResizeStart('status', e)} onTouchStart={(e) => handlePartyTouchStart('status', e)} onDoubleClick={() => handlePartyReset('status')} />
+                  </th>
+                  <th style={{ position: 'relative', padding: '0.85rem 0.6rem', width: `${partyColWidths.actions}px`, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
+                    <ColumnResizer columnKey="actions" isResizing={isPartyResizing('actions')} onMouseDown={(e) => handlePartyResizeStart('actions', e)} onTouchStart={(e) => handlePartyTouchStart('actions', e)} onDoubleClick={() => handlePartyReset('actions')} />
+                  </th>
                 </tr>
               </thead>
               <tbody>
