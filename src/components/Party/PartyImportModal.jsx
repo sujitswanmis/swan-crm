@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { bulkImportPartyMaster } from '@/app/actions/partyMaster';
+import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
+import { PRODUCT_GROUPS } from '@/config/productCatalog';
 
 export default function PartyImportModal({
   isOpen,
@@ -25,118 +27,319 @@ export default function PartyImportModal({
 
   if (!isOpen) return null;
 
-  // Generate and download standard CSV template
-  const handleDownloadTemplate = () => {
-    const headers = [
-      'firm_name',
-      'party_type',
-      'our_company',
-      'contact_person',
-      'primary_mobile',
-      'alt_mobile',
-      'email',
-      'state_name',
-      'district_name',
-      'tehsil',
-      'pincode',
-      'address',
-      'gstin',
-      'pan',
-      'billing_route',
-      'product_category',
-      'security_deposit',
-      'security_mode',
-      'parent_distributor_or_dealer'
-    ];
+  // Generate and download Excel (.xlsx) template with real dropdowns from Location Master
+  const handleDownloadTemplate = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
 
-    const sampleRows = [
-      [
-        'Majha Agro Implements Hub',
-        'Distributor',
-        'NSMLR',
-        'Gurpreet Singh',
-        '9876543210',
-        '9876543211',
-        'majha@agro.com',
-        'Punjab',
-        'Amritsar',
-        'Baba Bakala',
-        '143201',
-        'Shop 12 GT Road Rayya',
-        '03AAAAA0000A1Z5',
-        'ABCDE1234F',
-        'DIRECT_COMPANY_BILLING',
+      const isFull = importMode === 'FULL';
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet(isFull ? 'Full Onboarding S01-S08' : 'Party Master S01');
+
+      // Create hidden Lookups sheet to store Location Master and enum lists (bypasses Excel 255 char formula limits)
+      const lookupSheet = workbook.addWorksheet('Lookups');
+      lookupSheet.state = 'hidden';
+
+      const partyTiers = ['Distributor', 'Dealer', 'Sub-Dealer'];
+      const operatingCompanies = ['NSMLR', 'NSTL'];
+      const locationStates = ALL_INDIAN_STATES && ALL_INDIAN_STATES.length > 0 ? ALL_INDIAN_STATES : ['Punjab', 'Haryana', 'Uttar Pradesh', 'Rajasthan'];
+      const locationDistricts = Array.from(new Set(Object.values(INDIAN_STATE_DISTRICTS || {}).flat())).filter(Boolean).sort();
+      const billingRoutes = ['DIRECT_COMPANY_BILLING', 'DEALER_BILLED', 'DISTRIBUTOR_BILLED'];
+      const productCategories = [
         'Rotavator',
-        '100000',
-        'Cheque',
-        ''
-      ],
-      [
-        'Doaba Tractors & Farm Machines',
-        'Dealer',
-        'NSMLR',
-        'Harpreet Singh',
-        '9812345678',
-        '',
-        'doaba@tractors.com',
-        'Punjab',
-        'Jalandhar',
-        'Nakodar',
-        '144001',
-        'Near Old Bus Stand Nakodar Road',
-        '03BBBBB0000B1Z6',
-        'BCDEF2345G',
-        'DIRECT_COMPANY_BILLING',
-        'Agro Implements',
-        '50000',
-        'Cheque',
-        'Majha Agro Implements Hub'
-      ],
-      [
-        'Malwa Kisan Seva Center',
-        'Sub-Dealer',
-        'NSTL',
-        'Jaswinder Singh',
-        '9823456789',
-        '',
-        'malwa@kisan.com',
-        'Punjab',
-        'Ludhiana',
-        'Khanna',
-        '141401',
-        'Main Chowk GT Road Khanna',
-        '',
-        '',
-        'DEALER_BILLED',
-        'Rotavator',
-        '25000',
-        'Cheque',
-        'Doaba Tractors & Farm Machines'
-      ]
-    ];
+        'Hydraulic Reversible MB Plough',
+        'Mounted Disc Plough',
+        'Laser Land Leveller',
+        'Super Seeder',
+        'Roto Seeder',
+        'Happy Seeder',
+        'Zero Till Seed Drill',
+        'Mulcher',
+        'Straw Reaper',
+        'Square Baler',
+        'Fertilizer Spreader',
+        'Disc Harrow',
+        'Cultivator',
+        'Sub Soiler',
+        'Genuine Swan Blades, Gearbox & Spares'
+      ];
+      const securityModes = ['Cheque', 'NEFT/RTGS', 'DD', 'Bank Guarantee', 'Cash'];
 
-    const csvContent = '\uFEFF' + [
-      headers.join(','),
-      ...sampleRows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    ].join('\r\n');
+      // Populate Column A: Party Tiers
+      lookupSheet.getCell('A1').value = 'Party Tiers';
+      partyTiers.forEach((tier, i) => { lookupSheet.getCell(`A${i + 2}`).value = tier; });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Swan_Party_Master_S01_Template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // Populate Column B: Operating Companies
+      lookupSheet.getCell('B1').value = 'Operating Companies';
+      operatingCompanies.forEach((comp, i) => { lookupSheet.getCell(`B${i + 2}`).value = comp; });
+
+      // Populate Column C: Location States (From Central Location Master)
+      lookupSheet.getCell('C1').value = 'States';
+      locationStates.forEach((st, i) => { lookupSheet.getCell(`C${i + 2}`).value = st; });
+
+      // Populate Column D: Location Districts (From Central Location Master)
+      lookupSheet.getCell('D1').value = 'Districts';
+      locationDistricts.forEach((dist, i) => { lookupSheet.getCell(`D${i + 2}`).value = dist; });
+
+      // Populate Column E: Billing Routes
+      lookupSheet.getCell('E1').value = 'Billing Routes';
+      billingRoutes.forEach((route, i) => { lookupSheet.getCell(`E${i + 2}`).value = route; });
+
+      // Populate Column F: Product Categories
+      lookupSheet.getCell('F1').value = 'Product Categories';
+      productCategories.forEach((cat, i) => { lookupSheet.getCell(`F${i + 2}`).value = cat; });
+
+      // Populate Column G: Security Modes
+      lookupSheet.getCell('G1').value = 'Security Modes';
+      securityModes.forEach((mode, i) => { lookupSheet.getCell(`G${i + 2}`).value = mode; });
+
+      // Define Names for Universal Excel Dropdowns
+      workbook.definedNames.add(`Lookups!$A$2:$A$${partyTiers.length + 1}`, 'PartyTiers');
+      workbook.definedNames.add(`Lookups!$B$2:$B$${operatingCompanies.length + 1}`, 'OperatingCompanies');
+      workbook.definedNames.add(`Lookups!$C$2:$C$${locationStates.length + 1}`, 'LocationStates');
+      workbook.definedNames.add(`Lookups!$D$2:$D$${locationDistricts.length + 1}`, 'LocationDistricts');
+      workbook.definedNames.add(`Lookups!$E$2:$E$${billingRoutes.length + 1}`, 'BillingRoutes');
+      workbook.definedNames.add(`Lookups!$F$2:$F$${productCategories.length + 1}`, 'ProductCategories');
+      workbook.definedNames.add(`Lookups!$G$2:$G$${securityModes.length + 1}`, 'SecurityModes');
+
+      // Define Headers based on Import Scope
+      const fullHeaders = [
+        'firm_name',
+        'party_type',
+        'our_company',
+        'contact_person',
+        'primary_mobile',
+        'alt_mobile',
+        'email',
+        'state_name',
+        'district_name',
+        'tehsil',
+        'pincode',
+        'address',
+        'gstin',
+        'pan',
+        'billing_route',
+        'product_category',
+        'security_deposit',
+        'security_mode',
+        'parent_distributor_or_dealer'
+      ];
+
+      const s01Headers = [
+        'firm_name',
+        'party_type',
+        'our_company',
+        'contact_person',
+        'primary_mobile',
+        'alt_mobile',
+        'email',
+        'state_name',
+        'district_name',
+        'tehsil',
+        'pincode',
+        'address',
+        'gstin',
+        'pan'
+      ];
+
+      const activeHeaders = isFull ? fullHeaders : s01Headers;
+      sheet.addRow(activeHeaders);
+
+      // Header Row Styling
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isFull ? 'FF0F766E' : 'FF0284C7' } // Teal for Full, Sky for S01
+      };
+      headerRow.height = 24;
+
+      // Add Sample Rows tailored to selected scope
+      const fullSampleRows = [
+        [
+          'Majha Agro Implements Hub',
+          'Distributor',
+          'NSMLR',
+          'Gurpreet Singh',
+          '9876543210',
+          '9876543211',
+          'majha@agro.com',
+          'Punjab',
+          'Amritsar',
+          'Baba Bakala',
+          '143201',
+          'Shop 12 GT Road Rayya',
+          '03AAAAA0000A1Z5',
+          'ABCDE1234F',
+          'DIRECT_COMPANY_BILLING',
+          'Rotavator',
+          '100000',
+          'Cheque',
+          ''
+        ],
+        [
+          'Doaba Tractors & Farm Machines',
+          'Dealer',
+          'NSMLR',
+          'Harpreet Singh',
+          '9812345678',
+          '',
+          'doaba@tractors.com',
+          'Punjab',
+          'Jalandhar',
+          'Nakodar',
+          '144001',
+          'Near Old Bus Stand Nakodar Road',
+          '03BBBBB0000B1Z6',
+          'BCDEF2345G',
+          'DIRECT_COMPANY_BILLING',
+          'Super Seeder',
+          '50000',
+          'Cheque',
+          'Majha Agro Implements Hub'
+        ],
+        [
+          'Malwa Kisan Seva Center',
+          'Sub-Dealer',
+          'NSTL',
+          'Jaswinder Singh',
+          '9823456789',
+          '',
+          'malwa@kisan.com',
+          'Punjab',
+          'Ludhiana',
+          'Khanna',
+          '141401',
+          'Main Chowk GT Road Khanna',
+          '',
+          '',
+          'DEALER_BILLED',
+          'Rotavator',
+          '25000',
+          'Cheque',
+          'Doaba Tractors & Farm Machines'
+        ]
+      ];
+
+      const s01SampleRows = fullSampleRows.map(row => row.slice(0, 14));
+      const sampleData = isFull ? fullSampleRows : s01SampleRows;
+
+      sampleData.forEach(row => {
+        sheet.addRow(row);
+      });
+
+      // Set column widths
+      sheet.columns.forEach((col, i) => {
+        const headerName = activeHeaders[i];
+        if (headerName === 'address' || headerName === 'parent_distributor_or_dealer') {
+          col.width = 30;
+        } else if (headerName === 'firm_name') {
+          col.width = 28;
+        } else if (headerName === 'primary_mobile' || headerName === 'gstin' || headerName === 'billing_route' || headerName === 'product_category') {
+          col.width = 22;
+        } else {
+          col.width = 18;
+        }
+      });
+
+      // Apply Excel Data Validations (Dropdowns) across rows 2 to 1000
+      // Col B: Party Tier
+      sheet.dataValidations.add('B2:B1000', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=PartyTiers'],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Tier',
+        error: 'Please pick Distributor, Dealer, or Sub-Dealer from dropdown.'
+      });
+
+      // Col C: Operating Company
+      sheet.dataValidations.add('C2:C1000', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=OperatingCompanies'],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Company',
+        error: 'Please pick NSMLR or NSTL from dropdown.'
+      });
+
+      // Col H: State (from Location Master)
+      sheet.dataValidations.add('H2:H1000', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=LocationStates'],
+        showErrorMessage: true,
+        errorTitle: 'Invalid State',
+        error: 'Please select a valid Indian State from Location Master dropdown.'
+      });
+
+      // Col I: District (from Location Master)
+      sheet.dataValidations.add('I2:I1000', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=LocationDistricts'],
+        showErrorMessage: true,
+        errorTitle: 'Invalid District',
+        error: 'Please select a valid District from Location Master dropdown.'
+      });
+
+      if (isFull) {
+        // Col O: Billing Route
+        sheet.dataValidations.add('O2:O1000', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=BillingRoutes'],
+          showErrorMessage: true,
+          errorTitle: 'Invalid Billing Route',
+          error: 'Please choose DIRECT_COMPANY_BILLING, DEALER_BILLED, or DISTRIBUTOR_BILLED.'
+        });
+
+        // Col P: Product Category
+        sheet.dataValidations.add('P2:P1000', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=ProductCategories'],
+          showErrorMessage: true,
+          errorTitle: 'Invalid Product Category',
+          error: 'Please select an authorized implement category from dropdown.'
+        });
+
+        // Col R: Security Mode
+        sheet.dataValidations.add('R2:R1000', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=SecurityModes'],
+          showErrorMessage: true,
+          errorTitle: 'Invalid Security Mode',
+          error: 'Please choose Cheque, NEFT/RTGS, DD, Bank Guarantee, or Cash.'
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileName = isFull
+        ? 'Swan_Party_Master_Full_S01_to_S08_Template.xlsx'
+        : 'Swan_Party_Master_Only_S01_Template.xlsx';
+
+      saveAs(new Blob([buffer]), fileName);
+    } catch (err) {
+      console.error('Error generating Excel template:', err);
+      alert('Could not generate Excel template: ' + err.message);
+    }
   };
 
-  // Parse and validate uploaded CSV
-  const handleFileChange = (e) => {
+  // Parse and validate uploaded file (supports BOTH .xlsx and .csv)
+  const handleFileChange = async (e) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    if (!selectedFile.name.endsWith('.csv')) {
-      alert('Please upload a valid CSV (.csv) file.');
+    const lowerName = selectedFile.name.toLowerCase();
+    const isXlsx = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
+    const isCsv = lowerName.endsWith('.csv');
+
+    if (!isXlsx && !isCsv) {
+      alert('Please upload a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
       return;
     }
 
@@ -144,18 +347,63 @@ export default function PartyImportModal({
     setValidationSummary(null);
     setParsedRows([]);
 
-    Papa.parse(selectedFile, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim().toLowerCase().replace(/[\s/-]+/g, '_'),
-      complete: (results) => {
-        const rawData = results.data || [];
+    try {
+      if (isXlsx) {
+        const ExcelJS = (await import('exceljs')).default;
+        const workbook = new ExcelJS.Workbook();
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        await workbook.xlsx.load(arrayBuffer);
+        const worksheet = workbook.worksheets[0];
+
+        const worksheetHeaders = [];
+        worksheet.getRow(1).eachCell((cell, colNumber) => {
+          const val = cell.value ? String(cell.value).trim().toLowerCase().replace(/[\s/-]+/g, '_') : '';
+          worksheetHeaders[colNumber] = val;
+        });
+
+        const rawData = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // skip header row
+          const rowData = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const header = worksheetHeaders[colNumber];
+            if (header) {
+              let val = cell.value;
+              if (val instanceof Date) {
+                val = val.toISOString().split('T')[0];
+              } else if (val && typeof val === 'object' && val.text) {
+                val = val.text;
+              } else if (val && typeof val === 'object' && val.result !== undefined) {
+                val = val.result;
+              }
+              rowData[header] = val !== null && val !== undefined ? String(val).trim() : '';
+            }
+          });
+          if (Object.values(rowData).some(v => v !== '')) {
+            rawData.push(rowData);
+          }
+        });
+
         validateAndPrepareRows(rawData);
-      },
-      error: (err) => {
-        alert('Failed to read CSV: ' + err.message);
+      } else {
+        // CSV Parsing via PapaParse
+        Papa.parse(selectedFile, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (h) => h.trim().toLowerCase().replace(/[\s/-]+/g, '_'),
+          complete: (results) => {
+            const rawData = results.data || [];
+            validateAndPrepareRows(rawData);
+          },
+          error: (err) => {
+            alert('Failed to read CSV: ' + err.message);
+          }
+        });
       }
-    });
+    } catch (err) {
+      console.error('File reading error:', err);
+      alert('Error parsing uploaded file: ' + err.message);
+    }
   };
 
   const validateAndPrepareRows = (rows) => {
@@ -555,10 +803,10 @@ export default function PartyImportModal({
                   <FileSpreadsheet size={22} className="text-sky-400" />
                   <div>
                     <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Need the standard CSV format?
+                      {importMode === 'FULL' ? 'Full S01–S08 Excel Template' : 'Only S01 Registration Excel Template'}
                     </div>
                     <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      Download our template with sample entries for Distributor, Dealer & Sub-Dealer.
+                      Includes Location Master dropdowns for State & District, plus Party Tier, Company, Billing Route & Products.
                     </div>
                   </div>
                 </div>
@@ -568,9 +816,9 @@ export default function PartyImportModal({
                   onClick={handleDownloadTemplate}
                   style={{
                     padding: '0.45rem 0.95rem',
-                    background: 'rgba(56,189,248,0.15)',
-                    border: '1px solid rgba(56,189,248,0.4)',
-                    color: '#38bdf8',
+                    background: importMode === 'FULL' ? 'rgba(16,185,129,0.15)' : 'rgba(56,189,248,0.15)',
+                    border: `1px solid ${importMode === 'FULL' ? 'rgba(16,185,129,0.4)' : 'rgba(56,189,248,0.4)'}`,
+                    color: importMode === 'FULL' ? '#10b981' : '#38bdf8',
                     borderRadius: '7px',
                     fontWeight: 700,
                     fontSize: '0.78rem',
@@ -580,7 +828,7 @@ export default function PartyImportModal({
                     gap: '0.35rem'
                   }}
                 >
-                  <Download size={14} /> Download Sample Template (.csv)
+                  <Download size={14} /> {importMode === 'FULL' ? 'Download Full S01–S08 Template (.xlsx)' : 'Download Only S01 Template (.xlsx)'}
                 </button>
               </div>
 
@@ -597,7 +845,7 @@ export default function PartyImportModal({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".xlsx, .xls, .csv"
                   onChange={handleFileChange}
                   style={{ display: 'none' }}
                 />
@@ -616,10 +864,10 @@ export default function PartyImportModal({
                 ) : (
                   <div>
                     <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Click to choose or drag & drop CSV file
+                      Click to choose or drag & drop Excel or CSV file
                     </div>
                     <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                      Supports comma-separated `.csv` files
+                      Supports Excel (`.xlsx`, `.xls`) with dropdowns and comma-separated `.csv`
                     </div>
                   </div>
                 )}

@@ -605,9 +605,9 @@ export default function StageDataTable({
                 gap: '0.4rem',
                 boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)'
               }}
-              title="Bulk import channel partners from CSV (S01 to S08)"
+              title="Bulk import channel partners from Excel (.xlsx) or CSV (S01 to S08)"
             >
-              <Upload size={15} /> Import S01 CSV
+              <Upload size={15} /> Import S01 (Excel/CSV)
             </button>
           )}
 
