@@ -43,6 +43,7 @@ export default function PartyImportModal({
 
       const partyTiers = ['Distributor', 'Dealer', 'Sub-Dealer'];
       const operatingCompanies = ['NSMLR', 'NSTL'];
+      const constitutionTypes = ['PROPRIETORSHIP', 'PARTNERSHIP', 'PVT_LTD', 'LTD', 'LLP'];
       const locationStates = ALL_INDIAN_STATES && ALL_INDIAN_STATES.length > 0 ? ALL_INDIAN_STATES : ['Punjab', 'Haryana', 'Uttar Pradesh', 'Rajasthan'];
       const locationDistricts = Array.from(new Set(Object.values(INDIAN_STATE_DISTRICTS || {}).flat())).filter(Boolean).sort();
       const billingRoutes = ['DIRECT_COMPANY_BILLING', 'DEALER_BILLED', 'DISTRIBUTOR_BILLED'];
@@ -74,51 +75,100 @@ export default function PartyImportModal({
       lookupSheet.getCell('B1').value = 'Operating Companies';
       operatingCompanies.forEach((comp, i) => { lookupSheet.getCell(`B${i + 2}`).value = comp; });
 
-      // Populate Column C: Location States (From Central Location Master)
-      lookupSheet.getCell('C1').value = 'States';
-      locationStates.forEach((st, i) => { lookupSheet.getCell(`C${i + 2}`).value = st; });
+      // Populate Column C: Constitution Types
+      lookupSheet.getCell('C1').value = 'Constitution Types';
+      constitutionTypes.forEach((ctype, i) => { lookupSheet.getCell(`C${i + 2}`).value = ctype; });
 
-      // Populate Column D: Location Districts (From Central Location Master)
-      lookupSheet.getCell('D1').value = 'Districts';
-      locationDistricts.forEach((dist, i) => { lookupSheet.getCell(`D${i + 2}`).value = dist; });
+      // Populate Column D: Location States (From Central Location Master)
+      lookupSheet.getCell('D1').value = 'States';
+      locationStates.forEach((st, i) => { lookupSheet.getCell(`D${i + 2}`).value = st; });
 
-      // Populate Column E: Billing Routes
-      lookupSheet.getCell('E1').value = 'Billing Routes';
-      billingRoutes.forEach((route, i) => { lookupSheet.getCell(`E${i + 2}`).value = route; });
+      // Populate Column E: Location Districts (From Central Location Master)
+      lookupSheet.getCell('E1').value = 'Districts';
+      locationDistricts.forEach((dist, i) => { lookupSheet.getCell(`E${i + 2}`).value = dist; });
 
-      // Populate Column F: Product Categories
-      lookupSheet.getCell('F1').value = 'Product Categories';
-      productCategories.forEach((cat, i) => { lookupSheet.getCell(`F${i + 2}`).value = cat; });
+      // Populate Column F: Billing Routes
+      lookupSheet.getCell('F1').value = 'Billing Routes';
+      billingRoutes.forEach((route, i) => { lookupSheet.getCell(`F${i + 2}`).value = route; });
 
-      // Populate Column G: Security Modes
-      lookupSheet.getCell('G1').value = 'Security Modes';
-      securityModes.forEach((mode, i) => { lookupSheet.getCell(`G${i + 2}`).value = mode; });
+      // Populate Column G: Product Categories
+      lookupSheet.getCell('G1').value = 'Product Categories';
+      productCategories.forEach((cat, i) => { lookupSheet.getCell(`G${i + 2}`).value = cat; });
+
+      // Populate Column H: Security Modes
+      lookupSheet.getCell('H1').value = 'Security Modes';
+      securityModes.forEach((mode, i) => { lookupSheet.getCell(`H${i + 2}`).value = mode; });
 
       // Define Names for Universal Excel Dropdowns
       workbook.definedNames.add(`Lookups!$A$2:$A$${partyTiers.length + 1}`, 'PartyTiers');
       workbook.definedNames.add(`Lookups!$B$2:$B$${operatingCompanies.length + 1}`, 'OperatingCompanies');
-      workbook.definedNames.add(`Lookups!$C$2:$C$${locationStates.length + 1}`, 'LocationStates');
-      workbook.definedNames.add(`Lookups!$D$2:$D$${locationDistricts.length + 1}`, 'LocationDistricts');
-      workbook.definedNames.add(`Lookups!$E$2:$E$${billingRoutes.length + 1}`, 'BillingRoutes');
-      workbook.definedNames.add(`Lookups!$F$2:$F$${productCategories.length + 1}`, 'ProductCategories');
-      workbook.definedNames.add(`Lookups!$G$2:$G$${securityModes.length + 1}`, 'SecurityModes');
+      workbook.definedNames.add(`Lookups!$C$2:$C$${constitutionTypes.length + 1}`, 'ConstitutionTypes');
+      workbook.definedNames.add(`Lookups!$D$2:$D$${locationStates.length + 1}`, 'LocationStates');
+      workbook.definedNames.add(`Lookups!$E$2:$E$${locationDistricts.length + 1}`, 'LocationDistricts');
+      workbook.definedNames.add(`Lookups!$F$2:$F$${billingRoutes.length + 1}`, 'BillingRoutes');
+      workbook.definedNames.add(`Lookups!$G$2:$G$${productCategories.length + 1}`, 'ProductCategories');
+      workbook.definedNames.add(`Lookups!$H$2:$H$${securityModes.length + 1}`, 'SecurityModes');
 
-      // Define Headers based on Import Scope
-      const fullHeaders = [
+      // Define Complete S01 Headers (Firm Details + 22 Communication Channels) = 44 Columns
+      const s01Headers = [
+        // 1. Basic Firm Details & Location (14)
         'firm_name',
+        'legal_name',
         'party_type',
         'our_company',
-        'contact_person',
-        'primary_mobile',
-        'alt_mobile',
-        'email',
-        'state_name',
-        'district_name',
-        'tehsil',
-        'pincode',
-        'address',
+        'constitution_type',
         'gstin',
         'pan',
+        'state_name',
+        'district_name',
+        'city_village',
+        'tehsil',
+        'block_name',
+        'pincode',
+        'address',
+
+        // 2. Official Business Communication Channels (8)
+        'biz_contact_no_1',
+        'biz_contact_no_2',
+        'biz_alt_no_1',
+        'biz_alt_no_2',
+        'biz_email_1',
+        'biz_email_2',
+        'biz_alt_email_1',
+        'biz_alt_email_2',
+
+        // 3. Contact Person 1 (Primary Key Official / Director / Proprietor) (7)
+        'contact_person_name_1',
+        'contact_mobile_1_1',
+        'contact_mobile_1_2',
+        'contact_alt_mobile_1_1',
+        'contact_alt_mobile_1_2',
+        'contact_email_1_2',
+        'contact_alt_email_1_1',
+
+        // 4. Contact Person 2 (Secondary / Accounts) (7)
+        'contact_person_name_2',
+        'contact_mobile_2_1',
+        'contact_mobile_2_2',
+        'contact_alt_mobile_2_1',
+        'contact_alt_mobile_2_2',
+        'contact_email_2_2',
+        'contact_alt_email_2_1',
+
+        // 5. Contact Person 3 (Additional Key Official) (8)
+        'contact_person_name_3',
+        'contact_mobile_3_1',
+        'contact_mobile_3_2',
+        'contact_alt_mobile_3_1',
+        'contact_alt_mobile_3_2',
+        'contact_email_3_1',
+        'contact_email_3_2',
+        'contact_alt_email_3_1'
+      ];
+
+      // Define Full Scope Headers (S01 + Commercial Terms + Activation) = 49 Columns
+      const fullHeaders = [
+        ...s01Headers,
         'billing_route',
         'product_category',
         'security_deposit',
@@ -126,53 +176,66 @@ export default function PartyImportModal({
         'parent_distributor_or_dealer'
       ];
 
-      const s01Headers = [
-        'firm_name',
-        'party_type',
-        'our_company',
-        'contact_person',
-        'primary_mobile',
-        'alt_mobile',
-        'email',
-        'state_name',
-        'district_name',
-        'tehsil',
-        'pincode',
-        'address',
-        'gstin',
-        'pan'
-      ];
-
       const activeHeaders = isFull ? fullHeaders : s01Headers;
       sheet.addRow(activeHeaders);
 
       // Header Row Styling
       const headerRow = sheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
       headerRow.fill = {
         type: 'pattern',
         pattern: 'solid',
         fgColor: { argb: isFull ? 'FF0F766E' : 'FF0284C7' } // Teal for Full, Sky for S01
       };
-      headerRow.height = 24;
+      headerRow.height = 25;
 
-      // Add Sample Rows tailored to selected scope
+      // Realistic Sample Rows tailored to selected scope
       const fullSampleRows = [
         [
           'Majha Agro Implements Hub',
+          'Majha Agro Implements Hub Pvt Ltd',
           'Distributor',
           'NSMLR',
+          'PVT_LTD',
+          '03AAAAA0000A1Z5',
+          'ABCDE1234F',
+          'Punjab',
+          'Amritsar',
+          'Rayya',
+          'Baba Bakala',
+          'Rayya',
+          '143201',
+          'Shop 12 GT Road Rayya',
+          '9876543210',
+          '0183250001',
+          '',
+          '',
+          'orders@majhaagro.com',
+          'accounts@majhaagro.com',
+          '',
+          '',
           'Gurpreet Singh',
           '9876543210',
           '9876543211',
-          'majha@agro.com',
-          'Punjab',
-          'Amritsar',
-          'Baba Bakala',
-          '143201',
-          'Shop 12 GT Road Rayya',
-          '03AAAAA0000A1Z5',
-          'ABCDE1234F',
+          '',
+          '',
+          'gurpreet@majhaagro.com',
+          '',
+          'Harman Singh',
+          '9876543212',
+          '',
+          '',
+          '',
+          'harman@majhaagro.com',
+          '',
+          'Baljinder Singh',
+          '9876543213',
+          '',
+          '',
+          '',
+          'baljinder@majhaagro.com',
+          '',
+          '',
           'DIRECT_COMPANY_BILLING',
           'Rotavator',
           '100000',
@@ -181,19 +244,49 @@ export default function PartyImportModal({
         ],
         [
           'Doaba Tractors & Farm Machines',
+          'Doaba Tractors & Farm Machines',
           'Dealer',
           'NSMLR',
-          'Harpreet Singh',
-          '9812345678',
-          '',
-          'doaba@tractors.com',
+          'PARTNERSHIP',
+          '03BBBBB0000B1Z6',
+          'BCDEF2345G',
           'Punjab',
           'Jalandhar',
           'Nakodar',
+          'Nakodar',
+          'Nakodar',
           '144001',
           'Near Old Bus Stand Nakodar Road',
-          '03BBBBB0000B1Z6',
-          'BCDEF2345G',
+          '9812345678',
+          '0181240002',
+          '',
+          '',
+          'doaba@tractors.com',
+          '',
+          '',
+          '',
+          'Harpreet Singh',
+          '9812345678',
+          '',
+          '',
+          '',
+          'harpreet@tractors.com',
+          '',
+          'Manjit Kaur',
+          '9812345679',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
           'DIRECT_COMPANY_BILLING',
           'Super Seeder',
           '50000',
@@ -202,17 +295,47 @@ export default function PartyImportModal({
         ],
         [
           'Malwa Kisan Seva Center',
+          'Malwa Kisan Seva Center',
           'Sub-Dealer',
           'NSTL',
-          'Jaswinder Singh',
-          '9823456789',
+          'PROPRIETORSHIP',
           '',
-          'malwa@kisan.com',
+          '',
           'Punjab',
           'Ludhiana',
           'Khanna',
+          'Khanna',
+          'Khanna',
           '141401',
           'Main Chowk GT Road Khanna',
+          '9823456789',
+          '',
+          '',
+          '',
+          'malwa@kisan.com',
+          '',
+          '',
+          '',
+          'Jaswinder Singh',
+          '9823456789',
+          '',
+          '',
+          '',
+          'jaswinder@kisan.com',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
           '',
           '',
           'DEALER_BILLED',
@@ -223,7 +346,7 @@ export default function PartyImportModal({
         ]
       ];
 
-      const s01SampleRows = fullSampleRows.map(row => row.slice(0, 14));
+      const s01SampleRows = fullSampleRows.map(row => row.slice(0, 44));
       const sampleData = isFull ? fullSampleRows : s01SampleRows;
 
       sampleData.forEach(row => {
@@ -233,20 +356,20 @@ export default function PartyImportModal({
       // Set column widths
       sheet.columns.forEach((col, i) => {
         const headerName = activeHeaders[i];
-        if (headerName === 'address' || headerName === 'parent_distributor_or_dealer') {
-          col.width = 30;
-        } else if (headerName === 'firm_name') {
+        if (headerName === 'address' || headerName === 'parent_distributor_or_dealer' || headerName.includes('email')) {
           col.width = 28;
-        } else if (headerName === 'primary_mobile' || headerName === 'gstin' || headerName === 'billing_route' || headerName === 'product_category') {
-          col.width = 22;
+        } else if (headerName.includes('firm_name') || headerName.includes('legal_name') || headerName.includes('contact_person_name')) {
+          col.width = 25;
+        } else if (headerName.includes('mobile') || headerName.includes('contact_no') || headerName.includes('gstin') || headerName === 'billing_route' || headerName === 'product_category') {
+          col.width = 20;
         } else {
-          col.width = 18;
+          col.width = 16;
         }
       });
 
       // Apply Excel Data Validations (Dropdowns) across rows 2 to 1000
-      // Col B: Party Tier
-      sheet.dataValidations.add('B2:B1000', {
+      // Col C: Party Tier
+      sheet.dataValidations.add('C2:C1000', {
         type: 'list',
         allowBlank: true,
         formulae: ['=PartyTiers'],
@@ -255,14 +378,24 @@ export default function PartyImportModal({
         error: 'Please pick Distributor, Dealer, or Sub-Dealer from dropdown.'
       });
 
-      // Col C: Operating Company
-      sheet.dataValidations.add('C2:C1000', {
+      // Col D: Operating Company
+      sheet.dataValidations.add('D2:D1000', {
         type: 'list',
         allowBlank: true,
         formulae: ['=OperatingCompanies'],
         showErrorMessage: true,
         errorTitle: 'Invalid Company',
         error: 'Please pick NSMLR or NSTL from dropdown.'
+      });
+
+      // Col E: Constitution Type
+      sheet.dataValidations.add('E2:E1000', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=ConstitutionTypes'],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Constitution',
+        error: 'Please pick PROPRIETORSHIP, PARTNERSHIP, PVT_LTD, LTD, or LLP.'
       });
 
       // Col H: State (from Location Master)
@@ -286,8 +419,8 @@ export default function PartyImportModal({
       });
 
       if (isFull) {
-        // Col O: Billing Route
-        sheet.dataValidations.add('O2:O1000', {
+        // Col AS (Column 45): Billing Route
+        sheet.dataValidations.add('AS2:AS1000', {
           type: 'list',
           allowBlank: true,
           formulae: ['=BillingRoutes'],
@@ -296,8 +429,8 @@ export default function PartyImportModal({
           error: 'Please choose DIRECT_COMPANY_BILLING, DEALER_BILLED, or DISTRIBUTOR_BILLED.'
         });
 
-        // Col P: Product Category
-        sheet.dataValidations.add('P2:P1000', {
+        // Col AT (Column 46): Product Category
+        sheet.dataValidations.add('AT2:AT1000', {
           type: 'list',
           allowBlank: true,
           formulae: ['=ProductCategories'],
@@ -306,8 +439,8 @@ export default function PartyImportModal({
           error: 'Please select an authorized implement category from dropdown.'
         });
 
-        // Col R: Security Mode
-        sheet.dataValidations.add('R2:R1000', {
+        // Col AV (Column 48): Security Mode
+        sheet.dataValidations.add('AV2:AV1000', {
           type: 'list',
           allowBlank: true,
           formulae: ['=SecurityModes'],
@@ -422,8 +555,9 @@ export default function PartyImportModal({
     rows.forEach((row, idx) => {
       const rowIdx = idx + 1;
       const firmName = (row.firm_name || row.company || row.firm || '').trim();
-      const rawMobile = (row.primary_mobile || row.mobile || row.phone || '').trim();
+      const rawMobile = (row.biz_contact_no_1 || row.contact_mobile_1_1 || row.primary_mobile || row.mobile || row.phone || '').trim();
       const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
+      const contactPerson = (row.contact_person_name_1 || row.contact_person || row.owner_name || firmName).trim();
       const state = (row.state_name || row.state || 'Punjab').trim();
       const district = (row.district_name || row.district || '').trim();
 
@@ -458,6 +592,7 @@ export default function PartyImportModal({
         ...row,
         firm_name: firmName,
         primary_mobile: cleanMobile || rawMobile,
+        contact_person: contactPerson,
         state_name: state,
         district_name: district
       });

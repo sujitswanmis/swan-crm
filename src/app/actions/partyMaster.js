@@ -1537,7 +1537,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       const row = partiesList[i];
       const rowIdx = i + 1;
       const firmName = String(row.firm_name || row.company || row['Firm Name'] || '').trim();
-      const rawMobile = String(row.primary_mobile || row.mobile || row.phone || row['Primary Mobile'] || row['Mobile'] || '').trim();
+      const rawMobile = String(row.biz_contact_no_1 || row.contact_mobile_1_1 || row.primary_mobile || row.mobile || row.phone || row['Primary Mobile'] || row['Mobile'] || '').trim();
       const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
 
       // Validation
@@ -1594,15 +1594,26 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       const rawComp = String(row.our_company || row['Operating Company'] || row.company_name || 'NSMLR').trim().toUpperCase();
       const ourCompany = rawComp === 'NSTL' || rawComp === 'NSTLP' ? 'NSTL' : 'NSMLR';
 
+      let constitution = String(row.constitution_type || row['Constitution Type'] || 'PROPRIETORSHIP').trim().toUpperCase();
+      if (!['PROPRIETORSHIP', 'PARTNERSHIP', 'PVT_LTD', 'LTD', 'LLP'].includes(constitution)) {
+        if (constitution.includes('PARTNER')) constitution = 'PARTNERSHIP';
+        else if (constitution.includes('PVT')) constitution = 'PVT_LTD';
+        else if (constitution.includes('LLP')) constitution = 'LLP';
+        else if (constitution.includes('LTD')) constitution = 'LTD';
+        else constitution = 'PROPRIETORSHIP';
+      }
+
       const stateName = String(row.state_name || row.state || row['State'] || 'Punjab').trim();
       const districtName = String(row.district_name || row.district || row['District'] || '').trim();
-      const tehsilName = String(row.tehsil || row['Tehsil'] || row.city_village || row['City'] || '').trim();
+      const cityVillage = String(row.city_village || row['City / Village'] || row.city || '').trim();
+      const blockName = String(row.block_name || row['Block Name'] || row.block || '').trim();
+      const tehsilName = String(row.tehsil || row['Tehsil'] || cityVillage || '').trim();
       const pincode = String(row.pincode || row['Pincode'] || row.pin_code || '').trim();
       const addressLine = String(row.address || row['Address'] || row.address_line_1 || '').trim();
 
-      const contactPerson = String(row.contact_person || row.contact_person_name_1 || row.owner_name || row['Contact Person'] || firmName).trim();
-      const altMobile = String(row.alt_mobile || row.biz_contact_no_2 || row['Alt Mobile'] || '').trim();
-      const email = String(row.email || row.official_email || row['Email'] || '').trim();
+      const contactPerson = String(row.contact_person_name_1 || row.contact_person || row.owner_name || row['Contact Person'] || firmName).trim();
+      const altMobile = String(row.contact_mobile_1_2 || row.biz_contact_no_2 || row.alt_mobile || '').trim();
+      const email = String(row.biz_email_1 || row.contact_email_1_2 || row.email || row.official_email || '').trim();
       const pan = String(row.pan || row.pan_no || row['PAN'] || '').trim().toUpperCase();
 
       const billingRoute = String(row.billing_route || row.billing_route_type || row['Billing Route'] || 'DIRECT_COMPANY_BILLING').trim().toUpperCase();
@@ -1641,6 +1652,21 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
         security_mode: secMode
       };
 
+      // Populate all 22 contact channels and detailed location fields into metadata
+      const s01MetaKeys = [
+        'biz_contact_no_1', 'biz_contact_no_2', 'biz_alt_no_1', 'biz_alt_no_2',
+        'biz_email_1', 'biz_email_2', 'biz_alt_email_1', 'biz_alt_email_2',
+        'contact_person_name_1', 'contact_mobile_1_1', 'contact_mobile_1_2', 'contact_alt_mobile_1_1', 'contact_alt_mobile_1_2', 'contact_email_1_2', 'contact_alt_email_1_1',
+        'contact_person_name_2', 'contact_mobile_2_1', 'contact_mobile_2_2', 'contact_alt_mobile_2_1', 'contact_alt_mobile_2_2', 'contact_email_2_2', 'contact_alt_email_2_1',
+        'contact_person_name_3', 'contact_mobile_3_1', 'contact_mobile_3_2', 'contact_alt_mobile_3_1', 'contact_alt_mobile_3_2', 'contact_email_3_1', 'contact_email_3_2', 'contact_alt_email_3_1',
+        'city_village', 'block_name', 'tehsil'
+      ];
+      s01MetaKeys.forEach(k => {
+        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+          metaPayload[k] = String(row[k]).trim();
+        }
+      });
+
       const serializedMeta = 'SWAN_PARTY_META:' + JSON.stringify(metaPayload);
 
       const dbPayload = {
@@ -1648,7 +1674,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
         party_universal_code: partyCode,
         firm_name: firmName,
         legal_name: String(row.legal_name || row['Legal Name'] || firmName).trim(),
-        constitution_type: 'PROPRIETORSHIP',
+        constitution_type: constitution,
         business_nature: serializedMeta,
         gstin: gstin || null,
         pan: pan || null,
@@ -1676,16 +1702,49 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
 
       const partyId = createdParty.id;
 
-      // Insert primary contact
+      // Insert Contact Person 1 (Primary Contact)
+      const cp1Name = String(row.contact_person_name_1 || contactPerson || firmName).trim();
+      const cp1Mobile = String(row.contact_mobile_1_1 || cleanMobile).replace(/\D/g, '').slice(-10) || cleanMobile;
+      const cp1Email = String(row.contact_email_1_2 || email || '').trim();
       try {
         await adminClient.from('party_contacts').insert([{
           party_id: partyId,
-          contact_name: contactPerson,
-          primary_mobile: cleanMobile,
-          email: email || null,
+          contact_name: cp1Name,
+          primary_mobile: cp1Mobile,
+          email: cp1Email || null,
           is_primary: true
         }]);
       } catch (_) {}
+
+      // Insert Contact Person 2 (if present)
+      const cp2Name = String(row.contact_person_name_2 || '').trim();
+      const cp2Mobile = String(row.contact_mobile_2_1 || '').replace(/\D/g, '').slice(-10);
+      if (cp2Name || cp2Mobile) {
+        try {
+          await adminClient.from('party_contacts').insert([{
+            party_id: partyId,
+            contact_name: cp2Name || 'Contact Person 2',
+            primary_mobile: cp2Mobile || null,
+            email: String(row.contact_email_2_2 || '').trim() || null,
+            is_primary: false
+          }]);
+        } catch (_) {}
+      }
+
+      // Insert Contact Person 3 (if present)
+      const cp3Name = String(row.contact_person_name_3 || '').trim();
+      const cp3Mobile = String(row.contact_mobile_3_1 || '').replace(/\D/g, '').slice(-10);
+      if (cp3Name || cp3Mobile) {
+        try {
+          await adminClient.from('party_contacts').insert([{
+            party_id: partyId,
+            contact_name: cp3Name || 'Contact Person 3',
+            primary_mobile: cp3Mobile || null,
+            email: String(row.contact_email_3_1 || '').trim() || null,
+            is_primary: false
+          }]);
+        } catch (_) {}
+      }
 
       // Insert address
       try {

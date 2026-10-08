@@ -237,7 +237,53 @@ export default function StageDataTable({
       return;
     }
 
-    const headers = [
+    const isS01 = stageId === 's01';
+    const headers = isS01 ? [
+      'firm_name',
+      'legal_name',
+      'party_type',
+      'our_company',
+      'constitution_type',
+      'gstin',
+      'pan',
+      'state_name',
+      'district_name',
+      'city_village',
+      'tehsil',
+      'block_name',
+      'pincode',
+      'address',
+      'biz_contact_no_1',
+      'biz_contact_no_2',
+      'biz_alt_no_1',
+      'biz_alt_no_2',
+      'biz_email_1',
+      'biz_email_2',
+      'biz_alt_email_1',
+      'biz_alt_email_2',
+      'contact_person_name_1',
+      'contact_mobile_1_1',
+      'contact_mobile_1_2',
+      'contact_alt_mobile_1_1',
+      'contact_alt_mobile_1_2',
+      'contact_email_1_2',
+      'contact_alt_email_1_1',
+      'contact_person_name_2',
+      'contact_mobile_2_1',
+      'contact_mobile_2_2',
+      'contact_alt_mobile_2_1',
+      'contact_alt_mobile_2_2',
+      'contact_email_2_2',
+      'contact_alt_email_2_1',
+      'contact_person_name_3',
+      'contact_mobile_3_1',
+      'contact_mobile_3_2',
+      'contact_alt_mobile_3_1',
+      'contact_alt_mobile_3_2',
+      'contact_email_3_1',
+      'contact_email_3_2',
+      'contact_alt_email_3_1'
+    ] : [
       'S.No',
       'Party Universal Code',
       'Channel Code',
@@ -269,6 +315,56 @@ export default function StageDataTable({
       const mobile = p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '';
       const altMob = p.biz_contact_no_2 || p.contact_mobile_1_2 || '';
       const contactPerson = p.contact_person_name_1 || p.owner_name || '';
+
+      if (isS01) {
+        const m = p.meta || {};
+        return [
+          `"${(p.firm_name || '').replace(/"/g, '""')}"`,
+          `"${(p.legal_name || '').replace(/"/g, '""')}"`,
+          `"${p.party_type || 'Dealer'}"`,
+          `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || m.our_company || 'NSMLR')}"`,
+          `"${p.constitution_type || m.constitution_type || 'PROPRIETORSHIP'}"`,
+          `"${p.gstin || ''}"`,
+          `"${p.pan || ''}"`,
+          `"${p.state_name || m.state_name || 'Punjab'}"`,
+          `"${p.district_name || m.district_name || ''}"`,
+          `"${p.city_village || m.city_village || ''}"`,
+          `"${p.tehsil || m.tehsil || ''}"`,
+          `"${p.block_name || m.block_name || ''}"`,
+          `"${p.pincode || m.pincode || ''}"`,
+          `"${(p.address || m.address || '').replace(/"/g, '""')}"`,
+          `"${p.biz_contact_no_1 || m.biz_contact_no_1 || p.primary_mobile || ''}"`,
+          `"${p.biz_contact_no_2 || m.biz_contact_no_2 || ''}"`,
+          `"${p.biz_alt_no_1 || m.biz_alt_no_1 || ''}"`,
+          `"${p.biz_alt_no_2 || m.biz_alt_no_2 || ''}"`,
+          `"${p.biz_email_1 || m.biz_email_1 || p.official_email || ''}"`,
+          `"${p.biz_email_2 || m.biz_email_2 || ''}"`,
+          `"${p.biz_alt_email_1 || m.biz_alt_email_1 || ''}"`,
+          `"${p.biz_alt_email_2 || m.biz_alt_email_2 || ''}"`,
+          `"${(p.contact_person_name_1 || m.contact_person_name_1 || p.owner_name || '').replace(/"/g, '""')}"`,
+          `"${p.contact_mobile_1_1 || m.contact_mobile_1_1 || p.primary_mobile || ''}"`,
+          `"${p.contact_mobile_1_2 || m.contact_mobile_1_2 || ''}"`,
+          `"${p.contact_alt_mobile_1_1 || m.contact_alt_mobile_1_1 || ''}"`,
+          `"${p.contact_alt_mobile_1_2 || m.contact_alt_mobile_1_2 || ''}"`,
+          `"${p.contact_email_1_2 || m.contact_email_1_2 || ''}"`,
+          `"${p.contact_alt_email_1_1 || m.contact_alt_email_1_1 || ''}"`,
+          `"${(p.contact_person_name_2 || m.contact_person_name_2 || '').replace(/"/g, '""')}"`,
+          `"${p.contact_mobile_2_1 || m.contact_mobile_2_1 || ''}"`,
+          `"${p.contact_mobile_2_2 || m.contact_mobile_2_2 || ''}"`,
+          `"${p.contact_alt_mobile_2_1 || m.contact_alt_mobile_2_1 || ''}"`,
+          `"${p.contact_alt_mobile_2_2 || m.contact_alt_mobile_2_2 || ''}"`,
+          `"${p.contact_email_2_2 || m.contact_email_2_2 || ''}"`,
+          `"${p.contact_alt_email_2_1 || m.contact_alt_email_2_1 || ''}"`,
+          `"${(p.contact_person_name_3 || m.contact_person_name_3 || '').replace(/"/g, '""')}"`,
+          `"${p.contact_mobile_3_1 || m.contact_mobile_3_1 || ''}"`,
+          `"${p.contact_mobile_3_2 || m.contact_mobile_3_2 || ''}"`,
+          `"${p.contact_alt_mobile_3_1 || m.contact_alt_mobile_3_1 || ''}"`,
+          `"${p.contact_alt_mobile_3_2 || m.contact_alt_mobile_3_2 || ''}"`,
+          `"${p.contact_email_3_1 || m.contact_email_3_1 || ''}"`,
+          `"${p.contact_email_3_2 || m.contact_email_3_2 || ''}"`,
+          `"${p.contact_alt_email_3_1 || m.contact_alt_email_3_1 || ''}"`
+        ].join(',');
+      }
 
       return [
         `"${idx + 1}"`,
