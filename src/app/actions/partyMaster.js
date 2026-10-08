@@ -1477,3 +1477,275 @@ export async function deletePartyMaster(partyId) {
   }
 }
 
+/**
+ * Bulk Import Party Master (Supports both S01-only and Full S01-S08 Auto-Onboarding)
+ * Safely processes array of parsed party records, generates atomic codes,
+ * and creates corresponding party_master, party_contacts, party_addresses,
+ * and party_roles records.
+ */
+export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL', tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const results = {
+    total: partiesList.length,
+    imported: 0,
+    skipped: 0,
+    errors: [],
+    createdParties: []
+  };
+
+  if (!Array.isArray(partiesList) || partiesList.length === 0) {
+    return { success: false, error: 'No party records provided for import', ...results };
+  }
+
+  try {
+    // 1. Fetch existing mobile numbers & GSTINs in DB to prevent duplicates
+    const { data: existingRecords } = await adminClient
+      .from('party_master')
+      .select('primary_mobile, gstin')
+      .eq('tenant_id', tenantId);
+
+    const existingMobiles = new Set();
+    const existingGSTINs = new Set();
+    (existingRecords || []).forEach(r => {
+      if (r.primary_mobile) existingMobiles.add(String(r.primary_mobile).replace(/\D/g, '').slice(-10));
+      if (r.gstin) existingGSTINs.add(String(r.gstin).trim().toUpperCase());
+    });
+
+    // Also fetch active distributors and dealers to resolve parent mapping by name or code if provided
+    const { data: allPartiesMap } = await adminClient
+      .from('party_master')
+      .select('id, firm_name, party_universal_code, party_type')
+      .eq('tenant_id', tenantId);
+
+    const distMap = new Map();
+    const dlrMap = new Map();
+    (allPartiesMap || []).forEach(p => {
+      const lowerName = (p.firm_name || '').toLowerCase().trim();
+      const code = (p.party_universal_code || '').toLowerCase().trim();
+      if (p.party_type === 'Distributor') {
+        distMap.set(lowerName, p.id);
+        if (code) distMap.set(code, p.id);
+      } else if (p.party_type === 'Dealer') {
+        dlrMap.set(lowerName, p.id);
+        if (code) dlrMap.set(code, p.id);
+      }
+    });
+
+    const seenBatchMobiles = new Set();
+
+    for (let i = 0; i < partiesList.length; i++) {
+      const row = partiesList[i];
+      const rowIdx = i + 1;
+      const firmName = String(row.firm_name || row.company || row['Firm Name'] || '').trim();
+      const rawMobile = String(row.primary_mobile || row.mobile || row.phone || row['Primary Mobile'] || row['Mobile'] || '').trim();
+      const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
+
+      // Validation
+      if (!firmName) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx}: Skipped - Missing mandatory "Firm Name"`);
+        continue;
+      }
+
+      if (!cleanMobile || cleanMobile.length < 10) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx} ("${firmName}"): Skipped - Invalid primary mobile "${rawMobile}" (Must be 10 digits)`);
+        continue;
+      }
+
+      if (existingMobiles.has(cleanMobile)) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx} ("${firmName}"): Skipped - Mobile ${cleanMobile} already registered in Party Master`);
+        continue;
+      }
+
+      if (seenBatchMobiles.has(cleanMobile)) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx} ("${firmName}"): Skipped - Duplicate mobile ${cleanMobile} inside the same import file`);
+        continue;
+      }
+
+      const gstin = String(row.gstin || row.gst_no || row['GSTIN'] || '').trim().toUpperCase();
+      if (gstin && existingGSTINs.has(gstin)) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx} ("${firmName}"): Skipped - GSTIN ${gstin} already registered in Party Master`);
+        continue;
+      }
+
+      seenBatchMobiles.add(cleanMobile);
+      if (cleanMobile) existingMobiles.add(cleanMobile);
+      if (gstin) existingGSTINs.add(gstin);
+
+      // Generate atomic party universal code & channel code
+      const tsPart = Date.now().toString().slice(-6) + Math.floor(Math.random() * 100).toString().padStart(2, '0');
+      const partyCode = `PTY-${tsPart}`;
+
+      let partyType = String(row.party_type || row['Party Tier'] || row['Tier'] || 'Dealer').trim();
+      if (!['Distributor', 'Dealer', 'Sub-Dealer'].includes(partyType)) {
+        const lowerType = partyType.toLowerCase();
+        if (lowerType.includes('dist')) partyType = 'Distributor';
+        else if (lowerType.includes('sub')) partyType = 'Sub-Dealer';
+        else partyType = 'Dealer';
+      }
+
+      const channelPrefix = partyType === 'Distributor' ? 'DIS' : partyType === 'Sub-Dealer' ? 'SDL' : 'DLR';
+      const channelCode = `${channelPrefix}-${tsPart}`;
+
+      const rawComp = String(row.our_company || row['Operating Company'] || row.company_name || 'NSMLR').trim().toUpperCase();
+      const ourCompany = rawComp === 'NSTL' || rawComp === 'NSTLP' ? 'NSTL' : 'NSMLR';
+
+      const stateName = String(row.state_name || row.state || row['State'] || 'Punjab').trim();
+      const districtName = String(row.district_name || row.district || row['District'] || '').trim();
+      const tehsilName = String(row.tehsil || row['Tehsil'] || row.city_village || row['City'] || '').trim();
+      const pincode = String(row.pincode || row['Pincode'] || row.pin_code || '').trim();
+      const addressLine = String(row.address || row['Address'] || row.address_line_1 || '').trim();
+
+      const contactPerson = String(row.contact_person || row.contact_person_name_1 || row.owner_name || row['Contact Person'] || firmName).trim();
+      const altMobile = String(row.alt_mobile || row.biz_contact_no_2 || row['Alt Mobile'] || '').trim();
+      const email = String(row.email || row.official_email || row['Email'] || '').trim();
+      const pan = String(row.pan || row.pan_no || row['PAN'] || '').trim().toUpperCase();
+
+      const billingRoute = String(row.billing_route || row.billing_route_type || row['Billing Route'] || 'DIRECT_COMPANY_BILLING').trim().toUpperCase();
+      const prodCategory = String(row.product_category || row.order_category || row['Product Category'] || 'Rotavator').trim();
+      const secDeposit = parseFloat(row.security_deposit || row.security_deposit_amount || row['Security Deposit'] || 0) || 0;
+      const secMode = String(row.security_mode || row['Security Mode'] || 'Cheque').trim();
+
+      // Parent mapping resolution (for Dealer or Sub-Dealer)
+      const parentInput = String(row.parent_distributor_or_dealer || row.parent_distributor || row.parent_dealer || row['Parent Distributor / Dealer'] || '').trim().toLowerCase();
+      let parentDistId = null;
+      let parentDlrId = null;
+      if (parentInput) {
+        if (partyType === 'Dealer') {
+          parentDistId = distMap.get(parentInput) || null;
+        } else if (partyType === 'Sub-Dealer') {
+          parentDlrId = dlrMap.get(parentInput) || null;
+        }
+      }
+
+      // Determine Full vs S01-only stages
+      const isFull = importMode === 'FULL';
+      const stagesConfig = isFull
+        ? { s00: true, s01: true, s02: true, s03: true, s04: true, tier: true, s05: true, s06: true, s07: true, s08: true }
+        : { s00: true, s01: true };
+
+      const metaPayload = {
+        our_company: ourCompany,
+        billing_route_type: billingRoute,
+        order_category: prodCategory,
+        parent_distributor_id: parentDistId,
+        parent_dealer_id: parentDlrId,
+        stages: stagesConfig,
+        product_authorizations: isFull ? [{ product_category: prodCategory, status: 'APPROVED' }] : [],
+        territory: { state: stateName, districts: districtName ? [districtName] : [], zone: 'North Zone' },
+        security_deposit_amount: secDeposit,
+        security_mode: secMode
+      };
+
+      const serializedMeta = 'SWAN_PARTY_META:' + JSON.stringify(metaPayload);
+
+      const dbPayload = {
+        tenant_id: tenantId,
+        party_universal_code: partyCode,
+        firm_name: firmName,
+        legal_name: String(row.legal_name || row['Legal Name'] || firmName).trim(),
+        constitution_type: 'PROPRIETORSHIP',
+        business_nature: serializedMeta,
+        gstin: gstin || null,
+        pan: pan || null,
+        official_email: email || null,
+        primary_mobile: cleanMobile,
+        party_status: isFull ? 'Active' : 'Draft',
+        onboarding_stage: isFull ? 'S08_Party_Activation' : 'S01_Registration',
+        acquisition_source: 'CSV_BULK_IMPORT',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Insert party_master
+      const { data: createdParty, error: partyErr } = await adminClient
+        .from('party_master')
+        .insert([dbPayload])
+        .select()
+        .single();
+
+      if (partyErr || !createdParty) {
+        results.skipped++;
+        results.errors.push(`Row #${rowIdx} ("${firmName}"): DB Insert Error: ${partyErr?.message || 'Unknown'}`);
+        continue;
+      }
+
+      const partyId = createdParty.id;
+
+      // Insert primary contact
+      try {
+        await adminClient.from('party_contacts').insert([{
+          party_id: partyId,
+          contact_name: contactPerson,
+          primary_mobile: cleanMobile,
+          email: email || null,
+          is_primary: true
+        }]);
+      } catch (_) {}
+
+      // Insert address
+      try {
+        await adminClient.from('party_addresses').insert([{
+          party_id: partyId,
+          address_type: 'REGISTERED',
+          address_line_1: addressLine || `${firmName}, ${districtName || stateName}`,
+          state_name: stateName,
+          district_name: districtName,
+          pincode: pincode || null,
+          is_primary: true
+        }]);
+      } catch (_) {}
+
+      // Insert role
+      try {
+        const roleType = partyType === 'Distributor' ? 'DISTRIBUTOR' : (partyType === 'Sub-Dealer' ? 'DIRECT_CUSTOMER' : 'DEALER');
+        await adminClient.from('party_roles').insert([{
+          party_id: partyId,
+          role_type: roleType,
+          role_code: channelCode,
+          status: 'ACTIVE'
+        }]);
+      } catch (_) {}
+
+      // Insert commercial terms
+      try {
+        await adminClient.from('party_commercial_terms').insert([{
+          party_id: partyId,
+          credit_limit: isFull ? 1000000 : 500000,
+          credit_days: 30,
+          security_deposit_amount: secDeposit,
+          security_mode: secMode
+        }]);
+      } catch (_) {}
+
+      results.imported++;
+      results.createdParties.push({ id: partyId, firm_name: firmName, party_code: partyCode, channel_code: channelCode });
+    }
+
+    // Log audit action
+    try {
+      await logAuditAction(
+        'Party Bulk Import',
+        `Imported ${results.imported} party records (${results.skipped} skipped) in ${importMode} mode`
+      );
+    } catch (_) {}
+
+    return {
+      success: true,
+      ...results
+    };
+  } catch (err) {
+    console.error('Fatal error in bulkImportPartyMaster:', err);
+    return {
+      success: false,
+      error: err.message || 'Fatal error during bulk party import',
+      ...results
+    };
+  }
+}
+
+

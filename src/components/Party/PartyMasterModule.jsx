@@ -3429,6 +3429,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3441,6 +3442,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3453,6 +3455,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3465,6 +3468,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3477,6 +3481,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3489,6 +3494,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3501,6 +3507,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 
@@ -3513,6 +3520,7 @@ export default function PartyMasterModule({
           getStageApprovalStatus={getStageApprovalStatus}
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
+          refreshData={loadInitialData}
         />
       )}
 

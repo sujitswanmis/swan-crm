@@ -5,9 +5,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
   Building2, ShieldCheck, Check, Plus, ExternalLink, RefreshCw,
-  Users, MapPin, Phone, Shield, ChevronRight, Trash2, Eye
+  Users, MapPin, Phone, Shield, ChevronRight, Trash2, Eye,
+  Upload, Download
 } from 'lucide-react';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
+import PartyImportModal from './PartyImportModal';
 
 const STAGE_CONFIGS = {
   s01: {
@@ -107,9 +109,11 @@ export default function StageDataTable({
   onSelectParty,
   getStageApprovalStatus,
   onNewParty,
-  onDeleteParty
+  onDeleteParty,
+  refreshData
 }) {
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
+  const [showImportModal, setShowImportModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED'
   const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
@@ -225,6 +229,83 @@ export default function StageDataTable({
     const start = (validCurrentPage - 1) * effectivePageSize;
     return displayedParties.slice(start, start + effectivePageSize);
   }, [displayedParties, validCurrentPage, effectivePageSize, pageSize]);
+
+  // Export Current Stage Filtered Parties to CSV
+  const handleExportStageCSV = () => {
+    if (!displayedParties || displayedParties.length === 0) {
+      alert(`No records available to export for ${meta.badge || 'this stage'}.`);
+      return;
+    }
+
+    const headers = [
+      'S.No',
+      'Party Universal Code',
+      'Channel Code',
+      'Firm Name',
+      'Legal Name',
+      'Party Tier',
+      'Operating Company',
+      'Contact Person',
+      'Primary Mobile',
+      'Alt Mobile',
+      'Email',
+      'State',
+      'District',
+      'Tehsil',
+      'Pincode',
+      'Address',
+      'GSTIN',
+      'PAN',
+      'Billing Route',
+      'Approval Status',
+      'Created Date (IST)'
+    ];
+
+    const rows = displayedParties.map((p, idx) => {
+      const app = partyApprovalMap.get(p.id) || {};
+      const isApproved = meta.checkApproval(app);
+      const createdDateIST = p.created_at ? new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-';
+      const chCode = p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || '';
+      const mobile = p.contact_mobile_1_1 || p.primary_mobile || p.biz_contact_no_1 || '';
+      const altMob = p.biz_contact_no_2 || p.contact_mobile_1_2 || '';
+      const contactPerson = p.contact_person_name_1 || p.owner_name || '';
+
+      return [
+        `"${idx + 1}"`,
+        `"${p.party_universal_code || ''}"`,
+        `"${chCode}"`,
+        `"${(p.firm_name || '').replace(/"/g, '""')}"`,
+        `"${(p.legal_name || '').replace(/"/g, '""')}"`,
+        `"${p.party_type || 'Dealer'}"`,
+        `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}"`,
+        `"${contactPerson.replace(/"/g, '""')}"`,
+        `"${mobile}"`,
+        `"${altMob}"`,
+        `"${p.biz_email_1 || p.official_email || ''}"`,
+        `"${p.state_name || 'Punjab'}"`,
+        `"${p.district_name || ''}"`,
+        `"${p.tehsil || ''}"`,
+        `"${p.pincode || ''}"`,
+        `"${(p.address || '').replace(/"/g, '""')}"`,
+        `"${p.gstin || ''}"`,
+        `"${p.pan || ''}"`,
+        `"${p.billing_route_type || 'DIRECT_COMPANY_BILLING'}"`,
+        `"${isApproved ? 'Approved' : 'Pending'}"`,
+        `"${createdDateIST}"`
+      ].join(',');
+    });
+
+    const csvData = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    link.href = url;
+    link.setAttribute('download', `Swan_Party_Master_${stageId.toUpperCase()}_${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Stage-specific column 5 content renderer
   const renderStageCol5 = (party, approvals) => {
@@ -480,29 +561,78 @@ export default function StageDataTable({
           </p>
         </div>
 
-        {/* Action button if S01 */}
-        {stageId === 's01' && onNewParty && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          {/* Action button if S01 */}
+          {stageId === 's01' && onNewParty && (
+            <button
+              type="button"
+              onClick={onNewParty}
+              style={{
+                padding: '0.55rem 1.15rem',
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+              }}
+            >
+              <Plus size={15} /> + Direct Partner Entry (Without Lead)
+            </button>
+          )}
+
+          {/* S01 Import CSV */}
+          {stageId === 's01' && (
+            <button
+              type="button"
+              onClick={() => setShowImportModal(true)}
+              style={{
+                padding: '0.55rem 1.05rem',
+                background: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                borderRadius: '8px',
+                color: '#38bdf8',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)'
+              }}
+              title="Bulk import channel partners from CSV (S01 to S08)"
+            >
+              <Upload size={15} /> Import S01 CSV
+            </button>
+          )}
+
+          {/* Export CSV for Current Stage */}
           <button
             type="button"
-            onClick={onNewParty}
+            onClick={handleExportStageCSV}
             style={{
-              padding: '0.55rem 1.15rem',
-              background: 'linear-gradient(135deg, #10b981, #059669)',
-              border: 'none',
+              padding: '0.55rem 1.05rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border-light, rgba(255, 255, 255, 0.12))',
               borderRadius: '8px',
-              color: '#fff',
-              fontWeight: 700,
+              color: 'var(--text-primary, #fff)',
+              fontWeight: 600,
               cursor: 'pointer',
               fontSize: '0.84rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+              gap: '0.4rem'
             }}
+            title={`Export ${meta.badge} parties to CSV`}
           >
-            <Plus size={15} /> + Direct Partner Entry (Without Lead)
+            <Download size={15} /> Export {stageId === 's01' ? 'S01 CSV' : 'CSV'}
           </button>
-        )}
+        </div>
       </div>
 
       {/* Filter and search control toolbar */}
@@ -1037,6 +1167,18 @@ export default function StageDataTable({
           </div>
         )}
       </div>
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <PartyImportModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          onImportSuccess={() => {
+            if (typeof refreshData === 'function') refreshData();
+          }}
+          existingParties={parties}
+        />
+      )}
     </div>
   );
 }
