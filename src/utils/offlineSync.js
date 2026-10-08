@@ -1166,6 +1166,7 @@ export async function enqueueOfflineAction(actionType, entityType, payload) {
 export function showSyncToast(message, type = 'success', duration = 4000) {
   if (typeof window !== 'undefined' && message) {
     try {
+      console.log(`[SyncToast] ${type.toUpperCase()}:`, message);
       window.dispatchEvent(new CustomEvent('supuja_show_sync_toast', {
         detail: { message, type, duration }
       }));

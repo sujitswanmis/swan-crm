@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, AlertCircle, Info, CheckCircle2, Clock, X, ShieldAlert, Zap, Copy, Check } from 'lucide-react';
 import { 
   getPendingQueue, 
@@ -15,6 +16,11 @@ import { getOfflineRuleSettings } from '@/app/actions/offlineRules';
 import { createClient } from '@/utils/supabase/client';
 
 export default function OfflineSyncCenter({ onSyncComplete }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState([]);
@@ -270,14 +276,14 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
         )}
       </button>
 
-      {/* 2. Floating Toast Alert */}
-      {toastState && (
+      {/* 2. Floating Toast Alert (Portaled to document.body to break out of header stacking context) */}
+      {mounted && toastState && typeof document !== 'undefined' && createPortal(
         <div
           style={{
             position: 'fixed',
             bottom: '24px',
             right: '24px',
-            zIndex: 999999,
+            zIndex: 2147483647,
             backgroundColor: '#0f172a',
             color: '#ffffff',
             padding: '12px 18px',
@@ -323,16 +329,17 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
           >
             <X style={{ width: '14px', height: '14px' }} />
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* 3. Offline Sync Center Modal */}
-      {showModal && (
+      {/* 3. Offline Sync Center Modal (Portaled to document.body) */}
+      {mounted && showModal && typeof document !== 'undefined' && createPortal(
         <div 
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 999998,
+            zIndex: 2147483646,
             backgroundColor: 'rgba(0, 0, 0, 0.65)',
             backdropFilter: 'blur(4px)',
             display: 'flex',
@@ -717,7 +724,8 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

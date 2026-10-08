@@ -1422,15 +1422,6 @@ export default function LeadProfilePanel({
           await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${statusToUpdate}" via History Panel`);
         } catch (e) {}
 
-        showSyncToast(`✅ Saved to Supabase: Status changed to "${statusToUpdate}"!`, 'success', 3500);
-
-        try {
-          triggerWhatsappAutomationForStage(lead.id, statusToUpdate);
-        } catch (e) {}
-
-        // Automatic Transfer to Party Master S00 only when status explicitly indicates transfer (not pending)
-        const isTransferStatus = (statusToUpdate || '').toLowerCase().includes('transferred to party master') || 
-                                 (statusToUpdate || '').toLowerCase().includes('transfer to party master');
         if (isTransferStatus) {
           try {
             const transferRes = await sendLeadToParty(lead.id, userId);
@@ -1441,6 +1432,14 @@ export default function LeadProfilePanel({
             console.warn("Automatic transfer to party master notice from note update:", transErr.message || transErr);
           }
         }
+      }
+
+      if (noteContent && statusToUpdate) {
+        showSyncToast(`✅ Saved to Supabase: Note added & stage updated to "${statusToUpdate}"!`, 'success', 3500);
+      } else if (noteContent) {
+        showSyncToast('✅ Saved to Supabase: Note added successfully!', 'success', 3500);
+      } else if (statusToUpdate) {
+        showSyncToast(`✅ Saved to Supabase: Status changed to "${statusToUpdate}"!`, 'success', 3500);
       }
     } catch (netErr) {
       console.warn('Network addNote/status update failed, enqueueing offline fallback:', netErr?.message || netErr);
