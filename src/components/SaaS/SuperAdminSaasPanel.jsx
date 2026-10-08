@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
@@ -402,7 +403,7 @@ export default function SuperAdminSaasPanel() {
             </p>
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <MobileTableView id="SaaS/SuperAdminSaasPanel-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>Code</th>
@@ -473,7 +474,7 @@ export default function SuperAdminSaasPanel() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
 
@@ -570,7 +571,7 @@ export default function SuperAdminSaasPanel() {
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <MobileTableView id="SaaS/SuperAdminSaasPanel-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Company / Workspace</th>
@@ -725,7 +726,7 @@ export default function SuperAdminSaasPanel() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}

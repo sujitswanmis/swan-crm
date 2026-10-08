@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Plus, Briefcase, Users, Search, ChevronRight, UserPlus, Filter, RefreshCw, Calendar, FileText, CheckCircle2, ClipboardList } from 'lucide-react';
@@ -814,7 +815,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <p>Either create a new position or shift existing positions to change their status.</p>
             </div>
           ) : (
-            <table style={{ width: `${getPosTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+            <MobileTableView id="Recruiter/RecruiterDashboard-1"><table style={{ width: `${getPosTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1068,7 +1069,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></MobileTableView>
           )}
         </div>
       ) : (
@@ -1117,7 +1118,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
             </div>
           ) : (
             <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: `${getCandTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+              <MobileTableView id="Recruiter/RecruiterDashboard-2"><table style={{ width: `${getCandTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                     <th style={{ width: `${candColWidths.name}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1390,7 +1391,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     );
                   })}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>

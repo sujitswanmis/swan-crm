@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Download, Columns, ChevronDown, Loader2, Edit2, FileText, Search, ChevronLeft, ChevronRight, Filter, Trash2, UserPlus, Check, X, Sliders, Sparkles, Settings, RotateCcw } from 'lucide-react';
@@ -846,6 +846,7 @@ export default function ClientReport({
   // Manage Column Data / Bulk Update / Find-Replace permission: ONLY Admin or users with explicit can_manage_column_data power
   const canManageData = isAdmin || moduleAccess?.can_manage_column_data === true;
 
+  const [reportView, setReportView] = useTableViewPreference('ClientReport-1');
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showColumnModal, setShowColumnModal] = useState(false);
@@ -1517,7 +1518,7 @@ export default function ClientReport({
           <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Total Records: {leads.length}</p>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', position: 'relative' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center', position: 'relative', maxWidth: '100%' }}>
           
           <div style={{ position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
@@ -1736,6 +1737,8 @@ export default function ClientReport({
             </div>
           )}
 
+          <TableViewToggle view={reportView} onChange={setReportView} />
+
           {canExport && (
             <button 
               onClick={handleExportCSV}
@@ -1776,7 +1779,9 @@ export default function ClientReport({
 
       {/* Table Container - Horizontally Scrollable */}
       <div className="table-responsive-wrapper" style={{ flex: 1, overflowX: 'auto' }}>
-        <MobileTableView id="ClientReport-1"><table style={{ width: `${totalReportTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+        <MobileTableView id="ClientReport-1" view={reportView} hideToggle
+          summaryKeys={['company', 'lead_formatted_id', 'status', 'assigned_to_name', 'source', 'lead_date']}>
+        <table style={{ width: `${totalReportTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               {(canDelete || canAssign) && (

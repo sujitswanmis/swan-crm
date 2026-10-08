@@ -1,4 +1,5 @@
 'use client';
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Settings, Users, Phone, Loader2, RefreshCw, PhoneCall,
@@ -341,7 +342,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
           </h3>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <MobileTableView id="CallCenter/CallAdminModule-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
                 <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -444,7 +445,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                 <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call center agents yet. Add a team member above.</td></tr>
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
     </div>
@@ -518,7 +519,7 @@ function TabEndpoints() {
           </div>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <MobileTableView id="CallCenter/CallAdminModule-2"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {[
@@ -580,7 +581,7 @@ function TabEndpoints() {
                 <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No endpoints found.</td></tr>
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
     </div>
@@ -1125,7 +1126,7 @@ function TabCallLogs() {
         {/* Main Table */}
         <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
           <div style={{ overflowX:'auto' }}>
-            <table style={{ width: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
+            <MobileTableView id="CallCenter/CallAdminModule-3"><table style={{ width: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
               <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
                 <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
                   {source === 'db' && (
@@ -1275,7 +1276,7 @@ function TabCallLogs() {
                   );
                 })}
               </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
 
         {/* Pagination & Lead Data Page Size Controls */}

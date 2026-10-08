@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { MapPin, Globe, Map, Compass, UserCheck, ShieldAlert, Plus, RefreshCw, CheckCircle2, Search, ArrowRight, Layers, Building, X } from 'lucide-react';
 import { getStates, createState, getDistricts, createDistrict, createSubdistrict, resolveLocationAlias, createLocationRequest } from '@/app/actions/locationMaster';
@@ -340,7 +341,7 @@ export default function LocationTerritoryModule() {
           </div>
 
           <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', overflow: 'hidden' }}>
-            <table style={{ width: `${Math.max(980, getTerritoryTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <MobileTableView id="Workplace/LocationTerritoryModule-1"><table style={{ width: `${Math.max(980, getTerritoryTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ background: '#1e293b', color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                   <th style={{ position: 'relative', width: `${territoryColWidths.code}px`, padding: '0.75rem 1rem', textAlign: 'left' }}>
@@ -391,7 +392,7 @@ export default function LocationTerritoryModule() {
                   ))
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}

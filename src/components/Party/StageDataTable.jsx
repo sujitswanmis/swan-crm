@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
@@ -640,7 +641,7 @@ export default function StageDataTable({
         overflow: 'hidden',
         overflowX: 'auto'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+        <MobileTableView id="Party/StageDataTable-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)' }}>
             <tr style={{ borderBottom: '1px solid var(--border-light, #cbd5e1)', color: 'var(--table-header-text, #1e293b)' }}>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>
@@ -875,7 +876,7 @@ export default function StageDataTable({
               })
             )}
           </tbody>
-        </table>
+        </table></MobileTableView>
       </div>
 
       {/* Pagination Bar Matching Lead Data */}

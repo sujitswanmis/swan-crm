@@ -1,3 +1,4 @@
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Sparkles, Send, Loader2, MessageSquare, Zap, Mic, MicOff, Camera, Paperclip, Volume2, X, PhoneCall, PhoneOff, Plus, MessageCircle, MoreVertical, Menu, Settings2, Copy, Check, Pencil, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -964,7 +965,7 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
                               components={{
                                 table: ({ children }) => (
                                   <div className="ai-table-scroll">
-                                    <table>{children}</table>
+                                    <MobileTableView id="AiAssistant/AiAssistantModule-1"><table>{children}</table></MobileTableView>
                                   </div>
                                 ),
                                 pre: ({ children }) => (

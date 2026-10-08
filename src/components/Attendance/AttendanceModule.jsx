@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Clock, Calendar, CheckCircle2, XCircle, AlertCircle, RefreshCw, Send,
@@ -2130,7 +2131,7 @@ export default function AttendanceModule({
 
             {/* Attendance History Table */}
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date</th>
@@ -2217,7 +2218,7 @@ export default function AttendanceModule({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
 
           </div>
@@ -2275,7 +2276,7 @@ export default function AttendanceModule({
           {/* User's Requests Table */}
           <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On</th>
@@ -2358,7 +2359,7 @@ export default function AttendanceModule({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
 
@@ -2665,7 +2666,7 @@ export default function AttendanceModule({
           {/* Pending Requests Cards / Table */}
           <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-3"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 0.6rem', width: '38px', textAlign: 'center' }}>
@@ -2842,7 +2843,7 @@ export default function AttendanceModule({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
 
@@ -3142,7 +3143,7 @@ export default function AttendanceModule({
               {/* Master Team Attendance Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <table style={{ width: `${getTeamTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+                  <MobileTableView id="Attendance/AttendanceModule-4"><table style={{ width: `${getTeamTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ width: `${teamColWidths.emp_code}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -3261,7 +3262,7 @@ export default function AttendanceModule({
                         ))
                       )}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 </div>
               </div>
             </>
@@ -3353,7 +3354,7 @@ export default function AttendanceModule({
               {/* Monthly Master Matrix Grid Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)', maxHeight: '680px', overflowY: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.78rem' }}>
+                  <MobileTableView id="Attendance/AttendanceModule-5"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.78rem' }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-primary)' }}>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '90px', position: 'sticky', left: 0, background: 'var(--bg-primary)', zIndex: 4 }}>Emp ID</th>
@@ -3504,7 +3505,7 @@ export default function AttendanceModule({
                         ))
                       )}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 </div>
               </div>
             </>
@@ -3653,7 +3654,7 @@ export default function AttendanceModule({
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-6"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Condition / Scenario</th>
@@ -3700,7 +3701,7 @@ export default function AttendanceModule({
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#dc2626' }}>0.0 Day</td>
                   </tr>
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
 

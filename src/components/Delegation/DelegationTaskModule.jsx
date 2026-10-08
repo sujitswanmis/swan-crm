@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Clock, Calendar, AlertTriangle, CheckCircle2, AlertCircle, Plus,
@@ -1782,7 +1783,7 @@ export default function DelegationTaskModule({
 
             {/* Leaderboard Table */}
             <div style={{ overflowX: 'auto', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <MobileTableView id="Delegation/DelegationTaskModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg, #f8fafc)', borderBottom: '1.5px solid var(--border-light, #e2e8f0)', color: 'var(--text-secondary, #475569)', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     <th style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>Rank</th>
@@ -2037,7 +2038,7 @@ export default function DelegationTaskModule({
                     </tr>
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
 
           </div>
@@ -2531,7 +2532,7 @@ export default function DelegationTaskModule({
           boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
         }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: `${getTaskTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <MobileTableView id="Delegation/DelegationTaskModule-2"><table style={{ width: `${getTaskTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ width: `${taskColWidths.task}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -2819,7 +2820,7 @@ export default function DelegationTaskModule({
                   );
                 })}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}

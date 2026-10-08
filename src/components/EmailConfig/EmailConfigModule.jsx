@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { 
   Mail, Save, Plus, Trash2, Edit3, Send, CheckCircle2, AlertCircle, 
@@ -918,7 +919,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <MobileTableView id="EmailConfig/EmailConfigModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem' }}>Recipient</th>
@@ -943,7 +944,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>

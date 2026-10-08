@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Activity, Database, Wifi, HardDrive, PhoneCall, MessageSquare,
@@ -1885,7 +1886,7 @@ export default function SystemStatusHealth() {
             {/* Logs Table */}
             {filteredSupabaseLogs.length > 0 ? (
               <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <MobileTableView id="Settings/SystemStatusHealth-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--border-color, #e2e8f0)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                       <th style={{ padding: '0.6rem 0.75rem', width: '190px' }}>TIMESTAMP (IST)</th>
@@ -1937,7 +1938,7 @@ export default function SystemStatusHealth() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             ) : (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>

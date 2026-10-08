@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
@@ -497,7 +498,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
           )}
 
           <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
+            <MobileTableView id="WhatsappOfficial-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
               <thead style={{ backgroundColor: 'var(--th-bg)' }}>
                 <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Company</th>
@@ -544,7 +545,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
                   ))
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
 
         </div>

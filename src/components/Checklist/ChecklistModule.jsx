@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
@@ -2535,7 +2536,7 @@ export default function ChecklistModule({
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <MobileTableView id="Checklist/ChecklistModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '2px solid var(--border-color, #e2e8f0)' }}>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>RANK</th>
@@ -2619,7 +2620,7 @@ export default function ChecklistModule({
                           );
                         })}
                       </tbody>
-                    </table>
+                    </table></MobileTableView>
                   </div>
                 )}
               </div>
@@ -3478,7 +3479,7 @@ export default function ChecklistModule({
               {/* 2. TABLE VIEW */}
               {myChecklistsViewMode === 'table' && (
                 <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-                  <table style={{ width: `${getMyChecklistTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                  <MobileTableView id="Checklist/ChecklistModule-2"><table style={{ width: `${getMyChecklistTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                         <th style={{ position: 'relative', width: `${myChecklistColWidths.title}px`, padding: '0.75rem 1rem' }}>
@@ -3768,7 +3769,7 @@ export default function ChecklistModule({
                         );
                       })}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 </div>
               )}
                 </>
@@ -3845,7 +3846,7 @@ export default function ChecklistModule({
             </div>
 
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <MobileTableView id="Checklist/ChecklistModule-3"><table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ position: 'relative', width: `${templateColWidths.title}px`, padding: '0.75rem 1rem' }}>
@@ -4135,7 +4136,7 @@ export default function ChecklistModule({
                     );
                   })}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         );
@@ -4473,7 +4474,7 @@ export default function ChecklistModule({
 
             {/* Submissions Table */}
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: `${getLogsTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <MobileTableView id="Checklist/ChecklistModule-4"><table style={{ width: `${getLogsTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ position: 'relative', width: `${logsColWidths.employee}px`, padding: '0.75rem 1rem' }}>
@@ -4638,7 +4639,7 @@ export default function ChecklistModule({
                     );
                   })}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
 
             {/* Interactive Pagination Navigation Bar */}

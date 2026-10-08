@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -282,7 +282,7 @@ export const MODULE_DISPLAY_NAMES = {
   whatsapp_official: 'Official WhatsApp Center',
   whatsapp_unofficial: 'Unofficial WhatsApp Center',
   team: 'Team Management',
-  workplace: 'Workplace Directory',
+  workplace: 'Workflow Builder',
   public_users: 'Public User Management',
   settings: 'System Settings',
   system_offline_rules: 'Offline Rule Settings'
@@ -516,6 +516,20 @@ export default function CRMContainer({
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
   const [delegationSubTab, setDelegationSubTab] = useState('dashboard');
+  const [workflowMenuExpanded, setWorkflowMenuExpanded] = useState(false);
+  const [workflowSubTab, setWorkflowSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('workflow/') || cleanPath.startsWith('workplace/'))) {
+      const sub = cleanPath.split('/')[1];
+      if (['active', 'tracker', 'trash'].includes(sub)) return sub;
+    }
+    if (queryTab && ['active', 'tracker', 'trash'].includes(queryTab)) {
+      return queryTab;
+    }
+    return 'active';
+  });
   const [callAdminMenuExpanded, setCallAdminMenuExpanded] = useState(false);
   const [callAdminSubTab, setCallAdminSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -859,6 +873,7 @@ export default function CRMContainer({
     'Purchase': false,
     'Human Resource': false,
     'User Management': false,
+    'Workflow Builder': false,
     'System': false,
     'Settings': false
   });
@@ -892,7 +907,7 @@ export default function CRMContainer({
     const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
     const purchaseTabs = ['mrp', 'mrp_against'];
     const hrTabs = ['recruiter', 'joining'];
-    const systemTabs = ['team', 'workplace', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'offline_rule'];
+    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'offline_rule'];
     const settingsTabs = ['settings'];
 
     if (salesTabs.includes(activeTab)) {
@@ -903,6 +918,8 @@ export default function CRMContainer({
       categoryToExpand = 'Human Resource';
     } else if (activeTab === 'user_management_new') {
       categoryToExpand = 'User Management';
+    } else if (activeTab === 'workplace') {
+      categoryToExpand = 'Workflow Builder';
     } else if (systemTabs.includes(activeTab)) {
       categoryToExpand = 'System';
     } else if (settingsTabs.includes(activeTab)) {
@@ -915,6 +932,7 @@ export default function CRMContainer({
         'Purchase': categoryToExpand === 'Purchase',
         'Human Resource': categoryToExpand === 'Human Resource',
         'User Management': categoryToExpand === 'User Management',
+        'Workflow Builder': categoryToExpand === 'Workflow Builder',
         'System': categoryToExpand === 'System',
         'Settings': categoryToExpand === 'Settings'
       });
@@ -930,6 +948,7 @@ export default function CRMContainer({
     setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
     setCallAdminMenuExpanded(activeTab === 'calladmin');
+    setWorkflowMenuExpanded(activeTab === 'workplace');
     setSettingsMenuExpanded(activeTab === 'settings');
   }, [activeTab]);
 
@@ -2441,6 +2460,13 @@ export default function CRMContainer({
       }
       tab = 'delegation';
       setDelegationMenuExpanded(true);
+    } else if (tab === 'workflow' || tab === 'workplace' || (tab && (tab.startsWith('workflow/') || tab.startsWith('workplace/')))) {
+      let sub = tab.startsWith('workflow/') ? tab.split('/')[1] : tab.startsWith('workplace/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub && ['active', 'tracker', 'trash'].includes(sub.toLowerCase())) {
+        setWorkflowSubTab(sub.toLowerCase());
+      }
+      tab = 'workplace';
+      setWorkflowMenuExpanded(true);
     }
     if (tab) {
       setActiveTab(tab);
@@ -2542,6 +2568,13 @@ export default function CRMContainer({
         }
         tab = 'delegation';
         setDelegationMenuExpanded(true);
+      } else if (tab === 'workflow' || tab === 'workplace' || (tab && (tab.startsWith('workflow/') || tab.startsWith('workplace/')))) {
+        let sub = tab.startsWith('workflow/') ? tab.split('/')[1] : tab.startsWith('workplace/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub && ['active', 'tracker', 'trash'].includes(sub.toLowerCase())) {
+          setWorkflowSubTab(sub.toLowerCase());
+        }
+        tab = 'workplace';
+        setWorkflowMenuExpanded(true);
       }
       
       if (!tab) {
@@ -2688,6 +2721,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'workplace' || tabId === 'workflow') {
+      setActiveTab('workplace');
+      const targetSub = workflowSubTab || 'active';
+      window.history.pushState(null, '', `/workflow?tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
@@ -2746,6 +2789,19 @@ export default function CRMContainer({
       setActiveTab('delegation');
     }
     const newPath = `/delegation?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleWorkflowSubTabChange = (subTabId) => {
+    setWorkflowSubTab(subTabId);
+    if (activeTab !== 'workplace') {
+      setActiveTab('workplace');
+    }
+    const newPath = `/workflow?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -4348,6 +4404,67 @@ export default function CRMContainer({
             </div>
           )}
 
+          {/* WORKFLOW BUILDER CATEGORY (Strictly positioned between User Management and System) */}
+          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view !== false || moduleAccess['team']?.view) && (
+            <div>
+              <button
+                onClick={() => {
+                  toggleCategory('Workflow Builder');
+                  if (activeTab !== 'workplace') {
+                    handleTabChange('workplace');
+                  }
+                }}
+                className="category-header"
+                data-active={activeTab === 'workplace'}
+              >
+                {expandedCategories['Workflow Builder'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span>Workflow Builder</span>
+              </button>
+
+              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Workflow Builder']) ? 'expanded' : ''}`}>
+                <div className="category-modules-inner">
+                  {[
+                    { id: 'active', label: 'Active Workflows', icon: GitMerge },
+                    { id: 'tracker', label: 'Live Working Tracker', icon: Clock },
+                    { id: 'trash', label: 'Trash Bin', icon: Trash2 }
+                  ].map(sub => {
+                    const SubIcon = sub.icon;
+                    const isSubActive = activeTab === 'workplace' && (workflowSubTab === sub.id || (!workflowSubTab && sub.id === 'active'));
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => {
+                          if (activeTab !== 'workplace') {
+                            handleTabChange('workplace');
+                          }
+                          handleWorkflowSubTabChange(sub.id);
+                        }}
+                        className="nav-item"
+                        data-active={isSubActive}
+                        title={isSidebarCollapsed ? sub.label : undefined}
+                        style={{
+                          background: isSubActive ? 'var(--primary-light, rgba(37, 99, 235, 0.12))' : 'none',
+                          border: 'none',
+                          width: '100%',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          paddingLeft: '1.25rem'
+                        }}
+                      >
+                        <SubIcon size={16} style={{ flexShrink: 0, color: isSubActive ? 'var(--primary-color, #2563eb)' : 'inherit' }} />
+                        <span style={{ fontWeight: isSubActive ? 700 : 500 }}>{sub.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SYSTEM CATEGORY ACCORDION */}
           {((userRole === 'admin' || userRole === 'Admin') || 
             moduleAccess['team']?.view || 
@@ -4384,20 +4501,6 @@ export default function CRMContainer({
                       >
                         <Shield size={20} style={{ flexShrink: 0 }} />
                         <span>Team Management</span>
-                      </button>
-                    )}
-
-                    {/* Universal Workplace Management */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
-                      <button 
-                        onClick={() => handleTabChange('workplace')}
-                        className="nav-item" 
-                        data-active={activeTab === 'workplace'}
-                        title={isSidebarCollapsed ? "Workplace WMS" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <Building2 size={20} style={{ flexShrink: 0 }} />
-                        <span>Workplace (WMS)</span>
                       </button>
                     )}
 
@@ -4814,7 +4917,13 @@ export default function CRMContainer({
                   {activeTab === 'calladmin' && 'Call Admin'}
                   {activeTab === 'aicallcenter' && 'AI Call Center'}
                   {activeTab === 'team' && 'Team Management'}
-                  {activeTab === 'workplace' && 'Universal Workplace (WMS)'}
+                  {activeTab === 'workplace' && (
+                    workflowSubTab === 'tracker'
+                      ? 'Workflow Builder • Live Working Tracker'
+                      : workflowSubTab === 'trash'
+                        ? 'Workflow Builder • Trash Bin'
+                        : 'Workflow Builder • Active Workflows'
+                  )}
                   {activeTab === 'public_users' && 'Public Applicants'}
                   {activeTab === 'party' && (PARTY_SUBTAB_TITLES[partySubTab] ? `Party Master • ${PARTY_SUBTAB_TITLES[partySubTab]}` : 'Fully Managed Party Master')}
                   {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
@@ -6562,7 +6671,12 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('workplace', moduleAccess, userRole) && visitedTabs.has('workplace')}
               >
                 <ErrorBoundary>
-                  <UniversalWorkplaceModule moduleAccess={moduleAccess} userRole={userRole} />
+                  <UniversalWorkplaceModule 
+                    moduleAccess={moduleAccess} 
+                    userRole={userRole} 
+                    initialSubTab={workflowSubTab} 
+                    onSubTabChange={handleWorkflowSubTabChange} 
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 

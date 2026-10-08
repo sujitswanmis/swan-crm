@@ -1,3 +1,4 @@
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -308,7 +309,7 @@ export default function AiAdminModule() {
       </div>
 
       <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
-        <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', tableLayout: 'fixed' }}>
+        <MobileTableView id="AiAdmin/AiAdminModule-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', tableLayout: 'fixed' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               <th style={{ width: `${colWidths.employee}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -664,7 +665,7 @@ export default function AiAdminModule() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></MobileTableView>
       </div>
 
     </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Monitor, LogOut, Search, Calendar, History, ShieldOff, RefreshCw, Smartphone, Laptop, Clock, ShieldCheck, CheckCircle2, AlertCircle, Sliders, Activity, Download, FileSpreadsheet, Check, UserCheck, Coffee, Briefcase, Award, Users, UserX, X, Utensils, Droplets, ChevronRight, ChevronDown, Plus, Trash2, Edit3, Timer, ArrowRight, AlertTriangle, Sparkles, TrendingUp, Info } from 'lucide-react';
 import { forceLogoutSession, forceLogoutAllOtherSessions } from '@/app/actions/audit';
@@ -1159,7 +1160,7 @@ export default function ActiveSessionsConfig() {
               </div>
             ) : (
               <div style={{ maxHeight: '520px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <MobileTableView id="Settings/ActiveSessionsConfig-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Details</th>
@@ -1332,7 +1333,7 @@ export default function ActiveSessionsConfig() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
           </div>
@@ -1552,7 +1553,7 @@ export default function ActiveSessionsConfig() {
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                <MobileTableView id="Settings/ActiveSessionsConfig-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                   <thead>
                     <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)' }}>
                       <th style={{ padding: '0.85rem 1rem', textAlign: 'left', fontWeight: 700, color: 'var(--text-primary)' }}>Employee</th>
@@ -1738,7 +1739,7 @@ export default function ActiveSessionsConfig() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
           </div>
@@ -2060,7 +2061,7 @@ export default function ActiveSessionsConfig() {
                     </div>
                   </div>
                 ) : (
-                  <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem', textAlign: 'left' }}>
+                  <MobileTableView id="Settings/ActiveSessionsConfig-3"><table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem', textAlign: 'left' }}>
                     {/* Sticky Freeze Table Header */}
                     <thead style={{ position: 'sticky', top: 0, zIndex: 30 }}>
                       <tr style={{
@@ -2251,7 +2252,7 @@ export default function ActiveSessionsConfig() {
                         );
                       })}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 )}
               </div>
 
@@ -2330,7 +2331,7 @@ export default function ActiveSessionsConfig() {
             </div>
           ) : (
             <div style={{ maxHeight: '460px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <MobileTableView id="Settings/ActiveSessionsConfig-4"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee Name & Email</th>
@@ -2397,7 +2398,7 @@ export default function ActiveSessionsConfig() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>

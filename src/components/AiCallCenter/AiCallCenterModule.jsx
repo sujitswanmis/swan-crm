@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Settings2, Megaphone, Users, CheckCircle2, PlayCircle, Loader2, StopCircle, RefreshCw, Plus, Upload, PhoneOutgoing, ArrowLeft } from 'lucide-react';
 import Papa from 'papaparse';
@@ -204,7 +205,7 @@ function CampaignsTab({ onSelectCampaign }) {
         <h3 style={{ margin: 0 }}>Outgoing Campaigns</h3>
         <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><Plus size={16}/> New Campaign</button>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <MobileTableView id="AiCallCenter/AiCallCenterModule-1"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead style={{ backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ textAlign: 'left', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
             <th style={{ padding: '1rem' }}>Name</th>
@@ -226,7 +227,7 @@ function CampaignsTab({ onSelectCampaign }) {
           ))}
           {campaigns.length === 0 && <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No campaigns found.</td></tr>}
         </tbody>
-      </table>
+      </table></MobileTableView>
     </div>
   );
 }
@@ -328,7 +329,7 @@ function CampaignDetail({ id, onBack }) {
       <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
          <h3 style={{ margin: '0 0 1rem 0' }}>Contacts ({contacts.length})</h3>
          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <MobileTableView id="AiCallCenter/AiCallCenterModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead style={{ backgroundColor: 'var(--th-bg)' }}>
                 <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Name</th>
@@ -347,7 +348,7 @@ function CampaignDetail({ id, onBack }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></MobileTableView>
          </div>
       </div>
     </div>

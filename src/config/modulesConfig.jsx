@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff } from 'lucide-react';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -171,18 +171,15 @@ export const MODULES_CONFIG = [
   { id: 'team', path: 'team', label: 'Team Management', category: 'System', icon: <Shield size={20} /> },
   { 
     id: 'workplace', 
-    path: 'workplace', 
-    label: 'Workplace (WMS)', 
+    path: 'workflow', 
+    label: 'Workflow Builder', 
     category: 'System', 
-    icon: <Building2 size={20} />,
+    icon: <GitMerge size={20} />,
     subItemsType: 'tabs',
     subItems: [
-      { id: 'employees', label: 'Employees Master' },
-      { id: 'designations', label: 'Designation Hierarchy' },
-      { id: 'org', label: 'Organization Structure' },
-      { id: 'access', label: 'Access Control Matrix' },
-      { id: 'location_territory', label: 'Location & Territory' },
-      { id: 'workflow', label: 'Workflow Engine' }
+      { id: 'active', label: 'Active Workflows' },
+      { id: 'tracker', label: 'Live Working Tracker' },
+      { id: 'trash', label: 'Trash Bin' }
     ]
   },
   { id: 'public_users', path: 'public_users', label: 'Public User Management', category: 'System', icon: <Users size={20} /> },

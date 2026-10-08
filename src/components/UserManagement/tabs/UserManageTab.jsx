@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Plus, Download, Upload, Filter, User, Shield, Key, Pencil, 
@@ -331,7 +332,7 @@ export default function UserManageTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${getUserTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <MobileTableView id="UserManagement/tabs/UserManageTab-1"><table style={{ width: `${getUserTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -575,7 +576,7 @@ export default function UserManageTab({
                 })
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
 
         {/* Pagination Footer */}

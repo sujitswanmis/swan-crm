@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
@@ -181,7 +182,7 @@ export default function AuditLogsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+          <MobileTableView id="UserManagement/tabs/AuditLogsTab-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -292,7 +293,7 @@ export default function AuditLogsTab() {
                 ))
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
 
         {/* Pagination */}

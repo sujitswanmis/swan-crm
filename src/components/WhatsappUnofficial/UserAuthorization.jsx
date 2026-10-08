@@ -1,3 +1,4 @@
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { getInstances, getInstanceAuths, saveInstanceAuth, removeInstanceAuth } from '@/app/actions/whatsappUnofficialDb';
 import { getTeamMembers } from '@/app/actions/team';
@@ -101,7 +102,7 @@ export default function UserAuthorization() {
 
       {selectedInstance && (
         <div className="card">
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <MobileTableView id="WhatsappUnofficial/UserAuthorization-1"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: 'var(--th-filtered-bg)' }}>
               <tr>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>User</th>
@@ -170,7 +171,7 @@ export default function UserAuthorization() {
                 })
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       )}
     </div>

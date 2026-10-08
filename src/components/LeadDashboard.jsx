@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -2119,7 +2120,7 @@ export default function LeadDashboard({
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <MobileTableView id="LeadDashboard-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 {/* Primary Header Row */}
                 <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
@@ -2516,7 +2517,7 @@ export default function LeadDashboard({
                   </tr>
                 </tfoot>
               )}
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}
@@ -2859,7 +2860,7 @@ export default function LeadDashboard({
                       {/* Active Members Table for this Time Slot */}
                       {tSlot.hasActivity && (
                         <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                          <MobileTableView id="LeadDashboard-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                             <thead>
                               <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                                 <th style={{ padding: '0.6rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '170px' }}>
@@ -3027,7 +3028,7 @@ export default function LeadDashboard({
                                 </td>
                               </tr>
                             </tfoot>
-                          </table>
+                          </table></MobileTableView>
                         </div>
                       )}
                     </div>
@@ -3039,7 +3040,7 @@ export default function LeadDashboard({
             {/* VIEW 2: UNIFIED TABLE (with prominent Time Slot column) */}
             {hourlyViewMode === 'table' && (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <MobileTableView id="LeadDashboard-3"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                       <th 
@@ -3269,14 +3270,14 @@ export default function LeadDashboard({
                       </tr>
                     </tfoot>
                   )}
-                </table>
+                </table></MobileTableView>
               </div>
             )}
 
             {/* VIEW 3: EMPLOYEE × HOURS MATRIX GRID */}
             {hourlyViewMode === 'matrix' && (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <MobileTableView id="LeadDashboard-4"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                       <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)', minWidth: '180px' }}>
@@ -3353,7 +3354,7 @@ export default function LeadDashboard({
                       })
                     )}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
 
@@ -3528,7 +3529,7 @@ export default function LeadDashboard({
 
             {/* Modal Table Content */}
             <div style={{ overflowY: 'auto', flex: 1, padding: '0' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+              <MobileTableView id="LeadDashboard-5"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-primary, #f8fafc)', borderBottom: '1px solid var(--border-light)' }}>
                   <tr>
                     <th style={{ padding: '0.65rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', width: '40px', fontWeight: 600 }}>#</th>
@@ -3690,7 +3691,7 @@ export default function LeadDashboard({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
 
             {/* Modal Footer */}

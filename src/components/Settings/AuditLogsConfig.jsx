@@ -1,4 +1,5 @@
 'use client';
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Clock, Search, Calendar, RefreshCw, Download, Filter, 
@@ -956,7 +957,7 @@ export default function AuditLogsConfig() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', position: 'relative' }}>
-            <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left', tableLayout: 'fixed' }}>
+            <MobileTableView id="Settings/AuditLogsConfig-1"><table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)' }}>
                 <tr style={{ color: 'var(--text-secondary)' }}>
                   {DEFAULT_COLUMNS.map((col, idx) => {
@@ -1186,7 +1187,7 @@ export default function AuditLogsConfig() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         )}
 

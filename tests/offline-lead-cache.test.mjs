@@ -30,11 +30,11 @@ let previousDb;
 function fakeIndexedDB({ holdBulk = false, bulkError = false, withIndex = false } = {}) {
   previousDb?.onversionchange?.();
   const rows = new Map();
-  const stats = { bulkReads: 0, cursorReads: 0, indexReads: 0 };
+  const stats = { bulkReads: 0, cursorReads: 0, indexReads: 0, largestPage: 0 };
   const bulkRequests = [];
   let failNextWrite = false;
   const selectRows = range => [...rows.values()].filter(row => !range ||
-    (row.__cacheScope === range[0] && row.__cacheGeneration === range[1]));
+    ('after' in range ? row.id > range.after : row.__cacheScope === range[0] && row.__cacheGeneration === range[1]));
   const db = {
     transaction(_store, mode) {
       const tx = { error: null };
@@ -53,8 +53,9 @@ function fakeIndexedDB({ holdBulk = false, bulkError = false, withIndex = false 
           rows.set(row.id, row);
           queueMicrotask(() => tx.oncomplete?.());
         },
-        getAll() {
-          return bulkRead();
+        getAll(range, count) {
+          stats.largestPage = Math.max(stats.largestPage, count || 0);
+          return bulkRead(range, count);
         },
         get(id) {
           const request = { result: null };
@@ -73,12 +74,12 @@ function fakeIndexedDB({ holdBulk = false, bulkError = false, withIndex = false 
     close() {}
   };
   previousDb = db;
-  function bulkRead(range) {
+  function bulkRead(range, count) {
     stats.bulkReads++;
     const request = {};
     const finish = () => {
       if (bulkError) { request.error = new Error('Bulk read failed'); request.onerror?.(); }
-      else { request.result = selectRows(range); request.onsuccess?.(); }
+      else { request.result = count ? selectRows(range).sort((a, b) => a.id - b.id).slice(0, count) : selectRows(range); request.onsuccess?.(); }
     };
     if (holdBulk) bulkRequests.push(finish);
     else queueMicrotask(finish);
@@ -107,6 +108,43 @@ function fakeIndexedDB({ holdBulk = false, bulkError = false, withIndex = false 
     rows, stats
   };
 }
+
+test('mobile cache uses bounded pages and retains the original scope during user transitions', async () => {
+  const indexedDB = fakeIndexedDB({ withIndex: true });
+  globalThis.window = { indexedDB, navigator: { userAgent: 'Android Chrome' },
+    IDBKeyRange: { lowerBound: after => ({ after }), only: values => values } };
+  globalThis.sessionStorage = storage();
+  globalThis.localStorage = storage();
+  setLeadCacheScope('mobile-a');
+  localStorage.setItem('crm_leads_complete_cache_v1_mobile-a', JSON.stringify({ generation: 'a1' }));
+  const leads = Array.from({ length: 601 }, (_, index) => ({ id: index + 1, company: 'Mobile' }));
+  await saveLeadsLocally(leads, 'a1');
+  indexedDB.rows.set(900, { id: 900, __cacheScope: 'mobile-b', __cacheGeneration: 'b1' });
+  let preview, timing;
+  const rows = await getLocalLeads({ onPreview: value => {
+    preview = value;
+    setLeadCacheScope('mobile-b');
+  }, onTiming: value => { timing = value; } });
+  assert.equal(preview.length, 100);
+  assert.deepEqual(rows.map(row => row.id), leads.map(row => row.id));
+  assert.equal(indexedDB.stats.largestPage, 250);
+  assert.equal(indexedDB.stats.cursorReads, 0);
+  assert.equal(timing.mode, 'paged');
+});
+
+test('mobile failed page reads fall back to the existing scoped cursor', async () => {
+  const indexedDB = fakeIndexedDB({ bulkError: true, withIndex: true });
+  globalThis.window = { indexedDB, navigator: { userAgent: 'Android Chrome' },
+    IDBKeyRange: { lowerBound: after => ({ after }), only: values => values } };
+  globalThis.sessionStorage = storage();
+  globalThis.localStorage = storage();
+  setLeadCacheScope('mobile-fallback');
+  localStorage.setItem('crm_leads_complete_cache_v1_mobile-fallback', JSON.stringify({ generation: 'f1' }));
+  const leads = Array.from({ length: 301 }, (_, index) => ({ id: index + 1 }));
+  await saveLeadsLocally(leads, 'f1');
+  assert.deepEqual((await getLocalLeads()).map(row => row.id), leads.map(row => row.id));
+  assert.equal(indexedDB.stats.cursorReads, 1);
+});
 
 test('lead cache writes are scoped, bounded, and report transaction failures', async () => {
   const indexedDB = fakeIndexedDB();
@@ -519,7 +557,7 @@ const tableSource = fs.readFileSync(new URL('../src/components/LeadTable.jsx', i
 const tableAst = require('@babel/parser').parse(tableSource, { sourceType: 'module', plugins: ['jsx'] });
 const prepareNode = tableAst.program.body.find(node => node.type === 'ExportNamedDeclaration' &&
   node.declaration?.id?.name === 'prepareLeadTableRows').declaration;
-const prepareRows = vm.runInNewContext(`(${tableSource.slice(prepareNode.start, prepareNode.end)})`, { console });
+const prepareRows = vm.runInNewContext(`(${tableSource.slice(prepareNode.start, prepareNode.end)})`, { console, performance });
 const tableNode = tableAst.program.body.find(node => node.type === 'ExportDefaultDeclaration').declaration;
 const initialNode = tableNode.body.body.flatMap(node => node.declarations || [])
   .find(node => node.id.type === 'ArrayPattern' && node.id.elements[0]?.name === 'initialPreparation').init.arguments[0];
@@ -530,7 +568,7 @@ const compareNode = tableAst.program.body.flatMap(node => node.declarations || [
   .find(node => node.id.name === 'isLeadContentChanged').init;
 const compareRows = vm.runInNewContext(`(${tableSource.slice(compareNode.start, compareNode.end)})`);
 
-function tableHarness(rows) {
+function tableHarness(rows, profile = { mobile: false, firstBatch: 400, batchSize: 400, timeBudgetMs: Infinity }) {
   const tasks = [], calls = [];
   const members = [];
   const processRows = (source, _members, offset = 0) => {
@@ -538,12 +576,12 @@ function tableHarness(rows) {
     return source.map((row, index) => ({ ...row, sr_no: offset + index + 1 }));
   };
   const initial = vm.runInNewContext(`(${tableSource.slice(initialNode.start, initialNode.end)})()`, {
-    initialData: rows, teamMembers: members, processLeads: processRows
+    initialData: rows, teamMembers: members, processLeads: processRows, leadProfile: profile
   });
   let data = initial.prepared;
   const context = {
-    initialData: rows, teamMembers: members, initialPreparation: initial,
-    prevInitialDataRef: { current: rows.length <= 400 ? rows : null },
+    initialData: rows, teamMembers: members, initialPreparation: initial, leadProfile: profile,
+    prevInitialDataRef: { current: rows.length === initial.prepared.length ? rows : null },
     prevTeamMembersRef: { current: members }, localUpdatedLeadIdsRef: { current: new Set() },
     latestTableDataRef: { current: data },
     isLeadContentChanged: compareRows, processLeads: processRows,
@@ -588,6 +626,23 @@ test('small stage previews are ready immediately without a duplicate mount effec
   assert.equal(table.data.length, 52);
   assert.equal(table.calls.length, 52);
   assert.equal(table.tasks.length, 0);
+});
+
+test('mobile preparation starts with 48 rows and completes bounded batches without losing edits', () => {
+  const rows = Array.from({ length: 45000 }, (_, id) => ({ id: id + 1, status: 'New' }));
+  const table = tableHarness(rows, { mobile: true, firstBatch: 48, batchSize: 64, timeBudgetMs: 8 });
+  assert.equal(table.data.length, 48);
+  assert.equal(table.context.prevInitialDataRef.current, null);
+  table.effect();
+  table.context.localUpdatedLeadIdsRef.current.add(1);
+  table.setData(table.data.map(row => row.id === 1 ? { ...row, status: 'Hot' } : row));
+  const priorCalls = table.calls.length;
+  table.tasks.shift().callback();
+  assert.ok(table.calls.length - priorCalls <= 64);
+  table.drain();
+  assert.equal(table.data.length, 45000);
+  assert.equal(table.calls.length, 45000);
+  assert.equal(table.data[0].status, 'Hot');
 });
 
 test('the selected-stage preview stays visible while unrelated first rows prepare in background', () => {

@@ -1,3 +1,4 @@
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { getInstances, createNewInstance, regenerateInstanceQr, logoutInstance, syncInstanceStatus } from '@/app/actions/whatsappUnofficialDb';
 import { QRCodeSVG } from 'qrcode.react';
@@ -110,7 +111,7 @@ export default function InstanceManagement({ userId }) {
       </div>
 
       <div className="card">
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <MobileTableView id="WhatsappUnofficial/InstanceManagement-1"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ background: 'var(--th-filtered-bg)' }}>
             <tr>
               <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>Instance Name</th>
@@ -153,7 +154,7 @@ export default function InstanceManagement({ userId }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></MobileTableView>
       </div>
 
       {/* Create Modal */}

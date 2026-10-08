@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -2484,7 +2485,7 @@ export default function PartyMasterModule({
 
           {/* Table */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+            <MobileTableView id="Party/PartyMasterModule-1"><table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ position: 'relative', padding: '0.85rem 0.75rem', width: `${partyColWidths.select}px`, textAlign: 'center' }}>
@@ -2811,7 +2812,7 @@ export default function PartyMasterModule({
                   })
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
 
             {/* Pagination Bar Matching Lead Data */}
             <div style={{
@@ -3108,7 +3109,7 @@ export default function PartyMasterModule({
           </div>
 
           <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <MobileTableView id="Party/PartyMasterModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead Universal ID</th>
@@ -3253,7 +3254,7 @@ export default function PartyMasterModule({
                   })
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
 
             {/* S00 Pagination Bar Matching Lead Data */}
             <div style={{
@@ -4004,7 +4005,7 @@ export default function PartyMasterModule({
           {/* DISCRETE INDIVIDUAL COLUMN ENTERPRISE REPORT TABLE */}
           {/* ========================================================= */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+            <MobileTableView id="Party/PartyMasterModule-3"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   {/* Selection Checkbox */}
@@ -4490,7 +4491,7 @@ export default function PartyMasterModule({
                   })
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
 
             {/* Sticky Floating Selection Action Bar */}
             {selectedPartyIds.length > 0 && (
@@ -5063,7 +5064,7 @@ export default function PartyMasterModule({
 
             {/* Queue Table */}
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+              <MobileTableView id="Party/PartyMasterModule-4"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.85rem 1rem' }}>Partner Code &amp; Tier</th>
@@ -5264,7 +5265,7 @@ export default function PartyMasterModule({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         );
@@ -5443,7 +5444,7 @@ export default function PartyMasterModule({
 
             {/* Feedback Table */}
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+              <MobileTableView id="Party/PartyMasterModule-5"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.85rem 1rem' }}>Order Ref &amp; Date</th>
@@ -5523,7 +5524,7 @@ export default function PartyMasterModule({
                     ))
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         );
@@ -5756,7 +5757,7 @@ export default function PartyMasterModule({
 
             {/* Roster Table */}
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+              <MobileTableView id="Party/PartyMasterModule-6"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.85rem 1rem' }}>Partner Code &amp; Tier</th>
@@ -5989,7 +5990,7 @@ export default function PartyMasterModule({
                     })
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         );
@@ -6011,7 +6012,7 @@ export default function PartyMasterModule({
           </div>
 
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+            <MobileTableView id="Party/PartyMasterModule-7"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem' }}>Ticket Number</th>
@@ -6068,7 +6069,7 @@ export default function PartyMasterModule({
                   ))
                 )}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { getTeamMembers, toggleUserApproval, updateEmployeeDetailsAdmin } from '@/app/actions/team';
 import { Eye, EyeOff } from 'lucide-react';
@@ -211,7 +212,7 @@ export default function PublicUserManagement() {
       </div>
 
       <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 240px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-        <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+        <MobileTableView id="PublicUserManagement-1"><table style={{ width: '100%', minWidth: '800px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ backgroundColor: 'var(--th-bg)' }}>
             <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Customer ID</th>
@@ -283,7 +284,7 @@ export default function PublicUserManagement() {
             ))
           )}
         </tbody>
-      </table>
+      </table></MobileTableView>
       </div>
 
       {/* Confirmation Modal */}

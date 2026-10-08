@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo } from 'react';
 import { 
   Users, Search, CheckCircle2, XCircle, Key, Pencil, MessageSquare, 
@@ -238,7 +239,7 @@ export default function PublicUsersTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+          <MobileTableView id="UserManagement/tabs/PublicUsersTab-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -369,7 +370,7 @@ export default function PublicUsersTab({
                 ))
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
 

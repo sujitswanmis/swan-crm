@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, bulkImportEmployeesFast, cleanupDummyImportAccounts, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash, toggleSelfPasswordReset, sendAdminPasswordResetLink, impersonateUserAdmin } from '@/app/actions/team';
 import { Eye, EyeOff, Search, ChevronDown, ChevronRight, ChevronLeft, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw, Send, Check, Loader2, CheckCircle2, AlertCircle, Info, LogIn, UserCheck } from 'lucide-react';
@@ -1545,7 +1546,7 @@ export default function TeamManagement({ initialUsers = [] }) {
       </div>
 
       <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-        <table style={{ width: `${Math.max(1100, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+        <MobileTableView id="TeamManagement-1"><table style={{ width: `${Math.max(1100, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ backgroundColor: 'var(--th-bg)' }}>
             <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.emp_id}px` }}>
@@ -1880,7 +1881,7 @@ export default function TeamManagement({ initialUsers = [] }) {
             </tr>
           )))}
         </tbody>
-      </table>
+      </table></MobileTableView>
       </div>
 
       {/* Pagination & Page Navigation Bar (Exact same condition and layout as Lead Data) */}

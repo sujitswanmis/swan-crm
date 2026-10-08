@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo } from 'react';
 import {
   Building2, Users, Plus, ArrowRight, CheckCircle2, Clock,
@@ -1096,7 +1097,7 @@ export default function PartyMasterDashboard({
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+          <MobileTableView id="Party/PartyMasterDashboard-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
             <thead>
               <tr style={{ background: 'var(--th-bg, rgba(255,255,255,0.02))', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Universal ID</th>
@@ -1201,7 +1202,7 @@ export default function PartyMasterDashboard({
                 })
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
 
@@ -1255,7 +1256,7 @@ export default function PartyMasterDashboard({
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+          <MobileTableView id="Party/PartyMasterDashboard-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
             <thead>
               <tr style={{ background: 'var(--th-bg, rgba(255,255,255,0.02))', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Party Code & Tier</th>
@@ -1381,7 +1382,7 @@ export default function PartyMasterDashboard({
                 })
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
 

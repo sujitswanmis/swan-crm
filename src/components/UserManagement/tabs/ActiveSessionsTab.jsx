@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
@@ -620,7 +621,7 @@ export default function ActiveSessionsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <MobileTableView id="UserManagement/tabs/ActiveSessionsTab-1"><table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -891,7 +892,7 @@ export default function ActiveSessionsTab() {
                 })
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
       </div>
     </div>

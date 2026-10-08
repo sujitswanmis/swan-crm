@@ -1,90 +1,38 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Building2, Network, ShieldCheck, UserCheck, Plus, History, ArrowRightLeft, Layers, MapPin, RefreshCw, CheckCircle2, ChevronRight, GitMerge, FileCode, Clock, CheckSquare, Settings, Trash2, RotateCcw, ArrowUp, ArrowDown, User, PlayCircle, FileText, ListPlus, Tag, XCircle } from 'lucide-react';
-import { getCompanies, createCompany, getWmsDepartments, createWmsDepartment, createSubDepartment, getWorkLocations, createWorkLocation } from '@/app/actions/organization';
-import { getDesignations, createDesignation } from '@/app/actions/designation';
-import { getEmployeesMaster, createEmployeeMaster, transferEmployeeDesignation, getEmployeeHistory } from '@/app/actions/employee';
-import { getAccessProfiles } from '@/app/actions/accessControl';
-import { getRecursiveSubordinatesTree } from '@/app/actions/hierarchy';
-import { getWorkflowDefinitions, createWorkflowDefinition, addWorkflowStage, deleteWorkflowDefinition, restoreWorkflowDefinition, mapStageField, purgeWorkflowDefinition } from '@/app/actions/workflowEngine';
-import LocationTerritoryModule from './LocationTerritoryModule';
-import { getSubItemPermissions } from '@/utils/permissionUtils';
+import React, { useState, useEffect, useRef, useTransition } from 'react';
+import { GitMerge, Plus, Clock, CheckSquare, Settings, Trash2, RotateCcw, ArrowUp, ArrowDown, PlayCircle, FileText, ListPlus, Tag, XCircle, RefreshCw } from 'lucide-react';
+import { getDesignations } from '@/app/actions/designation';
+import { getEmployeesMaster } from '@/app/actions/employee';
+import { getWorkflowDefinitions, createWorkflowDefinition, addWorkflowStage, deleteWorkflowDefinition, restoreWorkflowDefinition, mapStageField, purgeWorkflowDefinition, getWorkflowInstances, startWorkflowInstance, advanceWorkflowInstance, setWorkflowPlanningMode, importWorkflowDefinition, reorderWorkflowStages, updateWorkflowStageField } from '@/app/actions/workflowEngine';
+import { tatHours, formatWorkflowIST, workflowVariance } from '@/utils/workflowTiming.mjs';
 
-const DESIGNATION_CATEGORIES = [
-  'Management', 'Head of Department', 'Senior Manager', 'Manager',
-  'Assistant Manager', 'Team Leader', 'Coordinator', 'Executive',
-  'Telecaller', 'Operator', 'Worker', 'Trainee', 'Consultant', 'Contract Employee'
-];
-
-const DESIGNATION_LEVELS = [
-  { level: 'L01', title: 'Top Management' },
-  { level: 'L02', title: 'Senior Management' },
-  { level: 'L03', title: 'Department Head' },
-  { level: 'L04', title: 'Manager' },
-  { level: 'L05', title: 'Assistant Manager' },
-  { level: 'L06', title: 'Team Leader' },
-  { level: 'L07', title: 'Senior Executive' },
-  { level: 'L08', title: 'Executive' },
-  { level: 'L09', title: 'Coordinator' },
-  { level: 'L10', title: 'Operator / Trainee' }
-];
-
-export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole = '' }) {
-  const canViewTab = (tabId) => {
-    return getSubItemPermissions(moduleAccess, userRole, 'workplace', tabId).view === true;
-  };
-
-  const allowedTabs = ['employees', 'designations', 'org', 'access', 'location_territory', 'workflow'].filter(t => canViewTab(t));
-
-  const [activeSubTab, setActiveSubTab] = useState(() => {
-    return allowedTabs[0] || 'employees';
-  });
-
-  useEffect(() => {
-    if (allowedTabs.length > 0 && !allowedTabs.includes(activeSubTab)) {
-      setActiveSubTab(allowedTabs[0]);
-    }
-  }, [moduleAccess, userRole, activeSubTab]);
-  const [loading, setLoading] = useState(false);
+export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole = '', initialSubTab = 'active', onSubTabChange = null }) {
+  const [workflowFilter, setWorkflowFilter] = useState(initialSubTab || 'active'); // 'active' | 'tracker' | 'trash'
 
   // Data states
-  const [companies, setCompanies] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [designations, setDesignations] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [locations, setLocations] = useState([]);
-  const [accessProfiles, setAccessProfiles] = useState([]);
   const [workflows, setWorkflows] = useState([]);
+  const [workflowPending, startWorkflowTransition] = useTransition();
+  const workflowBusy = useRef(false);
+  const [workflowError, setWorkflowError] = useState('');
+  const [legacyWorkflowNotice, setLegacyWorkflowNotice] = useState(false);
+  const [stageInputs, setStageInputs] = useState({});
+  const [stageApprovals, setStageApprovals] = useState({});
+  const launchRequestKey = useRef(null);
 
   // Modals
-  const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ code: '', name: '', legal_name: '', gstin: '', pan: '' });
-
-  const [showAddDeptModal, setShowAddDeptModal] = useState(false);
-  const [deptForm, setDeptForm] = useState({ code: '', name: '' });
-
-  const [showAddDesigModal, setShowAddDesigModal] = useState(false);
-  const [desigForm, setDesigForm] = useState({
-    designation_code: '',
-    designation_name: '',
-    category: 'Executive',
-    designation_level: 'L08',
-    hierarchy_rank: 50,
-    is_manager_eligible: false,
-    is_approval_authority: false
-  });
-
   const [showAddWorkflowModal, setShowAddWorkflowModal] = useState(false);
   const [workflowForm, setWorkflowForm] = useState({
     workflow_name: '',
     workflow_code: '',
     category: 'PRODUCTION',
-    description: ''
+    description: '',
+    planning_mode: 'ACTUAL_PLUS_TAT'
   });
 
   // Stage Planner Modal & Trash State
-  const [workflowFilter, setWorkflowFilter] = useState('active'); // 'active' | 'trash' | 'tracker'
   const [selectedWfForStages, setSelectedWfForStages] = useState(null);
   const [stageForm, setStageForm] = useState({
     stage_name: '',
@@ -107,6 +55,90 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     is_required: true,
     snapshot_mode: 'LIVE_REFERENCE'
   });
+  const [editingField, setEditingField] = useState(null);
+
+  // Centered Delete Modal States
+  const [deleteConfirmWf, setDeleteConfirmWf] = useState(null);
+  const [purgeConfirmWf, setPurgeConfirmWf] = useState(null);
+
+  // Live Workflow Instance Execution State
+  const [liveInstances, setLiveInstances] = useState([]);
+  const [liveLaunchWf, setLiveLaunchWf] = useState(null);
+  const [liveForm, setLiveForm] = useState({ reference_no: '', customer_name: '', notes: '' });
+
+  useEffect(() => {
+    if (initialSubTab && ['active', 'tracker', 'trash'].includes(initialSubTab)) {
+      setWorkflowFilter(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  const handleFilterChange = (filter) => {
+    setWorkflowFilter(filter);
+    if (typeof onSubTabChange === 'function') {
+      onSubTabChange(filter);
+    }
+  };
+
+  const workflowRequest = async (operation) => {
+    if (workflowBusy.current) throw new Error('A workflow operation is still running');
+    workflowBusy.current = true;
+    setWorkflowError('');
+    try {
+      return await new Promise((resolve, reject) => {
+        startWorkflowTransition(async () => {
+          try { resolve(await operation()); }
+          catch (err) { setWorkflowError(err.message); reject(err); }
+        });
+      });
+    } finally { workflowBusy.current = false; }
+  };
+
+  const acceptWorkflow = (wf) => {
+    setWorkflows(prev => prev.map(w => w.id === wf.id ? wf : w));
+    setSelectedWfForStages(prev => prev?.id === wf.id ? wf : prev);
+  };
+
+  const loadWorkflowData = async () => {
+    try {
+      const serverWorkflows = await getWorkflowDefinitions();
+      setWorkflows(prev => [...serverWorkflows, ...prev.filter(w => !w.persisted
+        && !serverWorkflows.some(sw => sw.workflow_code === w.workflow_code))]);
+      const instances = await getWorkflowInstances();
+      setLiveInstances(instances);
+    } catch (err) { setWorkflowError(err.message || 'Could not load workflows'); }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    startWorkflowTransition(async () => {
+      try {
+        const [desigData, empData] = await Promise.all([
+          getDesignations(),
+          getEmployeesMaster()
+        ]);
+        if (isMounted) {
+          setDesignations(desigData || []);
+          setEmployees(empData || []);
+        }
+      } catch (e) {
+        console.error('Error loading role assignments:', e);
+      }
+
+      try {
+        const stored = JSON.parse(localStorage.getItem('crm_custom_workflows') || '[]');
+        if (Array.isArray(stored) && isMounted) {
+          setLegacyWorkflowNotice(stored.some(w => w?.stages?.length));
+          setWorkflows(prev => [...prev, ...stored.filter(w => w?.id && !prev.some(p => p.id === w.id))
+            .map(w => ({ ...w, persisted: false }))]);
+        }
+      } catch {}
+
+      if (isMounted) {
+        await loadWorkflowData();
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   const handleSaveStage = async (e) => {
     e.preventDefault();
@@ -118,16 +150,15 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
       const workerEmp = employees.find(e => e.id === stageForm.assigned_employee_id);
 
       const stageIndex = (selectedWfForStages.stages || []).length;
-      const canonicalCode = `S${String(stageIndex).padStart(2, '0')}`; // S00, S01, S02, S03...
+      const canonicalCode = `S${String(stageIndex).padStart(2, '0')}`;
 
-      // Calculate TAT display and hours
-      const val = stageForm.tat_value || 1;
+      const val = stageForm.tat_value;
       const unit = stageForm.tat_unit || 'HOURS';
-      let hours = val;
+      let hours = tatHours(val, unit);
       let displayStr = `${val} Hours`;
 
       if (unit === 'MINUTES') {
-        hours = parseFloat((val / 60).toFixed(2));
+        hours = tatHours(val, unit);
         displayStr = `${val} Mins`;
       } else if (unit === 'DAYS') {
         hours = val * 24;
@@ -136,34 +167,33 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         displayStr = `${val} Hours`;
       }
 
-      // Default fields based on S00 / S01 stage type
       let defaultFields = [];
-      if (stageIndex === 0) { // S00 Initial Entry
+      if (stageIndex === 0) {
         defaultFields = [
-          { id: `fld-${Date.now()}-1`, field_name: 'Item & Material Name', field_key: 'item_name', data_type: 'TEXT', is_required: true, snapshot_mode: 'STAGE_SNAPSHOT' },
-          { id: `fld-${Date.now()}-2`, field_name: 'Required Quantity', field_key: 'req_qty', data_type: 'NUMBER', is_required: true, snapshot_mode: 'LIVE_REFERENCE' },
-          { id: `fld-${Date.now()}-3`, field_name: 'Target Priority', field_key: 'priority', data_type: 'TEXT', is_required: false, snapshot_mode: 'LIVE_REFERENCE' }
+          { field_name: 'Item & Material Name', field_key: 'item_name', data_type: 'TEXT', is_required: true, snapshot_mode: 'STAGE_SNAPSHOT' },
+          { field_name: 'Required Quantity', field_key: 'req_qty', data_type: 'NUMBER', is_required: true, snapshot_mode: 'LIVE_REFERENCE' },
+          { field_name: 'Target Priority', field_key: 'priority', data_type: 'TEXT', is_required: false, snapshot_mode: 'LIVE_REFERENCE' }
         ];
-      } else if (stageIndex === 1) { // S01 Processing / Inspection
+      } else if (stageIndex === 1) {
         defaultFields = [
-          { id: `fld-${Date.now()}-4`, field_name: 'Quality Inspection Verdict', field_key: 'quality_verdict', data_type: 'TEXT', is_required: true, snapshot_mode: 'STAGE_SNAPSHOT' },
-          { id: `fld-${Date.now()}-5`, field_name: 'Inspector Remarks', field_key: 'inspector_remarks', data_type: 'TEXT', is_required: false, snapshot_mode: 'LIVE_REFERENCE' }
+          { field_name: 'Quality Inspection Verdict', field_key: 'quality_verdict', data_type: 'TEXT', is_required: true, snapshot_mode: 'STAGE_SNAPSHOT' },
+          { field_name: 'Inspector Remarks', field_key: 'inspector_remarks', data_type: 'TEXT', is_required: false, snapshot_mode: 'LIVE_REFERENCE' }
         ];
       }
 
-      const createdStage = await addWorkflowStage(verId, {
+      const createdStage = await workflowRequest(() => addWorkflowStage(verId, {
         ...stageForm,
         planned_tat_hours: hours,
         tat_formatted_display: displayStr,
         stage_code: canonicalCode,
         stage_order: stageIndex + 1,
+        fields: defaultFields,
         approver_designation_name: approverDesig?.designation_name || '',
         assigned_designation_name: workerDesig?.designation_name || '',
         assigned_employee_name: workerEmp?.emp_name || ''
-      });
+      }));
 
       createdStage.stage_code = canonicalCode;
-      createdStage.fields = defaultFields;
       createdStage.tat_formatted_display = displayStr;
       createdStage.planned_tat_hours = hours;
 
@@ -173,11 +203,9 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
       setSelectedWfForStages(updatedWf);
       setWorkflows(prev => {
         const exists = prev.some(w => String(w.id) === String(updatedWf.id));
-        const next = exists
+        return exists
           ? prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w)
           : [updatedWf, ...prev];
-        try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-        return next;
       });
 
       setStageForm({
@@ -203,7 +231,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     e.preventDefault();
     if (!fieldForm.field_name || !selectedWfForStages) return;
     try {
-      const newFld = await mapStageField(stageId, fieldForm);
+      const newFld = await workflowRequest(() => mapStageField(stageId, fieldForm));
       const updatedStages = selectedWfForStages.stages.map(stg => {
         if (stg.id === stageId) {
           const existingFlds = stg.fields || [];
@@ -214,11 +242,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
 
       const updatedWf = { ...selectedWfForStages, stages: updatedStages };
       setSelectedWfForStages(updatedWf);
-      setWorkflows(prev => {
-        const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
-        try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-        return next;
-      });
+      setWorkflows(prev => prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w));
 
       setFieldForm({
         field_name: '',
@@ -233,448 +257,103 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     }
   };
 
-  const [editingField, setEditingField] = useState(null); // { stageId, fieldId, field_name, data_type, is_required }
-
-  const handleDeleteStageField = (stageId, fieldId) => {
-    if (!selectedWfForStages) return;
-    const updatedStages = selectedWfForStages.stages.map(stg => {
-      if (stg.id === stageId) {
-        const remainingFlds = (stg.fields || []).filter(f => (f.id || f.field_key) !== fieldId);
-        return { ...stg, fields: remainingFlds };
-      }
-      return stg;
-    });
-
-    const updatedWf = { ...selectedWfForStages, stages: updatedStages };
-    setSelectedWfForStages(updatedWf);
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
+  const handleDeleteStageField = async (stageId, fieldId) => {
+    try { acceptWorkflow(await workflowRequest(() => updateWorkflowStageField(stageId, fieldId, {}, true))); }
+    catch (err) { setWorkflowError(err.message); }
   };
 
-  const handleUpdateStageField = (e) => {
+  const handleUpdateStageField = async (e) => {
     e.preventDefault();
-    if (!editingField || !selectedWfForStages) return;
-
-    const { stageId, fieldId, field_name, data_type, is_required } = editingField;
-    const updatedStages = selectedWfForStages.stages.map(stg => {
-      if (stg.id === stageId) {
-        const updatedFlds = (stg.fields || []).map(f => {
-          if ((f.id || f.field_key) === fieldId) {
-            return { ...f, field_name, data_type, is_required };
-          }
-          return f;
-        });
-        return { ...stg, fields: updatedFlds };
-      }
-      return stg;
-    });
-
-    const updatedWf = { ...selectedWfForStages, stages: updatedStages };
-    setSelectedWfForStages(updatedWf);
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
-
-    setEditingField(null);
-    alert(`Field "${field_name}" updated successfully!`);
-  };
-
-  const handleMoveStageUp = (index) => {
-    if (index === 0 || !selectedWfForStages?.stages) return;
-    const stagesCopy = [...selectedWfForStages.stages];
-    const temp = stagesCopy[index - 1];
-    stagesCopy[index - 1] = stagesCopy[index];
-    stagesCopy[index] = temp;
-
-    const updatedWf = { ...selectedWfForStages, stages: stagesCopy };
-    setSelectedWfForStages(updatedWf);
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
-  };
-
-  const handleMoveStageDown = (index) => {
-    if (!selectedWfForStages?.stages || index >= selectedWfForStages.stages.length - 1) return;
-    const stagesCopy = [...selectedWfForStages.stages];
-    const temp = stagesCopy[index + 1];
-    stagesCopy[index + 1] = stagesCopy[index];
-    stagesCopy[index] = temp;
-
-    const updatedWf = { ...selectedWfForStages, stages: stagesCopy };
-    setSelectedWfForStages(updatedWf);
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
-  };
-
-  // Centered Delete Modal States
-  const [deleteConfirmWf, setDeleteConfirmWf] = useState(null);
-  const [purgeConfirmWf, setPurgeConfirmWf] = useState(null);
-
-  // Live Workflow Instance Execution State
-  const [liveInstances, setLiveInstances] = useState([]);
-  const [liveLaunchWf, setLiveLaunchWf] = useState(null);
-  const [liveForm, setLiveForm] = useState({ reference_no: '', customer_name: '', notes: '' });
-
-  useEffect(() => {
+    if (!editingField) return;
     try {
-      const rawInst = localStorage.getItem('crm_live_workflow_instances');
-      if (rawInst) setLiveInstances(JSON.parse(rawInst));
-    } catch (e) {}
-  }, []);
+      acceptWorkflow(await workflowRequest(() => updateWorkflowStageField(editingField.stageId, editingField.fieldId, editingField)));
+      setEditingField(null);
+    } catch (err) { setWorkflowError(err.message); }
+  };
 
-  const handleStartLiveExecution = (e) => {
+  const moveStage = async (index, direction) => {
+    if (!selectedWfForStages || workflowBusy.current) return;
+    const stages = [...selectedWfForStages.stages];
+    const target = index + direction;
+    if (target < 0 || target >= stages.length) return;
+    [stages[index], stages[target]] = [stages[target], stages[index]];
+    try { acceptWorkflow(await workflowRequest(() => reorderWorkflowStages(selectedWfForStages.workflow_versions?.[0]?.id, stages.map(s => s.id)))); }
+    catch (err) { setWorkflowError(err.message); }
+  };
+  const handleMoveStageUp = index => moveStage(index, -1);
+  const handleMoveStageDown = index => moveStage(index, 1);
+
+  const handleStartLiveExecution = async (e) => {
     e.preventDefault();
     if (!liveLaunchWf) return;
-
-    const stages = liveLaunchWf.stages || [];
-    const firstStage = stages[0] || { stage_name: 'Initial Entry', stage_code: 'S00', planned_tat_hours: 24 };
-
-    const newInst = {
-      id: `inst-${Date.now()}`,
-      workflow_id: liveLaunchWf.id,
-      workflow_name: liveLaunchWf.workflow_name,
-      workflow_code: liveLaunchWf.workflow_code,
-      category: liveLaunchWf.category,
-      reference_no: liveForm.reference_no || `REF-${Date.now().toString().slice(-6)}`,
-      customer_name: liveForm.customer_name || 'Internal Order',
-      notes: liveForm.notes || '',
-      current_stage_index: 0,
-      total_stages: stages.length || 1,
-      current_stage: firstStage,
-      status: 'IN_PROGRESS',
-      started_at: new Date().toISOString(),
-      history: [{
-        stage_code: firstStage.stage_code || 'S00',
-        stage_name: firstStage.stage_name,
-        entered_at: new Date().toISOString(),
-        status: 'CURRENT'
-      }]
-    };
-
-    const updatedInsts = [newInst, ...liveInstances];
-    setLiveInstances(updatedInsts);
     try {
-      localStorage.setItem('crm_live_workflow_instances', JSON.stringify(updatedInsts));
-    } catch (err) {}
-
-    setLiveLaunchWf(null);
-    setLiveForm({ reference_no: '', customer_name: '', notes: '' });
-    setWorkflowFilter('tracker');
-    alert(`🚀 Live Execution Started for ${newInst.workflow_name} (${newInst.reference_no})!\nCurrently at Stage [${firstStage.stage_code || 'S00'}]: ${firstStage.stage_name}`);
+      launchRequestKey.current ||= crypto.randomUUID();
+      const instance = await workflowRequest(() => startWorkflowInstance(liveLaunchWf.workflow_versions?.[0]?.id,
+        { ...liveForm, request_key: launchRequestKey.current }));
+      setLiveInstances(prev => [instance, ...prev.filter(i => i.id !== instance.id)]);
+      setLiveLaunchWf(null);
+      launchRequestKey.current = null;
+      setLiveForm({ reference_no: '', customer_name: '', notes: '' });
+      handleFilterChange('tracker');
+    } catch (err) { setWorkflowError(err.message); }
   };
 
-  const handleAdvanceStage = (instId) => {
-    const updatedInsts = liveInstances.map(inst => {
-      if (inst.id === instId) {
-        const wf = workflows.find(w => String(w.id) === String(inst.workflow_id));
-        const stages = wf?.stages || [];
-        const nextIndex = inst.current_stage_index + 1;
-
-        if (nextIndex >= stages.length) {
-          return {
-            ...inst,
-            status: 'COMPLETED',
-            completed_at: new Date().toISOString()
-          };
-        } else {
-          const nextStage = stages[nextIndex];
-          return {
-            ...inst,
-            current_stage_index: nextIndex,
-            current_stage: nextStage,
-            history: [
-              ...inst.history,
-              {
-                stage_code: nextStage.stage_code || `S${String(nextIndex).padStart(2, '0')}`,
-                stage_name: nextStage.stage_name,
-                entered_at: new Date().toISOString(),
-                status: 'CURRENT'
-              }
-            ]
-          };
-        }
-      }
-      return inst;
-    });
-
-    setLiveInstances(updatedInsts);
+  const handleAdvanceStage = async (instId) => {
+    const instance = liveInstances.find(i => i.id === instId);
+    if (!instance?.current_stage?.stage_instance_id) return;
+    const stageId = instance.current_stage.stage_instance_id;
     try {
-      localStorage.setItem('crm_live_workflow_instances', JSON.stringify(updatedInsts));
-    } catch (err) {}
+      const saved = await workflowRequest(() => advanceWorkflowInstance(instId, stageId,
+        stageInputs[stageId] || {}, !!stageApprovals[stageId]));
+      setLiveInstances(prev => prev.map(i => i.id === saved.id ? saved : i));
+    } catch (err) { setWorkflowError(err.message); }
   };
 
   const confirmSoftDelete = async () => {
     if (!deleteConfirmWf) return;
-    const targetId = deleteConfirmWf.id;
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(targetId) ? { ...w, status: 'DELETED' } : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
-    setDeleteConfirmWf(null);
     try {
-      await deleteWorkflowDefinition(targetId);
-    } catch (err) { console.error('Error soft deleting workflow:', err); }
+      await workflowRequest(() => deleteWorkflowDefinition(deleteConfirmWf.id));
+      setWorkflows(prev => prev.map(w => w.id === deleteConfirmWf.id ? { ...w, status: 'DELETED' } : w));
+      setDeleteConfirmWf(null);
+    } catch (err) { setWorkflowError(err.message); }
   };
 
   const confirmPurgeDelete = async () => {
     if (!purgeConfirmWf) return;
-    const targetId = purgeConfirmWf.id;
-    setWorkflows(prev => {
-      const next = prev.filter(w => String(w.id) !== String(targetId));
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
-    setPurgeConfirmWf(null);
     try {
-      await purgeWorkflowDefinition(targetId);
-    } catch (err) { console.error('Error purging workflow:', err); }
+      await workflowRequest(() => purgeWorkflowDefinition(purgeConfirmWf.id));
+      setWorkflows(prev => prev.filter(w => w.id !== purgeConfirmWf.id));
+      setPurgeConfirmWf(null);
+    } catch (err) { setWorkflowError(err.message); }
   };
 
   const handleRestoreWorkflow = async (id) => {
-    setWorkflows(prev => {
-      const next = prev.map(w => String(w.id) === String(id) ? { ...w, status: 'ACTIVE' } : w);
-      try { localStorage.setItem('crm_custom_workflows', JSON.stringify(next)); } catch (err) {}
-      return next;
-    });
     try {
-      await restoreWorkflowDefinition(id);
-    } catch (err) { console.error('Error restoring workflow:', err); }
+      await workflowRequest(() => restoreWorkflowDefinition(id));
+      setWorkflows(prev => prev.map(w => w.id === id ? { ...w, status: 'ACTIVE' } : w));
+    } catch (err) { setWorkflowError(err.message); }
   };
 
-  const [showAddEmpModal, setShowAddEmpModal] = useState(false);
-  const [empForm, setEmpForm] = useState({
-    emp_code: '',
-    emp_name: '',
-    email: '',
-    mobile: '',
-    user_type: 'Internal Employee',
-    employment_type: 'Permanent',
-    emp_status: 'Active',
-    designation_id: '',
-    department_id: '',
-    company_id: '',
-    reporting_manager_id: ''
-  });
-
-  // Transfer modal
-  const [transferEmp, setTransferEmp] = useState(null);
-  const [transferForm, setTransferForm] = useState({
-    new_designation_id: '',
-    new_department_id: '',
-    new_reporting_manager_id: '',
-    change_type: 'Promotion',
-    change_reason: ''
-  });
-  const [empHistory, setEmpHistory] = useState([]);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-
-  const loadAllData = async () => {
-    setLoading(true);
-    try {
-      const [cmpData, deptData, desigData, empData, locData, accessData, wfData] = await Promise.all([
-        getCompanies(),
-        getWmsDepartments(),
-        getDesignations(),
-        getEmployeesMaster(),
-        getWorkLocations(),
-        getAccessProfiles(),
-        getWorkflowDefinitions()
-      ]);
-      setCompanies(cmpData || []);
-      setDepartments(deptData || []);
-      setDesignations(desigData || []);
-      setEmployees(empData || []);
-      setLocations(locData || []);
-      setAccessProfiles(accessData || []);
-
-      // Load client-side local persisted workflows
-      let savedLocalWfs = [];
-      try {
-        const rawLocal = localStorage.getItem('crm_custom_workflows');
-        if (rawLocal) savedLocalWfs = JSON.parse(rawLocal);
-      } catch (err) { console.error('Error reading local workflows:', err); }
-
-      // Merge local workflows WITH priority for locally configured stages
-      let localMap = new Map();
-      savedLocalWfs.forEach(lw => {
-        if (lw && lw.id) localMap.set(String(lw.id), lw);
-      });
-
-      let finalWorkflows = [];
-      // 1. Process server/demo workflows: if local version exists and has stages, use local version!
-      (wfData || []).forEach(sw => {
-        const swId = String(sw.id);
-        if (localMap.has(swId)) {
-          const lw = localMap.get(swId);
-          finalWorkflows.push({
-            ...sw,
-            ...lw,
-            stages: (lw.stages && lw.stages.length > 0) ? lw.stages : (sw.stages || [])
-          });
-          localMap.delete(swId);
-        } else {
-          finalWorkflows.push(sw);
-        }
-      });
-
-      // 2. Add remaining local workflows that weren't in server data
-      localMap.forEach(lw => {
-        finalWorkflows.unshift(lw);
-      });
-
-      setWorkflows(finalWorkflows);
-      try {
-        localStorage.setItem('crm_custom_workflows', JSON.stringify(finalWorkflows));
-      } catch (e) {}
-    } catch (e) {
-      console.error('Error loading workplace data:', e);
-    }
-    setLoading(false);
+  const handlePlanningMode = async (wf, mode) => {
+    try { acceptWorkflow(await workflowRequest(() => setWorkflowPlanningMode(wf.id, mode))); }
+    catch (err) { setWorkflowError(err.message); }
   };
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  const handleCreateCompany = async (e) => {
-    e.preventDefault();
+  const handleImportWorkflow = async (wf) => {
     try {
-      await createCompany(companyForm);
-      setShowAddCompanyModal(false);
-      setCompanyForm({ code: '', name: '', legal_name: '', gstin: '', pan: '' });
-      loadAllData();
-    } catch (err) {
-      alert('Error creating company: ' + err.message);
-    }
-  };
-
-  const handleCreateDept = async (e) => {
-    e.preventDefault();
-    try {
-      await createWmsDepartment(deptForm);
-      setShowAddDeptModal(false);
-      setDeptForm({ code: '', name: '' });
-      loadAllData();
-    } catch (err) {
-      alert('Error creating department: ' + err.message);
-    }
-  };
-
-  const handleCreateDesig = async (e) => {
-    e.preventDefault();
-    try {
-      await createDesignation(desigForm);
-      setShowAddDesigModal(false);
-      setDesigForm({
-        designation_code: '',
-        designation_name: '',
-        category: 'Executive',
-        designation_level: 'L08',
-        hierarchy_rank: 50,
-        is_manager_eligible: false,
-        is_approval_authority: false
-      });
-      loadAllData();
-    } catch (err) {
-      alert('Error creating designation: ' + err.message);
-    }
-  };
-
-  const handleCreateEmployee = async (e) => {
-    e.preventDefault();
-    try {
-      const selectedDesig = designations.find(d => d.id === empForm.designation_id);
-      const selectedDept = departments.find(d => d.id === empForm.department_id);
-      const selectedMgr = employees.find(e => e.id === empForm.reporting_manager_id);
-      const selectedCmp = companies.find(c => c.id === empForm.company_id);
-
-      const createdEmp = await createEmployeeMaster({
-        ...empForm,
-        designation_name: selectedDesig?.designation_name || '',
-        department_name: selectedDept?.name || '',
-        reporting_manager_name: selectedMgr?.emp_name || '',
-        company_name: selectedCmp?.name || 'Swan Agro'
-      });
-
-      if (createdEmp) {
-        setEmployees(prev => [createdEmp, ...prev]);
-      }
-
-      setShowAddEmpModal(false);
-      setEmpForm({
-        emp_code: '',
-        emp_name: '',
-        email: '',
-        mobile: '',
-        user_type: 'Internal Employee',
-        employment_type: 'Permanent',
-        emp_status: 'Active',
-        designation_id: '',
-        department_id: '',
-        company_id: '',
-        reporting_manager_id: ''
-      });
-      alert('Employee Master Record Created Successfully!');
-      loadAllData();
-    } catch (err) {
-      alert('Error creating employee: ' + err.message);
-    }
-  };
-
-  const handleTransferSubmit = async (e) => {
-    e.preventDefault();
-    if (!transferEmp) return;
-    try {
-      const selectedDesig = designations.find(d => d.id === transferForm.new_designation_id);
-      const selectedDept = departments.find(d => d.id === transferForm.new_department_id);
-      const selectedMgr = employees.find(e => e.id === transferForm.new_reporting_manager_id);
-
-      await transferEmployeeDesignation(transferEmp.id, {
-        ...transferForm,
-        new_designation_name: selectedDesig?.designation_name || transferEmp.designation_name,
-        new_department_name: selectedDept?.name || transferEmp.department_name,
-        new_reporting_manager_name: selectedMgr?.emp_name || transferEmp.reporting_manager_name
-      });
-
-      setTransferEmp(null);
-      loadAllData();
-      alert('Employee designation/department transfer processed successfully! Audit log saved.');
-    } catch (err) {
-      alert('Transfer failed: ' + err.message);
-    }
-  };
-
-  const openHistory = async (emp) => {
-    setTransferEmp(emp);
-    const history = await getEmployeeHistory(emp.id);
-    setEmpHistory(history);
-    setShowHistoryModal(true);
+      const result = await workflowRequest(() => importWorkflowDefinition(wf));
+      setWorkflows(prev => [result.workflow, ...prev.filter(w => w.id !== wf.id)]);
+    } catch (err) { setWorkflowError(err.message); }
   };
 
   const handleCreateWorkflow = async (e) => {
     e.preventDefault();
     try {
-      const res = await createWorkflowDefinition(workflowForm);
+      const res = await workflowRequest(() => createWorkflowDefinition(workflowForm));
       if (res && res.workflow) {
         setWorkflows(prev => {
           const filtered = prev.filter(w => w.id !== res.workflow.id);
-          const updated = [res.workflow, ...filtered];
-          // Save to localStorage for permanent client-side persistence across refreshes
-          try {
-            localStorage.setItem('crm_custom_workflows', JSON.stringify(updated));
-          } catch (err) { console.error('Error saving to localStorage:', err); }
-          return updated;
+          return [res.workflow, ...filtered];
         });
       }
       setShowAddWorkflowModal(false);
@@ -682,10 +361,11 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         workflow_name: '',
         workflow_code: '',
         category: 'PRODUCTION',
-        description: ''
+        description: '',
+        planning_mode: 'ACTUAL_PLUS_TAT'
       });
       alert('Workflow Created Successfully!');
-      loadAllData();
+      await loadWorkflowData();
     } catch (err) {
       alert('Error creating workflow: ' + err.message);
     }
@@ -693,511 +373,319 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
 
   return (
     <div style={{ padding: '1.5rem', color: 'var(--text-primary, #f8fafc)' }}>
-      {/* Top Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      {workflowError && <div role="alert" style={{ padding: '0.75rem', marginBottom: '1rem', color: '#b91c1c', background: '#fee2e2', borderRadius: '8px' }}>{workflowError}</div>}
+      {workflowPending && <p role="status">Loading / saving workflow…</p>}
+      {legacyWorkflowNotice && <p style={{ fontSize: '0.85rem' }}>Older local stage settings remain preserved in this browser. Supabase records are shown as the saved source.</p>}
+
+      {/* Top Header & Sub-page Navigation Tabs */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Building2 className="text-blue-500" size={28} />
-            Universal Workplace Management
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <GitMerge className="text-blue-500" size={26} />
+            Universal Workflow Builder
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: '0.25rem 0 0 0' }}>
-            Manage Enterprise Hierarchy, Designation Levels (L01-L10), Employee Masters & Transfer Audit Logs
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+            Build dynamic multi-stage process flows, assign designated workers & approvers, and track live executions in real-time.
           </p>
         </div>
-        <button
-          onClick={loadAllData}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.6rem 1.2rem',
-            borderRadius: '8px',
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            color: '#f8fafc',
-            cursor: 'pointer'
-          }}
-        >
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
 
-      {/* Sub Navigation Bar */}
-      <div style={{ display: 'flex', gap: '0.75rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        {canViewTab('employees') && (
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={() => setActiveSubTab('employees')}
-            className={`sub-tab-btn ${activeSubTab === 'employees' ? 'active' : ''}`}
+            type="button"
+            disabled={workflowPending}
+            onClick={() => startWorkflowTransition(loadWorkflowData)}
+            className="btn-action-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
           >
-            <UserCheck size={18} />
-            Employee Master ({employees.length})
+            <RefreshCw size={14} /> Refresh
           </button>
-        )}
-        {canViewTab('designations') && (
-          <button
-            onClick={() => setActiveSubTab('designations')}
-            className={`sub-tab-btn ${activeSubTab === 'designations' ? 'active' : ''}`}
-          >
-            <ShieldCheck size={18} />
-            Designation Master ({designations.length})
-          </button>
-        )}
-        {canViewTab('org') && (
-          <button
-            onClick={() => setActiveSubTab('org')}
-            className={`sub-tab-btn ${activeSubTab === 'org' ? 'active' : ''}`}
-          >
-            <Network size={18} />
-            Organization Hierarchy
-          </button>
-        )}
-        {canViewTab('access') && (
-          <button
-            onClick={() => setActiveSubTab('access')}
-            className={`sub-tab-btn ${activeSubTab === 'access' ? 'active' : ''}`}
-          >
-            <ShieldCheck size={18} />
-            Access Profiles ({accessProfiles.length})
-          </button>
-        )}
-        {canViewTab('location_territory') && (
-          <button
-            onClick={() => setActiveSubTab('location_territory')}
-            className={`sub-tab-btn ${activeSubTab === 'location_territory' ? 'active' : ''}`}
-          >
-            <MapPin size={18} />
-            Location & Territory Master
-          </button>
-        )}
-        {canViewTab('workflow') && (
-          <button
-            onClick={() => setActiveSubTab('workflow')}
-            className={`sub-tab-btn ${activeSubTab === 'workflow' ? 'active' : ''}`}
-          >
-            <GitMerge size={18} />
-            Workflow Builder ({workflows.length})
-          </button>
-        )}
-      </div>
 
-      {/* SUB-TAB 1: EMPLOYEES */}
-      {activeSubTab === 'employees' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Active Employee Directory</h2>
+          {/* Sub-page Navigation Tabs / Filter Bar */}
+          <div style={{ display: 'flex', background: '#334155', padding: '0.2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
             <button
-              onClick={() => setShowAddEmpModal(true)}
-              style={{ padding: '0.6rem 1.2rem', background: '#10b981', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              onClick={() => handleFilterChange('active')}
+              style={{
+                padding: '0.45rem 0.9rem',
+                background: workflowFilter === 'active' ? '#3b82f6' : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
             >
-              <Plus size={18} /> Add Employee
+              <span>Active Workflows</span>
+              <span style={{ fontSize: '0.72rem', background: 'rgba(255,255,255,0.2)', padding: '0.1rem 0.35rem', borderRadius: '10px' }}>
+                {workflows.filter(w => w.status !== 'DELETED').length}
+              </span>
+            </button>
+            <button
+              onClick={() => handleFilterChange('tracker')}
+              style={{
+                padding: '0.45rem 0.9rem',
+                background: workflowFilter === 'tracker' ? '#3b82f6' : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              <PlayCircle size={14} />
+              <span>Live Working Tracker</span>
+              <span style={{ fontSize: '0.72rem', background: 'rgba(255,255,255,0.2)', padding: '0.1rem 0.35rem', borderRadius: '10px' }}>
+                {liveInstances.length}
+              </span>
+            </button>
+            <button
+              onClick={() => handleFilterChange('trash')}
+              style={{
+                padding: '0.45rem 0.9rem',
+                background: workflowFilter === 'trash' ? '#ef4444' : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              <Trash2 size={14} />
+              <span>Trash Bin</span>
+              <span style={{ fontSize: '0.72rem', background: 'rgba(255,255,255,0.2)', padding: '0.1rem 0.35rem', borderRadius: '10px' }}>
+                {workflows.filter(w => w.status === 'DELETED').length}
+              </span>
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Emp Code</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Name</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Designation</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Department</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Reporting Manager</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Mobile / Email</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      No employee master records found. Click "Add Employee" to create one.
-                    </td>
-                  </tr>
-                ) : (
-                  employees.map((emp) => (
-                    <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)' }}>{emp.emp_code}</td>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{emp.emp_name}</td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{ background: 'var(--nav-active-bg)', color: 'var(--accent-color)', border: '1px solid var(--border-light)', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600 }}>
-                          {emp.designation_name || 'Not Set'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>{emp.department_name || '-'}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{emp.reporting_manager_name || emp.reporting_manager?.emp_name || '-'}</td>
-                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                        <div style={{ color: 'var(--text-primary)' }}>{emp.mobile || '-'}</div>
-                        <div style={{ color: 'var(--text-secondary)' }}>{emp.email || '-'}</div>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: emp.emp_status === 'Active' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: emp.emp_status === 'Active' ? '#10b981' : '#ef4444', border: `1px solid ${emp.emp_status === 'Active' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}` }}>
-                          {emp.emp_status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button
-                            onClick={() => { setTransferEmp(emp); setTransferForm({ new_designation_id: emp.designation_id || '', new_department_id: emp.department_id || '', new_reporting_manager_id: emp.reporting_manager_id || '', change_type: 'Promotion', change_reason: '' }); }}
-                            className="btn-action-primary"
-                          >
-                            <ArrowRightLeft size={14} /> Transfer/Promote
-                          </button>
-                          <button
-                            onClick={() => openHistory(emp)}
-                            className="btn-action-secondary"
-                          >
-                            <History size={14} /> Audit Log
-                          </button>
+          {workflowFilter === 'active' && (
+            <button
+              onClick={() => setShowAddWorkflowModal(true)}
+              style={{ padding: '0.5rem 1rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
+            >
+              <Plus size={16} /> Create Workflow
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* SUB-PAGE 2: LIVE WORKING TRACKER VIEW */}
+      {workflowFilter === 'tracker' && (
+        <div style={{ color: '#f8fafc', background: '#1e293b', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <PlayCircle size={24} className="text-blue-400" />
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Live Working Execution & Operational Integration</h3>
+              <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
+                Track real-time workflow orders, review completed stages, and advance pending operational handovers.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '1.25rem' }}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <PlayCircle size={16} /> Active Live Operational Instances ({liveInstances.length})
+            </h4>
+
+            {liveInstances.length === 0 ? (
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '8px', padding: '1.75rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                No live workflow instances launched yet. Go to <strong style={{ color: '#38bdf8' }}>Active Workflows</strong> and click <strong>&quot;🚀 Start Live Instance&quot;</strong> on any workflow to launch live execution!
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {liveInstances.map(inst => {
+                  const progressPct = Math.round((inst.history.filter(s => s.status === 'COMPLETED').length / (inst.total_stages || 1)) * 100);
+                  const isDone = inst.status === 'COMPLETED';
+
+                  return (
+                    <div key={inst.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>{inst.category}</span>
+                          <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0.2rem 0 0 0', color: '#f8fafc' }}>{inst.workflow_name} ({inst.reference_no})</h4>
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Order / Customer: {inst.customer_name} {inst.notes && `• ${inst.notes}`}</div>
                         </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
-      {/* SUB-TAB 2: DESIGNATIONS */}
-      {activeSubTab === 'designations' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Designation Master (L01 - L10 Ranks)</h2>
-            <button
-              onClick={() => setShowAddDesigModal(true)}
-              style={{ padding: '0.6rem 1.2rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Plus size={18} /> Create Designation
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {designations.map((desig) => (
-              <div key={desig.id} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8' }}>
-                      {desig.designation_level}
-                    </span>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0.4rem 0 0 0' }}>{desig.designation_name}</h3>
-                  </div>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Rank #{desig.hierarchy_rank}</span>
-                </div>
-                <div style={{ fontSize: '0.85rem', color: '#cbd5e1', spaceY: '0.4rem' }}>
-                  <div>Category: <strong style={{ color: '#f1f5f9' }}>{desig.category}</strong></div>
-                  <div>Default Access: <span style={{ color: '#a7f3d0' }}>{desig.default_access_profile}</span></div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                    {desig.is_manager_eligible && <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>Manager Eligible</span>}
-                    {desig.is_approval_authority && <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>Approval Authority</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 3: ORGANIZATION HIERARCHY */}
-      {activeSubTab === 'org' && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1.5rem' }}>
-            {/* Companies */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Building2 size={20} className="text-blue-400" /> Companies ({companies.length})
-                </h3>
-                <button onClick={() => setShowAddCompanyModal(true)} style={{ padding: '0.4rem 0.8rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  + Add Company
-                </button>
-              </div>
-              {companies.map(c => (
-                <div key={c.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Code: {c.code}</div>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px', height: 'fit-content' }}>Active</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Departments */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Layers size={20} className="text-emerald-400" /> Centralized Departments ({departments.length})
-                </h3>
-                <button onClick={() => setShowAddDeptModal(true)} style={{ padding: '0.4rem 0.8rem', background: '#10b981', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  + Add Dept
-                </button>
-              </div>
-              {departments.map(d => (
-                <div key={d.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', marginBottom: '0.5rem' }}>
-                  <div style={{ fontWeight: 600 }}>{d.name}</div>
-                  {d.sub_departments && d.sub_departments.length > 0 && (
-                    <div style={{ marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {d.sub_departments.map(sd => (
-                        <span key={sd.id} style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#cbd5e1' }}>
-                          {sd.name}
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px', background: isDone ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: isDone ? '#34d399' : '#fbbf24' }}>
+                          {isDone ? '✓ COMPLETED' : `IN PROGRESS (Stage ${inst.current_stage_index + 1}/${inst.total_stages})`}
                         </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+                      </div>
 
-      {/* SUB-TAB 4: ACCESS PROFILES & 4-TIER PERMISSIONS */}
-      {activeSubTab === 'access' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>4-Tier Permission & Access Profile Engine</h2>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
-                Effective Access = Designation Default + Access Profile + User Additional - User Restrictions (Restrictions have highest priority)
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {accessProfiles.map((prof) => (
-              <div key={prof.id} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc' }}>
-                      {prof.profile_code}
-                    </span>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0.4rem 0 0 0' }}>{prof.profile_name}</h3>
-                  </div>
-                </div>
-                <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                  <div style={{ marginBottom: '0.4rem' }}>Data Scope: <strong style={{ color: '#38bdf8' }}>{prof.data_visibility_scope}</strong></div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    {prof.can_import_export && <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>Import/Export</span>}
-                    {prof.can_approve && <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>Approver</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 5: LOCATION & TERRITORY MASTER */}
-      {activeSubTab === 'location_territory' && (
-        <LocationTerritoryModule />
-      )}
-
-      {/* SUB-TAB 6: UNIVERSAL WORKFLOW BUILDER */}
-      {activeSubTab === 'workflow' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Universal Workflow Builder, Stage Assignment & Live Tracker</h2>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
-                Build dynamic multi-stage process flows, assign designated workers & approvers, and manage trash bin records.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '0.2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <button
-                  onClick={() => setWorkflowFilter('active')}
-                  style={{ padding: '0.4rem 0.8rem', background: workflowFilter === 'active' ? '#3b82f6' : 'transparent', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Active ({workflows.filter(w => w.status !== 'DELETED').length})
-                </button>
-                <button
-                  onClick={() => setWorkflowFilter('tracker')}
-                  style={{ padding: '0.4rem 0.8rem', background: workflowFilter === 'tracker' ? '#3b82f6' : 'transparent', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                >
-                  <PlayCircle size={14} /> Live Working Tracker
-                </button>
-                <button
-                  onClick={() => setWorkflowFilter('trash')}
-                  style={{ padding: '0.4rem 0.8rem', background: workflowFilter === 'trash' ? '#ef4444' : 'transparent', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                >
-                  <Trash2 size={14} /> Trash Bin ({workflows.filter(w => w.status === 'DELETED').length})
-                </button>
-              </div>
-
-              {workflowFilter === 'active' && (
-                <button
-                  onClick={() => setShowAddWorkflowModal(true)}
-                  style={{ padding: '0.5rem 1rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
-                >
-                  <Plus size={16} /> Create Workflow
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* LIVE WORKING TRACKER VIEW */}
-          {workflowFilter === 'tracker' && (
-            <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <PlayCircle size={24} className="text-blue-400" />
-                <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Live Working Execution & Operational Integration</h3>
-                  <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
-                    Where do published workflows appear for daily execution?
-                  </p>
-                </div>
-              </div>
-
-              {/* ACTIVE RUNNING LIVE INSTANCES LIST */}
-              <div style={{ marginTop: '1.25rem' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <PlayCircle size={16} /> Active Live Operational Instances ({liveInstances.length})
-                </h4>
-
-                {liveInstances.length === 0 ? (
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '8px', padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
-                    No live workflow instances launched yet. Go to <strong>Active Workflows</strong> and click <strong>"🚀 Start Live Instance"</strong> on any workflow (e.g. NSMLR-O2D) to launch live execution!
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {liveInstances.map(inst => {
-                      const progressPct = Math.round(((inst.current_stage_index + 1) / (inst.total_stages || 1)) * 100);
-                      const isDone = inst.status === 'COMPLETED';
-
-                      return (
-                        <div key={inst.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                            <div>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>{inst.category}</span>
-                              <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0.2rem 0 0 0', color: '#f8fafc' }}>{inst.workflow_name} ({inst.reference_no})</h4>
-                              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Order / Customer: {inst.customer_name} {inst.notes && `• ${inst.notes}`}</div>
-                            </div>
-
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px', background: isDone ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: isDone ? '#34d399' : '#fbbf24' }}>
-                              {isDone ? '✓ COMPLETED' : `IN PROGRESS (Stage ${inst.current_stage_index + 1}/${inst.total_stages})`}
-                            </span>
-                          </div>
-
-                          {/* Stage Progress Bar */}
-                          <div style={{ background: 'rgba(255,255,255,0.08)', height: '6px', borderRadius: '3px', overflow: 'hidden', margin: '0.6rem 0' }}>
-                            <div style={{ background: isDone ? '#10b981' : '#3b82f6', height: '100%', width: `${progressPct}%`, transition: 'width 0.3s ease' }} />
-                          </div>
-
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-                            <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
-                              Current Stage: <strong style={{ color: '#38bdf8' }}>[{inst.current_stage?.stage_code || 'S00'}] {inst.current_stage?.stage_name}</strong>
-                              <span style={{ marginLeft: '0.6rem', color: '#94a3b8', fontSize: '0.75rem' }}>Worker: <strong>{inst.current_stage?.assigned_designation_name || inst.current_stage?.assigned_employee_name || 'Assigned Worker'}</strong></span>
-                            </div>
-
-                            {!isDone && (
-                              <button
-                                type="button"
-                                onClick={() => handleAdvanceStage(inst.id)}
-                                style={{ padding: '0.4rem 0.8rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                              >
-                                ▶ Proceed to Next Stage ({inst.current_stage_index + 2}/{inst.total_stages})
-                              </button>
+                      <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '0.6rem' }}>
+                        Planning rule: <strong>{inst.planning_mode === 'PLANNED_PLUS_TAT' ? 'Planned + TAT' : 'Actual + TAT'}</strong>
+                      </div>
+                      <div style={{ display: 'grid', gap: '0.6rem', margin: '0.75rem 0' }}>
+                        {inst.history.map(stage => (
+                          <div key={stage.stage_instance_id || stage.stage_id} style={{ border: '1px solid #475569', borderRadius: '6px', padding: '0.65rem', color: '#e2e8f0' }}>
+                            <strong>[{stage.stage_code}] {stage.stage_name} — {stage.status || 'PENDING'}</strong>
+                            <div style={{ fontSize: '0.8rem', marginTop: '0.3rem' }}>Planned completion: {formatWorkflowIST(stage.planned_end)}</div>
+                            <div style={{ fontSize: '0.8rem' }}>Actual start: {formatWorkflowIST(stage.actual_start)}</div>
+                            <div style={{ fontSize: '0.8rem' }}>Actual completion: {formatWorkflowIST(stage.actual_end)}</div>
+                            <div style={{ fontSize: '0.8rem' }}>{workflowVariance(stage.planned_end, stage.actual_end)}</div>
+                            {stage.status === 'IN_PROGRESS' && (stage.fields || []).map(field => (
+                              <label key={field.field_key} style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                                {field.field_name}{field.is_required ? ' *' : ''}
+                                {field.data_type === 'BOOLEAN' ? (
+                                  <select disabled={workflowPending} value={stageInputs[stage.stage_instance_id]?.[field.field_key] ?? ''}
+                                    onChange={e => setStageInputs(prev => ({ ...prev, [stage.stage_instance_id]: { ...prev[stage.stage_instance_id], [field.field_key]: e.target.value } }))}>
+                                    <option value="">Select</option><option value="true">Yes</option><option value="false">No</option>
+                                  </select>
+                                ) : (
+                                  <input type={field.data_type === 'NUMBER' ? 'number' : field.data_type === 'DATE' ? 'date' : 'text'}
+                                    step={field.data_type === 'NUMBER' ? 'any' : undefined} disabled={workflowPending}
+                                    value={stageInputs[stage.stage_instance_id]?.[field.field_key] ?? ''}
+                                    onChange={e => setStageInputs(prev => ({ ...prev, [stage.stage_instance_id]: { ...prev[stage.stage_instance_id], [field.field_key]: e.target.value } }))}
+                                    style={{ display: 'block', width: '100%', padding: '0.4rem', color: '#fff', background: '#1e293b', border: '1px solid #64748b', borderRadius: '4px' }} />
+                                )}
+                              </label>
+                            ))}
+                            {stage.status === 'IN_PROGRESS' && stage.approval_required && (
+                              <label style={{ display: 'block', marginTop: '0.6rem' }}>
+                                <input type="checkbox" disabled={workflowPending} checked={!!stageApprovals[stage.stage_instance_id]}
+                                  onChange={e => setStageApprovals(prev => ({ ...prev, [stage.stage_instance_id]: e.target.checked }))} />
+                                Confirm approval ({stage.approver_designation_name || 'configured approver / admin'})
+                              </label>
                             )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* WORKFLOW CARDS GRID */}
-          {workflowFilter !== 'tracker' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.25rem' }}>
-              {workflows.filter(w => workflowFilter === 'trash' ? w.status === 'DELETED' : w.status !== 'DELETED').length === 0 ? (
-                <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                  <GitMerge size={40} className="text-blue-400" style={{ margin: '0 auto 1rem auto' }} />
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>
-                    {workflowFilter === 'trash' ? 'Trash Bin is Empty' : 'No Workflows Defined Yet'}
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.4rem 0 1rem 0' }}>
-                    {workflowFilter === 'trash' ? 'No deleted workflows in trash.' : 'Click "Create Workflow" to build custom stage-by-stage workflows.'}
-                  </p>
-                  {workflowFilter === 'active' && (
-                    <button onClick={() => setShowAddWorkflowModal(true)} style={{ padding: '0.5rem 1rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', cursor: 'pointer' }}>+ Add First Workflow</button>
-                  )}
-                </div>
-              ) : (
-                workflows.filter(w => workflowFilter === 'trash' ? w.status === 'DELETED' : w.status !== 'DELETED').map(wf => (
-                  <div key={wf.id} style={{ background: 'rgba(15, 23, 42, 0.6)', border: wf.status === 'DELETED' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                      <div>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
-                          {wf.category || 'WORKFLOW'}
-                        </span>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0.4rem 0 0 0' }}>{wf.workflow_name}</h3>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Code: {wf.workflow_code}</div>
+                        ))}
                       </div>
-                      <span style={{ fontSize: '0.75rem', background: wf.status === 'DELETED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: wf.status === 'DELETED' ? '#f87171' : '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                        {wf.status || 'ACTIVE'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '0.75rem' }}>
-                      {wf.description || 'Universal business process workflow'}
-                    </div>
+                      <div style={{ background: 'rgba(255,255,255,0.08)', height: '6px', borderRadius: '3px', overflow: 'hidden', margin: '0.6rem 0' }}>
+                        <div style={{ background: isDone ? '#10b981' : '#3b82f6', height: '100%', width: `${progressPct}%`, transition: 'width 0.3s ease' }} />
+                      </div>
 
-                    <div style={{ fontSize: '0.8rem', color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Active Version: <strong style={{ color: '#38bdf8' }}>v1.0</strong></span>
-                      <span style={{ fontSize: '0.75rem', color: '#34d399' }}>{wf.stages?.length || 0} Stages</span>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-                      {wf.status !== 'DELETED' ? (
-                        <>
-                          <button
-                            onClick={() => setLiveLaunchWf(wf)}
-                            style={{ padding: '0.5rem 0.8rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
-                            title="Launch Live Workflow Order Instance"
-                          >
-                            <PlayCircle size={15} /> Start Live Instance
-                          </button>
-                          <button
-                            onClick={() => setSelectedWfForStages(wf)}
-                            style={{ flex: 1, padding: '0.5rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: '#60a5fa', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                          >
-                            <Settings size={15} /> Configure Stages ({wf.stages?.length || 0})
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmWf(wf)}
-                            title="Move to Trash Bin"
-                            style={{ padding: '0.5rem 0.75rem', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-                          <button
-                            onClick={() => handleRestoreWorkflow(wf.id)}
-                            style={{ flex: 1, padding: '0.5rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', color: '#34d399', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                          >
-                            <RotateCcw size={15} /> Restore
-                          </button>
-                          <button
-                            onClick={() => setPurgeConfirmWf(wf)}
-                            style={{ padding: '0.5rem 0.8rem', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', color: '#f87171', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                            title="Permanently Delete Workflow"
-                          >
-                            <XCircle size={15} /> Delete Forever
-                          </button>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                          Current Stage: <strong style={{ color: '#38bdf8' }}>[{inst.current_stage?.stage_code || 'S00'}] {inst.current_stage?.stage_name}</strong>
+                          <span style={{ marginLeft: '0.6rem', color: '#94a3b8', fontSize: '0.75rem' }}>Worker: <strong>{inst.current_stage?.assigned_designation_name || inst.current_stage?.assigned_employee_name || 'Assigned Worker'}</strong></span>
                         </div>
-                      )}
+
+                        {!isDone && inst.status === 'IN_PROGRESS' && (
+                          <button
+                            type="button"
+                            disabled={workflowPending}
+                            onClick={() => handleAdvanceStage(inst.id)}
+                            style={{ padding: '0.4rem 0.8rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          >
+                            {inst.current_stage_index + 1 >= inst.total_stages ? 'Complete Workflow' : `Complete Stage & Start Next (${inst.current_stage_index + 2}/${inst.total_stages})`}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-PAGES 1 & 3: ACTIVE WORKFLOWS OR TRASH BIN VIEW */}
+      {workflowFilter !== 'tracker' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.25rem' }}>
+          {workflows.filter(w => workflowFilter === 'trash' ? w.status === 'DELETED' : w.status !== 'DELETED').length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+              <GitMerge size={40} className="text-blue-400" style={{ margin: '0 auto 1rem auto' }} />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>
+                {workflowFilter === 'trash' ? 'Trash Bin is Empty' : 'No Workflows Defined Yet'}
+              </h3>
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.4rem 0 1rem 0' }}>
+                {workflowFilter === 'trash' ? 'No deleted workflows in trash.' : 'Click "Create Workflow" to build custom stage-by-stage workflows.'}
+              </p>
+              {workflowFilter === 'active' && (
+                <button onClick={() => setShowAddWorkflowModal(true)} style={{ padding: '0.5rem 1rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', cursor: 'pointer' }}>+ Add First Workflow</button>
               )}
             </div>
+          ) : (
+            workflows.filter(w => workflowFilter === 'trash' ? w.status === 'DELETED' : w.status !== 'DELETED').map(wf => (
+              <div key={wf.id} style={{ color: '#f8fafc', background: '#1e293b', border: wf.status === 'DELETED' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                      {wf.category || 'WORKFLOW'}
+                    </span>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0.4rem 0 0 0' }}>{wf.workflow_name}</h3>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Code: {wf.workflow_code}</div>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', background: wf.status === 'DELETED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: wf.status === 'DELETED' ? '#f87171' : '#34d399', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                    {wf.status || 'ACTIVE'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '0.75rem' }}>
+                  {wf.description || 'Universal business process workflow'}
+                </div>
+
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{wf.persisted ? 'Saved in Supabase' : 'Local — not saved'} · Version <strong style={{ color: '#38bdf8' }}>{wf.workflow_versions?.[0]?.version_number || 1}</strong></span>
+                  <span style={{ fontSize: '0.75rem', color: '#34d399' }}>{wf.stages?.length || 0} Stages</span>
+                </div>
+
+                <label style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.85rem' }}>
+                  Next stage planning rule
+                  <select aria-label={`Planning rule for ${wf.workflow_name}`} disabled={workflowPending || !wf.persisted}
+                    value={wf.planning_mode || 'ACTUAL_PLUS_TAT'} onChange={e => handlePlanningMode(wf, e.target.value)}
+                    style={{ display: 'block', width: '100%', padding: '0.5rem', marginTop: '0.3rem', color: '#fff', background: '#334155' }}>
+                    <option value="ACTUAL_PLUS_TAT">Previous Actual Completion + TAT</option>
+                    <option value="PLANNED_PLUS_TAT">Previous Planned Completion + TAT</option>
+                  </select>
+                </label>
+                {!wf.persisted && <button disabled={workflowPending} onClick={() => handleImportWorkflow(wf)} style={{ marginTop: '0.5rem' }}>Save Local Workflow to Supabase</button>}
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                  {wf.status !== 'DELETED' ? (
+                    <>
+                      <button
+                        disabled={workflowPending || !wf.persisted || !wf.stages?.length}
+                        onClick={() => { launchRequestKey.current = crypto.randomUUID(); setLiveLaunchWf(wf); }}
+                        style={{ padding: '0.5rem 0.8rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
+                        title="Launch Live Workflow Order Instance"
+                      >
+                        <PlayCircle size={15} /> Start Live Instance
+                      </button>
+                      <button
+                        disabled={workflowPending || !wf.persisted}
+                        onClick={() => setSelectedWfForStages(wf)}
+                        style={{ flex: 1, padding: '0.5rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: '#60a5fa', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                      >
+                        <Settings size={15} /> Configure Stages ({wf.stages?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmWf(wf)}
+                        title="Move to Trash Bin"
+                        style={{ padding: '0.5rem 0.75rem', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                      <button
+                        onClick={() => handleRestoreWorkflow(wf.id)}
+                        style={{ flex: 1, padding: '0.5rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', color: '#34d399', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                      >
+                        <RotateCcw size={15} /> Restore
+                      </button>
+                      <button
+                        onClick={() => setPurgeConfirmWf(wf)}
+                        style={{ padding: '0.5rem 0.8rem', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', color: '#f87171', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        title="Hide Workflow and Preserve History"
+                      >
+                        <XCircle size={15} /> Hide Workflow
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}
@@ -1219,6 +707,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
               <button onClick={() => setLiveLaunchWf(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
 
+            {workflowError && <p role="alert" style={{ color: '#fca5a5' }}>{workflowError}</p>}
             <form onSubmit={handleStartLiveExecution}>
               <div style={{ marginBottom: '0.85rem' }}>
                 <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Order / Reference Number</label>
@@ -1265,6 +754,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                 </button>
                 <button
                   type="submit"
+                  disabled={workflowPending}
                   style={{ padding: '0.6rem 1.2rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                 >
                   <PlayCircle size={16} /> 🚀 Launch Live Instance
@@ -1320,7 +810,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
               Permanently Delete Workflow?
             </h3>
             <p style={{ fontSize: '0.9rem', color: '#94a3b8', margin: '0 0 1.5rem 0', lineHeight: 1.5 }}>
-              Are you sure you want to permanently purge <strong style={{ color: '#f87171' }}>{purgeConfirmWf.workflow_name}</strong>? This action cannot be undone.
+              Are you sure you want to hide <strong style={{ color: '#f87171' }}>{purgeConfirmWf.workflow_name}</strong>? Historical execution records will be preserved.
             </p>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
@@ -1336,7 +826,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                 onClick={confirmPurgeDelete}
                 style={{ flex: 1, padding: '0.6rem 1.2rem', background: '#dc2626', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
               >
-                <XCircle size={16} /> Delete Permanently
+                <XCircle size={16} /> Hide Workflow
               </button>
             </div>
           </div>
@@ -1346,7 +836,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
       {/* MODAL: STAGE CONFIGURATOR */}
       {selectedWfForStages && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '720px', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ color: '#f8fafc', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '720px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
               <div>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#60a5fa', background: 'rgba(59,130,246,0.15)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>{selectedWfForStages.category}</span>
@@ -1356,10 +846,10 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
               <button onClick={() => setSelectedWfForStages(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
 
-            {/* Daily Working Indicator Info */}
+            {workflowError && <p role="alert" style={{ color: '#fca5a5' }}>{workflowError}</p>}
             <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.8rem', color: '#93c5fd', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <PlayCircle size={16} className="text-blue-400" />
-              <span><strong>Operational Location:</strong> Stages configured here will automatically execute when creating Work Orders / Purchase Indents in MRP & Sales System.</span>
+              <span><strong>Operational Location:</strong> Launch an instance from Workflow Builder to track planned and actual completion. Running instances retain their stage settings.</span>
             </div>
 
             {/* Configured Stages List with Reordering */}
@@ -1379,7 +869,6 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                       <div key={stg.id || idx} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            {/* Up Down Reorder Controls */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                               <button
                                 type="button"
@@ -1401,7 +890,6 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                               </button>
                             </div>
 
-                            {/* Canonical Stage Numbering Badge (S00, S01, S02) */}
                             <span style={{ fontSize: '0.8rem', fontWeight: 800, padding: '0.2rem 0.6rem', borderRadius: '6px', background: '#3b82f6', color: '#fff', letterSpacing: '0.5px' }}>
                               {stageCode}
                             </span>
@@ -1444,7 +932,6 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                               <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Snapshot Mode: LIVE_REFERENCE vs STAGE_SNAPSHOT</span>
                             </div>
 
-                            {/* Existing Stage Fields */}
                             {(!stg.fields || stg.fields.length === 0) ? (
                               <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0.4rem 0' }}>No specific fields mapped for this stage yet.</p>
                             ) : (
@@ -1509,9 +996,9 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => handleDeleteStageField(stg.id, fldId)}
-                                        style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0 2px', fontSize: '0.7rem' }}
-                                        title="Remove Field"
+                                        onClick={() => handleDeleteStageField(stg.id, fld.id || fldId)}
+                                        style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px', fontSize: '0.7rem' }}
+                                        title="Delete Field"
                                       >
                                         ✕
                                       </button>
@@ -1521,36 +1008,38 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                               </div>
                             )}
 
-                            {/* Add New Field Form */}
-                            <form onSubmit={(e) => handleAddStageField(stg.id, e)} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 100px auto', gap: '0.5rem', alignItems: 'center' }}>
+                            {/* Add New Field to Stage */}
+                            <form onSubmit={(e) => handleAddStageField(stg.id, e)} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
                               <input
                                 type="text"
-                                required
+                                placeholder="+ Field Name (e.g. Batch Code, Heat No)"
                                 value={fieldForm.field_name}
                                 onChange={e => setFieldForm({ ...fieldForm, field_name: e.target.value })}
-                                placeholder={`e.g. ${stageCode === 'S00' ? 'Item Spec / Indent Quantity' : 'Inspection Remarks / Verdict'}`}
-                                style={{ padding: '0.4rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}
+                                style={{ padding: '0.3rem 0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', minWidth: '180px' }}
                               />
                               <select
                                 value={fieldForm.data_type}
                                 onChange={e => setFieldForm({ ...fieldForm, data_type: e.target.value })}
-                                style={{ padding: '0.4rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}
+                                style={{ padding: '0.3rem 0.5rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem' }}
                               >
-                                <option value="TEXT">TEXT</option>
-                                <option value="NUMBER">NUMBER</option>
-                                <option value="SELECT">SELECT</option>
-                                <option value="FILE">FILE UPLOAD</option>
-                                <option value="DATE">DATE</option>
+                                <option value="TEXT">TEXT Input</option>
+                                <option value="NUMBER">NUMBER Value</option>
+                                <option value="SELECT">SELECT Dropdown</option>
+                                <option value="FILE">FILE / Document Upload</option>
+                                <option value="DATE">DATE Selector</option>
                               </select>
-                              <select
-                                value={fieldForm.is_required ? 'REQ' : 'OPT'}
-                                onChange={e => setFieldForm({ ...fieldForm, is_required: e.target.value === 'REQ' })}
-                                style={{ padding: '0.4rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}
+                              <label style={{ fontSize: '0.75rem', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={fieldForm.is_required}
+                                  onChange={e => setFieldForm({ ...fieldForm, is_required: e.target.checked })}
+                                />
+                                Mandatory / Required*
+                              </label>
+                              <button
+                                type="submit"
+                                style={{ padding: '0.3rem 0.75rem', background: '#3b82f6', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                               >
-                                <option value="REQ">Required *</option>
-                                <option value="OPT">Optional</option>
-                              </select>
-                              <button type="submit" style={{ padding: '0.4rem 0.8rem', background: '#10b981', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
                                 + Add Field
                               </button>
                             </form>
@@ -1584,7 +1073,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                 </div>
               </div>
 
-              {/* Work Assignment Rules (Who performs the work?) */}
+              {/* Work Assignment Rules */}
               <div style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px dashed rgba(59, 130, 246, 0.2)', padding: '0.75rem', borderRadius: '8px', marginBottom: '0.75rem' }}>
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#60a5fa', display: 'block', marginBottom: '0.4rem' }}>
                   👷 Who Will Perform The Work At This Stage? (Work Assignment)
@@ -1685,6 +1174,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         <div className="modal-overlay">
           <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '500px' }}>
             <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>Create Enterprise Workflow</h2>
+            {workflowError && <p role="alert" style={{ color: '#b91c1c' }}>{workflowError}</p>}
             <form onSubmit={handleCreateWorkflow}>
               <div style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
@@ -1701,150 +1191,26 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                     <option value="PRODUCTION">Production</option>
                     <option value="QUALITY">Quality & Testing</option>
                     <option value="PURCHASE">Purchase & Procurement</option>
-                    <option value="LOGISTICS">Logistics & Dispatch</option>
+                    <option value="DISPATCH">Logistics & Dispatch</option>
                     <option value="SALES">Sales & Billing</option>
                     <option value="HR">HR</option>
                   </select>
                 </div>
                 <div>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Planning Rule</label>
+                  <select value={workflowForm.planning_mode} disabled={workflowPending} onChange={e => setWorkflowForm({ ...workflowForm, planning_mode: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem' }}>
+                    <option value="ACTUAL_PLUS_TAT">Actual Completion + TAT</option>
+                    <option value="PLANNED_PLUS_TAT">Planned Completion + TAT</option>
+                  </select>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Description</label>
                   <textarea value={workflowForm.description} onChange={e => setWorkflowForm({ ...workflowForm, description: e.target.value })} placeholder="Brief workflow purpose" style={{ width: '100%', minHeight: '60px' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                 <button type="button" onClick={() => setShowAddWorkflowModal(false)} className="btn-action-secondary">Cancel</button>
-                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Publish Workflow (v1.0)</button>
+                <button type="submit" disabled={workflowPending} className="btn-primary" style={{ borderRadius: '8px' }}>Publish Workflow (v1.0)</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD EMPLOYEE */}
-      {showAddEmpModal && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ padding: '1.5rem', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>Create Employee Master Record</h2>
-            <form onSubmit={handleCreateEmployee}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Emp Code</label>
-                  <input type="text" required value={empForm.emp_code} onChange={e => setEmpForm({ ...empForm, emp_code: e.target.value })} placeholder="e.g. EMP-1001" style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Employee Name</label>
-                  <input type="text" required value={empForm.emp_name} onChange={e => setEmpForm({ ...empForm, emp_name: e.target.value })} placeholder="Full Name" style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Email</label>
-                  <input type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} placeholder="email@swanagro.in" style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Mobile</label>
-                  <input type="text" value={empForm.mobile} onChange={e => setEmpForm({ ...empForm, mobile: e.target.value })} placeholder="10-digit mobile" style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Designation</label>
-                  <select value={empForm.designation_id} onChange={e => setEmpForm({ ...empForm, designation_id: e.target.value })} style={{ width: '100%' }}>
-                    <option value="">-- Select Designation --</option>
-                    {designations.map(d => <option key={d.id} value={d.id}>{d.designation_name} ({d.designation_level})</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Department</label>
-                  <select value={empForm.department_id} onChange={e => setEmpForm({ ...empForm, department_id: e.target.value })} style={{ width: '100%' }}>
-                    <option value="">-- Select Department --</option>
-                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Primary Reporting Manager</label>
-                  <select value={empForm.reporting_manager_id} onChange={e => setEmpForm({ ...empForm, reporting_manager_id: e.target.value })} style={{ width: '100%' }}>
-                    <option value="">-- None (Top Level) --</option>
-                    {employees.map(m => <option key={m.id} value={m.id}>{m.emp_name} ({m.emp_code} - {m.designation_name})</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" onClick={() => setShowAddEmpModal(false)} className="btn-action-secondary">Cancel</button>
-                <button type="submit" className="btn-primary" style={{ borderRadius: '8px' }}>Create Employee</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: TRANSFER / PROMOTE */}
-      {transferEmp && !showHistoryModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '550px' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.5rem' }}>Transfer / Promote Employee</h2>
-            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1.25rem' }}>
-              Employee: <strong style={{ color: '#38bdf8' }}>{transferEmp.emp_name}</strong> ({transferEmp.emp_code})
-            </p>
-            <form onSubmit={handleTransferSubmit}>
-              <div style={{ display: 'grid', gap: '1rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Change Type</label>
-                  <select value={transferForm.change_type} onChange={e => setTransferForm({ ...transferForm, change_type: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
-                    <option value="Promotion">Promotion</option>
-                    <option value="Transfer">Department Transfer</option>
-                    <option value="Designation Correction">Designation Correction</option>
-                    <option value="Reporting Change">Reporting Manager Change</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>New Designation</label>
-                  <select value={transferForm.new_designation_id} onChange={e => setTransferForm({ ...transferForm, new_designation_id: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
-                    <option value="">-- Keep Current --</option>
-                    {designations.map(d => <option key={d.id} value={d.id}>{d.designation_name} ({d.designation_level})</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>New Reporting Manager</label>
-                  <select value={transferForm.new_reporting_manager_id} onChange={e => setTransferForm({ ...transferForm, new_reporting_manager_id: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}>
-                    <option value="">-- Keep Current --</option>
-                    {employees.filter(m => m.id !== transferEmp.id).map(m => <option key={m.id} value={m.id}>{m.emp_name} ({m.emp_code})</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem' }}>Reason / Approval Reference</label>
-                  <textarea value={transferForm.change_reason} onChange={e => setTransferForm({ ...transferForm, change_reason: e.target.value })} placeholder="e.g. Annual Appraisal Promotion" style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', minHeight: '60px' }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" onClick={() => setTransferEmp(null)} style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#cbd5e1', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.6rem 1.2rem', background: '#6366f1', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Submit Transfer</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: AUDIT HISTORY */}
-      {showHistoryModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.5rem' }}>Employee Transfer & Designation Audit Log</h2>
-            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>Historical designation changes are preserved for compliance.</p>
-            {empHistory.length === 0 ? (
-              <p style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No transfer history recorded for this employee yet.</p>
-            ) : (
-              <div style={{ spaceY: '0.75rem' }}>
-                {empHistory.map(h => (
-                  <div key={h.id} style={{ padding: '0.85rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#38bdf8', fontWeight: 600 }}>
-                      <span>{h.change_type}</span>
-                      <span>{new Date(h.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <div style={{ fontSize: '0.85rem', marginTop: '0.3rem', color: '#e2e8f0' }}>Reason: {h.change_reason || 'N/A'}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-              <button onClick={() => setShowHistoryModal(false)} style={{ padding: '0.6rem 1.2rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Close</button>
-            </div>
           </div>
         </div>
       )}

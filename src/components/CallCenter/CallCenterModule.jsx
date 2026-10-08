@@ -1,4 +1,5 @@
 'use client';
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   PhoneCall, Users, Clock, Database, Loader2, ShieldAlert,
@@ -520,7 +521,7 @@ export default function CallCenterModule({ userId }) {
 
         {/* Responsive Table with Draggable Resizable Columns */}
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+          <MobileTableView id="CallCenter/CallCenterModule-1"><table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
                 <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -693,7 +694,7 @@ export default function CallCenterModule({ userId }) {
                 ))
               )}
             </tbody>
-          </table>
+          </table></MobileTableView>
         </div>
 
         {/* Pagination & Rows Per Page Controls */}

@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -1874,7 +1875,7 @@ export default function AnalyticsDashboard({
                 </div>
               ) : (
                 <div style={{ overflow: 'auto', maxHeight: '360px', width: '100%', position: 'relative' }}>
-                  <table style={{ width: '100%', minWidth: '280px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <MobileTableView id="AnalyticsDashboard-1"><table style={{ width: '100%', minWidth: '280px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                       <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                         <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Employee</th>
@@ -1902,7 +1903,7 @@ export default function AnalyticsDashboard({
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 </div>
               )}
             </div>
@@ -2109,7 +2110,7 @@ export default function AnalyticsDashboard({
             </div>
 
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
-              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
+              <MobileTableView id="AnalyticsDashboard-2"><table style={{ width: '100%', minWidth: '980px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
@@ -2276,7 +2277,7 @@ export default function AnalyticsDashboard({
                     ))
                   )}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         </div>
@@ -2365,7 +2366,7 @@ export default function AnalyticsDashboard({
               </div>
             ) : (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                <MobileTableView id="AnalyticsDashboard-3"><table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                       <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Code</th>
@@ -2407,7 +2408,7 @@ export default function AnalyticsDashboard({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
           </div>
@@ -2524,7 +2525,7 @@ export default function AnalyticsDashboard({
             {/* VIEW 1: Team Members Checklist Status Matrix */}
             {checklistViewMode === 'BY_EMPLOYEE' && (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                <MobileTableView id="AnalyticsDashboard-4"><table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                       <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
@@ -2594,7 +2595,7 @@ export default function AnalyticsDashboard({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
 
@@ -2606,7 +2607,7 @@ export default function AnalyticsDashboard({
                     No checklist slots scheduled for today.
                   </div>
                 ) : (
-                  <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                  <MobileTableView id="AnalyticsDashboard-5"><table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                       <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                         <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Slot ID</th>
@@ -2647,7 +2648,7 @@ export default function AnalyticsDashboard({
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></MobileTableView>
                 )}
               </div>
             )}
@@ -2724,7 +2725,7 @@ export default function AnalyticsDashboard({
             </div>
 
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+              <MobileTableView id="AnalyticsDashboard-6"><table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                     <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
@@ -2758,7 +2759,7 @@ export default function AnalyticsDashboard({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         </div>
@@ -3072,7 +3073,7 @@ export default function AnalyticsDashboard({
             </div>
 
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
+              <MobileTableView id="AnalyticsDashboard-7"><table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)' }}>
                   <tr style={{ background: 'var(--th-bg)' }}>
                     <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
@@ -3197,7 +3198,7 @@ export default function AnalyticsDashboard({
                       );
                     }))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           </div>
         </div>
@@ -3328,7 +3329,7 @@ export default function AnalyticsDashboard({
               </div>
             ) : (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                <MobileTableView id="AnalyticsDashboard-8"><table style={{ width: '100%', minWidth: '700px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                       <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Job Title</th>
@@ -3397,7 +3398,7 @@ export default function AnalyticsDashboard({
                       );
                     })}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
           </div>
@@ -3475,7 +3476,7 @@ export default function AnalyticsDashboard({
               </div>
             ) : (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
+                <MobileTableView id="AnalyticsDashboard-9"><table style={{ width: '100%', minWidth: '820px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
                     <tr style={{ backgroundColor: 'var(--th-bg)' }}>
                       <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Candidate</th>
@@ -3574,7 +3575,7 @@ export default function AnalyticsDashboard({
                       );
                     })}
                   </tbody>
-                </table>
+                </table></MobileTableView>
               </div>
             )}
           </div>

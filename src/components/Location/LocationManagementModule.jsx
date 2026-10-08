@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import {
   Globe, MapPin, Compass, Layers, ShieldCheck, Plus, RefreshCw, Search,
@@ -877,7 +878,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
             </button>
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+            <MobileTableView id="Location/LocationManagementModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--table-header-text, var(--text-primary))' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>#</th>
@@ -925,7 +926,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></MobileTableView>
           </div>
         </div>
       )}
@@ -972,7 +973,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+              <MobileTableView id="Location/LocationManagementModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--table-header-text, var(--text-primary))' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>#</th>
@@ -1016,7 +1017,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>
@@ -1064,7 +1065,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+              <MobileTableView id="Location/LocationManagementModule-3"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>#</th>
@@ -1109,7 +1110,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>
@@ -1157,7 +1158,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+              <MobileTableView id="Location/LocationManagementModule-4"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>#</th>
@@ -1196,7 +1197,7 @@ export default function LocationManagementModule({ moduleAccess = {}, userRole =
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></MobileTableView>
             </div>
           )}
         </div>
