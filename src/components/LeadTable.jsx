@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, Table, LayoutGrid, RotateCcw, Settings, Phone } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ChevronDown, Filter, RotateCcw, Settings, Phone } from 'lucide-react';
 import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -16,11 +16,13 @@ import {
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { logAuditAction } from '@/app/actions/audit';
-import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally, matchesLeadPreviewStage, markLeadStartupTiming } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally, matchesLeadPreviewStage, markLeadStartupTiming, showSyncToast } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import Papa from 'papaparse';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
+import { useTableViewPreference, TableViewToggle } from '@/components/common/MobileTableView';
+import { getLeadRuntimeProfile, getMobileLeadPage, createLeadRowReader } from '@/utils/leadPerformance';
 
 const LeadFormModal = dynamic(() => import('./LeadFormModal'));
 const LeadProfilePanel = dynamic(() => import('./LeadProfilePanel'));
@@ -241,10 +243,11 @@ const LeadAssigneeCell = React.memo(({ info }) => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const check = canPerformOfflineAction('leadAssign');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
+      showSyncToast(`⚡ Offline: Assigned to ${newAssigneeName}. Saved locally in Sync Center & will auto-sync!`, 'info', 4500);
       const updatedRawLead = {
         ...lead,
         assigned_to: valToSet,
@@ -269,6 +272,8 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         await logAuditAction('Assign Lead', `Assigned lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to ${newAssigneeName}`);
       } catch (e) {}
 
+      showSyncToast(`✅ Saved to Supabase: Lead assigned to ${newAssigneeName}!`, 'success', 3500);
+
       const updatedRawLead = {
         ...lead,
         assigned_to: valToSet,
@@ -283,10 +288,11 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       console.warn('Network updateAssignee failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadAssign');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { id: lead.id, assigned_to: valToSet });
+      showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       const updatedRawLead = {
         ...lead,
         assigned_to: valToSet,
@@ -411,10 +417,11 @@ const LeadStatusCell = React.memo(({ info }) => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const check = canPerformOfflineAction('leadStatusUpdate');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
+      showSyncToast(`⚡ Offline: Stage updated to ${newStatus}. Saved locally in Sync Center & will auto-sync!`, 'info', 4500);
       const updatedRawLead = {
         ...lead,
         ...updates,
@@ -446,6 +453,8 @@ const LeadStatusCell = React.memo(({ info }) => {
       } catch (e) {
         console.error('Audit Log failed', e);
       }
+
+      showSyncToast(`✅ Saved to Supabase: Stage updated to ${newStatus}!`, 'success', 3500);
       
       const updatedRawLead = {
         ...lead,
@@ -490,10 +499,11 @@ const LeadStatusCell = React.memo(({ info }) => {
       console.warn('Network stage update failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadStatusUpdate');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       const updatedRawLead = {
         ...lead,
         ...updates,
@@ -1081,6 +1091,7 @@ const isLeadContentChanged = (a, b) => {
 // once. Cancellation prevents an older dataset from replacing newer edits.
 export function prepareLeadTableRows(rows, teamMembers, {
   seed = [], onPreview, onComplete, processRows = processLeads,
+  batchSize = 400, timeBudgetMs = Infinity,
   onError = error => console.warn('Lead table background preparation failed:', error),
   schedule = callback => setTimeout(callback, 0), cancel = clearTimeout
 } = {}) {
@@ -1089,7 +1100,7 @@ export function prepareLeadTableRows(rows, teamMembers, {
   const processed = [...seed];
   let offset = seed.length;
   if (offset === 0) {
-    const nextOffset = Math.min(400, rows.length);
+    const nextOffset = Math.min(batchSize, rows.length);
     processed.push(...processRows(rows.slice(0, nextOffset), teamMembers, 0));
     offset = nextOffset;
   }
@@ -1097,9 +1108,13 @@ export function prepareLeadTableRows(rows, teamMembers, {
   const processBatch = () => {
     if (cancelled) return;
     try {
-      const nextOffset = Math.min(offset + 400, rows.length);
-      processed.push(...processRows(rows.slice(offset, nextOffset), teamMembers, offset));
-      offset = nextOffset;
+      const batchEnd = Math.min(offset + batchSize, rows.length);
+      const started = performance.now();
+      do {
+        const nextOffset = Math.min(offset + (Number.isFinite(timeBudgetMs) ? 16 : batchSize), batchEnd);
+        processed.push(...processRows(rows.slice(offset, nextOffset), teamMembers, offset));
+        offset = nextOffset;
+      } while (offset < batchEnd && performance.now() - started < timeBudgetMs);
       if (offset < rows.length) timer = schedule(processBatch);
       else onComplete(processed);
     } catch (error) {
@@ -1134,10 +1149,11 @@ export default function LeadTable({
 }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
+  const [leadProfile] = useState(getLeadRuntimeProfile);
 
   const [initialPreparation] = useState(() => ({
     rows: initialData, teamMembers,
-    prepared: processLeads((initialData || []).slice(0, 400), teamMembers)
+    prepared: processLeads((initialData || []).slice(0, leadProfile.firstBatch), teamMembers)
   }));
   const [data, setData] = useState(initialPreparation.prepared);
 
@@ -1202,7 +1218,7 @@ export default function LeadTable({
   };
   
   // A partial preparation must never qualify for the targeted-update shortcut.
-  const prevInitialDataRef = useRef(initialPreparation.rows?.length <= 400 ? initialPreparation.rows : null);
+  const prevInitialDataRef = useRef(initialPreparation.rows?.length === initialPreparation.prepared.length ? initialPreparation.rows : null);
   const prevTeamMembersRef = useRef(teamMembers);
   const localUpdatedLeadIdsRef = useRef(new Set());
   const latestTableDataRef = useRef(data);
@@ -1272,7 +1288,7 @@ export default function LeadTable({
       .filter(row => localUpdatedLeadIdsRef.current.has(row.id)).map(row => [row.id, row]));
     markLeadStartupTiming('table-preparation-start', { count: rows.length });
     return prepareLeadTableRows(rows, teamMembers, {
-      seed,
+      seed, batchSize: leadProfile.batchSize, timeBudgetMs: leadProfile.timeBudgetMs,
       // Keep the selected stage's cached rows visible until the entire new
       // list is ready; its first 400 rows can belong to a different stage.
       onPreview: preview => setData(current => current.length > 0 ? current : preview),
@@ -1291,7 +1307,7 @@ export default function LeadTable({
         });
       }
     });
-  }, [initialData, teamMembers, initialPreparation]);
+  }, [initialData, teamMembers, initialPreparation, leadProfile]);
 
   useEffect(() => {
     if (searchQuery !== undefined && searchQuery !== null) {
@@ -1345,12 +1361,7 @@ export default function LeadTable({
   const [whatsappModalLead, setWhatsappModalLead] = useState(null);
   const [activeRowId, setActiveRowId] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [viewMode, setViewMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('crm_lead_view_mode') || 'table';
-    }
-    return 'table';
-  });
+  const [viewMode, setViewMode] = useTableViewPreference('lead-data', { desktopKey: 'crm_lead_view_mode' });
   const fileInputRef = React.useRef(null);
   const [columnFilters, setColumnFilters] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1653,7 +1664,7 @@ export default function LeadTable({
     return m;
   }, [teamMembers]);
 
-  const multiSelectFilter = (row, columnId, filterValue) => {
+  const multiSelectFilter = useCallback((row, columnId, filterValue) => {
     if (!filterValue || filterValue.length === 0) return true;
     
     let val = String(row.getValue(columnId) || '');
@@ -1717,9 +1728,9 @@ export default function LeadTable({
 
     const set = getNormalizedFilterSet(columnId, filterValue, null);
     return set ? set.has(val) : false;
-  };
+  }, [teamMemberMap, teamMembers]);
 
-  const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), []);
+  const finalColumns = useMemo(() => columns.map(c => ({ ...c, filterFn: multiSelectFilter })), [multiSelectFilter]);
 
   // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
   const stageFilteredData = useMemo(() => {
@@ -1802,8 +1813,26 @@ export default function LeadTable({
   }, [stageFilter]);
 
 
+  const readLeadRow = useMemo(() => createLeadRowReader(finalColumns), [finalColumns]);
+  const mobileFilteredData = useMemo(() => {
+    if (!leadProfile.mobile) return stageFilteredData;
+    const filters = columnFilters.filter(filter => finalColumns.some(column => (column.id || column.accessorKey) === filter.id) &&
+      filter.value !== undefined && filter.value !== null &&
+      (Array.isArray(filter.value) ? filter.value.length > 0 : filter.value !== ''));
+    if (!String(globalFilter || '').trim() && !filters.length) return stageFilteredData;
+    return stageFilteredData.filter((lead, index) => {
+      const row = readLeadRow(lead, index);
+      return customGlobalFilterFn(row, null, globalFilter) && filters.every(filter => multiSelectFilter(row, filter.id, filter.value));
+    });
+  }, [leadProfile.mobile, stageFilteredData, globalFilter, columnFilters, readLeadRow, multiSelectFilter, finalColumns]);
+  const mobilePage = useMemo(() => getMobileLeadPage(mobileFilteredData, pagination), [mobileFilteredData, pagination]);
+
   const table = useReactTable({
-    data: stageFilteredData,
+    data: leadProfile.mobile ? mobilePage.rows : stageFilteredData,
+    manualFiltering: leadProfile.mobile,
+    manualPagination: leadProfile.mobile,
+    rowCount: leadProfile.mobile ? mobileFilteredData.length : undefined,
+    getRowId: leadProfile.mobile ? lead => String(lead.id) : undefined,
     columns: finalColumns,
     autoResetPageIndex: false,
     globalFilterFn: customGlobalFilterFn,
@@ -1813,14 +1842,15 @@ export default function LeadTable({
       globalFilter,
       columnFilters,
       columnVisibility,
-      pagination,
+      pagination: leadProfile.mobile ? mobilePage.pagination : pagination,
       columnOrder,
       columnSizing,
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onPaginationChange: setPagination,
+    onPaginationChange: updater => setPagination(current => typeof updater === 'function'
+      ? updater(leadProfile.mobile ? mobilePage.pagination : current) : updater),
     onColumnOrderChange: setColumnOrder,
     onColumnSizingChange: setColumnSizing,
     getCoreRowModel: getCoreRowModel(),
@@ -1875,7 +1905,7 @@ export default function LeadTable({
       return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
 
-    let candidateRows = table.getCoreRowModel().rows;
+    let candidateRows = leadProfile.mobile ? stageFilteredData.map(readLeadRow) : table.getCoreRowModel().rows;
 
     // Apply global filter to candidate rows if present
     const currentGlobalFilter = table.getState().globalFilter;
@@ -2148,10 +2178,11 @@ export default function LeadTable({
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const check = canPerformOfflineAction('leadStatusUpdate');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
+      showSyncToast(`⚡ Offline: Status updated to ${newStatus}. Saved locally in Sync Center & will auto-sync!`, 'info', 4500);
       const updatedRawLead = {
         ...lead,
         ...updates,
@@ -2181,6 +2212,8 @@ export default function LeadTable({
       } catch (e) {
         console.error('Audit Log failed', e);
       }
+
+      showSyncToast(`✅ Saved to Supabase: Status updated to ${newStatus}!`, 'success', 3500);
       
       const updatedRawLead = {
         ...lead,
@@ -2206,10 +2239,11 @@ export default function LeadTable({
       console.warn('Network direct status change failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadStatusUpdate');
       if (!check.allowed) {
-        alert(check.reason);
+        showSyncToast(check.reason, 'error', 6000);
         return;
       }
       await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       const updatedRawLead = {
         ...lead,
         ...updates,
@@ -2233,13 +2267,14 @@ export default function LeadTable({
   }, [table, columnVisibility, columnOrder]);
 
   const filteredLeadRows = useMemo(() => {
+    if (leadProfile.mobile) return mobileFilteredData;
     try {
       const rows = table.getFilteredRowModel().rows;
       return rows && rows.length > 0 ? rows.map(r => r.original) : (data || []);
     } catch (e) {
       return data || [];
     }
-  }, [table, data]);
+  }, [table, data, leadProfile.mobile, mobileFilteredData]);
 
   const selectedLeadIndex = useMemo(() => {
     if (!selectedLead || !filteredLeadRows || filteredLeadRows.length === 0) return -1;
@@ -2598,67 +2633,7 @@ export default function LeadTable({
             </button>
           )}
 
-          {/* View Mode Toggle: Table vs Tiles (Desktop Only) */}
-          <div 
-            className="desktop-only"
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              background: 'var(--bg-surface)', 
-              border: '1px solid var(--border-light)', 
-              borderRadius: '8px', 
-              padding: '3px',
-              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
-              userSelect: 'none',
-              flexShrink: 0
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => { setViewMode('table'); localStorage.setItem('crm_lead_view_mode', 'table'); }}
-              style={{
-                padding: '0.45rem 0.85rem',
-                borderRadius: '6px',
-                border: 'none',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                transition: 'all 0.2s ease',
-                background: viewMode === 'table' ? 'var(--accent-color, #3b82f6)' : 'transparent',
-                color: viewMode === 'table' ? '#ffffff' : 'var(--text-secondary)'
-              }}
-              title="Table View"
-            >
-              <Table size={15} />
-              <span>Table</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setViewMode('tiles'); localStorage.setItem('crm_lead_view_mode', 'tiles'); }}
-              style={{
-                padding: '0.45rem 0.85rem',
-                borderRadius: '6px',
-                border: 'none',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                transition: 'all 0.2s ease',
-                background: viewMode === 'tiles' ? 'var(--accent-color, #3b82f6)' : 'transparent',
-                color: viewMode === 'tiles' ? '#ffffff' : 'var(--text-secondary)'
-              }}
-              title="Tiles View"
-            >
-              <LayoutGrid size={15} />
-              <span>Tiles</span>
-            </button>
-          </div>
+          <TableViewToggle view={viewMode} onChange={setViewMode} />
 
           <button onClick={() => setIsModalOpen(true)} className="btn-primary" style={{ padding: '0.5rem 0.9rem', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
             + Add Lead
@@ -2666,7 +2641,7 @@ export default function LeadTable({
         </div>
       </div>
 
-      {viewMode === 'tiles' || isMobile ? (
+      {viewMode === 'tiles' ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0.65rem' : '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: isMobile ? '0.75rem' : '1.25rem', alignContent: 'start', backgroundColor: 'var(--bg-primary)' }}>
           {table.getRowModel().rows.length === 0 ? (
             <div className="card" style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -3357,7 +3332,7 @@ export default function LeadTable({
             {(() => {
               const pageIndex = table.getState().pagination.pageIndex;
               const pageSize = table.getState().pagination.pageSize;
-              const totalRecords = table.getFilteredRowModel().rows.length;
+              const totalRecords = leadProfile.mobile ? mobileFilteredData.length : table.getFilteredRowModel().rows.length;
               const startRecord = totalRecords === 0 ? 0 : pageIndex * pageSize + 1;
               const endRecord = Math.min((pageIndex + 1) * pageSize, totalRecords);
               return `Showing ${startRecord} to ${endRecord} of ${totalRecords} records`;
@@ -3375,10 +3350,10 @@ export default function LeadTable({
           >
             {(() => {
               const currentSize = table.getState().pagination.pageSize;
-              const optionsSet = new Set(availablePageSizes);
+              const optionsSet = new Set(availablePageSizes.filter(size => !leadProfile.mobile || size <= 100));
               if (currentSize !== 100000 && !isNaN(currentSize)) optionsSet.add(currentSize);
               const optionsList = Array.from(optionsSet).sort((a,b) => a - b);
-              optionsList.push(100000);
+              if (!leadProfile.mobile) optionsList.push(100000);
               
               return optionsList.map(pageSize => (
                 <option key={pageSize} value={pageSize}>

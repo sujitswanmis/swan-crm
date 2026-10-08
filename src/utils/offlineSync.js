@@ -1,4 +1,5 @@
 // ============================================================================
+import { isMobileLeadDevice, readLeadCacheInPages } from './leadPerformance.js';
 // SuPuja Creations CRM - Robust IndexedDB Offline Storage & Auto-Sync Engine
 // ============================================================================
 
@@ -883,6 +884,18 @@ export async function getLocalLeads({ onPreview, onTiming } = {}) {
         }
       };
 
+      const rangeFactory = window.IDBKeyRange || globalThis.IDBKeyRange;
+      if (isMobileLeadDevice() && rangeFactory?.lowerBound) {
+        readLeadCacheInPages(db, STORES.LEADS_CACHE, { scope, generation, keyRange: rangeFactory,
+          onPreview: publishPreview }).then(rows => safeResolve(rows, 'paged')).catch(error => {
+          if (isResolved) return;
+          console.warn('[IndexedDB] Mobile page read failed, falling back to cursor:', error);
+          hardTimer = setTimeout(() => safeResolve([], 'timeout'), 30000);
+          readWithCursor();
+        });
+        return;
+      }
+
       // Large getAll() results can stall mobile browsers. Try a cursor before
       // treating a slow read as an empty cache and triggering a full download.
       fallbackTimer = setTimeout(readWithCursor, 3000);
@@ -1141,6 +1154,24 @@ export async function enqueueOfflineAction(actionType, entityType, payload) {
   } catch (err) {
     console.error('Failed to enqueue offline action:', err);
     return null;
+  }
+}
+
+/**
+ * Dispatch a global toast notification event handled by OfflineSyncCenter
+ * @param {string} message - Text to display
+ * @param {'success' | 'warning' | 'error' | 'info'} type - Toast type ('success' | 'warning' | 'error' | 'info')
+ * @param {number} duration - Display time in ms (default 4000)
+ */
+export function showSyncToast(message, type = 'success', duration = 4000) {
+  if (typeof window !== 'undefined' && message) {
+    try {
+      window.dispatchEvent(new CustomEvent('supuja_show_sync_toast', {
+        detail: { message, type, duration }
+      }));
+    } catch (e) {
+      console.warn('Toast dispatch notice:', e);
+    }
   }
 }
 

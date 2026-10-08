@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
@@ -9,7 +10,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
-import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally, showSyncToast } from '@/utils/offlineSync';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -919,6 +920,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               await logAuditAction('Update Lead', `Updated Lead ID: ${initialData.id} (${cleanPayload.company || cleanPayload.name || 'Unknown'})`);
             } catch(e) { console.error('Audit Log failed', e); }
             
+            showSyncToast('✅ Saved to Supabase: Client updated successfully!', 'success', 3500);
             alert('Client Updated Successfully!');
             if (onRegistrationSuccess) onRegistrationSuccess(updatedLeadObj);
             if (onClose) onClose();
@@ -933,16 +935,19 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (isRealOffline) {
               const check = canPerformOfflineAction('clientRegistration');
               if (!check.allowed) {
+                showSyncToast(check.reason, 'error', 6000);
                 alert(check.reason);
                 setIsSubmitting(false);
                 return;
               }
               const updatedLeadObj = { ...initialData, ...cleanPayload };
               await enqueueOfflineAction('update', 'lead', { ...cleanPayload, id: initialData.id });
+              showSyncToast('⚡ Offline: Client update saved in Sync Center & auto-syncing!', 'info', 5000);
               alert('⚡ Offline Mode: Device is offline. Client updates saved to device storage! They will sync to cloud when connected.');
               if (onRegistrationSuccess) onRegistrationSuccess(updatedLeadObj);
               if (onClose) onClose();
             } else {
+              showSyncToast(`❌ Failed to update client: ${netErr.message || 'Database error'}`, 'error', 6000);
               alert(`Failed to update client: ${netErr.message || 'Database error occurred'}`);
               setIsSubmitting(false);
               return;
@@ -1021,6 +1026,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               await upsertLeadsLocally([finalNewLeadObj]);
             }
             
+            showSyncToast('✅ Saved to Supabase: Client registered successfully!', 'success', 3500);
             alert('Client Registered Successfully!');
             if (onRegistrationSuccess) onRegistrationSuccess(finalNewLeadObj);
             if (finalNewLeadObj) {
@@ -1037,14 +1043,17 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (isRealOffline) {
               const check = canPerformOfflineAction('clientRegistration');
               if (!check.allowed) {
+                showSyncToast(check.reason, 'error', 6000);
                 alert(check.reason);
                 setIsSubmitting(false);
                 return;
               }
               await enqueueOfflineAction('create', 'lead', cleanPayload);
+              showSyncToast('⚡ Offline: Client saved safely in Sync Center & auto-syncing!', 'info', 5000);
               alert('⚡ Offline Mode: Device is offline. Client saved safely to device storage! It will sync to cloud when connected.');
               if (onRegistrationSuccess) onRegistrationSuccess();
             } else {
+              showSyncToast(`❌ Failed to register client: ${netErr.message || 'Database error'}`, 'error', 6000);
               alert(`Failed to register client: ${netErr.message || 'Database error occurred'}`);
               setIsSubmitting(false);
               return;
@@ -2296,7 +2305,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                         No records match your selected filter or search query.
                       </div>
                     ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 180)}px` }}>
+                      <MobileTableView id="ClientRegistration-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 180)}px` }}>
                         <thead style={{ position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)' }}>
                           <tr>
                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '50px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>#</th>
@@ -2354,7 +2363,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                             );
                           })}
                         </tbody>
-                      </table>
+                      </table></MobileTableView>
                     )}
                   </div>
 

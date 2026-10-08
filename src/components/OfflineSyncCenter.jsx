@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, Clock, X, ShieldAlert, Zap, Copy, Check } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, AlertCircle, Info, CheckCircle2, Clock, X, ShieldAlert, Zap, Copy, Check } from 'lucide-react';
 import { 
   getPendingQueue, 
   getSyncHistory, 
@@ -21,8 +21,29 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   const [syncedHistory, setSyncedHistory] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
+  const [toastState, setToastState] = useState(null); // { message, type, duration }
   const [offlineUsage, setOfflineUsage] = useState(() => getDailyOfflineUsage());
+  const autoSyncDebounceRef = useRef(null);
+
+  const setToastMessage = useCallback((msgOrObj, type = 'info', duration = 4000) => {
+    if (!msgOrObj) {
+      setToastState(null);
+      return;
+    }
+    if (typeof msgOrObj === 'object' && msgOrObj.message) {
+      setToastState({
+        message: msgOrObj.message,
+        type: msgOrObj.type || 'info',
+        duration: msgOrObj.duration || 4000
+      });
+    } else {
+      setToastState({
+        message: String(msgOrObj),
+        type,
+        duration
+      });
+    }
+  }, []);
 
   const onSyncCompleteRef = useRef(onSyncComplete);
   useEffect(() => {
@@ -53,7 +74,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       const supabase = createClient();
       const result = await syncPendingQueue(supabase);
       if (result && result.count > 0) {
-        setToastMessage(`🎉 ${result.count} offline update${result.count > 1 ? 's' : ''} synchronized successfully!`);
+        setToastMessage(`🎉 ${result.count} offline update${result.count > 1 ? 's' : ''} synchronized successfully to Supabase!`, 'success', 5000);
         if (onSyncCompleteRef.current) onSyncCompleteRef.current();
       }
       await loadQueueState();
@@ -63,7 +84,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [loadQueueState]);
+  }, [loadQueueState, setToastMessage]);
 
   const triggerSyncRef = useRef(triggerSync);
   useEffect(() => {
@@ -116,6 +137,19 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     return () => clearInterval(offlineTicker);
   }, []);
 
+  // Listen for global custom sync toasts dispatched from any module
+  useEffect(() => {
+    const handleSyncToast = (e) => {
+      if (e?.detail?.message) {
+        setToastMessage(e.detail.message, e.detail.type || 'info', e.detail.duration || 4000);
+      }
+    };
+    window.addEventListener('supuja_show_sync_toast', handleSyncToast);
+    return () => {
+      window.removeEventListener('supuja_show_sync_toast', handleSyncToast);
+    };
+  }, [setToastMessage]);
+
   useEffect(() => {
     setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
     loadQueueState();
@@ -123,7 +157,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     const handleOnline = () => {
       setIsOnline(true);
       setOfflineUsage(getDailyOfflineUsage());
-      setToastMessage('🌐 Internet reconnected! Syncing offline changes...');
+      setToastMessage('🌐 Internet reconnected! Syncing offline changes...', 'info', 4000);
       if (triggerSyncRef.current) triggerSyncRef.current();
     };
 
@@ -131,11 +165,18 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       setIsOnline(false);
       const usage = getDailyOfflineUsage();
       setOfflineUsage(usage);
-      setToastMessage(`⚡ Offline mode active (${usage.dailyCapHours || 5}h max daily quota). All changes saved to disk.`);
+      setToastMessage(`⚡ Offline mode active (${usage.dailyCapHours || 5}h max daily quota). All changes saved to disk.`, 'info', 4000);
     };
 
     const handleQueueChanged = () => {
       loadQueueState();
+      // Auto-Sync Debounce: If online, automatically trigger background sync after 5s!
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        clearTimeout(autoSyncDebounceRef.current);
+        autoSyncDebounceRef.current = setTimeout(() => {
+          if (triggerSyncRef.current) triggerSyncRef.current();
+        }, 5000);
+      }
     };
 
     window.addEventListener('online', handleOnline);
@@ -144,7 +185,13 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
 
     const interval = setInterval(() => {
       if (typeof navigator !== 'undefined' && navigator.onLine) {
-        loadQueueState();
+        loadQueueState().then(() => {
+          getPendingQueue().then(queue => {
+            if (queue.length > 0 && triggerSyncRef.current) {
+              triggerSyncRef.current();
+            }
+          }).catch(() => {});
+        }).catch(() => {});
       }
     }, 30000);
 
@@ -153,14 +200,16 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('supuja_offline_queue_changed', handleQueueChanged);
       clearInterval(interval);
+      if (autoSyncDebounceRef.current) clearTimeout(autoSyncDebounceRef.current);
     };
-  }, [loadQueueState]);
+  }, [loadQueueState, setToastMessage]);
 
   useEffect(() => {
-    if (!toastMessage) return;
-    const t = setTimeout(() => setToastMessage(null), 4000);
+    if (!toastState) return;
+    const dur = toastState.duration || 4000;
+    const t = setTimeout(() => setToastState(null), dur);
     return () => clearTimeout(t);
-  }, [toastMessage]);
+  }, [toastState]);
 
   return (
     <>
@@ -222,7 +271,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
       </button>
 
       {/* 2. Floating Toast Alert */}
-      {toastMessage && (
+      {toastState && (
         <div
           style={{
             position: 'fixed',
@@ -234,20 +283,43 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
             padding: '12px 18px',
             borderRadius: '12px',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
-            border: '1px solid #334155',
+            border: toastState.type === 'success'
+              ? '1px solid rgba(34, 197, 94, 0.55)'
+              : toastState.type === 'warning'
+              ? '1px solid rgba(245, 158, 11, 0.65)'
+              : toastState.type === 'error'
+              ? '1px solid rgba(239, 68, 68, 0.65)'
+              : '1px solid #334155',
+            background: toastState.type === 'success'
+              ? 'linear-gradient(135deg, #0f172a 0%, #064e3b 100%)'
+              : toastState.type === 'warning'
+              ? 'linear-gradient(135deg, #0f172a 0%, #78350f 100%)'
+              : toastState.type === 'error'
+              ? 'linear-gradient(135deg, #0f172a 0%, #7f1d1d 100%)'
+              : '#0f172a',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: '12px',
             fontSize: '13px',
             fontWeight: '500',
-            maxWidth: '380px',
+            maxWidth: '430px',
             animation: 'fadeIn 0.2s ease-out'
           }}
         >
-          <span>{toastMessage}</span>
+          {toastState.type === 'success' ? (
+            <CheckCircle2 style={{ width: '18px', height: '18px', color: '#4ade80', flexShrink: 0 }} />
+          ) : toastState.type === 'warning' ? (
+            <AlertTriangle style={{ width: '18px', height: '18px', color: '#fbbf24', flexShrink: 0 }} />
+          ) : toastState.type === 'error' ? (
+            <AlertCircle style={{ width: '18px', height: '18px', color: '#f87171', flexShrink: 0 }} />
+          ) : (
+            <Info style={{ width: '18px', height: '18px', color: '#38bdf8', flexShrink: 0 }} />
+          )}
+          <span style={{ flex: 1, lineHeight: 1.4 }}>{toastState.message}</span>
           <button
-            onClick={() => setToastMessage(null)}
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
+            onClick={() => setToastState(null)}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+            title="Dismiss"
           >
             <X style={{ width: '14px', height: '14px' }} />
           </button>

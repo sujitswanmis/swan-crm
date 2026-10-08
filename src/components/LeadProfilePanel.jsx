@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
 import { getLeadCallHistory } from '@/app/actions/team';
-import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, showSyncToast } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
@@ -858,6 +858,7 @@ export default function LeadProfilePanel({
       }
 
       setStatusUpdateSuccess(true);
+      showSyncToast(`✅ Saved to Supabase: Status changed to "${formattedNewStatus}"!`, 'success', 3500);
       setTimeout(() => setStatusUpdateSuccess(false), 2000);
     } catch (err) {
       console.error('Status update failed, enqueueing offline fallback:', err?.message || err?.details || JSON.stringify(err));
@@ -873,9 +874,13 @@ export default function LeadProfilePanel({
             note_text: noteText,
             created_by: actor
           });
+          showSyncToast(`⚠️ Cloud save failed (${err?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
+        } else {
+          showSyncToast(check.reason, 'error', 6000);
         }
       } catch (queueErr) {
         console.warn('Offline fallback queue error:', queueErr);
+        showSyncToast(`❌ Error saving status: ${err?.message || 'Unknown error'}`, 'error', 6000);
       }
     } finally {
       setIsUpdatingStatus(false);
@@ -952,6 +957,7 @@ export default function LeadProfilePanel({
       } catch (e) {}
 
       setSavedFieldSuccess(fieldKey);
+      showSyncToast(`✅ Saved to Supabase: ${label} updated to "${newValue}"!`, 'success', 3500);
       setTimeout(() => setSavedFieldSuccess(null), 2000);
     } catch (err) {
       console.error(`${fieldKey} update failed, enqueueing offline fallback:`, err?.message || err?.details || JSON.stringify(err));
@@ -967,9 +973,13 @@ export default function LeadProfilePanel({
             note_text: noteText,
             created_by: actor
           });
+          showSyncToast(`⚠️ Cloud save failed (${err?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
+        } else {
+          showSyncToast(check.reason, 'error', 6000);
         }
       } catch (queueErr) {
         console.warn('Offline fallback queue error:', queueErr);
+        showSyncToast(`❌ Error saving ${label}: ${err?.message || 'Unknown error'}`, 'error', 6000);
       }
     } finally {
       setSavingField(null);
@@ -1412,6 +1422,8 @@ export default function LeadProfilePanel({
           await logAuditAction('Stage Changed', `Changed status of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}" to "${statusToUpdate}" via History Panel`);
         } catch (e) {}
 
+        showSyncToast(`✅ Saved to Supabase: Status changed to "${statusToUpdate}"!`, 'success', 3500);
+
         try {
           triggerWhatsappAutomationForStage(lead.id, statusToUpdate);
         } catch (e) {}
@@ -1445,8 +1457,10 @@ export default function LeadProfilePanel({
             await enqueueOfflineAction('update', 'lead', { id: lead.id, status: statusToUpdate });
           }
         }
+        showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       } catch (queueErr) {
         console.warn('Offline fallback queue error:', queueErr);
+        showSyncToast(`❌ Error saving note/status: ${netErr?.message || 'Unknown error'}`, 'error', 6000);
       }
     }
   };
@@ -1477,14 +1491,15 @@ export default function LeadProfilePanel({
           note_text: noteText,
           created_by: actor
         }]);
+        showSyncToast('✅ Saved to Supabase: Follow-up date cleared!', 'success', 3500);
       } catch (netErr) {
         console.warn('Network follow-up update failed, fallback to offline:', netErr);
-        const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-        if (isOffline) {
-          const check = canPerformOfflineAction('leadFollowUp');
-          if (check.allowed) {
-            await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: null });
-          }
+        const check = canPerformOfflineAction('leadFollowUp');
+        if (check.allowed) {
+          await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: null });
+          showSyncToast('⚠️ Cloud save failed. Follow-up clear saved in Offline Sync Center & auto-syncing!', 'warning', 6000);
+        } else {
+          showSyncToast(check.reason, 'error', 6000);
         }
       }
       return;
@@ -1511,14 +1526,15 @@ export default function LeadProfilePanel({
       try {
         logAuditAction('Set Follow-up', `Scheduled follow-up for lead "${currentLead.company || currentLead.name || currentLead.lead_ref_id || currentLead.id}" on ${formattedDate}`);
       } catch(e) {}
+      showSyncToast(`✅ Saved to Supabase: Follow-up scheduled for ${formattedDate}!`, 'success', 3500);
     } catch (netErr) {
       console.warn('Network follow-up update failed, fallback to offline:', netErr);
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (isOffline) {
-        const check = canPerformOfflineAction('leadFollowUp');
-        if (check.allowed) {
-          await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: isoDateStr });
-        }
+      const check = canPerformOfflineAction('leadFollowUp');
+      if (check.allowed) {
+        await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: isoDateStr });
+        showSyncToast(`⚠️ Cloud save failed. Follow-up scheduled for ${formattedDate} saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
+      } else {
+        showSyncToast(check.reason, 'error', 6000);
       }
     }
   };
@@ -1565,7 +1581,7 @@ export default function LeadProfilePanel({
       try {
         logAuditAction('Update Lead', `Updated profile of lead "${lead.company || lead.name || lead.lead_ref_id || lead.id}"`);
       } catch(e) {}
-      alert('Lead profile updated successfully!');
+      showSyncToast('✅ Saved to Supabase: Lead profile updated successfully!', 'success', 4000);
     } catch (netErr) {
       console.error('Network profile update failed:', netErr);
       const isRealOffline = (typeof navigator !== 'undefined' && !navigator.onLine) ||
@@ -1578,10 +1594,12 @@ export default function LeadProfilePanel({
         const check = canPerformOfflineAction('profileEdit');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', { ...cleanForm, id: lead.id });
-          alert('⚡ Offline Mode: Device is offline. Profile changes saved to device storage! They will sync to cloud when connected.');
+          showSyncToast('⚡ Offline: Profile changes saved in Sync Center. Will sync to Supabase once online!', 'info', 5000);
+        } else {
+          showSyncToast(check.reason, 'error', 6000);
         }
       } else {
-        alert(`Failed to update profile: ${netErr.message || 'Database error occurred'}`);
+        showSyncToast(`❌ Failed to update profile: ${netErr.message || 'Database error occurred'}`, 'error', 6000);
       }
     }
   };
