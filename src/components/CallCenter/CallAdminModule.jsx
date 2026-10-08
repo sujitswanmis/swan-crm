@@ -341,7 +341,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
           </h3>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width: `${Math.max(960, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
                 <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -385,9 +385,9 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             <tbody>
               {agents.map((agent, i) => (
                 <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace:'nowrap' }} title={agent.display_name}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.display_name}</div>
-                    {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.mobile_number}</div>}
+                  <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={agent.display_name}>
+                    <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{agent.display_name}</div>
+                    {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
                   </td>
                   <td style={{ width: `${colWidths.calling_mode}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
@@ -413,7 +413,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       })}
                     </select>
                     {agent.plivo_sip_uri && (
-                      <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={agent.plivo_sip_uri}>
+                      <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }} title={agent.plivo_sip_uri}>
                         {agent.plivo_sip_uri}
                       </div>
                     )}
@@ -518,7 +518,7 @@ function TabEndpoints() {
           </div>
         </div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width: `${Math.max(920, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: 'var(--th-bg)' }}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {[
@@ -565,9 +565,9 @@ function TabEndpoints() {
                 <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : endpoints.map((ep, i) => (
                 <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ width: `${colWidths.alias}px`, padding:'1rem', fontWeight:600, color:'#1e293b', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.alias}>{ep.alias}</td>
-                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.username}>{ep.username}</td>
-                  <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ep.sip_uri}>{ep.sip_uri}</td>
+                  <td style={{ width: `${colWidths.alias}px`, padding:'1rem', fontWeight:600, color:'#1e293b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.alias}>{ep.alias}</td>
+                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.username}>{ep.username}</td>
+                  <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
                   <td style={{ width: `${colWidths.app_linked}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {ep.application
                       ? <span style={{ color:'#16a34a', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><CheckCircle size={13}/>Linked</span>

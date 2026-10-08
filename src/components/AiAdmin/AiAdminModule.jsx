@@ -308,7 +308,7 @@ export default function AiAdminModule() {
       </div>
 
       <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
-        <table style={{ width: `${Math.max(1220, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', tableLayout: 'fixed' }}>
+        <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', tableLayout: 'fixed' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               <th style={{ width: `${colWidths.employee}px`, padding: '1rem', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -370,9 +370,9 @@ export default function AiAdminModule() {
 
               return (
                 <tr key={user.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <td style={{ width: `${colWidths.employee}px`, padding: '1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.name || 'Unknown User'}>{user.name || 'Unknown User'}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.email}>{user.email}</div>
+                  <td style={{ width: `${colWidths.employee}px`, padding: '1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={user.name || 'Unknown User'}>{user.name || 'Unknown User'}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, marginTop: '0.2rem' }} title={user.email}>{user.email}</div>
                   </td>
                   <td style={{ width: `${colWidths.role}px`, padding: '1rem', boxSizing: 'border-box' }}>
                     <span style={{ padding: '0.25rem 0.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem', textTransform: 'capitalize' }}>

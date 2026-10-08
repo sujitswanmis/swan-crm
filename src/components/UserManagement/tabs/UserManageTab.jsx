@@ -331,7 +331,7 @@ export default function UserManageTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${Math.max(1050, getUserTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${getUserTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -398,8 +398,8 @@ export default function UserManageTab({
                       }}
                     >
                       {/* User Column */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
                           <div style={{
                             width: '36px',
                             height: '36px',
@@ -415,8 +415,8 @@ export default function UserManageTab({
                           }}>
                             {initials}
                           </div>
-                          <div style={{ overflow: 'hidden' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                               <span>{u.emp_name || 'Unnamed Employee'}</span>
                               {isMaster && (
                                 <span style={{ fontSize: '0.66rem', backgroundColor: '#dc2626', color: '#fff', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 700 }}>
@@ -424,12 +424,12 @@ export default function UserManageTab({
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
                               {u.emp_id && <span>#{u.emp_id}</span>}
                               {u.email && <span>{u.email}</span>}
                             </div>
                             {u.emp_mobile && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                 📞 {u.emp_mobile}
                               </div>
                             )}
@@ -438,34 +438,34 @@ export default function UserManageTab({
                       </td>
 
                       {/* Department & Role */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.emp_department || 'General'}
                         </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.emp_designation || u.role || 'Staff'}
                         </div>
                       </td>
 
                       {/* Location */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.work_location_name || u.work_location_type || 'Headquarters'}
                         </div>
                         {u.company && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                             {u.company}
                           </div>
                         )}
                       </td>
 
                       {/* Reporting Structure */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Mgr: </span>
                           <strong>{u.primary_reporting_person || 'None'}</strong>
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           <span>HOD: </span>
                           <strong>{u.hod_person || 'None'}</strong>
                         </div>

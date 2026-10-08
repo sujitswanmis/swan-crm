@@ -181,7 +181,7 @@ export default function AuditLogsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${Math.max(1040, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -245,16 +245,16 @@ export default function AuditLogsTab() {
                       backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
                     }}
                   >
-                    <td style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.emp_name || 'System User'}>
+                    <td style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={log.emp_name || 'System User'}>
                         {log.emp_name || 'System User'}
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.email || 'system@internal'}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, marginTop: '0.15rem' }} title={log.email || 'system@internal'}>
                         {log.email || 'system@internal'}
                       </div>
                     </td>
 
-                    <td style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                       <span style={{
                         fontSize: '0.72rem',
                         fontWeight: 700,
@@ -264,26 +264,28 @@ export default function AuditLogsTab() {
                         color: '#334155',
                         border: '1px solid #cbd5e1',
                         display: 'inline-block',
-                        whiteSpace: 'nowrap'
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.25
                       }}>
                         {log.action || 'Action'}
                       </span>
                     </td>
 
-                    <td style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.4, boxSizing: 'border-box' }}>
-                      <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.target || 'N/A'}>{log.target || 'N/A'}</div>
+                    <td style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.35, boxSizing: 'border-box', verticalAlign: 'top' }}>
+                      <div style={{ fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.target || 'N/A'}>{log.target || 'N/A'}</div>
                       {log.details && typeof log.details === 'string' && log.details !== log.target && (
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.details}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.25rem', whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.details}>
                           {log.details}
                         </div>
                       )}
                     </td>
 
-                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.ip_address || log.ip || '—'}>
+                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', verticalAlign: 'top' }} title={log.ip_address || log.ip || '—'}>
                       {log.ip_address || log.ip || '—'}
                     </td>
 
-                    <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }}>
                       {formatISTDateTime(log.created_at || log.timestamp)}
                     </td>
                   </tr>

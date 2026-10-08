@@ -238,7 +238,7 @@ export default function PublicUsersTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${Math.max(880, getTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -302,22 +302,22 @@ export default function PublicUsersTab({
                       backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
                     }}
                   >
-                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.emp_name || 'Unnamed Client'}>
+                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={u.emp_name || 'Unnamed Client'}>
                         {u.emp_name || 'Unnamed Client'}
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.email}>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, marginTop: '0.15rem' }} title={u.email}>
                         {u.email}
                       </div>
                     </td>
 
-                    <td style={{ width: `${colWidths.contact}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={u.emp_mobile || 'No phone'}>
+                    <td style={{ width: `${colWidths.contact}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={u.emp_mobile || 'No phone'}>
                         {u.emp_mobile ? `📞 ${u.emp_mobile}` : 'No phone'}
                       </div>
                     </td>
 
-                    <td style={{ width: `${colWidths.registered_date}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={formatISTDateTime(u.created_at)}>
+                    <td style={{ width: `${colWidths.registered_date}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }} title={formatISTDateTime(u.created_at)}>
                       {formatISTDateTime(u.created_at)}
                     </td>
 

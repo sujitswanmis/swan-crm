@@ -2531,7 +2531,7 @@ export default function DelegationTaskModule({
           boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
         }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: `${Math.max(1220, getTaskTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <table style={{ width: `${getTaskTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ width: `${taskColWidths.task}px`, padding: '0.75rem 0.85rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -2612,8 +2612,8 @@ export default function DelegationTaskModule({
                       onMouseLeave={(e) => e.currentTarget.style.background = deadlineBadge.isLate && task.status !== 'COMPLETED' ? '#fffbfb' : 'transparent'}
                     >
                       {/* Task Code, Priority & Title */}
-                      <td style={{ width: `${taskColWidths.task}px`, padding: '0.85rem 1rem', boxSizing: 'border-box', overflow: 'hidden' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      <td style={{ width: `${taskColWidths.task}px`, padding: '0.85rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                           <span style={{
                             background: prio.bg,
                             color: prio.color,
@@ -2630,39 +2630,39 @@ export default function DelegationTaskModule({
                         </div>
                         <div
                           onClick={() => handleOpenDrawer(task)}
-                          style={{ fontWeight: 600, color: '#1e293b', cursor: 'pointer', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          style={{ fontWeight: 600, color: '#1e293b', cursor: 'pointer', fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.3 }}
                           title={task.title}
                         >
                           {task.title}
                         </div>
                         {task.description && (
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.description}>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.2rem' }} title={task.description}>
                             {task.description}
                           </div>
                         )}
                       </td>
 
                       {/* Category */}
-                      <td style={{ width: `${taskColWidths.category}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.category}>
-                        <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <td style={{ width: `${taskColWidths.category}px`, padding: '0.85rem 1rem', whiteSpace: 'normal', wordBreak: 'break-word', boxSizing: 'border-box', verticalAlign: 'top' }} title={task.category}>
+                        <span style={{ background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569', fontSize: '0.75rem', fontWeight: 600, display: 'inline-block' }}>
                           {task.category}
                         </span>
                       </td>
 
                       {/* Delegated By */}
-                      <td style={{ width: `${taskColWidths.delegated_by}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${task.delegated_by_name} (${task.delegated_by_email})`}>
-                        <div style={{ fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.delegated_by_name}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.delegated_by_email}</div>
+                      <td style={{ width: `${taskColWidths.delegated_by}px`, padding: '0.85rem 1rem', whiteSpace: 'normal', wordBreak: 'break-word', boxSizing: 'border-box', verticalAlign: 'top' }} title={`${task.delegated_by_name} (${task.delegated_by_email})`}>
+                        <div style={{ fontWeight: 600, color: '#1e293b', wordBreak: 'break-word', lineHeight: 1.3 }}>{task.delegated_by_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', wordBreak: 'break-all', lineHeight: 1.3 }}>{task.delegated_by_email}</div>
                       </td>
 
                       {/* Assigned To */}
-                      <td style={{ width: `${taskColWidths.assigned_to}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${task.assigned_to_name} (${task.assigned_to_email})`}>
-                        <div style={{ fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.assigned_to_name}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.assigned_to_email}</div>
+                      <td style={{ width: `${taskColWidths.assigned_to}px`, padding: '0.85rem 1rem', whiteSpace: 'normal', wordBreak: 'break-word', boxSizing: 'border-box', verticalAlign: 'top' }} title={`${task.assigned_to_name} (${task.assigned_to_email})`}>
+                        <div style={{ fontWeight: 600, color: '#1e293b', wordBreak: 'break-word', lineHeight: 1.3 }}>{task.assigned_to_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', wordBreak: 'break-all', lineHeight: 1.3 }}>{task.assigned_to_email}</div>
                       </td>
 
                       {/* Checkpoints */}
-                      <td style={{ width: `${taskColWidths.checkpoints}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box' }}>
+                      <td style={{ width: `${taskColWidths.checkpoints}px`, padding: '0.85rem 1rem', textAlign: 'center', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         {totalSubtasks > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
@@ -2683,7 +2683,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Due Deadline */}
-                      <td style={{ width: `${taskColWidths.deadline}px`, padding: '0.85rem 1rem', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <td style={{ width: `${taskColWidths.deadline}px`, padding: '0.85rem 1rem', whiteSpace: 'normal', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                           <span style={{
                             fontSize: '0.75rem',
@@ -2697,19 +2697,20 @@ export default function DelegationTaskModule({
                           }}>
                             {deadlineBadge.text}
                           </span>
-                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8', wordBreak: 'break-word' }}>
                             {new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                         </div>
                       </td>
 
                       {/* Status */}
-                      <td style={{ width: `${taskColWidths.status}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                      <td style={{ width: `${taskColWidths.status}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'normal', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         <span style={{
                           fontSize: '0.72rem',
                           fontWeight: 700,
                           padding: '0.2rem 0.55rem',
                           borderRadius: '12px',
+                          display: 'inline-block',
                           background: task.status === 'COMPLETED' ? '#ecfdf5' : task.status === 'SUBMITTED' ? '#fffbeb' : task.status === 'IN_PROGRESS' ? '#eff6ff' : task.status === 'REOPENED' ? '#fef2f2' : '#f8fafc',
                           color: task.status === 'COMPLETED' ? '#059669' : task.status === 'SUBMITTED' ? '#d97706' : task.status === 'IN_PROGRESS' ? '#2563eb' : task.status === 'REOPENED' ? '#dc2626' : '#64748b',
                           border: `1px solid ${task.status === 'COMPLETED' ? '#a7f3d0' : task.status === 'SUBMITTED' ? '#fde68a' : task.status === 'IN_PROGRESS' ? '#bfdbfe' : task.status === 'REOPENED' ? '#fecaca' : '#e2e8f0'}`
@@ -2719,7 +2720,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Rating */}
-                      <td style={{ width: `${taskColWidths.rating}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                      <td style={{ width: `${taskColWidths.rating}px`, padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         {task.status === 'COMPLETED' && task.rating ? (
                           <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.82rem' }}>
                             {'⭐'.repeat(task.rating)}
@@ -2730,7 +2731,7 @@ export default function DelegationTaskModule({
                       </td>
 
                       {/* Actions */}
-                      <td style={{ width: `${taskColWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'right', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                      <td style={{ width: `${taskColWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'right', whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           {/* Assignee Actions */}
                           {isAssignedToMe && task.status === 'PENDING' && (

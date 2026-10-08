@@ -3478,7 +3478,7 @@ export default function ChecklistModule({
               {/* 2. TABLE VIEW */}
               {myChecklistsViewMode === 'table' && (
                 <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-                  <table style={{ width: `${Math.max(1100, getMyChecklistTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                  <table style={{ width: `${getMyChecklistTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                         <th style={{ position: 'relative', width: `${myChecklistColWidths.title}px`, padding: '0.75rem 1rem' }}>
@@ -3541,13 +3541,13 @@ export default function ChecklistModule({
                               opacity: isLocked ? 0.82 : 1
                             }}
                           >
-                            <td style={{ padding: '0.85rem 1rem', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${tmpl.title} - ${tmpl.description || tmpl.department}`}>
-                              <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tmpl.title}</div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }} title={`${tmpl.title} - ${tmpl.description || tmpl.department}`}>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.title}</div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.2rem' }}>
                                 {tmpl.description || tmpl.department}
                               </div>
                             </td>
-                            <td style={{ padding: '0.85rem 1rem', overflow: 'hidden' }} title={`${tmpl.frequency} | ${tmpl.department}`}>
+                            <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }} title={`${tmpl.frequency} | ${tmpl.department}`}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                                 <span style={{
                                   background: `${freqMeta.badgeColor}15`,
@@ -3563,10 +3563,10 @@ export default function ChecklistModule({
                                 }}>
                                   {freqMeta.icon} {tmpl.frequency}
                                 </span>
-                                <span style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tmpl.department}</span>
+                                <span style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.department}</span>
                               </div>
                             </td>
-                            <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', fontWeight: 600, overflow: 'hidden' }} title={humanPeriod}>
+                            <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', fontWeight: 600, verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }} title={humanPeriod}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}>
                                 <Calendar size={13} color="#f59e0b" />
                                 <span>{humanPeriod}</span>
@@ -3577,9 +3577,11 @@ export default function ChecklistModule({
                               fontSize: '0.85rem',
                               fontWeight: isExpired ? 700 : 600,
                               color: isExpired ? '#991b1b' : isActive ? '#166534' : 'inherit',
-                              overflow: 'hidden'
+                              verticalAlign: 'top',
+                              whiteSpace: 'normal',
+                              wordBreak: 'break-word'
                             }} title={`${delayInfo.formattedStart || tmpl.due_time || '18:00'} - ${delayInfo.formattedExpire || '18:20'}`}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                                 <Clock size={13} />
                                 <span>{delayInfo.formattedStart || tmpl.due_time || '18:00'} - {delayInfo.formattedExpire || '18:20'}</span>
                               </div>
@@ -3597,7 +3599,7 @@ export default function ChecklistModule({
                                 </div>
                               ) : null}
                             </td>
-                            <td style={{ padding: '0.85rem 1rem' }}>
+                            <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '130px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
                                   <span>{item.stats.completedCount}/{item.stats.totalCount}</span>
@@ -3612,7 +3614,7 @@ export default function ChecklistModule({
                                 </div>
                               </div>
                             </td>
-                            <td style={{ padding: '0.85rem 1rem' }}>
+                            <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                               {isCompleted ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
                                   <span style={{
@@ -3700,7 +3702,7 @@ export default function ChecklistModule({
                                 </span>
                               )}
                             </td>
-                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right', verticalAlign: 'top' }}>
                               <button
                                 onClick={() => {
                                   if (isLocked) return;
@@ -3843,7 +3845,7 @@ export default function ChecklistModule({
             </div>
 
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: `${Math.max(1100, getTemplateTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ position: 'relative', width: `${templateColWidths.title}px`, padding: '0.75rem 1rem' }}>
@@ -3906,13 +3908,13 @@ export default function ChecklistModule({
 
                     return (
                       <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>{tmpl.title}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{tmpl.description || tmpl.department}</div>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)', wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.title}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.2rem' }}>{tmpl.description || tmpl.department}</div>
                         </td>
 
                         {/* Recurrence Frequency */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
                             <span style={{
                               background: `${freqMeta.badgeColor}15`,
@@ -3954,7 +3956,7 @@ export default function ChecklistModule({
                         </td>
 
                         {/* Time / Days / Date */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           {tmpl.frequency === 'DAILY' ? (
                             repCount === 1 ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
@@ -4055,20 +4057,20 @@ export default function ChecklistModule({
                         </td>
 
                         {/* Assigned To */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                             <User size={14} style={{ opacity: 0.7 }} />
-                            <span>{tmpl.assigned_type === 'ALL' ? 'All Staff' : tmpl.assigned_employee_name || tmpl.assigned_employee_email}</span>
+                            <span style={{ wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.assigned_type === 'ALL' ? 'All Staff' : tmpl.assigned_employee_name || tmpl.assigned_employee_email}</span>
                           </div>
                         </td>
 
                         {/* Questions / Items */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                           <span style={{ background: 'var(--bg-primary, #f1f5f9)', color: 'var(--text-primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.8rem' }}>
                             {(tmpl.items || []).length} items
                           </span>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                           <select
                             value={s}
                             disabled={togglingStatusId === tmpl.id}
@@ -4092,7 +4094,7 @@ export default function ChecklistModule({
                             <option value="DRAFT" style={{ background: '#ffffff', color: '#92400e', fontWeight: 700 }}>📝 Draft</option>
                           </select>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', gap: '0.55rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button
                               onClick={() => handleCopyTemplate(tmpl)}
@@ -4471,7 +4473,7 @@ export default function ChecklistModule({
 
             {/* Submissions Table */}
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <table style={{ width: `${Math.max(1100, getLogsTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <table style={{ width: `${getLogsTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ position: 'relative', width: `${logsColWidths.employee}px`, padding: '0.75rem 1rem' }}>
@@ -4525,15 +4527,15 @@ export default function ChecklistModule({
                     const isDelayed = log.delayInfo?.isDelayed;
                     return (
                       <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>{log.employee_name}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>{log.employee_email}</div>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)', wordBreak: 'break-word', lineHeight: 1.3 }}>{log.employee_name}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', wordBreak: 'break-all', lineHeight: 1.3 }}>{log.employee_email}</div>
                           {log.department && (
-                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.1rem' }}>🏢 {log.department}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.1rem', wordBreak: 'break-word' }}>🏢 {log.department}</div>
                           )}
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>{log.template_title}</div>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)', wordBreak: 'break-word', lineHeight: 1.3 }}>{log.template_title}</div>
                           <span style={{
                             fontSize: '0.72rem',
                             color: '#0284c7',
@@ -4547,13 +4549,13 @@ export default function ChecklistModule({
                             {log.frequency}
                           </span>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           {humanPeriod}
                         </td>
-                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           {log.submitted_at ? new Date(log.submitted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : 'N/A'}
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                           {isDelayed ? (
                             <span style={{
                               background: '#fee2e2',
@@ -4586,7 +4588,7 @@ export default function ChecklistModule({
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                           <span style={{
                             background: log.status === 'COMPLETED' ? '#dcfce7' : '#fef3c7',
                             color: log.status === 'COMPLETED' ? '#166534' : '#92400e',
@@ -4598,7 +4600,7 @@ export default function ChecklistModule({
                             {log.items_completed_count}/{log.items_total_count} Done
                           </span>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
                           <span style={{
                             background: isApproved ? '#dcfce7' : isRejected ? '#fee2e2' : '#fef3c7',
                             color: isApproved ? '#166534' : isRejected ? '#991b1b' : '#92400e',
@@ -4611,7 +4613,7 @@ export default function ChecklistModule({
                             {log.verification_status || 'PENDING'}
                           </span>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right', verticalAlign: 'top' }}>
                           <button
                             onClick={() => handleOpenVerify(log)}
                             style={{

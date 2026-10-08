@@ -3142,7 +3142,7 @@ export default function AttendanceModule({
               {/* Master Team Attendance Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <table style={{ width: `${Math.max(1200, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+                  <table style={{ width: `${getTeamTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ width: `${teamColWidths.emp_code}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -3219,42 +3219,42 @@ export default function AttendanceModule({
                       ) : (
                         filteredTeamRecords.map((r, idx) => (
                           <tr key={r.id || `${r.email}_${r.attendance_date}_${idx}`} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
-                            <td style={{ width: `${teamColWidths.emp_code}px`, padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', fontSize: '0.82rem', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.emp_code || '—'}>
+                            <td style={{ width: `${teamColWidths.emp_code}px`, padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', fontSize: '0.82rem', boxSizing: 'border-box', wordBreak: 'break-all', whiteSpace: 'normal', verticalAlign: 'top' }} title={r.emp_code || '—'}>
                               {r.emp_code || '—'}
                             </td>
-                            <td style={{ width: `${teamColWidths.emp_name}px`, padding: '0.75rem 1rem', fontWeight: 600, boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.emp_name}>
+                            <td style={{ width: `${teamColWidths.emp_name}px`, padding: '0.75rem 1rem', fontWeight: 600, boxSizing: 'border-box', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.3, verticalAlign: 'top' }} title={r.emp_name}>
                               {r.emp_name}
                             </td>
                             {teamStartDate !== teamEndDate && (
-                              <td style={{ width: `${teamColWidths.date}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.attendance_date}>
+                              <td style={{ width: `${teamColWidths.date}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }} title={r.attendance_date}>
                                 {r.attendance_date}
                               </td>
                             )}
-                            <td style={{ width: `${teamColWidths.email}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.email}>
+                            <td style={{ width: `${teamColWidths.email}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3, verticalAlign: 'top' }} title={r.email}>
                               {r.email}
                             </td>
-                            <td style={{ width: `${teamColWidths.department}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.department || 'General'}>
+                            <td style={{ width: `${teamColWidths.department}px`, padding: '0.75rem 1rem', color: 'var(--text-secondary)', boxSizing: 'border-box', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.3, verticalAlign: 'top' }} title={r.department || 'General'}>
                               {r.department || 'General'}
                             </td>
-                            <td style={{ width: `${teamColWidths.in_time}px`, padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={r.in_time ? formatTimeIST(r.in_time) : '—'}>
+                            <td style={{ width: `${teamColWidths.in_time}px`, padding: '0.75rem 1rem', color: r.in_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: r.in_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }} title={r.in_time ? formatTimeIST(r.in_time) : '—'}>
                               {r.in_time ? formatTimeIST(r.in_time) : '—'}
                             </td>
-                            <td style={{ width: `${teamColWidths.out_time}px`, padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={r.out_time ? formatTimeIST(r.out_time) : '—'}>
+                            <td style={{ width: `${teamColWidths.out_time}px`, padding: '0.75rem 1rem', color: r.out_time ? '#dc2626' : 'var(--text-secondary)', fontWeight: r.out_time ? 600 : 400, whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }} title={r.out_time ? formatTimeIST(r.out_time) : '—'}>
                               {r.out_time 
                                 ? formatTimeIST(r.out_time) 
                                 : (r.attendance_date === getTodayDateString() ? (r.in_time ? 'Working...' : '—') : (r.in_time ? 'Missed Out' : '—'))
                               }
                             </td>
-                            <td style={{ width: `${teamColWidths.duration}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box' }} title={formatMinutesToHours(r.total_working_minutes)}>
+                            <td style={{ width: `${teamColWidths.duration}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--accent-color)', whiteSpace: 'nowrap', boxSizing: 'border-box', verticalAlign: 'top' }} title={formatMinutesToHours(r.total_working_minutes)}>
                               {formatMinutesToHours(r.total_working_minutes)}
                             </td>
-                            <td style={{ width: `${teamColWidths.status}px`, padding: '0.75rem 1rem', boxSizing: 'border-box' }}>
+                            <td style={{ width: `${teamColWidths.status}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
                                 {renderStatusBadge(r.status, r.is_regularized, r.remarks)}
                                 {renderShortLeaveBadge(r)}
                               </div>
                             </td>
-                            <td style={{ width: `${teamColWidths.regularization}px`, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.is_regularized ? 'Yes (HOD Approved)' : 'No'}>
+                            <td style={{ width: `${teamColWidths.regularization}px`, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', boxSizing: 'border-box', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.3, verticalAlign: 'top' }} title={r.is_regularized ? 'Yes (HOD Approved)' : 'No'}>
                               {r.is_regularized ? 'Yes (HOD Approved)' : 'No'}
                             </td>
                           </tr>

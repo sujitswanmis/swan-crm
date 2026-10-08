@@ -620,7 +620,7 @@ export default function ActiveSessionsTab() {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <table style={{ width: `${Math.max(1200, getSessionTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -721,8 +721,8 @@ export default function ActiveSessionsTab() {
                       }}
                     >
                       {/* Employee Column */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
                           <div style={{
                             width: '36px',
                             height: '36px',
@@ -739,8 +739,8 @@ export default function ActiveSessionsTab() {
                           }}>
                             {initials}
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                               <span>{emp.empName}</span>
                               {emp.isCurrent && (
                                 <span style={{
@@ -755,7 +755,7 @@ export default function ActiveSessionsTab() {
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
                               {emp.empId ? <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>#{emp.empId} • </span> : null}
                               <span>{emp.email}</span>
                             </div>
@@ -764,11 +764,11 @@ export default function ActiveSessionsTab() {
                       </td>
 
                       {/* Department & Role */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {emp.department || 'General'}
                         </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {emp.designation || 'Staff'}
                         </div>
                       </td>
@@ -843,12 +843,12 @@ export default function ActiveSessionsTab() {
                       </td>
 
                       {/* Device & IP */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          <DevIcon size={15} style={{ color: 'var(--text-secondary)' }} />
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                          <DevIcon size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                           <span style={{ fontSize: '0.78rem' }}>{dev.browser} on {dev.os}</span>
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
                           {emp.ipAddress || 'Logged via Web App'}
                         </div>
                       </td>

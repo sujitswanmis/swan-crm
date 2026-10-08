@@ -814,7 +814,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <p>Either create a new position or shift existing positions to change their status.</p>
             </div>
           ) : (
-            <table style={{ width: `${Math.max(1200, getPosTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+            <table style={{ width: `${getPosTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -825,7 +825,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   </th>
                   <th style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
-                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Position ID</span>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Position Code</span>
                     </div>
                     <ColumnResizer colKey="position_id" isResizing={posResizingCol === 'position_id'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
                   </th>
@@ -849,13 +849,13 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                   </th>
                   <th style={{ width: `${posColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
-                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</span>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Stage</span>
                     </div>
                     <ColumnResizer colKey="status" isResizing={posResizingCol === 'status'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
                   </th>
                   <th style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
-                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Deadline Date</span>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Deadline</span>
                     </div>
                     <ColumnResizer colKey="deadline" isResizing={posResizingCol === 'deadline'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
                   </th>
@@ -902,8 +902,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
               <tbody>
                 {filteredPositions.map(pos => (
                   <tr key={pos.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}>
-                    <td style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.title}>{pos.title}</td>
-                    <td style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.title}>{pos.title}</td>
+                    <td style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden' }}>
                         <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
                         {pos.id && (
@@ -923,9 +923,9 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                         )}
                       </div>
                     </td>
-                    <td style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.department}>{pos.department}</td>
-                    <td style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>{pos.openings}</td>
-                    <td style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.department}>{pos.department}</td>
+                    <td style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>{pos.openings}</td>
+                    <td style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
                       {pos.salary_min || pos.salary_max ? (
                         <span title={`${pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - ${pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month`}>
                           {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month
@@ -951,23 +951,23 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                     <td style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
                       {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString() : <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>None</span>}
                     </td>
-                    <td style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pos.interviewer_name || 'Not Assigned'}>
+                    <td style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.interviewer_name || 'Not Assigned'}>
                       {pos.interviewer_name || <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Assigned</span>}
                     </td>
-                    <td style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
+                    <td style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                       {pos.recruiter_assigned && pos.recruiter_assigned !== 'All' ? (
                         <span style={{ 
                           display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
                           padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
                           background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem',
-                          maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                          maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
                         }} title={pos.recruiter_assigned}>👤 {pos.recruiter_assigned}</span>
                       ) : (
                         <span style={{ 
                           display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
                           padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
                           background: '#fef9c3', color: '#854d0e', fontSize: '0.75rem',
-                          whiteSpace: 'nowrap'
+                          whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
                         }}>📢 All Recruiters</span>
                       )}
                     </td>
@@ -1117,7 +1117,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
             </div>
           ) : (
             <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-              <table style={{ width: `${Math.max(1100, getCandTotalTableWidth())}px`, minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+              <table style={{ width: `${getCandTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                     <th style={{ width: `${candColWidths.name}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1268,10 +1268,10 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
                             </div>
                           )}
                         </td>
-                        <td style={{ width: `${candColWidths.applying_for}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cand.recruitment_positions?.title || 'Unknown'}>{cand.recruitment_positions?.title || 'Unknown'}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.2rem' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cand.recruitment_positions?.department}</span>
+                        <td style={{ width: `${candColWidths.applying_for}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                          <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={cand.recruitment_positions?.title || 'Unknown'}>{cand.recruitment_positions?.title || 'Unknown'}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                            <span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{cand.recruitment_positions?.department}</span>
                             {cand.position_id && (
                               <span style={{ 
                                 fontSize: '0.68rem', fontFamily: 'monospace', 

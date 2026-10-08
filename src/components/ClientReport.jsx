@@ -1232,7 +1232,7 @@ export default function ClientReport({
     visibleReportCols.forEach(col => {
       w += getColWidth(col.key);
     });
-    return Math.max(1200, w);
+    return w;
   }, [visibleReportCols, columnWidths, canDelete, canAssign]);
 
   const moveReportColumn = (key, direction) => {
@@ -1849,7 +1849,7 @@ export default function ClientReport({
 
       {/* Table Container - Horizontally Scrollable */}
       <div className="table-responsive-wrapper" style={{ flex: 1, overflowX: 'auto' }}>
-        <table style={{ width: `${totalReportTableWidth}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+        <table style={{ width: `${totalReportTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               {(canDelete || canAssign) && (
@@ -2025,17 +2025,17 @@ export default function ClientReport({
                     <td 
                       key={col.key} 
                       style={{ 
-                        padding: '0.75rem 1rem', 
+                        padding: '0.65rem 0.75rem', 
                         fontSize: '0.85rem', 
                         color: 'var(--text-primary)', 
-                        whiteSpace: 'nowrap', 
+                        whiteSpace: 'normal', 
+                        wordBreak: 'break-word',
+                        lineHeight: 1.35,
                         width: `${colWidth}px`, 
                         minWidth: '60px', 
-                        maxWidth: `${colWidth}px`, 
-                        overflow: 'hidden', 
-                        textOverflow: 'ellipsis',
                         borderRight: '1px solid var(--border-light)',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        verticalAlign: 'top'
                       }}
                       title={typeof val === 'string' || typeof val === 'number' ? String(val) : undefined}
                     >
