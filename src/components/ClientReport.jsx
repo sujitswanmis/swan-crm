@@ -1,5 +1,6 @@
 'use client';
 
+import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Download, Columns, ChevronDown, Loader2, Edit2, FileText, Search, ChevronLeft, ChevronRight, Filter, Trash2, UserPlus, Check, X, Sliders, Sparkles, Settings, RotateCcw } from 'lucide-react';
@@ -12,6 +13,7 @@ import ColumnSelectorModal from './TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { upsertLeadsLocally } from '@/utils/offlineSync';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 export const EDITABLE_COLUMNS = [
   { key: 'state_name', label: 'State' },
@@ -746,6 +748,75 @@ const ALL_COLUMNS = [
   { key: 'buying_timeline', label: 'Buying Timeline' }
 ];
 
+export const DEFAULT_CLIENT_REPORT_COL_WIDTHS = {
+  lead_formatted_id: 120,
+  id: 80,
+  created_at: 160,
+  lead_date: 130,
+  our_company: 170,
+  source: 140,
+  source_name: 150,
+  created_by: 140,
+  entry_by: 140,
+  assigned_to_name: 200,
+  status: 140,
+  priority: 130,
+  company: 180,
+  business_type: 140,
+  business_gst: 150,
+  business_contact_aio: 140,
+  business_email_aio: 180,
+  cp_name_aio: 150,
+  cp_mobile_aio: 140,
+  cp_email_aio: 180,
+  business_contact_1: 140,
+  business_contact_2: 140,
+  business_alt_1: 140,
+  business_alt_2: 140,
+  business_email_1: 180,
+  business_email_2: 180,
+  business_alt_email_1: 180,
+  business_alt_email_2: 180,
+  name: 150,
+  phone: 140,
+  cp1_mobile_2: 140,
+  cp1_alt_1: 140,
+  cp1_alt_2: 140,
+  email: 180,
+  cp1_email_2: 180,
+  cp2_name: 150,
+  cp2_mobile_1: 140,
+  cp2_mobile_2: 140,
+  cp2_alt_1: 140,
+  cp2_alt_2: 140,
+  cp2_email_1: 180,
+  cp2_email_2: 180,
+  cp3_name: 150,
+  cp3_mobile_1: 140,
+  cp3_mobile_2: 140,
+  cp3_alt_1: 140,
+  cp3_alt_2: 140,
+  cp3_email_1: 180,
+  cp3_email_2: 180,
+  state_name: 140,
+  district_name: 140,
+  pin_code: 100,
+  city_name: 130,
+  tehsil_name: 130,
+  block_name: 130,
+  address: 240,
+  requirement: 220,
+  investment: 130,
+  buying_timeline: 140
+};
+
+export const CLIENT_REPORT_MIN_WIDTHS = {
+  id: 60,
+  pin_code: 80,
+  status: 90,
+  priority: 90
+};
+
 export default function ClientReport({ 
   initialData = [], 
   teamMembers = [], 
@@ -1065,162 +1136,17 @@ export default function ClientReport({
     }
   }, [reportColumns]);
 
-  // Column width resizing state with persistence
-  const [columnWidths, setColumnWidths] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm_client_report_column_sizing');
-        if (saved) return JSON.parse(saved);
-      } catch (e) {
-        console.error('Error reading crm_client_report_column_sizing', e);
-      }
-    }
-    return {};
-  });
-
-  const [resizingColKey, setResizingColKey] = useState(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('crm_client_report_column_sizing', JSON.stringify(columnWidths));
-      } catch (e) {
-        console.error('Error saving crm_client_report_column_sizing', e);
-      }
-    }
-  }, [columnWidths]);
-
-  const getDefaultColWidth = (key) => {
-    switch (key) {
-      case 'lead_formatted_id': return 120;
-      case 'id': return 80;
-      case 'created_at': return 160;
-      case 'lead_date': return 130;
-      case 'our_company': return 170;
-      case 'source': return 140;
-      case 'source_name': return 150;
-      case 'created_by':
-      case 'entry_by': return 140;
-      case 'assigned_to_name': return 200;
-      case 'status': return 140;
-      case 'priority': return 130;
-      case 'company': return 180;
-      case 'business_type': return 140;
-      case 'business_gst': return 150;
-      case 'name':
-      case 'cp2_name':
-      case 'cp3_name': return 150;
-      case 'phone':
-      case 'cp1_mobile_2':
-      case 'cp1_alt_1':
-      case 'cp1_alt_2':
-      case 'cp2_mobile_1':
-      case 'cp2_mobile_2':
-      case 'cp2_alt_1':
-      case 'cp2_alt_2':
-      case 'cp3_mobile_1':
-      case 'cp3_mobile_2':
-      case 'cp3_alt_1':
-      case 'cp3_alt_2':
-      case 'business_contact_1':
-      case 'business_contact_2':
-      case 'business_alt_1':
-      case 'business_alt_2':
-      case 'business_contact_aio': return 140;
-      case 'email':
-      case 'cp1_email_2':
-      case 'cp2_email_1':
-      case 'cp2_email_2':
-      case 'cp3_email_1':
-      case 'cp3_email_2':
-      case 'business_email_1':
-      case 'business_email_2':
-      case 'business_alt_email_1':
-      case 'business_alt_email_2':
-      case 'business_email_aio': return 180;
-      case 'state_name':
-      case 'district_name': return 140;
-      case 'city_name':
-      case 'tehsil_name':
-      case 'block_name': return 130;
-      case 'pin_code': return 100;
-      case 'address': return 240;
-      case 'requirement': return 220;
-      case 'investment': return 130;
-      case 'buying_timeline': return 140;
-      default: return 150;
-    }
-  };
+  // Column width resizing hook with persistence & drag isolation
+  const {
+    columnWidths,
+    isResizing,
+    handleResizeStart,
+    resetColWidth,
+    resetAllColWidths
+  } = useTableColumnResize(DEFAULT_CLIENT_REPORT_COL_WIDTHS, 'crm_client_report_col_widths', CLIENT_REPORT_MIN_WIDTHS);
 
   const getColWidth = (key) => {
-    return columnWidths[key] || getDefaultColWidth(key);
-  };
-
-  const handleMouseDownResize = (colKey, initialWidth, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizingColKey(colKey);
-
-    const startX = e.clientX;
-    const startWidth = initialWidth || 160;
-
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + deltaX)));
-      setColumnWidths(prev => ({
-        ...prev,
-        [colKey]: newWidth
-      }));
-    };
-
-    const handleMouseUp = () => {
-      setResizingColKey(null);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleTouchStartResize = (colKey, initialWidth, e) => {
-    if (!e.touches || e.touches.length === 0) return;
-    e.stopPropagation();
-    setResizingColKey(colKey);
-
-    const startX = e.touches[0].clientX;
-    const startWidth = initialWidth || 160;
-
-    const handleTouchMove = (moveEvent) => {
-      if (!moveEvent.touches || moveEvent.touches.length === 0) return;
-      const deltaX = moveEvent.touches[0].clientX - startX;
-      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + deltaX)));
-      setColumnWidths(prev => ({
-        ...prev,
-        [colKey]: newWidth
-      }));
-    };
-
-    const handleTouchEnd = () => {
-      setResizingColKey(null);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
-
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
-  };
-
-  const handleResetColWidth = (colKey) => {
-    setColumnWidths(prev => {
-      const next = { ...prev };
-      delete next[colKey];
-      return next;
-    });
+    return columnWidths[key] || DEFAULT_CLIENT_REPORT_COL_WIDTHS[key] || 150;
   };
 
   const visibleReportCols = useMemo(() => {
@@ -1653,10 +1579,11 @@ export default function ClientReport({
                 onReset={() => {
                   setVisibleColumns(ALL_COLUMNS.slice(0, 14).map(c => c.key));
                   setReportColumns(ALL_COLUMNS);
-                  setColumnWidths({});
+                  resetAllColWidths();
                   try {
                     localStorage.removeItem('clientReportVisibleColumns');
                     localStorage.removeItem('clientReportColumnsOrder');
+                    localStorage.removeItem('crm_client_report_col_widths');
                     localStorage.removeItem('crm_client_report_column_sizing');
                   } catch (e) {}
                 }}
@@ -1849,7 +1776,7 @@ export default function ClientReport({
 
       {/* Table Container - Horizontally Scrollable */}
       <div className="table-responsive-wrapper" style={{ flex: 1, overflowX: 'auto' }}>
-        <table style={{ width: `${totalReportTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+        <MobileTableView id="ClientReport-1"><table style={{ width: `${totalReportTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: 'var(--th-bg)' }}>
             <tr>
               {(canDelete || canAssign) && (
@@ -1890,8 +1817,7 @@ export default function ClientReport({
                       whiteSpace: 'normal', 
                       verticalAlign: 'middle',
                       width: `${colWidth}px`,
-                      minWidth: '60px',
-                      maxWidth: `${colWidth}px`,
+                      minWidth: `${CLIENT_REPORT_MIN_WIDTHS[col.key] || 60}px`,
                       boxSizing: 'border-box'
                     }}
                   >
@@ -1938,40 +1864,12 @@ export default function ClientReport({
                     )}
 
                     {/* Column Resizer Handle */}
-                    <div
-                      onMouseDown={(e) => handleMouseDownResize(col.key, colWidth, e)}
-                      onTouchStart={(e) => handleTouchStartResize(col.key, colWidth, e)}
-                      onClick={(e) => e.stopPropagation()}
-                      onDoubleClick={() => handleResetColWidth(col.key)}
-                      className={`column-resizer ${resizingColKey === col.key ? 'is-resizing' : ''}`}
-                      title="Drag to resize column width | Double-click to reset"
-                      style={{
-                        position: 'absolute',
-                        right: '-6px',
-                        top: 0,
-                        height: '100%',
-                        width: '14px',
-                        cursor: 'col-resize',
-                        userSelect: 'none',
-                        touchAction: 'none',
-                        zIndex: 25,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <div 
-                        className="resizer-bar"
-                        style={{
-                          width: resizingColKey === col.key ? '4px' : '3px',
-                          height: '75%',
-                          backgroundColor: resizingColKey === col.key ? 'var(--accent-color, #2563eb)' : '#64748b',
-                          borderRadius: '3px',
-                          boxShadow: resizingColKey === col.key ? '0 0 6px var(--accent-color)' : '0 1px 2px rgba(0,0,0,0.15)',
-                          transition: 'all 0.15s ease'
-                        }}
-                      />
-                    </div>
+                    <ColumnResizer
+                      colKey={col.key}
+                      isResizing={isResizing(col.key)}
+                      onResizeStart={handleResizeStart}
+                      onReset={resetColWidth}
+                    />
                   </th>
                 );
               })}
@@ -1992,7 +1890,7 @@ export default function ClientReport({
                       : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))')),
                   borderLeft: activeRowId === lead.id ? '3px solid var(--accent-color)' : (selectedRows.includes(lead.id) ? '3px solid #3b82f6' : '3px solid transparent'),
                   cursor: 'pointer',
-                  transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
+                  transition: 'background-color 0.15s ease'
                 }}
               >
                 {(canDelete || canAssign) && (
@@ -2020,7 +1918,6 @@ export default function ClientReport({
                 {visibleReportCols.map(col => {
                   let val = lead[col.key];
                   if (col.key === 'created_at' && val) val = new Date(val).toLocaleString();
-                  const colWidth = getColWidth(col.key);
                   return (
                     <td 
                       key={col.key} 
@@ -2031,8 +1928,6 @@ export default function ClientReport({
                         whiteSpace: 'normal', 
                         wordBreak: 'break-word',
                         lineHeight: 1.35,
-                        width: `${colWidth}px`, 
-                        minWidth: '60px', 
                         borderRight: '1px solid var(--border-light)',
                         boxSizing: 'border-box',
                         verticalAlign: 'top'
@@ -2053,7 +1948,7 @@ export default function ClientReport({
               </tr>
             )}
           </tbody>
-        </table>
+        </table></MobileTableView>
       </div>
 
       {/* Pagination Controls */}
