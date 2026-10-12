@@ -37,7 +37,7 @@ const SETTINGS_TABS = [
   { id: 'saas_master', label: 'SaaS Billing & Pricing Studio', icon: <DollarSign size={18} /> }
 ];
 
-export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) {
+export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '' }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
 
   const [activeTab, setActiveTab] = useState('business');
@@ -125,7 +125,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '' }) 
 
       {/* Settings Content Area (Full Width) */}
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
-        {activeTab === 'business' && <BusinessProfile />}
+        {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'crm' && <CRMConfig />}
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'notifications' && <NotificationsConfig />}

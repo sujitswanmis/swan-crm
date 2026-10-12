@@ -6929,7 +6929,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('settings', moduleAccess, userRole) && visitedTabs.has('settings')}
               >
                 <ErrorBoundary>
-                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} />
+                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

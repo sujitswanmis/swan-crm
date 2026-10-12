@@ -5,6 +5,7 @@ import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save,
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
 export default function AddEditUserModal({
   isOpen,
@@ -17,6 +18,8 @@ export default function AddEditUserModal({
 }) {
   const isEdit = Boolean(user);
   const [activeStep, setActiveStep] = useState('personal'); // 'personal' | 'job' | 'reporting' | 'auth'
+  const [availableBranches, setAvailableBranches] = useState([]);
+  const [customBranchInput, setCustomBranchInput] = useState(false);
   
   const [formData, setFormData] = useState({
     emp_id: '',
@@ -84,6 +87,18 @@ export default function AddEditUserModal({
     setActiveStep('personal');
     setErrorMsg('');
   }, [user, isOpen, departments]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isOpen) {
+      getTenantBranches(formData.company || 'Swan Hosting').then(res => {
+        if (isMounted && res.success && Array.isArray(res.branches)) {
+          setAvailableBranches(res.branches);
+        }
+      }).catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [isOpen, formData.company]);
 
   if (!isOpen) return null;
 
@@ -520,26 +535,72 @@ export default function AddEditUserModal({
                   </div>
 
                   <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
-                      Location / Branch / Plant Name
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                        Location / Branch / Plant Name
+                      </label>
+                      {availableBranches.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomBranchInput(!customBranchInput)}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          {customBranchInput ? '← Select from Created Branches' : '+ Type Custom Location'}
+                        </button>
+                      )}
+                    </div>
                     <div style={{ position: 'relative' }}>
                       <MapPin size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                      <input
-                        type="text"
-                        value={formData.work_location_name}
-                        onChange={e => handleChange('work_location_name', e.target.value)}
-                        placeholder="e.g. Head Office Delhi / Factory Unit 1"
-                        style={{
-                          width: '100%',
-                          padding: '0.55rem 0.75rem 0.55rem 2.2rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-light)',
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.85rem'
-                        }}
-                      />
+                      {!customBranchInput && availableBranches.length > 0 ? (
+                        <select
+                          value={formData.work_location_name}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '__custom__') {
+                              setCustomBranchInput(true);
+                            } else {
+                              handleChange('work_location_name', val);
+                              const matched = availableBranches.find(b => b.branch_name === val);
+                              if (matched?.location_type) {
+                                handleChange('work_location_type', matched.location_type);
+                              }
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <option value="">-- Select Branch Office / Plant --</option>
+                          {availableBranches.map(br => (
+                            <option key={br.id || br.branch_code} value={br.branch_name}>
+                              {br.branch_name} ({br.branch_code}) - {br.location_type}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Enter Custom Location...</option>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={formData.work_location_name}
+                          onChange={e => handleChange('work_location_name', e.target.value)}
+                          placeholder="e.g. Head Office Delhi / Factory Unit 1"
+                          style={{
+                            width: '100%',
+                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
