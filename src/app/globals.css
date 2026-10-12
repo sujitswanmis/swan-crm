@@ -1102,7 +1102,8 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior-y: contain;
-    padding: 0.65rem 0.35rem;
+    padding: 0.4rem 0.35rem;
+    gap: 2px;
   }
 
   .sidebar.collapsed .nav-list > * {
@@ -1110,7 +1111,23 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   }
 
   .sidebar.collapsed .nav-item {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    margin: 1px auto !important;
     gap: 0;
+  }
+
+  .sidebar.collapsed .category-header {
+    margin: 6px 0.5rem 4px !important;
+  }
+
+  .sidebar.collapsed .category-modules-list.expanded {
+    padding: 0;
+  }
+
+  .sidebar.collapsed .category-modules-inner {
+    gap: 2px;
   }
 
   .sidebar.collapsed .nav-item > span,

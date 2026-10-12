@@ -47,7 +47,8 @@ import {
   updateTenantValidityAndStatus,
   softDeleteTenantWorkspace,
   restoreTenantWorkspace,
-  permanentDeleteTenantWorkspace
+  permanentDeleteTenantWorkspace,
+  addNewProcessModule
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
@@ -114,6 +115,17 @@ export default function SuperAdminSaasPanel() {
   const [inputValidityDate, setInputValidityDate] = useState('');
   const [inputValidityStatus, setInputValidityStatus] = useState('ACTIVE');
   const [savingValidity, setSavingValidity] = useState(false);
+  const [validityError, setValidityError] = useState(null);
+
+  // Add New Module Modal State
+  const [showAddModuleModal, setShowAddModuleModal] = useState(false);
+  const [newModCode, setNewModCode] = useState('');
+  const [newModName, setNewModName] = useState('');
+  const [newModCategory, setNewModCategory] = useState('OPERATIONS');
+  const [newModDesc, setNewModDesc] = useState('');
+  const [newModRate, setNewModRate] = useState(99);
+  const [addingModule, setAddingModule] = useState(false);
+  const [addModuleError, setAddModuleError] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -291,7 +303,11 @@ export default function SuperAdminSaasPanel() {
         userSeats: planData?.seats || 5,
         cycleCode: planData?.cycleCode || 'YEARLY',
         trialDays: createTrialDays,
-        isDraft
+        isDraft,
+        dealPrice: planData?.dealPrice,
+        discountPercent: planData?.discountPercent,
+        planPrice: planData?.planPrice,
+        dealNotes: planData?.dealNotes
       });
 
       if (res.success) {
@@ -458,6 +474,7 @@ export default function SuperAdminSaasPanel() {
 
   const handleOpenEditValidity = (t) => {
     setEditValidityTenant(t);
+    setValidityError(null);
     let dateStr = '';
     if (t.subscription?.valid_until) {
       const d = new Date(t.subscription.valid_until);
@@ -477,6 +494,7 @@ export default function SuperAdminSaasPanel() {
   const handleSaveValidity = async () => {
     if (!editValidityTenant) return;
     setSavingValidity(true);
+    setValidityError(null);
     try {
       const res = await updateTenantValidityAndStatus({
         tenantId: editValidityTenant.id,
@@ -488,12 +506,48 @@ export default function SuperAdminSaasPanel() {
         setEditValidityTenant(null);
         await loadData();
       } else {
+        setValidityError(res.error || 'Failed to update validity');
         showNotification(res.error, true);
       }
     } catch (err) {
+      setValidityError(err.message);
       showNotification(err.message, true);
     } finally {
       setSavingValidity(false);
+    }
+  };
+
+  const handleAddNewModule = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newModCode.trim() || !newModName.trim()) {
+      setAddModuleError('Module Code aur Display Name required hain!');
+      return;
+    }
+    setAddingModule(true);
+    setAddModuleError(null);
+    try {
+      const res = await addNewProcessModule({
+        processCode: newModCode,
+        displayName: newModName,
+        category: newModCategory,
+        description: newModDesc,
+        monthlyRate: newModRate
+      });
+      if (res.success) {
+        showNotification(res.message);
+        setShowAddModuleModal(false);
+        setNewModCode('');
+        setNewModName('');
+        setNewModDesc('');
+        setNewModRate(99);
+        await loadData();
+      } else {
+        setAddModuleError(res.error || 'Failed to add module');
+      }
+    } catch (err) {
+      setAddModuleError(err.message);
+    } finally {
+      setAddingModule(false);
     }
   };
 
@@ -634,12 +688,45 @@ export default function SuperAdminSaasPanel() {
         <div>
           {/* Process Catalog Table */}
           <div className="card" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-              8 Business Modules — Monthly Rate Editor (₹ / User / Mo)
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              Any price adjustments made here will immediately reflect in the pricing calculator and client invoices.
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>
+                  {catalog.length} Business Modules — Monthly Rate Editor (₹ / User / Mo)
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
+                  Any price adjustments made here will immediately reflect in the pricing calculator and client invoices.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddModuleModal(true);
+                  setAddModuleError(null);
+                  setNewModCode('');
+                  setNewModName('');
+                  setNewModCategory('OPERATIONS');
+                  setNewModDesc('');
+                  setNewModRate(99);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: '#4338ca',
+                  color: '#ffffff',
+                  padding: '0.55rem 1.15rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.86rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
+                }}
+              >
+                <PlusCircle size={16} /> + Add New Business Module
+              </button>
+            </div>
 
             <div style={{ overflowX: 'auto' }}>
               <MobileTableView id="SaaS/SuperAdminSaasPanel-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -2266,6 +2353,13 @@ export default function SuperAdminSaasPanel() {
               </button>
             </div>
 
+            {validityError && (
+              <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '0.65rem 0.85rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <AlertTriangle size={16} />
+                <span>{validityError}</span>
+              </div>
+            )}
+
             <div style={{ marginBottom: '1.25rem' }}>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
                 Exact Expiry Date (YYYY-MM-DD):
@@ -2381,6 +2475,155 @@ export default function SuperAdminSaasPanel() {
                 {savingValidity ? 'Saving...' : 'Save Expiry & Status'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add New Business Module */}
+      {showAddModuleModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '500px', borderRadius: '14px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#111827', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <PlusCircle size={18} color="#4338ca" /> + Add New Business Module
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Will automatically appear in Onboarding, Pricing Calculator & Client Subscriptions
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModuleModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {addModuleError && (
+              <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '0.65rem 0.85rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <AlertTriangle size={16} />
+                <span>{addModuleError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddNewModule} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                  Module Unique Code * (Uppercase, e.g. INVENTORY_MANAGEMENT)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. INVENTORY_MANAGEMENT"
+                  value={newModCode}
+                  onChange={(e) => setNewModCode(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontWeight: 600, fontSize: '0.9rem' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                  Module Display Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Smart Inventory & Warehouse Tracking"
+                  value={newModName}
+                  onChange={(e) => setNewModName(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    Category
+                  </label>
+                  <select
+                    value={newModCategory}
+                    onChange={(e) => setNewModCategory(e.target.value)}
+                    style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
+                  >
+                    <option value="OPERATIONS">OPERATIONS</option>
+                    <option value="SALES">SALES</option>
+                    <option value="TELEPHONY">TELEPHONY</option>
+                    <option value="HR">HR</option>
+                    <option value="FINANCE">FINANCE</option>
+                    <option value="COMBO">COMBO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    Monthly Rate (₹/User/Mo) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="99"
+                    value={newModRate}
+                    onChange={(e) => setNewModRate(e.target.value)}
+                    style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem', fontWeight: 700 }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                  Description
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Short description of what features this module unlocks..."
+                  value={newModDesc}
+                  onChange={(e) => setNewModDesc(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.85rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModuleModal(false)}
+                  style={{ padding: '0.6rem 1.15rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingModule}
+                  style={{
+                    padding: '0.6rem 1.4rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#4338ca',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {addingModule ? 'Saving...' : 'Add to Process Catalog 🚀'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -59,6 +59,11 @@ export default function PlanPricingCalculator({
   const [seatCount, setSeatCount] = useState(Math.max(1, parseInt(initialSeats, 10) || 5));
   const [selectedCycle, setSelectedCycle] = useState(initialCycle);
 
+  // Negotiated Deal Custom Inputs
+  const [customDiscount, setCustomDiscount] = useState(null);
+  const [customDealPrice, setCustomDealPrice] = useState('');
+  const [dealNotes, setDealNotes] = useState('');
+
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
@@ -119,7 +124,8 @@ export default function PlanPricingCalculator({
   };
 
   const months = activeCycle.months_count || 1;
-  const discountPercent = Number(activeCycle.discount_percent || 0);
+  const standardDiscountPercent = Number(activeCycle.discount_percent || 0);
+  const discountPercent = customDiscount !== null ? customDiscount : standardDiscountPercent;
 
   const selectedItems = catalog.filter((p) => selectedProcesses.includes(p.process_code));
   const ratePerSeatMonthly = selectedItems.reduce(
@@ -131,8 +137,17 @@ export default function PlanPricingCalculator({
   const grossTotal = monthlySubtotal * months;
   const discountAmount = Math.round(grossTotal * (discountPercent / 100) * 100) / 100;
   const netTotal = Math.max(0, Math.round((grossTotal - discountAmount) * 100) / 100);
+
+  const finalAgreedAmount = customDealPrice !== '' && !isNaN(Number(customDealPrice))
+    ? Math.max(0, Number(customDealPrice))
+    : netTotal;
+
+  const effectiveDiscountPercent = customDealPrice !== '' && grossTotal > 0
+    ? Math.max(0, Math.round(((grossTotal - finalAgreedAmount) / grossTotal) * 100))
+    : discountPercent;
+
   const effectiveMonthlyPerSeat =
-    months > 0 && seatCount > 0 ? Math.round(netTotal / (months * seatCount)) : 0;
+    months > 0 && seatCount > 0 ? Math.round(finalAgreedAmount / (months * seatCount)) : 0;
 
   // Notify parent of updates
   useEffect(() => {
@@ -537,10 +552,10 @@ export default function PlanPricingCalculator({
         >
           <div>
             <div style={{ fontSize: '0.8rem', color: '#c7d2fe', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Plan Pricing Summary & Estimated Total
+              Plan Pricing Summary & Agreed Deal Total
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.2rem' }}>
-              <span style={{ fontSize: '2.1rem', fontWeight: 800 }}>₹{netTotal.toLocaleString('en-IN')}</span>
+              <span style={{ fontSize: '2.1rem', fontWeight: 800 }}>₹{finalAgreedAmount.toLocaleString('en-IN')}</span>
               <span style={{ fontSize: '0.9rem', color: '#a5b4fc' }}>
                 / {activeCycle.display_name} ({seatCount} Users)
               </span>
@@ -570,20 +585,117 @@ export default function PlanPricingCalculator({
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>₹{ratePerSeatMonthly} / user / mo</div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>Gross Amount:</span>
+            <span style={{ opacity: 0.75 }}>Gross Amount (MRP):</span>
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>₹{grossTotal.toLocaleString('en-IN')}</div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>Term Discount ({discountPercent}%):</span>
+            <span style={{ opacity: 0.75 }}>Effective Discount ({effectiveDiscountPercent}%):</span>
             <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#86efac' }}>
-              - ₹{discountAmount.toLocaleString('en-IN')}
+              - ₹{Math.max(0, grossTotal - finalAgreedAmount).toLocaleString('en-IN')}
             </div>
           </div>
           <div>
-            <span style={{ opacity: 0.75 }}>Net Total Payable:</span>
-            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#ffffff' }}>
-              ₹{netTotal.toLocaleString('en-IN')}
+            <span style={{ opacity: 0.75 }}>Final Agreed Deal:</span>
+            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#34d399' }}>
+              ₹{finalAgreedAmount.toLocaleString('en-IN')}
             </div>
+          </div>
+        </div>
+
+        {/* NEGOTIATED DEAL & CUSTOM PRICING INPUTS */}
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.08)',
+          border: '1px solid rgba(255, 255, 255, 0.22)',
+          borderRadius: '10px',
+          padding: '0.9rem 1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.6rem', color: '#fef08a', fontWeight: 700, fontSize: '0.88rem' }}>
+            <Sparkles size={15} /> 🤝 Negotiated Deal & Final Agreed Pricing (डील की तय कीमत)
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#c7d2fe', marginBottom: '0.25rem' }}>
+                Catalog / Plan Price (MRP)
+              </label>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', padding: '0.35rem 0' }}>
+                ₹{grossTotal.toLocaleString('en-IN')}
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#c7d2fe', marginBottom: '0.25rem' }}>
+                Negotiated Discount (%):
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder={`${discountPercent}%`}
+                value={customDiscount !== null ? customDiscount : discountPercent}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  setCustomDiscount(val);
+                  setCustomDealPrice('');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.65rem',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  background: 'rgba(255,255,255,0.15)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.9rem'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#86efac', fontWeight: 700, marginBottom: '0.25rem' }}>
+                Actual Agreed Deal Price (₹ Final):
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder={String(netTotal)}
+                value={customDealPrice !== '' ? customDealPrice : ''}
+                onChange={(e) => {
+                  setCustomDealPrice(e.target.value);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.65rem',
+                  borderRadius: '6px',
+                  border: '1.5px solid #34d399',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#34d399',
+                  fontWeight: 800,
+                  fontSize: '1rem'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginTop: '0.6rem' }}>
+            <label style={{ display: 'block', fontSize: '0.72rem', color: '#c7d2fe', marginBottom: '0.2rem' }}>
+              Deal Notes / Remarks (Kitna me deal close hua tha):
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Special yearly deal agreed by management"
+              value={dealNotes}
+              onChange={(e) => setDealNotes(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.65rem',
+                borderRadius: '6px',
+                border: '1px solid rgba(255,255,255,0.25)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#ffffff',
+                fontSize: '0.8rem'
+              }}
+            />
           </div>
         </div>
 
@@ -615,15 +727,19 @@ export default function PlanPricingCalculator({
                   processCodes: selectedProcesses,
                   seats: seatCount,
                   cycleCode: selectedCycle,
+                  dealPrice: finalAgreedAmount,
+                  discountPercent: effectiveDiscountPercent,
+                  planPrice: grossTotal,
+                  dealNotes,
                   calculation: {
                     ratePerSeatMonthly,
                     seatCount,
                     months,
-                    discountPercent,
+                    discountPercent: effectiveDiscountPercent,
                     monthlySubtotal,
                     grossTotal,
-                    discountAmount,
-                    netTotal,
+                    discountAmount: Math.max(0, grossTotal - finalAgreedAmount),
+                    netTotal: finalAgreedAmount,
                     effectiveMonthlyPerSeat
                   }
                 });
@@ -654,15 +770,19 @@ export default function PlanPricingCalculator({
                   processCodes: selectedProcesses,
                   seats: seatCount,
                   cycleCode: selectedCycle,
+                  dealPrice: finalAgreedAmount,
+                  discountPercent: effectiveDiscountPercent,
+                  planPrice: grossTotal,
+                  dealNotes,
                   calculation: {
                     ratePerSeatMonthly,
                     seatCount,
                     months,
-                    discountPercent,
+                    discountPercent: effectiveDiscountPercent,
                     monthlySubtotal,
                     grossTotal,
-                    discountAmount,
-                    netTotal,
+                    discountAmount: Math.max(0, grossTotal - finalAgreedAmount),
+                    netTotal: finalAgreedAmount,
                     effectiveMonthlyPerSeat
                   }
                 });

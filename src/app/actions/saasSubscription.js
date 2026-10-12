@@ -45,13 +45,36 @@ export async function getProcessCatalog(tenantId = null) {
     const admin = getAdminClient();
     const config = await getDynamicConfig(admin);
     const catalogRates = config?.rates || {};
+    const customModules = config?.custom_modules || [];
 
+    // Base catalog from DEFAULT_PROCESS_CATALOG
     let catalog = DEFAULT_PROCESS_CATALOG.map(item => ({
       ...item,
       monthly_rate_per_user: typeof catalogRates[item.process_code] === 'number'
         ? catalogRates[item.process_code]
         : item.monthly_rate_per_user
     }));
+
+    // Append dynamic custom modules added by Super Admin
+    for (const cMod of customModules) {
+      const existingIdx = catalog.findIndex(x => x.process_code === cMod.process_code);
+      const modObj = {
+        process_code: cMod.process_code,
+        display_name: cMod.display_name,
+        category: cMod.category || 'OPERATIONS',
+        description: cMod.description || '',
+        monthly_rate_per_user: typeof catalogRates[cMod.process_code] === 'number'
+          ? catalogRates[cMod.process_code]
+          : Number(cMod.monthly_rate_per_user || 99),
+        is_active: cMod.is_active !== false,
+        is_custom_added: true
+      };
+      if (existingIdx >= 0) {
+        catalog[existingIdx] = modObj;
+      } else {
+        catalog.push(modObj);
+      }
+    }
 
     // If tenantId specified, check for tenant negotiated custom rates
     if (tenantId && tenantId !== DEFAULT_TENANT_ID && config?.tenant_rates?.[tenantId]) {
@@ -69,6 +92,74 @@ export async function getProcessCatalog(tenantId = null) {
   } catch (err) {
     console.error('getProcessCatalog error:', err);
     return { success: true, catalog: DEFAULT_PROCESS_CATALOG };
+  }
+}
+
+/**
+ * Super Admin: Add a new custom module to the process catalog
+ */
+export async function addNewProcessModule({
+  processCode,
+  displayName,
+  category = 'OPERATIONS',
+  description = '',
+  monthlyRate = 99
+}) {
+  try {
+    const admin = getAdminClient();
+    if (!processCode || !displayName) {
+      throw new Error('Module Code और Display Name आवश्यक हैं।');
+    }
+
+    const cleanCode = String(processCode).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const cleanName = String(displayName).trim();
+    const rate = Math.max(0, Number(monthlyRate) || 0);
+
+    const config = (await getDynamicConfig(admin)) || {};
+    const customModules = config.custom_modules || [];
+    const rates = config.rates || {};
+
+    const existingIdx = customModules.findIndex(m => m.process_code === cleanCode);
+    const newModule = {
+      process_code: cleanCode,
+      display_name: cleanName,
+      category: category || 'OPERATIONS',
+      description: description || '',
+      monthly_rate_per_user: rate,
+      is_active: true,
+      created_at: new Date().toISOString()
+    };
+
+    if (existingIdx >= 0) {
+      customModules[existingIdx] = newModule;
+    } else {
+      customModules.push(newModule);
+    }
+
+    rates[cleanCode] = rate;
+    config.custom_modules = customModules;
+    config.rates = rates;
+    config.updated_at = new Date().toISOString();
+
+    const { error } = await admin
+      .from('tenant_entitlements')
+      .upsert({
+        tenant_id: DEFAULT_TENANT_ID,
+        module_key: CONFIG_ENTITLEMENT_KEY,
+        is_enabled: true,
+        config_json: config
+      }, { onConflict: 'tenant_id,module_key' });
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      module: newModule,
+      message: `नया मॉड्यूल '${cleanName}' (${cleanCode}) कैटलॉग में सफलतापूर्वक जुड़ गया!`
+    };
+  } catch (err) {
+    console.error('addNewProcessModule error:', err);
+    return { success: false, error: err.message };
   }
 }
 
@@ -363,7 +454,7 @@ export async function getAllTenantsWithSubscriptions() {
       }
 
       let resolvedStatus = 'ACTIVE';
-      if (t.status === 'DELETED') {
+      if (t.status === 'ARCHIVED' || t.status === 'DELETED') {
         resolvedStatus = 'DELETED';
       } else if (t.status === 'DRAFT') {
         resolvedStatus = 'DRAFT';
@@ -439,8 +530,7 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
         .from('tenant_subscriptions')
         .update({
           valid_until: newExpiry.toISOString(),
-          status: 'ACTIVE',
-          updated_at: new Date().toISOString()
+          status: 'ACTIVE'
         })
         .eq('id', existing.id);
       if (error) throw error;
@@ -558,7 +648,11 @@ export async function createTenantWorkspace({
   userSeats = 5,
   cycleCode = 'YEARLY',
   trialDays = 0,
-  isDraft = false
+  isDraft = false,
+  dealPrice = null,
+  discountPercent = null,
+  planPrice = null,
+  dealNotes = ''
 }) {
   try {
     const admin = getAdminClient();
@@ -683,13 +777,17 @@ export async function createTenantWorkspace({
       expiryDate = new Date(now);
       expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
 
-      const priceRes = await calculatePlanPrice({
-        processCodes,
-        userSeats,
-        cycleCode,
-        tenantId: newTenant.id
-      });
-      finalAmount = priceRes.success ? priceRes.final_amount : 0;
+      if (dealPrice !== null && !isNaN(Number(dealPrice)) && Number(dealPrice) >= 0) {
+        finalAmount = Number(dealPrice);
+      } else {
+        const priceRes = await calculatePlanPrice({
+          processCodes,
+          userSeats,
+          cycleCode,
+          tenantId: newTenant.id
+        });
+        finalAmount = priceRes.success ? priceRes.final_amount : 0;
+      }
     }
 
     // 5. Insert Subscription Record
@@ -710,7 +808,7 @@ export async function createTenantWorkspace({
       console.warn('Subscription creation notice:', subError.message);
     }
 
-    // 6. Insert Tenant Entitlements for Chosen Modules
+    // 6. Insert Tenant Entitlements for Chosen Modules with deal terms
     const entitlementsRows = (processCodes || []).map((code) => ({
       tenant_id: newTenant.id,
       module_key: code,
@@ -718,7 +816,13 @@ export async function createTenantWorkspace({
       config_json: {
         activated_at: now.toISOString(),
         plan: 'SAAS_MODULAR',
-        billing_cycle: cycleCode
+        billing_cycle: cycleCode,
+        deal_terms: {
+          catalog_price: Number(planPrice) || null,
+          discount_percent: Number(discountPercent) || null,
+          deal_price: finalAmount,
+          deal_notes: dealNotes || null
+        }
       }
     }));
 
@@ -783,8 +887,7 @@ export async function purchaseAddonSeats(tenantId, additionalSeats) {
       const { error } = await admin
         .from('tenant_subscriptions')
         .update({
-          user_seat_limit: newLimit,
-          updated_at: new Date().toISOString()
+          user_seat_limit: newLimit
         })
         .eq('id', sub.id);
       if (error) throw error;
@@ -906,8 +1009,7 @@ export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
         .update({
           valid_until: newExpiry.toISOString(),
           status: 'TRIAL',
-          billing_cycle: `TRIAL_${days}D`,
-          updated_at: now.toISOString()
+          billing_cycle: `TRIAL_${days}D`
         })
         .eq('id', existing.id);
       if (error) throw error;
@@ -964,13 +1066,21 @@ export async function updateTenantValidityAndStatus({
 
     const normalizedStatus = status === 'FREE TRIAL' ? 'TRIAL' : status;
 
+    // Determine safe status for tenants table (must satisfy tenants_status_check: 'DRAFT', 'TRIAL', 'ACTIVE', 'GRACE_PERIOD', 'READ_ONLY', 'SUSPENDED', 'ARCHIVED')
+    let tenantTableStatus = 'ACTIVE';
+    if (normalizedStatus === 'DRAFT') tenantTableStatus = 'DRAFT';
+    else if (normalizedStatus === 'TRIAL') tenantTableStatus = 'TRIAL';
+    else if (normalizedStatus === 'DELETED' || normalizedStatus === 'ARCHIVED') tenantTableStatus = 'ARCHIVED';
+    else if (normalizedStatus === 'EXPIRED') tenantTableStatus = 'SUSPENDED';
+    else tenantTableStatus = 'ACTIVE';
+
     // 1. Update tenants table
     await admin.from('tenants').update({
-      status: normalizedStatus,
+      status: tenantTableStatus,
       updated_at: now.toISOString()
     }).eq('id', tenantId);
 
-    // 2. Update subscription record
+    // 2. Update subscription record (NO updated_at column in tenant_subscriptions)
     const { data: existing } = await admin
       .from('tenant_subscriptions')
       .select('*')
@@ -981,8 +1091,7 @@ export async function updateTenantValidityAndStatus({
 
     const subPayload = {
       valid_until: expiryIso,
-      status: normalizedStatus,
-      updated_at: now.toISOString()
+      status: normalizedStatus
     };
     if (billingCycle) {
       subPayload.billing_cycle = billingCycle;
@@ -1032,13 +1141,13 @@ export async function softDeleteTenantWorkspace(tenantId) {
 
     const { error: tErr } = await admin
       .from('tenants')
-      .update({ status: 'DELETED', updated_at: now })
+      .update({ status: 'ARCHIVED', updated_at: now })
       .eq('id', tenantId);
     if (tErr) throw tErr;
 
     await admin
       .from('tenant_subscriptions')
-      .update({ status: 'DELETED', updated_at: now })
+      .update({ status: 'ARCHIVED' })
       .eq('tenant_id', tenantId);
 
     return {
@@ -1070,7 +1179,7 @@ export async function restoreTenantWorkspace(tenantId) {
 
     await admin
       .from('tenant_subscriptions')
-      .update({ status: 'ACTIVE', updated_at: now })
+      .update({ status: 'ACTIVE' })
       .eq('tenant_id', tenantId);
 
     return {
@@ -1153,8 +1262,7 @@ export async function recordPaymentAndGenerateInvoice({
           valid_until: newExpiry.toISOString(),
           status: 'ACTIVE',
           amount: Number(amount || 0),
-          billing_cycle: Number(months) === 12 ? 'YEARLY' : (Number(months) === 6 ? 'HALF_YEARLY' : 'MONTHLY'),
-          updated_at: now.toISOString()
+          billing_cycle: Number(months) === 12 ? 'YEARLY' : (Number(months) === 6 ? 'HALF_YEARLY' : 'MONTHLY')
         })
         .eq('id', sub.id);
     } else {
