@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronDown, Check, X, User, Users, Building, Shield, CheckSquare, Square } from 'lucide-react';
+import { normalizeReportingValue, resolveEmployeeReference } from '@/utils/reportingHierarchy';
 
 export default function SearchableEmployeeSelect({
   employees = [],
@@ -20,6 +21,9 @@ export default function SearchableEmployeeSelect({
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
+  const singleReference = normalizeReportingValue(selectedEmail);
+  const resolvedSingleEmployee = useMemo(() => resolveEmployeeReference(singleReference, employees), [singleReference, employees]);
+  const singleEmail = (resolvedSingleEmployee?.email || singleReference).toLowerCase();
 
   // Close on outside click
   useEffect(() => {
@@ -59,12 +63,12 @@ export default function SearchableEmployeeSelect({
   // Single select employee
   const selectedEmployee = useMemo(() => {
     if (isMulti) return null;
-    if (!selectedEmail) return null;
-    if (selectedEmail === 'ALL' && allowAllStaff) {
+    if (!singleReference) return null;
+    if (singleReference === 'ALL' && allowAllStaff) {
       return { email: 'ALL', name: allStaffLabel, department: 'All Staff' };
     }
-    return employees.find(e => (e.email || '').toLowerCase() === selectedEmail.toLowerCase()) || null;
-  }, [isMulti, selectedEmail, employees, allowAllStaff, allStaffLabel]);
+    return resolvedSingleEmployee || { email: singleReference, name: singleReference };
+  }, [isMulti, singleReference, resolvedSingleEmployee, allowAllStaff, allStaffLabel]);
 
   // Multi selected objects
   const selectedMultiEmployees = useMemo(() => {
@@ -365,7 +369,7 @@ export default function SearchableEmployeeSelect({
                   gap: '0.65rem',
                   cursor: 'pointer',
                   borderBottom: '1px solid var(--border-color, #f1f5f9)',
-                  background: selectedEmail === 'ALL' ? '#f5f3ff' : 'transparent',
+                  background: singleReference === 'ALL' ? '#f5f3ff' : 'transparent',
                   transition: 'background 0.15s ease'
                 }}
               >
@@ -376,7 +380,7 @@ export default function SearchableEmployeeSelect({
                   <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#6d28d9' }}>{allStaffLabel}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>Assign to everyone in the company</div>
                 </div>
-                {selectedEmail === 'ALL' && <Check size={16} style={{ color: '#8b5cf6', flexShrink: 0 }} />}
+                {singleReference === 'ALL' && <Check size={16} style={{ color: '#8b5cf6', flexShrink: 0 }} />}
               </div>
             )}
 
@@ -390,7 +394,7 @@ export default function SearchableEmployeeSelect({
               const emailLower = (emp.email || '').trim().toLowerCase();
               const isSelected = isMulti
                 ? currentMultiEmails.includes(emailLower)
-                : selectedEmail && emailLower === selectedEmail.toLowerCase();
+                : Boolean(singleEmail && emailLower === singleEmail);
               const name = emp.name || emp.emp_name || emp.email;
 
               return (

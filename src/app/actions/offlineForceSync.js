@@ -175,8 +175,40 @@ export async function forceSyncOfflineItem(item) {
       }
       return { success: true, item };
     } else if (item.entityType === 'checklist_response') {
+      const payload = item.payload || {};
+      const templateId = payload.template_id;
+      const periodKey = payload.period_key;
+      const rawEmail = payload.employee_email || '';
+      const emailClean = rawEmail.replace(/^\[([^\]]+)\].*$/, '$1').trim().toLowerCase();
+
+      // Check if already in Supabase database
+      let alreadyExists = false;
+      if (payload.id) {
+        const { data: existById } = await supabase
+          .from('checklist_submissions')
+          .select('id')
+          .eq('id', payload.id)
+          .maybeSingle();
+        if (existById) alreadyExists = true;
+      }
+
+      if (!alreadyExists && templateId && periodKey && emailClean) {
+        const { data: existByKey } = await supabase
+          .from('checklist_submissions')
+          .select('id')
+          .eq('template_id', templateId)
+          .eq('employee_email', emailClean)
+          .eq('period_key', periodKey)
+          .maybeSingle();
+        if (existByKey) alreadyExists = true;
+      }
+
+      if (alreadyExists) {
+        return { success: true, item: { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` } };
+      }
+
       const { submitChecklistResponse } = await import('@/app/actions/checklist');
-      const res = await submitChecklistResponse({ ...item.payload, isOfflineSync: true });
+      const res = await submitChecklistResponse({ ...item.payload, employee_email: emailClean, isOfflineSync: true });
       if (res && !res.success && res.error) {
         throw new Error(res.error);
       }

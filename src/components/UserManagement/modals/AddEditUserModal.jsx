@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users } from 'lucide-react';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
+import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
 
 export default function AddEditUserModal({
@@ -56,9 +57,7 @@ export default function AddEditUserModal({
         emp_alt_mobile: user.emp_alt_mobile || (user.module_access?.emp_alt_mobile) || '',
         email: user.email || '',
         password: '',
-        primary_reporting_person: user.primary_reporting_person || (user.module_access?.primary_reporting_person) || '',
-        secondary_reporting_person: user.secondary_reporting_person || (user.module_access?.secondary_reporting_person) || '',
-        hod_person: user.hod_person || (user.module_access?.hod_person) || '',
+        ...getReportingFields(user),
         can_self_reset_password: user.can_self_reset_password === true || (user.module_access?.can_self_reset_password === true)
       });
     } else {
@@ -562,7 +561,7 @@ export default function AddEditUserModal({
                     <SearchableEmployeeSelect
                       employees={allEmployees}
                       selectedEmail={formData.primary_reporting_person}
-                      onSelect={(val) => handleChange('primary_reporting_person', val)}
+                      onSelect={(employee) => handleChange('primary_reporting_person', getReportingEmail(employee, allEmployees))}
                       placeholder="Select Primary Reporting Manager..."
                       allowAllStaff={false}
                     />
@@ -575,7 +574,7 @@ export default function AddEditUserModal({
                     <SearchableEmployeeSelect
                       employees={allEmployees}
                       selectedEmail={formData.secondary_reporting_person}
-                      onSelect={(val) => handleChange('secondary_reporting_person', val)}
+                      onSelect={(employee) => handleChange('secondary_reporting_person', getReportingEmail(employee, allEmployees))}
                       placeholder="Select Secondary Manager (Optional)..."
                       allowAllStaff={false}
                     />
@@ -588,7 +587,7 @@ export default function AddEditUserModal({
                     <SearchableEmployeeSelect
                       employees={allEmployees}
                       selectedEmail={formData.hod_person}
-                      onSelect={(val) => handleChange('hod_person', val)}
+                      onSelect={(employee) => handleChange('hod_person', getReportingEmail(employee, allEmployees))}
                       placeholder="Select Department HOD..."
                       allowAllStaff={false}
                     />

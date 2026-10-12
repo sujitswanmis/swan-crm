@@ -39,6 +39,7 @@ import {
   getCompanyDepartmentsList
 } from '@/app/actions/checklist';
 import { getEmployeesMaster } from '@/app/actions/employee';
+import { getReportingTeam } from '@/utils/reportingHierarchy';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import { createClient } from '@/utils/supabase/client';
@@ -270,20 +271,37 @@ export default function ChecklistModule({
 
   // Detect Subordinates who report to logged-in user as Primary, Secondary, or HOD
   const myReportingTeam = useMemo(() => {
-    const emailLow = (userEmail || '').toLowerCase().trim();
-    const nameLow = (userName || '').toLowerCase().trim();
-    if (!emailLow && !nameLow) return [];
-    return (employeesList || []).filter(e => {
-      const p = (e.primary_reporting_person || '').toLowerCase().trim();
-      const s = (e.secondary_reporting_person || '').toLowerCase().trim();
-      const h = (e.hod_person || '').toLowerCase().trim();
-      return (p && (p === emailLow || p === nameLow || (emailLow && emailLow.includes(p)))) ||
-             (s && (s === emailLow || s === nameLow || (emailLow && emailLow.includes(s)))) ||
-             (h && (h === emailLow || h === nameLow || (emailLow && emailLow.includes(h))));
-    });
+    return getReportingTeam(employeesList, { email: userEmail, emp_name: userName });
   }, [employeesList, userEmail, userName]);
 
   const isReportingManager = myReportingTeam.length > 0;
+  useEffect(() => {
+    if (!userEmail) return;
+    let active = true;
+    let timer;
+    const client = createClient();
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          const employees = await getEmployeesMaster();
+          if (active && Array.isArray(employees)) setEmployeesList(employees);
+        } catch (error) {
+          console.warn('Reporting hierarchy refresh failed:', error.message);
+        }
+      }, 500);
+    };
+    const channel = client.channel(`checklist_reporting_hierarchy_${userEmail}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_roles' }, refresh)
+      .subscribe();
+    window.addEventListener('focus', refresh);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      client.removeChannel(channel);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [userEmail]);
   const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
   const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 

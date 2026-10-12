@@ -29,6 +29,7 @@ import { getTransferredLeads } from '@/app/actions/partyHandoff';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
+import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
@@ -506,6 +507,14 @@ export default function CRMContainer({
     return () => { active = false; };
   }, [userId, userCompany, userRole, initialLeadStage]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const reportingLeadTeam = useMemo(() => getReportingTeam(teamMembers, {
+    user_id: userId, email: userEmail, emp_name: userName
+  }), [teamMembers, userId, userEmail, userName]);
+  const reportingLeadAssignees = useMemo(() => getLeadAssignees(reportingLeadTeam, {
+    user_id: userId, emp_name: userName
+  }), [reportingLeadTeam, userId, userName]);
+  const leadAssigneeScopeKey = JSON.stringify(reportingLeadAssignees);
+  const leadAssigneeScope = useMemo(() => new Set(JSON.parse(leadAssigneeScopeKey)), [leadAssigneeScopeKey]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
@@ -1282,9 +1291,12 @@ export default function CRMContainer({
   
   // Fetch team members for LeadTable dropdown
   useEffect(() => {
+    let active = true;
+    let refreshTimer;
     async function loadTeam() {
       try {
         const response = await getTeamMembers();
+        if (!active) return;
         if (response && Array.isArray(response)) {
           setTeamMembers(response);
         } else if (response?.data) {
@@ -1295,7 +1307,22 @@ export default function CRMContainer({
       }
     }
     loadTeam();
-  }, []);
+    const client = createClient();
+    const scheduleRefresh = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadTeam, 500);
+    };
+    const channel = client.channel(`crm_reporting_hierarchy_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_roles' }, scheduleRefresh)
+      .subscribe();
+    window.addEventListener('focus', scheduleRefresh);
+    return () => {
+      active = false;
+      clearTimeout(refreshTimer);
+      client.removeChannel(channel);
+      window.removeEventListener('focus', scheduleRefresh);
+    };
+  }, [userId]);
   
   const loadLeadsRef = useRef(null);
   const leadSyncInFlightRef = useRef(false);
@@ -1424,7 +1451,7 @@ export default function CRMContainer({
           ? userCompany.trim()
           : null;
         const _agentAssignees = (!_isPrivilegedUser && (userId || userName))
-          ? [...new Set([userId, userName].filter(Boolean))]
+          ? JSON.parse(leadAssigneeScopeKey)
           : null;
 
         const applyLeadScope = (query) => {
@@ -1531,8 +1558,10 @@ export default function CRMContainer({
         };
 
         const fetchAssignedLeads = async () => {
-          if (!_agentCompanyFilter || !userId) return [];
-          const assignees = [...new Set([userId, userName].filter(Boolean))];
+          // Privileged users without a company filter already fetched every assignment.
+          if (!userId || (!_agentCompanyFilter && _isPrivilegedUser)) return [];
+          const assignees = JSON.parse(leadAssigneeScopeKey);
+          if (!_agentCompanyFilter && assignees.length <= new Set([userId, userName].filter(Boolean)).size) return [];
           const assigned = [];
           for (let page = 0; page < 100; page++) {
             const { data, error } = await supabase
@@ -1972,10 +2001,7 @@ export default function CRMContainer({
           if (current.some(item => item.id === newRow.id)) return current;
           return [{ ...newRow, lead_notes: [] }, ...current];
         });
-        setLeads((current) => {
-          if (current.some(item => item.id === newRow.id)) return current;
-          return [{ ...newRow, lead_notes: [] }, ...current];
-        });
+        // Publish through the company/stage/team filter below.
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         const updatedRow = payload.new;
@@ -2011,17 +2037,7 @@ export default function CRMContainer({
           }
           return updated;
         });
-        setLeads((current) => {
-          const existing = current.find(item => item.id === updatedRow.id);
-          if (existing && existing.status === updatedRow.status && existing.updated_at === updatedRow.updated_at && existing.assigned_to === updatedRow.assigned_to) {
-            return current;
-          }
-          if (existing) {
-            return current.map(item => item.id === updatedRow.id ? { ...item, ...updatedRow, lead_notes: item.lead_notes || [] } : item);
-          } else {
-            return [{ ...updatedRow, lead_notes: [] }, ...current];
-          }
-        });
+        // Assignment changes must pass the current visibility filter as well.
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, (payload) => {
         const deletedId = payload?.old?.id;
@@ -2143,7 +2159,7 @@ export default function CRMContainer({
       window.removeEventListener('crm_leads_imported', handleLeadsImported);
       window.removeEventListener('crm_force_full_sync', handleForceFullSync);
     };
-  }, [hasLeadsAccess, userId, userCompany, userName, userRole]);
+  }, [hasLeadsAccess, userId, userCompany, userName, userRole, leadAssigneeScopeKey, moduleAccess?.leads?.is_manager, globalRolePermissions?.viewAll]);
 
   const handleOfflineSyncComplete = React.useCallback(() => {
     if (loadLeadsRef.current) {
@@ -2179,7 +2195,7 @@ export default function CRMContainer({
            const matchComp = (userCompany === 'NSTL' || userCompany === 'NSTLP')
              ? (l.our_company === 'NSTL' || l.our_company === 'NSTLP')
              : l.our_company === userCompany;
-            return matchComp || (userId && l.assigned_to === userId) || (userName && l.assigned_to === userName);
+            return matchComp || leadAssigneeScope.has(l.assigned_to);
          });
       }
     }
@@ -2207,14 +2223,14 @@ export default function CRMContainer({
       const filteredLeads = preFilteredLeads.filter(lead => {
         const leadStage = getStageFromStatus(lead.status);
         return assignedSteps.includes(leadStage) && 
-                (lead.assigned_to === null || lead.assigned_to === undefined || lead.assigned_to === userId || lead.assigned_to === userName);
+                isLeadInAssignmentScope(lead, leadAssigneeScope);
       });
       updateLeadsIfChanged(filteredLeads);
     } else {
       // If view is true but no steps assigned, they see nothing
       updateLeadsIfChanged([]);
     }
-  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions]);
+  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope]);
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = (updatedFilteredLeads) => {

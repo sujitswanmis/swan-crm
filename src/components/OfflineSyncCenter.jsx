@@ -564,25 +564,105 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                               >
                                 Retry
                               </button>
-                              <button
-                                type="button"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
-                                    const res = await forceSyncOfflineItem(item);
-                                    if (res && res.success) {
-                                      await removeQueueItem(item.queueId, res.item || item);
-                                      setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
-                                      await loadQueueState();
-                                      if (onSyncComplete) onSyncComplete();
-                                    } else {
-                                      alert('Force sync issue: ' + (res?.error || 'Unknown error'));
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const supabase = createClient();
+                                      if (item.entityType === 'checklist_response') {
+                                        const payload = item.payload || {};
+                                        const rawEmail = payload.employee_email || '';
+                                        const emailClean = rawEmail.replace(/^\[([^\]]+)\].*$/, '$1').trim().toLowerCase();
+
+                                        // 1. Check if already exists in Supabase database
+                                        let alreadyExists = false;
+                                        if (payload.id) {
+                                          const { data: existById } = await supabase
+                                            .from('checklist_submissions')
+                                            .select('id')
+                                            .eq('id', payload.id)
+                                            .maybeSingle();
+                                          if (existById) alreadyExists = true;
+                                        }
+
+                                        if (!alreadyExists && payload.template_id && payload.period_key && emailClean) {
+                                          const { data: existByKey } = await supabase
+                                            .from('checklist_submissions')
+                                            .select('id')
+                                            .eq('template_id', payload.template_id)
+                                            .eq('employee_email', emailClean)
+                                            .eq('period_key', payload.period_key)
+                                            .maybeSingle();
+                                          if (existByKey) alreadyExists = true;
+                                        }
+
+                                        if (alreadyExists) {
+                                          await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
+                                          setToastMessage('⚡ Item was already safely saved in cloud database! Cleared from offline queue.');
+                                          await loadQueueState();
+                                          if (onSyncComplete) onSyncComplete();
+                                          return;
+                                        }
+
+                                        // 2. Direct Supabase Upsert
+                                        const responses = payload.responses || {};
+                                        const items = Array.isArray(payload.items) ? payload.items : [];
+                                        const completedCount = items.filter(it => {
+                                          const val = responses[it.id];
+                                          return val !== undefined && val !== null && val !== '' && val !== false;
+                                        }).length;
+                                        const isAllDone = items.length > 0 && completedCount >= items.length;
+                                        const status = payload.status || (isAllDone ? 'COMPLETED' : 'PARTIAL');
+
+                                        const subPayload = {
+                                          id: payload.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}`),
+                                          tenant_id: payload.tenant_id || '00000000-0000-0000-0000-000000000001',
+                                          template_id: payload.template_id,
+                                          template_title: payload.template_title || 'Checklist',
+                                          frequency: (payload.frequency || 'DAILY').toUpperCase(),
+                                          period_key: payload.period_key,
+                                          employee_id: payload.employee_id || null,
+                                          employee_name: payload.employee_name || 'Employee',
+                                          employee_email: emailClean,
+                                          department: payload.department || 'General',
+                                          status,
+                                          items_completed_count: payload.items_completed_count !== undefined ? payload.items_completed_count : completedCount,
+                                          items_total_count: payload.items_total_count !== undefined ? payload.items_total_count : items.length,
+                                          responses,
+                                          submitted_at: payload.submitted_at || new Date().toISOString(),
+                                          submission_notes: payload.submission_notes || '',
+                                          verification_status: payload.verification_status || 'PENDING',
+                                          updated_at: new Date().toISOString()
+                                        };
+
+                                        const { error: directErr } = await supabase
+                                          .from('checklist_submissions')
+                                          .upsert([subPayload], { onConflict: 'template_id,employee_email,period_key' });
+
+                                        if (!directErr) {
+                                          await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
+                                          setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
+                                          await loadQueueState();
+                                          if (onSyncComplete) onSyncComplete();
+                                          return;
+                                        }
+                                      }
+
+                                      const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
+                                      const res = await forceSyncOfflineItem(item);
+                                      if (res && res.success) {
+                                        await removeQueueItem(item.queueId, res.item || item);
+                                        setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
+                                        await loadQueueState();
+                                        if (onSyncComplete) onSyncComplete();
+                                      } else {
+                                        alert('Force sync issue: ' + (res?.error || 'Unknown error'));
+                                      }
+                                    } catch (err) {
+                                      alert('Force sync error: ' + err.message);
                                     }
-                                  } catch (err) {
-                                    alert('Force sync error: ' + err.message);
-                                  }
-                                }}
+                                  }}
                                 style={{
                                   background: 'rgba(234, 179, 8, 0.2)',
                                   border: '1px solid rgba(234, 179, 8, 0.4)',

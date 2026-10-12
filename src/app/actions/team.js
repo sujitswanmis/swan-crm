@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server';
 import { sendAdminAccountEmailOtp } from './adminMessageConfig';
 import { logAuditAction } from './audit';
 import { saveImpersonateToken } from '@/lib/impersonateStore';
+import { getReportingFields } from '@/utils/reportingHierarchy';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -32,9 +33,7 @@ export async function getTeamMembers() {
     emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
     work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
     work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
-    primary_reporting_person: u.primary_reporting_person || (u.module_access && u.module_access.primary_reporting_person) || '',
-    secondary_reporting_person: u.secondary_reporting_person || (u.module_access && u.module_access.secondary_reporting_person) || '',
-    hod_person: u.hod_person || (u.module_access && u.module_access.hod_person) || '',
+    ...getReportingFields(u),
     can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
     can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
   }));
@@ -117,6 +116,7 @@ export async function toggleWritePermissions(userId, canWrite) {
 }
 
 export async function registerEmployeeDetails(userId, email, details) {
+  details = { ...details, ...getReportingFields(details) };
   const adminClient = getAdminClient();
   const isCustomer = details.role === 'customer';
   
@@ -305,6 +305,7 @@ export async function registerEmployeeDetails(userId, email, details) {
 }
 
 export async function updateEmployeeDetailsAdmin(userId, details) {
+  details = { ...details, ...getReportingFields(details) };
   const adminClient = getAdminClient();
 
   // If email is provided and is different, update it in auth.users
@@ -597,6 +598,7 @@ export async function bulkImportEmployeesFast(records = []) {
   const results = [];
 
   const processOne = async (record) => {
+    record = { ...record, ...getReportingFields(record) };
     const {
       rowIndex = '',
       emp_id = '',

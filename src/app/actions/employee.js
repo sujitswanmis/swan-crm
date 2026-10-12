@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { getReportingFields } from '@/utils/reportingHierarchy';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -47,9 +48,8 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
           emp_designation: u.emp_designation || u.designation || u.role || 'Staff',
           role: u.role || 'agent',
           status: status,
-          primary_reporting_person: u.primary_reporting_person || '',
-          secondary_reporting_person: u.secondary_reporting_person || '',
-          hod_person: u.hod_person || ''
+          tenant_id: u.tenant_id,
+          ...getReportingFields(u)
         };
 
         employeeMap.set(email, empObj);

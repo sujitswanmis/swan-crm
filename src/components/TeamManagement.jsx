@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PremiumProgressLoader } from './PremiumProgressLoader';
 import { createClient } from '@/utils/supabase/client';
+import { getReportingEmail } from '@/utils/reportingHierarchy';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
@@ -995,9 +996,9 @@ export default function TeamManagement({ initialUsers = [] }) {
       emp_mobile: user.emp_mobile || '',
       emp_alt_mobile: user.emp_alt_mobile || '',
       email: user.email || '',
-      primary_reporting_person: user.primary_reporting_person || '',
-      secondary_reporting_person: user.secondary_reporting_person || '',
-      hod_person: user.hod_person || ''
+      primary_reporting_person: getReportingEmail(user.primary_reporting_person, users),
+      secondary_reporting_person: getReportingEmail(user.secondary_reporting_person, users),
+      hod_person: getReportingEmail(user.hod_person, users)
     });
   };
 
@@ -2728,13 +2729,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Primary Reporting Person</label>
                   <select
-                    value={addForm.primary_reporting_person || ''}
+                    value={getReportingEmail(addForm.primary_reporting_person, users)}
                     onChange={e => setAddForm({ ...addForm, primary_reporting_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Select Reporting Manager --</option>
+                    {addForm.primary_reporting_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(addForm.primary_reporting_person, users)) && (
+                      <option value={getReportingEmail(addForm.primary_reporting_person, users)}>{getReportingEmail(addForm.primary_reporting_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}
@@ -2744,13 +2748,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Secondary Reporting Person</label>
                   <select
-                    value={addForm.secondary_reporting_person || ''}
+                    value={getReportingEmail(addForm.secondary_reporting_person, users)}
                     onChange={e => setAddForm({ ...addForm, secondary_reporting_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Optional Secondary --</option>
+                    {addForm.secondary_reporting_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(addForm.secondary_reporting_person, users)) && (
+                      <option value={getReportingEmail(addForm.secondary_reporting_person, users)}>{getReportingEmail(addForm.secondary_reporting_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}
@@ -2760,13 +2767,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>HOD Person (Head of Department)</label>
                   <select
-                    value={addForm.hod_person || ''}
+                    value={getReportingEmail(addForm.hod_person, users)}
                     onChange={e => setAddForm({ ...addForm, hod_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Select HOD --</option>
+                    {addForm.hod_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(addForm.hod_person, users)) && (
+                      <option value={getReportingEmail(addForm.hod_person, users)}>{getReportingEmail(addForm.hod_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}
@@ -3144,13 +3154,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Primary Reporting Person</label>
                   <select
-                    value={editForm.primary_reporting_person || ''}
+                    value={getReportingEmail(editForm.primary_reporting_person, users)}
                     onChange={e => setEditForm({ ...editForm, primary_reporting_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Select Reporting Manager --</option>
+                    {editForm.primary_reporting_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(editForm.primary_reporting_person, users)) && (
+                      <option value={getReportingEmail(editForm.primary_reporting_person, users)}>{getReportingEmail(editForm.primary_reporting_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && u.user_id !== editingUser && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}
@@ -3160,13 +3173,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Secondary Reporting Person</label>
                   <select
-                    value={editForm.secondary_reporting_person || ''}
+                    value={getReportingEmail(editForm.secondary_reporting_person, users)}
                     onChange={e => setEditForm({ ...editForm, secondary_reporting_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Optional Secondary --</option>
+                    {editForm.secondary_reporting_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(editForm.secondary_reporting_person, users)) && (
+                      <option value={getReportingEmail(editForm.secondary_reporting_person, users)}>{getReportingEmail(editForm.secondary_reporting_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && u.user_id !== editingUser && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}
@@ -3176,13 +3192,16 @@ export default function TeamManagement({ initialUsers = [] }) {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>HOD Person (Head of Department)</label>
                   <select
-                    value={editForm.hod_person || ''}
+                    value={getReportingEmail(editForm.hod_person, users)}
                     onChange={e => setEditForm({ ...editForm, hod_person: e.target.value })}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
                     <option value="">-- None / Select HOD --</option>
+                    {editForm.hod_person && !users.some(u => (u.email || u.emp_name) === getReportingEmail(editForm.hod_person, users)) && (
+                      <option value={getReportingEmail(editForm.hod_person, users)}>{getReportingEmail(editForm.hod_person, users)} (current reporting person)</option>
+                    )}
                     {users.filter(u => u.role !== 'customer' && u.emp_name && u.user_id !== editingUser && (u.emp_status === 'Active' || !u.emp_status)).map(u => (
-                      <option key={u.user_id} value={u.emp_name}>
+                      <option key={u.user_id} value={u.email || u.emp_name}>
                         {u.emp_name} ({u.emp_id || 'Staff'}{u.emp_designation ? ` - ${u.emp_designation}` : ''})
                       </option>
                     ))}

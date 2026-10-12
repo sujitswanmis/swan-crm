@@ -1469,12 +1469,83 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         await removeQueueItem(item.queueId, { ...item, title: `Note: ${payload.note_text?.slice(0, 20)}` });
         successCount++;
       } else if (item.entityType === 'checklist_response') {
-        const payload = item.payload;
-        const { submitChecklistResponse } = await import('@/app/actions/checklist');
-        const res = await submitChecklistResponse({ ...payload, isOfflineSync: true });
-        if (res && !res.success && res.error) {
-          throw new Error(res.error);
+        const payload = item.payload || {};
+        const templateId = payload.template_id;
+        const periodKey = payload.period_key;
+        const rawEmail = payload.employee_email || '';
+        const emailClean = rawEmail.replace(/^\[([^\]]+)\].*$/, '$1').trim().toLowerCase();
+
+        // 1. Check if submission is already in Supabase database
+        let alreadyExists = false;
+        if (payload.id) {
+          const { data: existById } = await supabaseClient
+            .from('checklist_submissions')
+            .select('id')
+            .eq('id', payload.id)
+            .maybeSingle();
+          if (existById) alreadyExists = true;
         }
+
+        if (!alreadyExists && templateId && periodKey && emailClean) {
+          const { data: existByKey } = await supabaseClient
+            .from('checklist_submissions')
+            .select('id')
+            .eq('template_id', templateId)
+            .eq('employee_email', emailClean)
+            .eq('period_key', periodKey)
+            .maybeSingle();
+          if (existByKey) alreadyExists = true;
+        }
+
+        if (alreadyExists) {
+          await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
+          successCount++;
+          continue;
+        }
+
+        // 2. Direct Supabase Upsert (Robust, bypasses server action drops)
+        const responses = payload.responses || {};
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const completedCount = items.filter(it => {
+          const val = responses[it.id];
+          return val !== undefined && val !== null && val !== '' && val !== false;
+        }).length;
+        const isAllDone = items.length > 0 && completedCount >= items.length;
+        const status = payload.status || (isAllDone ? 'COMPLETED' : 'PARTIAL');
+
+        const subPayload = {
+          id: payload.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}`),
+          tenant_id: payload.tenant_id || '00000000-0000-0000-0000-000000000001',
+          template_id: templateId,
+          template_title: payload.template_title || 'Checklist',
+          frequency: (payload.frequency || 'DAILY').toUpperCase(),
+          period_key: periodKey,
+          employee_id: payload.employee_id || null,
+          employee_name: payload.employee_name || 'Employee',
+          employee_email: emailClean,
+          department: payload.department || 'General',
+          status,
+          items_completed_count: payload.items_completed_count !== undefined ? payload.items_completed_count : completedCount,
+          items_total_count: payload.items_total_count !== undefined ? payload.items_total_count : items.length,
+          responses,
+          submitted_at: payload.submitted_at || new Date().toISOString(),
+          submission_notes: payload.submission_notes || '',
+          verification_status: payload.verification_status || 'PENDING',
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: upsertErr } = await supabaseClient
+          .from('checklist_submissions')
+          .upsert([subPayload], { onConflict: 'template_id,employee_email,period_key' });
+
+        if (upsertErr) {
+          const { submitChecklistResponse } = await import('@/app/actions/checklist');
+          const res = await submitChecklistResponse({ ...payload, employee_email: emailClean, isOfflineSync: true });
+          if (res && !res.success && res.error) {
+            throw new Error(res.error);
+          }
+        }
+
         await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
         successCount++;
       } else if (item.entityType === 'delegation_task') {
