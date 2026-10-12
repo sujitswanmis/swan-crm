@@ -567,6 +567,11 @@ export default function CRMContainer({
     if (queryTab) return queryTab;
     return 'dashboard';
   });
+  const [saasMenuExpanded, setSaasMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath.startsWith('saas-studio') || cleanPath.startsWith('saas_studio');
+  });
   const [saasSubTab, setSaasSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -574,10 +579,13 @@ export default function CRMContainer({
     if (cleanPath && (cleanPath.startsWith('saas-studio/') || cleanPath.startsWith('saas_studio/'))) {
       const sub = cleanPath.split('/')[1];
       if (sub === 'workspaces' || sub === 'clients') return 'tenants';
-      if (['pricing', 'tenants'].includes(sub)) return sub;
+      if (sub === 'invoices' || sub === 'ledger') return 'billing';
+      if (['pricing', 'tenants', 'billing'].includes(sub)) return sub;
     }
-    if (queryTab && ['pricing', 'tenants', 'workspaces'].includes(queryTab)) {
-      return queryTab === 'workspaces' ? 'tenants' : queryTab;
+    if (queryTab && ['pricing', 'tenants', 'workspaces', 'billing', 'invoices'].includes(queryTab)) {
+      if (queryTab === 'workspaces') return 'tenants';
+      if (queryTab === 'invoices') return 'billing';
+      return queryTab;
     }
     return 'pricing';
   });
@@ -2911,7 +2919,8 @@ export default function CRMContainer({
   };
 
   const handleSaasSubTabChange = (subTabId) => {
-    const canonical = (subTabId === 'workspaces' || subTabId === 'clients') ? 'tenants' : (subTabId || 'pricing');
+    let canonical = (subTabId === 'workspaces' || subTabId === 'clients') ? 'tenants' : (subTabId || 'pricing');
+    if (canonical === 'invoices' || canonical === 'ledger') canonical = 'billing';
     setSaasSubTab(canonical);
     if (activeTab !== 'saas_studio') {
       setActiveTab('saas_studio');
@@ -3732,42 +3741,81 @@ export default function CRMContainer({
         <nav className="nav-list">
           {/* Master Admin Only Top-Level SaaS Studio */}
           {isMasterAdmin && (
-            <button 
-              onClick={() => handleTabChange('saas_studio')}
-              className="nav-item" 
-              data-active={activeTab === 'saas_studio'}
-              title={isSidebarCollapsed ? "SaaS Studio" : undefined}
-              style={{ 
-                background: activeTab === 'saas_studio' 
-                  ? 'linear-gradient(135deg, rgba(79, 70, 229, 0.16) 0%, rgba(124, 58, 237, 0.16) 100%)' 
-                  : 'none', 
-                borderLeft: activeTab === 'saas_studio' ? '3px solid #7c3aed' : 'none',
-                width: '100%', 
-                textAlign: 'left', 
-                cursor: 'pointer', 
-                fontFamily: 'inherit', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.75rem' 
-              }}
-            >
-              <Crown size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <span style={{ fontWeight: activeTab === 'saas_studio' ? 600 : 500 }}>SaaS Studio</span>
-                <span style={{ 
-                  fontSize: '0.62rem', 
-                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 
-                  color: '#92400e', 
-                  padding: '1px 6px', 
-                  borderRadius: '999px', 
-                  fontWeight: 800, 
-                  letterSpacing: '0.04em',
-                  border: '1px solid #fcd34d' 
-                }}>
-                  MASTER
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setSaasMenuExpanded(true);
+                  } else {
+                    setSaasMenuExpanded(!saasMenuExpanded);
+                  }
+                  handleTabChange('saas_studio');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'saas_studio'}
+                title={isSidebarCollapsed ? "SaaS Studio" : undefined}
+                style={{ 
+                  background: activeTab === 'saas_studio' 
+                    ? 'linear-gradient(135deg, rgba(79, 70, 229, 0.16) 0%, rgba(124, 58, 237, 0.16) 100%)' 
+                    : 'none', 
+                  borderLeft: activeTab === 'saas_studio' ? '3px solid #7c3aed' : 'none',
+                  width: '100%', 
+                  textAlign: 'left', 
+                  cursor: 'pointer', 
+                  fontFamily: 'inherit', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.75rem' 
+                }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {saasMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
+                <Crown size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                  <span style={{ fontWeight: activeTab === 'saas_studio' ? 600 : 500 }}>SaaS Studio</span>
+                  <span style={{ 
+                    fontSize: '0.62rem', 
+                    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 
+                    color: '#92400e', 
+                    padding: '1px 6px', 
+                    borderRadius: '999px', 
+                    fontWeight: 800, 
+                    letterSpacing: '0.04em',
+                    border: '1px solid #fcd34d' 
+                  }}>
+                    MASTER
+                  </span>
+                </div>
+              </button>
+              
+              <div className={`submenu-list ${saasMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleSaasSubTabChange('pricing')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && (saasSubTab === 'pricing' || !saasSubTab)}
+                  >
+                    💵 Pricing Catalog
+                  </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('tenants')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && (saasSubTab === 'tenants' || saasSubTab === 'workspaces')}
+                  >
+                    🏢 Client Workspaces
+                  </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('billing')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && (saasSubTab === 'billing' || saasSubTab === 'invoices')}
+                  >
+                    🧾 Master Invoices
+                  </button>
+                </div>
               </div>
-            </button>
+            </SidebarSubmenu>
           )}
 
           {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
@@ -5021,7 +5069,11 @@ export default function CRMContainer({
                   {activeTab === 'email_config' && 'Email Config'}
                   {activeTab === 'admin_message_config' && 'Admin Messaging Config'}
                   {activeTab === 'settings' && 'Enterprise Settings'}
-                  {activeTab === 'saas_studio' && '👑 SaaS Studio (Multi-Tenant & Billing)'}
+                  {activeTab === 'saas_studio' && (
+                    saasSubTab === 'pricing' ? '👑 SaaS Studio — Dynamic Pricing & Catalog' :
+                    saasSubTab === 'billing' ? '👑 SaaS Studio — Master Invoices & Billing Ledger' :
+                    '👑 SaaS Studio — Client Workspaces & Subscriptions'
+                  )}
                 </h1>
               </div>
             )}

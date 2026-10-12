@@ -1554,6 +1554,235 @@ export async function processAddonSeatsAndInvoice({
   }
 }
 
+/**
+ * Super Admin: Get all active employees in a tenant workspace for seat auditing and hold selection
+ */
+export async function getTenantActiveUsers(tenantId) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const { data: tenant } = await admin
+      .from('tenants')
+      .select('id, name, tenant_code')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    const { data: users, error } = await admin
+      .from('user_roles')
+      .select('user_id, emp_id, emp_name, emp_official_mail_id, email, role, is_approved, tenant_id, company, created_at')
+      .order('emp_name', { ascending: true });
+
+    if (error) throw error;
+
+    const tCode = (tenant?.tenant_code || '').toLowerCase().trim();
+    const tName = (tenant?.name || '').toLowerCase().trim();
+
+    const tenantUsers = (users || []).filter(u => {
+      if (u.tenant_id && u.tenant_id === tenantId) return true;
+      const comp = (u.company || '').toLowerCase().trim();
+      if (!comp) return false;
+      if (tenantId === DEFAULT_TENANT_ID) {
+        return comp.includes('swan') || comp.includes('testing');
+      }
+      return comp === tName || comp === tCode;
+    });
+
+    const activeUsers = tenantUsers.filter(u => u.is_approved !== false);
+    const heldUsers = tenantUsers.filter(u => u.is_approved === false);
+
+    return {
+      success: true,
+      tenant,
+      totalUsers: tenantUsers.length,
+      activeUsers,
+      heldUsers
+    };
+  } catch (err) {
+    console.error('getTenantActiveUsers error:', err);
+    return { success: false, error: err.message, activeUsers: [], heldUsers: [] };
+  }
+}
+
+/**
+ * Super Admin: Process User Seats Downgrade and put selected excess employees on HOLD
+ */
+export async function reduceTenantSeatsAndHoldUsers({
+  tenantId,
+  currentSeats = 5,
+  newSeats = 1,
+  holdUserIds = [],
+  reason = ''
+}) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const cSeats = Math.max(1, parseInt(currentSeats, 10) || 1);
+    const nSeats = Math.max(1, parseInt(newSeats, 10) || 1);
+    if (nSeats >= cSeats) {
+      throw new Error(`New seat limit (${nSeats}) must be less than current limit (${cSeats}) for downgrade.`);
+    }
+
+    const now = new Date();
+
+    // 1. If any user IDs are selected to be put on HOLD, update user_roles
+    if (Array.isArray(holdUserIds) && holdUserIds.length > 0) {
+      const { error: holdErr } = await admin
+        .from('user_roles')
+        .update({
+          is_approved: false
+        })
+        .in('user_id', holdUserIds);
+
+      if (holdErr) {
+        console.warn('Failed to put some users on hold:', holdErr);
+      }
+    }
+
+    // 2. Update tenant_subscriptions with new reduced user_seat_limit
+    const { data: sub, error: subErr } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (subErr) throw subErr;
+
+    if (sub) {
+      const { error: updErr } = await admin
+        .from('tenant_subscriptions')
+        .update({
+          user_seat_limit: nSeats
+        })
+        .eq('id', sub.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'SAAS_MODULAR',
+          user_seat_limit: nSeats,
+          valid_from: now.toISOString(),
+          valid_until: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'ACTIVE',
+          billing_cycle: 'YEARLY'
+        }]);
+      if (insErr) throw insErr;
+    }
+
+    // 3. Record SEAT_DOWNGRADE entry in billing ledger
+    const { data: tenant } = await admin
+      .from('tenants')
+      .select('*')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    const reductionRecord = {
+      id: `RED-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      invoice_number: `ADJ-${tenant?.tenant_code || 'WS'}-${Date.now().toString().slice(-4)}`,
+      invoice_type: 'seat_reduction',
+      category: 'SEAT_REDUCTION',
+      description: `User Seats Reduced from ${cSeats} to ${nSeats} (-${cSeats - nSeats} Seats)${reason ? ' | Note: ' + reason : ''}`,
+      additional_seats: -(cSeats - nSeats),
+      total_seats: nSeats,
+      held_users_count: Array.isArray(holdUserIds) ? holdUserIds.length : 0,
+      billing_mode: 'DOWNGRADE',
+      amount: 0,
+      gst_type: 'NON_GST',
+      gst_rate: 0,
+      tax_amount: 0,
+      total_payable: 0,
+      payment_mode: 'ADJUSTMENT',
+      transaction_id: 'SYSTEM-REDUCTION',
+      status: 'COMPLETED',
+      created_at: now.toISOString()
+    };
+
+    const { data: entRow } = await admin
+      .from('tenant_entitlements')
+      .select('config_json')
+      .eq('tenant_id', tenantId)
+      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
+      .maybeSingle();
+
+    const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
+    existingInvoices.unshift(reductionRecord);
+
+    await admin
+      .from('tenant_entitlements')
+      .upsert({
+        tenant_id: tenantId,
+        module_key: BILLING_HISTORY_MODULE_KEY,
+        is_enabled: true,
+        config_json: {
+          invoices: existingInvoices,
+          updated_at: now.toISOString()
+        }
+      }, { onConflict: 'tenant_id,module_key' });
+
+    return {
+      success: true,
+      newSeatLimit: nSeats,
+      reducedCount: cSeats - nSeats,
+      heldUsersCount: holdUserIds.length,
+      message: `सीट लिमिट सफलतापूर्वक कम करके ${nSeats} कर दी गई! (${holdUserIds.length > 0 ? `${holdUserIds.length} users ko HOLD par rakha gaya` : 'Seats already freed'})`
+    };
+  } catch (err) {
+    console.error('reduceTenantSeatsAndHoldUsers error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Get all invoices across all tenants for Master Invoices Ledger
+ */
+export async function getAllMasterInvoices() {
+  try {
+    const admin = getAdminClient();
+
+    const [{ data: tenants }, { data: entRows }] = await Promise.all([
+      admin.from('tenants').select('id, name, tenant_code, primary_contact_email, phone, address, gstin'),
+      admin.from('tenant_entitlements').select('tenant_id, config_json').eq('module_key', BILLING_HISTORY_MODULE_KEY)
+    ]);
+
+    const tenantMap = {};
+    (tenants || []).forEach(t => {
+      tenantMap[t.id] = t;
+    });
+
+    let allInvoices = [];
+    (entRows || []).forEach(row => {
+      const tenant = tenantMap[row.tenant_id] || { id: row.tenant_id, name: 'Unknown Client', tenant_code: 'WS' };
+      const invoices = Array.isArray(row?.config_json?.invoices) ? row.config_json.invoices : [];
+      invoices.forEach(inv => {
+        allInvoices.push({
+          ...inv,
+          tenant_id: tenant.id,
+          tenant_name: tenant.name,
+          tenant_code: tenant.tenant_code,
+          tenant_email: tenant.primary_contact_email,
+          tenant_phone: tenant.phone,
+          tenant_gstin: tenant.gstin
+        });
+      });
+    });
+
+    allInvoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    return {
+      success: true,
+      invoices: allInvoices
+    };
+  } catch (err) {
+    console.error('getAllMasterInvoices error:', err);
+    return { success: false, error: err.message, invoices: [] };
+  }
+}
+
 
 
 

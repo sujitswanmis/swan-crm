@@ -33,7 +33,12 @@ import {
   Share2,
   MessageCircle,
   CreditCard,
-  Send
+  Send,
+  Search,
+  Receipt,
+  ArrowDownCircle,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -54,7 +59,10 @@ import {
   permanentDeleteTenantWorkspace,
   addNewProcessModule,
   processAddonSeatsAndInvoice,
-  getTenantBillingHistory
+  getTenantBillingHistory,
+  getTenantActiveUsers,
+  reduceTenantSeatsAndHoldUsers,
+  getAllMasterInvoices
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
@@ -69,6 +77,9 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
 
   const handleTabSwitch = (tab) => {
     setActiveTab(tab);
+    if (tab === 'billing') {
+      loadMasterInvoices();
+    }
     if (onSubTabChange) {
       onSubTabChange(tab);
     } else if (typeof window !== 'undefined') {
@@ -107,6 +118,19 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   // Active Invoice View State (for Add-on or Ledger Invoices)
   const [activeInvoiceData, setActiveInvoiceData] = useState(null);
   const [invoiceGstMode, setInvoiceGstMode] = useState('IGST'); // 'IGST' | 'CGST_SGST' | 'NON_GST'
+
+  // Seat Downgrade & Excess Employee Hold State
+  const [tenantActiveUsers, setTenantActiveUsers] = useState([]);
+  const [loadingTenantUsers, setLoadingTenantUsers] = useState(false);
+  const [selectedHoldUserIds, setSelectedHoldUserIds] = useState([]);
+  const [downgradeReason, setDowngradeReason] = useState('');
+  const [processingDowngrade, setProcessingDowngrade] = useState(false);
+
+  // Master Invoices Sub-Page State
+  const [masterInvoices, setMasterInvoices] = useState([]);
+  const [loadingMasterInvoices, setLoadingMasterInvoices] = useState(false);
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('ALL');
 
   // Create Client Tenant Modal State (Master Admin Exclusive)
   const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
@@ -165,13 +189,45 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const [addingModule, setAddingModule] = useState(false);
   const [addModuleError, setAddModuleError] = useState(null);
 
+  const loadMasterInvoices = async () => {
+    setLoadingMasterInvoices(true);
+    try {
+      const res = await getAllMasterInvoices();
+      if (res.success) {
+        setMasterInvoices(res.invoices || []);
+      }
+    } catch (err) {
+      console.error('loadMasterInvoices error:', err);
+    } finally {
+      setLoadingMasterInvoices(false);
+    }
+  };
+
+  const loadTenantActiveUsersList = async (tId) => {
+    setLoadingTenantUsers(true);
+    try {
+      const res = await getTenantActiveUsers(tId);
+      if (res.success) {
+        setTenantActiveUsers(res.activeUsers || []);
+      } else {
+        setTenantActiveUsers([]);
+      }
+    } catch (err) {
+      console.error('loadTenantActiveUsersList error:', err);
+      setTenantActiveUsers([]);
+    } finally {
+      setLoadingTenantUsers(false);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [catRes, cycleRes, tenantsRes] = await Promise.all([
+      const [catRes, cycleRes, tenantsRes, masterInvRes] = await Promise.all([
         getProcessCatalog(),
         getCycleDiscounts(),
-        getAllTenantsWithSubscriptions()
+        getAllTenantsWithSubscriptions(),
+        getAllMasterInvoices()
       ]);
 
       if (catRes.success) {
@@ -195,6 +251,10 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
       if (tenantsRes.success) {
         setTenants(tenantsRes.tenants || []);
       }
+
+      if (masterInvRes.success) {
+        setMasterInvoices(masterInvRes.invoices || []);
+      }
     } catch (err) {
       console.error('Failed to load SaaS admin data:', err);
     } finally {
@@ -206,10 +266,11 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     let isMounted = true;
     const initData = async () => {
       try {
-        const [catRes, cycleRes, tenantsRes] = await Promise.all([
+        const [catRes, cycleRes, tenantsRes, masterInvRes] = await Promise.all([
           getProcessCatalog(),
           getCycleDiscounts(),
-          getAllTenantsWithSubscriptions()
+          getAllTenantsWithSubscriptions(),
+          getAllMasterInvoices()
         ]);
 
         if (!isMounted) return;
@@ -234,6 +295,10 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
 
         if (tenantsRes.success) {
           setTenants(tenantsRes.tenants || []);
+        }
+
+        if (masterInvRes.success) {
+          setMasterInvoices(masterInvRes.invoices || []);
         }
       } catch (err) {
         console.error('Failed to load SaaS admin data:', err);
@@ -334,22 +399,27 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const handleOpenEditSeats = (t) => {
     setSeatModalTenant(t);
     const curr = t.user_seat_limit || 5;
-    const target = curr + 5;
-    setNewSeatValue(target);
+    setNewSeatValue(curr);
     setSeatBillingMode('SAME_EXPIRY');
     setSeatExtendMonths(12);
     setSeatGstType('IGST');
     setSeatPaymentMode('UPI');
     setSeatTransactionId('');
-    const suggested = calculateSuggestedSeatPrice(t, target, 'SAME_EXPIRY', 12);
+    setSelectedHoldUserIds([]);
+    setDowngradeReason('');
+    const suggested = calculateSuggestedSeatPrice(t, curr, 'SAME_EXPIRY', 12);
     setSeatDealPrice(suggested);
+    loadTenantActiveUsersList(t.id);
   };
 
   const handleSeatSeatsChange = (val) => {
     const num = Math.max(1, parseInt(val, 10) || 1);
     setNewSeatValue(num);
-    const suggested = calculateSuggestedSeatPrice(seatModalTenant, num, seatBillingMode, seatExtendMonths);
-    setSeatDealPrice(suggested);
+    const curr = seatModalTenant?.user_seat_limit || 5;
+    if (num >= curr) {
+      const suggested = calculateSuggestedSeatPrice(seatModalTenant, num, seatBillingMode, seatExtendMonths);
+      setSeatDealPrice(suggested);
+    }
   };
 
   const handleSeatModeChange = (mode) => {
@@ -377,6 +447,43 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
       }
     } catch (err) {
       showNotification(err.message, true);
+    }
+  };
+
+  const handleProcessDowngradeSeats = async () => {
+    if (!seatModalTenant) return;
+    const currSeats = seatModalTenant.user_seat_limit || 5;
+    const targetSeats = parseInt(newSeatValue, 10) || 1;
+    const excessUsers = Math.max(0, tenantActiveUsers.length - targetSeats);
+
+    if (excessUsers > 0 && selectedHoldUserIds.length < excessUsers) {
+      showNotification(`कृपया कम से कम ${excessUsers} users को HOLD करने के लिए सेलेक्ट करें!`, true);
+      return;
+    }
+
+    setProcessingDowngrade(true);
+    try {
+      const res = await reduceTenantSeatsAndHoldUsers({
+        tenantId: seatModalTenant.id,
+        currentSeats: currSeats,
+        newSeats: targetSeats,
+        holdUserIds: selectedHoldUserIds,
+        reason: downgradeReason
+      });
+
+      if (res.success) {
+        showNotification(res.message);
+        setSeatModalTenant(null);
+        setSelectedHoldUserIds([]);
+        setDowngradeReason('');
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setProcessingDowngrade(false);
     }
   };
 
@@ -877,6 +984,23 @@ Thank you for choosing New Swan CRM!`;
         >
           <Building size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
           Client Workspaces & Subscriptions ({tenants.length})
+        </button>
+
+        <button
+          onClick={() => handleTabSwitch('billing')}
+          style={{
+            padding: '0.75rem 1.25rem',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            fontWeight: 600,
+            borderBottom: activeTab === 'billing' ? '2px solid #2563eb' : '2px solid transparent',
+            color: activeTab === 'billing' ? '#2563eb' : 'var(--text-secondary)'
+          }}
+        >
+          <Receipt size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
+          Master Billing & Invoices ({masterInvoices.length})
         </button>
       </div>
 
@@ -1556,350 +1680,853 @@ Thank you for choosing New Swan CRM!`;
         </div>
       )}
 
-      {/* User Seats Expansion & Add-on Invoice Modal */}
-      {seatModalTenant && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.65)',
-          backdropFilter: 'blur(3px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100000,
-          padding: '1rem'
-        }}>
-          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '640px', maxHeight: '92vh', overflowY: 'auto', background: '#fff', borderRadius: '12px' }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.85rem', marginBottom: '1.25rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Users size={22} color="#2563eb" />
-                  User Seats Expansion & Add-on Invoice
-                </h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.25rem 0 0 0' }}>
-                  Workspace: <strong>{seatModalTenant.name}</strong> (<code>{seatModalTenant.tenant_code}</code>) | Current: <strong>{seatModalTenant.user_seat_limit || 5} Users</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSeatModalTenant(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
-              >
-                <X size={20} />
-              </button>
+      {/* TAB 3: MASTER BILLING & INVOICES */}
+      {activeTab === 'billing' && (
+        <div>
+          {/* Header & Refresh */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Receipt size={22} color="#4338ca" />
+                Master Invoices & Centralized Billing Ledger
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+                All generated Tax Invoices, Proforma Invoices, Seat Expansions, and Downgrades across all {tenants.length} client workspaces in real-time.
+              </p>
             </div>
 
-            {/* Step 1: Seat Expansion Counter */}
-            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.5rem' }}>
-                1. SELECT NEW TOTAL SEAT LIMIT:
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-                <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.45rem 0.85rem', fontSize: '0.88rem', color: '#64748b' }}>
-                  Current: <strong>{seatModalTenant.user_seat_limit || 5}</strong> Seats
-                </div>
-                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#94a3b8' }}>➜</span>
-                <input
-                  type="number"
-                  min={Math.max(1, seatModalTenant.user_seat_limit || 1)}
-                  max="10000"
-                  value={newSeatValue}
-                  onChange={(e) => handleSeatSeatsChange(e.target.value)}
-                  style={{
-                    width: '120px',
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '2px solid #2563eb',
-                    fontSize: '1.05rem',
-                    fontWeight: 700,
-                    color: '#1e3a8a',
-                    outline: 'none'
-                  }}
-                />
-                <span style={{
-                  padding: '0.35rem 0.75rem',
-                  borderRadius: '16px',
-                  background: Number(newSeatValue) > (seatModalTenant.user_seat_limit || 5) ? '#dcfce7' : '#f1f5f9',
-                  color: Number(newSeatValue) > (seatModalTenant.user_seat_limit || 5) ? '#15803d' : '#64748b',
-                  fontSize: '0.82rem',
-                  fontWeight: 800
-                }}>
-                  +{Math.max(0, Number(newSeatValue) - (seatModalTenant.user_seat_limit || 5))} Additional Seats
-                </span>
-              </div>
-            </div>
+            <button
+              onClick={loadMasterInvoices}
+              disabled={loadingMasterInvoices}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border-light)',
+                background: '#fff',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: '#4338ca'
+              }}
+            >
+              <RefreshCw size={15} className={loadingMasterInvoices ? 'spin' : ''} />
+              {loadingMasterInvoices ? 'Refreshing...' : 'Refresh Invoices'}
+            </button>
+          </div>
 
-            {/* Step 2: Dual Billing Modes */}
-            <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.6rem' }}>
-                2. BILLING & EXPANSION CONTRACT MODE:
-              </label>
+          {/* Master Billing KPI Stats Cards */}
+          {(() => {
+            const paidInvoices = masterInvoices.filter(i => i.status === 'PAID');
+            const pendingInvoices = masterInvoices.filter(i => i.status === 'PENDING');
+            const totalPaidRevenue = paidInvoices.reduce((acc, i) => acc + (Number(i.total_payable) || Number(i.amount) || 0), 0);
+            const totalGstCollected = paidInvoices.reduce((acc, i) => acc + (Number(i.tax_amount) || 0), 0);
+            const totalPendingValue = pendingInvoices.reduce((acc, i) => acc + (Number(i.total_payable) || Number(i.amount) || 0), 0);
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                {/* Mode A */}
-                <div
-                  onClick={() => handleSeatModeChange('SAME_EXPIRY')}
-                  style={{
-                    border: `2px solid ${seatBillingMode === 'SAME_EXPIRY' ? '#2563eb' : '#e2e8f0'}`,
-                    background: seatBillingMode === 'SAME_EXPIRY' ? '#eff6ff' : '#fff',
-                    borderRadius: '8px',
-                    padding: '0.85rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="seat_billing_mode"
-                      checked={seatBillingMode === 'SAME_EXPIRY'}
-                      onChange={() => handleSeatModeChange('SAME_EXPIRY')}
-                    />
-                    Mode A: Coterminous (Same Expiry)
-                  </label>
-                  <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
-                    New seats expire on current contract validity date (<strong>{seatModalTenant.subscription?.valid_until ? new Date(seatModalTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Existing Expiry'}</strong>). Prorated for remaining days.
-                  </p>
-                </div>
-
-                {/* Mode B */}
-                <div
-                  onClick={() => handleSeatModeChange('EXTEND_VALIDITY')}
-                  style={{
-                    border: `2px solid ${seatBillingMode === 'EXTEND_VALIDITY' ? '#2563eb' : '#e2e8f0'}`,
-                    background: seatBillingMode === 'EXTEND_VALIDITY' ? '#eff6ff' : '#fff',
-                    borderRadius: '8px',
-                    padding: '0.85rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="seat_billing_mode"
-                      checked={seatBillingMode === 'EXTEND_VALIDITY'}
-                      onChange={() => handleSeatModeChange('EXTEND_VALIDITY')}
-                    />
-                    Mode B: Add Seats + Extend Validity
-                  </label>
-                  <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
-                    Increase seats AND extend the workspace subscription contract validity for another billing cycle.
-                  </p>
-                  {seatBillingMode === 'EXTEND_VALIDITY' && (
-                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem' }}>
-                      {[1, 3, 6, 12].map(m => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleSeatMonthsChange(m); }}
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            border: `1px solid ${seatExtendMonths === m ? '#2563eb' : '#cbd5e1'}`,
-                            background: seatExtendMonths === m ? '#2563eb' : '#fff',
-                            color: seatExtendMonths === m ? '#fff' : '#334155',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          +{m}M
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Step 3: Agreed Deal Price (Kitna me deal hua tha) & GST Mode */}
-            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1rem', alignItems: 'flex-start' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
-                    3. AGREED DEAL PRICE (₹):
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <input
-                      type="number"
-                      value={seatDealPrice}
-                      onChange={(e) => setSeatDealPrice(e.target.value)}
-                      placeholder="Agreed Base Price (₹)"
-                      style={{
-                        width: '100%',
-                        padding: '0.55rem 0.75rem',
-                        borderRadius: '6px',
-                        border: '1px solid #cbd5e1',
-                        fontSize: '1rem',
-                        fontWeight: 700,
-                        color: '#0f172a'
-                      }}
-                    />
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #16a34a' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Paid Revenue</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#16a34a', marginTop: '0.25rem' }}>
+                    ₹{totalPaidRevenue.toLocaleString('en-IN')}
                   </div>
-                  <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.35rem' }}>
-                    Negotiated amount. Automatically computed, but fully editable to match your custom deal.
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                    {paidInvoices.length} Paid Invoices
                   </div>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
-                    GST INVOICE BILLING:
-                  </label>
-                  <select
-                    value={seatGstType}
-                    onChange={(e) => setSeatGstType(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.55rem 0.65rem',
-                      borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.82rem',
-                      fontWeight: 600
-                    }}
-                  >
-                    <option value="IGST">18% IGST (Inter-state / Default)</option>
-                    <option value="CGST_SGST">9% CGST + 9% SGST (Intra-state)</option>
-                    <option value="NON_GST">NON-GST (0% Tax / Commercial Bill)</option>
-                  </select>
+                <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #2563eb' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total GST Collected</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#2563eb', marginTop: '0.25rem' }}>
+                    ₹{totalGstCollected.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                    18% IGST / CGST+SGST
+                  </div>
+                </div>
 
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.76rem', color: '#334155', background: '#fff', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Subtotal:</span>
-                      <strong>₹{Number(seatDealPrice || 0).toLocaleString('en-IN')}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>GST:</span>
-                      <strong>
-                        {seatGstType === 'NON_GST'
-                          ? 'NIL (0% / Non-GST)'
-                          : `₹${Math.round(Number(seatDealPrice || 0) * 0.18).toLocaleString('en-IN')} (18%)`}
-                      </strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', marginTop: '3px', paddingTop: '3px', color: '#1e3a8a', fontWeight: 800 }}>
-                      <span>Total Payable:</span>
-                      <span>
-                        ₹{(seatGstType === 'NON_GST'
-                          ? Number(seatDealPrice || 0)
-                          : Math.round(Number(seatDealPrice || 0) * 1.18)
-                        ).toLocaleString('en-IN')}
-                      </span>
-                    </div>
+                <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #d97706' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Pending Proforma Pipeline</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#d97706', marginTop: '0.25rem' }}>
+                    ₹{totalPendingValue.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                    {pendingInvoices.length} Unpaid Estimates
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #7c3aed' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Ledger Records</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.25rem' }}>
+                    {masterInvoices.length}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                    Across {tenants.length} Workspaces
                   </div>
                 </div>
               </div>
-            </div>
+            );
+          })()}
 
-            {/* Step 4: Payment Details (For Paid Tax Invoice) */}
-            <div style={{ background: '#f0fdf4', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.4rem' }}>
-                4. PAYMENT MODE & TRANSACTION ID (IF RECORDING PAYMENT):
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.5rem' }}>
-                <select
-                  value={seatPaymentMode}
-                  onChange={(e) => setSeatPaymentMode(e.target.value)}
-                  style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem', fontWeight: 600 }}
-                >
-                  <option value="UPI">UPI Transfer</option>
-                  <option value="NEFT">Bank NEFT / RTGS</option>
-                  <option value="Cheque">Cheque</option>
-                  <option value="Cash">Cash</option>
-                </select>
+          {/* Search & Filter Bar */}
+          <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '260px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                 <input
                   type="text"
-                  value={seatTransactionId}
-                  onChange={(e) => setSeatTransactionId(e.target.value)}
-                  placeholder="UTR / Transaction Ref (e.g. UPI/62019482)"
-                  style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem' }}
+                  placeholder="Search by Client Name, Invoice #, or Reference..."
+                  value={invoiceSearchQuery}
+                  onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem 0.5rem 2.25rem',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.85rem'
+                  }}
                 />
               </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
-              <button
-                type="button"
-                onClick={() => setSeatModalTenant(null)}
-                style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontSize: '0.82rem' }}
-              >
-                Cancel
-              </button>
-
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {/* Quick Save */}
-                <button
-                  type="button"
-                  onClick={handleUpdateSeats}
-                  style={{
-                    padding: '0.5rem 0.85rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    background: '#f8fafc',
-                    color: '#334155',
-                    fontWeight: 600,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer'
-                  }}
-                  title="Update seat count only without generating an invoice"
-                >
-                  ⚡ Quick Seats Only
-                </button>
-
-                {/* Generate Proforma Invoice */}
-                <button
-                  type="button"
-                  onClick={() => handleProcessAddonSeats('proforma')}
-                  disabled={processingSeats}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: '#4338ca',
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <FileText size={14} />
-                  {processingSeats ? 'Processing...' : 'Generate Add-on Proforma (PI)'}
-                </button>
-
-                {/* Record Payment & Tax Invoice */}
-                <button
-                  type="button"
-                  onClick={() => handleProcessAddonSeats('tax_invoice')}
-                  disabled={processingSeats}
-                  style={{
-                    padding: '0.5rem 1.15rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: '#059669',
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <CreditCard size={14} />
-                  {processingSeats ? 'Processing...' : 'Record Payment & Paid Tax Invoice'}
-                </button>
+              {/* Status Filter Pills */}
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'ALL', label: 'All Invoices' },
+                  { id: 'PAID', label: 'Paid Tax Invoices' },
+                  { id: 'PENDING', label: 'Pending Proforma' },
+                  { id: 'ADDON_SEATS', label: 'Seat Expansions' },
+                  { id: 'SEAT_REDUCTION', label: 'Downgrades' },
+                  { id: 'NON_GST', label: 'Non-GST Bills' }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setInvoiceStatusFilter(f.id)}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '20px',
+                      border: '1px solid',
+                      borderColor: invoiceStatusFilter === f.id ? '#4338ca' : '#cbd5e1',
+                      background: invoiceStatusFilter === f.id ? '#eef2ff' : '#fff',
+                      color: invoiceStatusFilter === f.id ? '#4338ca' : '#475569',
+                      fontSize: '0.78rem',
+                      fontWeight: invoiceStatusFilter === f.id ? 700 : 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
             </div>
+
+            {/* Invoices Table */}
+            {(() => {
+              const q = (invoiceSearchQuery || '').toLowerCase().trim();
+              const filteredInvoices = masterInvoices.filter(inv => {
+                if (invoiceStatusFilter === 'PAID' && inv.status !== 'PAID') return false;
+                if (invoiceStatusFilter === 'PENDING' && inv.status !== 'PENDING') return false;
+                if (invoiceStatusFilter === 'ADDON_SEATS' && inv.category !== 'ADDON_SEATS') return false;
+                if (invoiceStatusFilter === 'SEAT_REDUCTION' && inv.category !== 'SEAT_REDUCTION') return false;
+                if (invoiceStatusFilter === 'NON_GST' && inv.gst_type !== 'NON_GST') return false;
+
+                if (!q) return true;
+                const matchName = (inv.tenant_name || '').toLowerCase().includes(q);
+                const matchCode = (inv.tenant_code || '').toLowerCase().includes(q);
+                const matchInv = (inv.invoice_number || '').toLowerCase().includes(q);
+                const matchDesc = (inv.description || '').toLowerCase().includes(q);
+                const matchUtr = (inv.transaction_id || '').toLowerCase().includes(q);
+                return matchName || matchCode || matchInv || matchDesc || matchUtr;
+              });
+
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Invoice # & Date</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Client Workspace</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Category & Details</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right' }}>Taxable Amount</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right' }}>GST Tax</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right' }}>Total Payable</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredInvoices.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                            {loadingMasterInvoices ? 'Loading master invoices...' : 'No invoices match the selected filter or search.'}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredInvoices.map((inv, idx) => {
+                          const isPaid = inv.status === 'PAID';
+                          const isReduction = inv.category === 'SEAT_REDUCTION';
+                          const tenantObj = tenants.find(t => t.id === inv.tenant_id) || { name: inv.tenant_name, tenant_code: inv.tenant_code };
+
+                          return (
+                            <tr key={inv.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.75rem' }}>
+                                <div style={{ fontWeight: 700, color: '#1e1b4b', fontFamily: 'monospace' }}>
+                                  {inv.invoice_number}
+                                </div>
+                                <div style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                                  {inv.created_at ? new Date(inv.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '0.75rem' }}>
+                                <div style={{ fontWeight: 600, color: '#0f172a' }}>{inv.tenant_name}</div>
+                                <div style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                                  <code>{inv.tenant_code}</code>
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '0.75rem' }}>
+                                <div style={{ fontWeight: 600, color: isReduction ? '#dc2626' : '#334155', fontSize: '0.82rem' }}>
+                                  {inv.description || inv.category}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  {inv.gst_type === 'NON_GST' ? '🏷️ Non-GST Commercial Bill' : (inv.gst_type || 'IGST 18%')}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>
+                                {isReduction ? '₹0' : `₹${Number(inv.amount || 0).toLocaleString('en-IN')}`}
+                              </td>
+
+                              <td style={{ padding: '0.75rem', textAlign: 'right', color: '#64748b' }}>
+                                {inv.gst_type === 'NON_GST' || isReduction ? '₹0' : `₹${Number(inv.tax_amount || 0).toLocaleString('en-IN')}`}
+                              </td>
+
+                              <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 800, color: isPaid ? '#15803d' : '#0f172a' }}>
+                                {isReduction ? '₹0' : `₹${Number(inv.total_payable || inv.amount || 0).toLocaleString('en-IN')}`}
+                              </td>
+
+                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '0.25rem 0.6rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  background: isPaid ? '#dcfce7' : isReduction ? '#f1f5f9' : '#fef3c7',
+                                  color: isPaid ? '#15803d' : isReduction ? '#475569' : '#b45309'
+                                }}>
+                                  {isPaid ? 'PAID' : isReduction ? 'ADJUSTMENT' : 'PENDING'}
+                                </span>
+                              </td>
+
+                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                                  {!isReduction && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveInvoiceData(inv);
+                                          setInvoiceTenant(tenantObj);
+                                          setInvoiceType(inv.invoice_type || (isPaid ? 'tax_invoice' : 'proforma'));
+                                          setInvoiceGstMode(inv.gst_type || (inv.tax_amount === 0 ? 'NON_GST' : 'IGST'));
+                                        }}
+                                        style={{
+                                          padding: '0.3rem 0.6rem',
+                                          borderRadius: '6px',
+                                          border: '1px solid #cbd5e1',
+                                          background: '#fff',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer',
+                                          color: '#4338ca',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '3px'
+                                        }}
+                                        title="View, Print or Download Invoice"
+                                      >
+                                        <Eye size={13} /> View
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleShareWhatsApp(inv, tenantObj)}
+                                        style={{
+                                          padding: '0.3rem 0.55rem',
+                                          borderRadius: '6px',
+                                          border: '1px solid #86efac',
+                                          background: '#f0fdf4',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer',
+                                          color: '#16a34a',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '3px'
+                                        }}
+                                        title="Share on WhatsApp"
+                                      >
+                                        <MessageCircle size={13} />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
+
+      {/* User Seats Expansion & Downgrade Modal */}
+      {seatModalTenant && (() => {
+        const currSeats = seatModalTenant.user_seat_limit || 5;
+        const targetSeats = Math.max(1, parseInt(newSeatValue, 10) || 1);
+        const isDowngrade = targetSeats < currSeats;
+        const excessUsers = Math.max(0, tenantActiveUsers.length - targetSeats);
+
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '1rem'
+          }}>
+            <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '640px', maxHeight: '92vh', overflowY: 'auto', background: '#fff', borderRadius: '12px' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.85rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <h3 style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    margin: 0,
+                    color: isDowngrade ? '#991b1b' : '#1e1b4b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    {isDowngrade ? (
+                      <>
+                        <ArrowDownCircle size={22} color="#dc2626" />
+                        User Seats Downgrade & License Hold Workflow
+                      </>
+                    ) : (
+                      <>
+                        <Users size={22} color="#2563eb" />
+                        User Seats Expansion & Add-on Invoice
+                      </>
+                    )}
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.25rem 0 0 0' }}>
+                    Workspace: <strong>{seatModalTenant.name}</strong> (<code>{seatModalTenant.tenant_code}</code>) | Current: <strong>{currSeats} Users</strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSeatModalTenant(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Step 1: Seat Counter / Limit Selector */}
+              <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.5rem' }}>
+                  1. SELECT NEW TOTAL SEAT LIMIT:
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                  <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.45rem 0.85rem', fontSize: '0.88rem', color: '#64748b' }}>
+                    Current: <strong>{currSeats}</strong> Seats
+                  </div>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#94a3b8' }}>➜</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={newSeatValue}
+                    onChange={(e) => handleSeatSeatsChange(e.target.value)}
+                    style={{
+                      width: '120px',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: `2px solid ${isDowngrade ? '#dc2626' : '#2563eb'}`,
+                      fontSize: '1.05rem',
+                      fontWeight: 700,
+                      color: isDowngrade ? '#991b1b' : '#1e3a8a',
+                      outline: 'none'
+                    }}
+                  />
+                  <span style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '16px',
+                    background: isDowngrade ? '#fee2e2' : targetSeats > currSeats ? '#dcfce7' : '#f1f5f9',
+                    color: isDowngrade ? '#b91c1c' : targetSeats > currSeats ? '#15803d' : '#64748b',
+                    fontSize: '0.82rem',
+                    fontWeight: 800
+                  }}>
+                    {isDowngrade
+                      ? `-${currSeats - targetSeats} Seats (Downgrade)`
+                      : targetSeats > currSeats
+                      ? `+${targetSeats - currSeats} Additional Seats (Expansion)`
+                      : 'No Change in Seats'}
+                  </span>
+                </div>
+              </div>
+
+              {/* DOWNSCALE / DOWNGRADE BRANCH */}
+              {isDowngrade ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
+                  {/* Quota Audit Box */}
+                  <div style={{
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    background: excessUsers > 0 ? '#fffbeb' : '#f0fdf4',
+                    border: `1px solid ${excessUsers > 0 ? '#fde68a' : '#bbf7d0'}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.88rem', color: excessUsers > 0 ? '#b45309' : '#15803d' }}>
+                        {excessUsers > 0 ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+                        {excessUsers > 0 ? 'Excess Active Employees Detected' : 'Quota Clean: Ready to Downgrade'}
+                      </div>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+                        Active: <strong>{tenantActiveUsers.length}</strong> | Target Limit: <strong>{targetSeats}</strong>
+                      </span>
+                    </div>
+
+                    {excessUsers > 0 ? (
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#92400e', lineHeight: 1.45 }}>
+                        Workspace currently has <strong>{tenantActiveUsers.length} active users</strong>, which exceeds the new limit of <strong>{targetSeats} seats</strong>.
+                        Please select at least <strong>{excessUsers} user(s) to put on HOLD</strong> (deactivated) to fulfill the new seat quota.
+                      </p>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#166534', lineHeight: 1.45 }}>
+                        Workspace has only <strong>{tenantActiveUsers.length} active users</strong>, which is already within the target limit of <strong>{targetSeats} seats</strong>.
+                        No employees need to be held. You can proceed with the downgrade immediately!
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Employee Hold Selection Checklist */}
+                  {excessUsers > 0 && (
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <UserX size={15} color="#dc2626" />
+                          SELECT EMPLOYEES TO PUT ON HOLD ({selectedHoldUserIds.length} / {excessUsers} selected):
+                        </label>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: selectedHoldUserIds.length >= excessUsers ? '#dcfce7' : '#fee2e2',
+                          color: selectedHoldUserIds.length >= excessUsers ? '#15803d' : '#b91c1c'
+                        }}>
+                          {selectedHoldUserIds.length >= excessUsers ? '✓ Quota Met' : `Need ${excessUsers - selectedHoldUserIds.length} more`}
+                        </span>
+                      </div>
+
+                      <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                        {tenantActiveUsers.length === 0 ? (
+                          <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
+                            No active users found.
+                          </div>
+                        ) : (
+                          tenantActiveUsers.map((u) => {
+                            const isSelected = selectedHoldUserIds.includes(u.id);
+                            return (
+                              <div
+                                key={u.id}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedHoldUserIds(selectedHoldUserIds.filter(id => id !== u.id));
+                                  } else {
+                                    setSelectedHoldUserIds([...selectedHoldUserIds, u.id]);
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '0.65rem 0.85rem',
+                                  borderBottom: '1px solid #f1f5f9',
+                                  cursor: 'pointer',
+                                  background: isSelected ? '#fef2f2' : 'transparent',
+                                  transition: 'background 0.15s ease'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                                  />
+                                  <div>
+                                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: isSelected ? '#991b1b' : '#1e293b' }}>
+                                      {u.name || u.full_name || 'Unnamed Employee'}
+                                    </div>
+                                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                                      {u.email} {u.mobile_number ? `• ${u.mobile_number}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  background: isSelected ? '#fee2e2' : '#f1f5f9',
+                                  color: isSelected ? '#b91c1c' : '#475569'
+                                }}>
+                                  {isSelected ? 'PUT ON HOLD' : (u.role || 'USER')}
+                                </span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Downgrade Reason */}
+                  <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      DOWNGRADE REASON / AUDIT NOTE (OPTIONAL):
+                    </label>
+                    <input
+                      type="text"
+                      value={downgradeReason}
+                      onChange={(e) => setDowngradeReason(e.target.value)}
+                      placeholder="e.g. Client requested downsizing team / Cost optimization"
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.82rem'
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Step 2: Dual Billing Modes */}
+                  <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.6rem' }}>
+                      2. BILLING & EXPANSION CONTRACT MODE:
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      {/* Mode A */}
+                      <div
+                        onClick={() => handleSeatModeChange('SAME_EXPIRY')}
+                        style={{
+                          border: `2px solid ${seatBillingMode === 'SAME_EXPIRY' ? '#2563eb' : '#e2e8f0'}`,
+                          background: seatBillingMode === 'SAME_EXPIRY' ? '#eff6ff' : '#fff',
+                          borderRadius: '8px',
+                          padding: '0.85rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="seat_billing_mode"
+                            checked={seatBillingMode === 'SAME_EXPIRY'}
+                            onChange={() => handleSeatModeChange('SAME_EXPIRY')}
+                          />
+                          Mode A: Coterminous (Same Expiry)
+                        </label>
+                        <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
+                          New seats expire on current contract validity date (<strong>{seatModalTenant.subscription?.valid_until ? new Date(seatModalTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Existing Expiry'}</strong>). Prorated for remaining days.
+                        </p>
+                      </div>
+
+                      {/* Mode B */}
+                      <div
+                        onClick={() => handleSeatModeChange('EXTEND_VALIDITY')}
+                        style={{
+                          border: `2px solid ${seatBillingMode === 'EXTEND_VALIDITY' ? '#2563eb' : '#e2e8f0'}`,
+                          background: seatBillingMode === 'EXTEND_VALIDITY' ? '#eff6ff' : '#fff',
+                          borderRadius: '8px',
+                          padding: '0.85rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="seat_billing_mode"
+                            checked={seatBillingMode === 'EXTEND_VALIDITY'}
+                            onChange={() => handleSeatModeChange('EXTEND_VALIDITY')}
+                          />
+                          Mode B: Add Seats + Extend Validity
+                        </label>
+                        <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
+                          Increase seats AND extend the workspace subscription contract validity for another billing cycle.
+                        </p>
+                        {seatBillingMode === 'EXTEND_VALIDITY' && (
+                          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem' }}>
+                            {[1, 3, 6, 12].map(m => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleSeatMonthsChange(m); }}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  border: `1px solid ${seatExtendMonths === m ? '#2563eb' : '#cbd5e1'}`,
+                                  background: seatExtendMonths === m ? '#2563eb' : '#fff',
+                                  color: seatExtendMonths === m ? '#fff' : '#334155',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                +{m}M
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 3: Agreed Deal Price (Kitna me deal hua tha) & GST Mode */}
+                  <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1rem', alignItems: 'flex-start' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                          3. AGREED DEAL PRICE (₹):
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input
+                            type="number"
+                            value={seatDealPrice}
+                            onChange={(e) => setSeatDealPrice(e.target.value)}
+                            placeholder="Agreed Base Price (₹)"
+                            style={{
+                              width: '100%',
+                              padding: '0.55rem 0.75rem',
+                              borderRadius: '6px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '1rem',
+                              fontWeight: 700,
+                              color: '#0f172a'
+                            }}
+                          />
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.35rem' }}>
+                          Negotiated amount. Automatically computed, but fully editable to match your custom deal.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                          GST INVOICE BILLING:
+                        </label>
+                        <select
+                          value={seatGstType}
+                          onChange={(e) => setSeatGstType(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '0.82rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          <option value="IGST">18% IGST (Inter-state / Default)</option>
+                          <option value="CGST_SGST">9% CGST + 9% SGST (Intra-state)</option>
+                          <option value="NON_GST">NON-GST (0% Tax / Commercial Bill)</option>
+                        </select>
+
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.76rem', color: '#334155', background: '#fff', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>Subtotal:</span>
+                            <strong>₹{Number(seatDealPrice || 0).toLocaleString('en-IN')}</strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>GST:</span>
+                            <strong>
+                              {seatGstType === 'NON_GST'
+                                ? 'NIL (0% / Non-GST)'
+                                : `₹${Math.round(Number(seatDealPrice || 0) * 0.18).toLocaleString('en-IN')} (18%)`}
+                            </strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', marginTop: '3px', paddingTop: '3px', color: '#1e3a8a', fontWeight: 800 }}>
+                            <span>Total Payable:</span>
+                            <span>
+                              ₹{(seatGstType === 'NON_GST'
+                                ? Number(seatDealPrice || 0)
+                                : Math.round(Number(seatDealPrice || 0) * 1.18)
+                              ).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 4: Payment Details (For Paid Tax Invoice) */}
+                  <div style={{ background: '#f0fdf4', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '1.25rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.4rem' }}>
+                      4. PAYMENT MODE & TRANSACTION ID (IF RECORDING PAYMENT):
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.5rem' }}>
+                      <select
+                        value={seatPaymentMode}
+                        onChange={(e) => setSeatPaymentMode(e.target.value)}
+                        style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem', fontWeight: 600 }}
+                      >
+                        <option value="UPI">UPI Transfer</option>
+                        <option value="NEFT">Bank NEFT / RTGS</option>
+                        <option value="Cheque">Cheque</option>
+                        <option value="Cash">Cash</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={seatTransactionId}
+                        onChange={(e) => setSeatTransactionId(e.target.value)}
+                        placeholder="UTR / Transaction Ref (e.g. UPI/62019482)"
+                        style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setSeatModalTenant(null)}
+                  style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontSize: '0.82rem' }}
+                >
+                  Cancel
+                </button>
+
+                {isDowngrade ? (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleProcessDowngradeSeats}
+                      disabled={processingDowngrade || (excessUsers > 0 && selectedHoldUserIds.length < excessUsers)}
+                      style={{
+                        padding: '0.55rem 1.25rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: (excessUsers > 0 && selectedHoldUserIds.length < excessUsers) ? '#cbd5e1' : '#dc2626',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        cursor: (excessUsers > 0 && selectedHoldUserIds.length < excessUsers) ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <ArrowDownCircle size={15} />
+                      {processingDowngrade
+                        ? 'Processing Downgrade...'
+                        : `Confirm Downgrade to ${targetSeats} Seats${selectedHoldUserIds.length > 0 ? ` & Hold ${selectedHoldUserIds.length} Users` : ''}`}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {/* Quick Save */}
+                    <button
+                      type="button"
+                      onClick={handleUpdateSeats}
+                      style={{
+                        padding: '0.5rem 0.85rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        color: '#334155',
+                        fontWeight: 600,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer'
+                      }}
+                      title="Update seat count only without generating an invoice"
+                    >
+                      ⚡ Quick Seats Only
+                    </button>
+
+                    {/* Generate Proforma Invoice */}
+                    <button
+                      type="button"
+                      onClick={() => handleProcessAddonSeats('proforma')}
+                      disabled={processingSeats}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: '#4338ca',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <FileText size={14} />
+                      {processingSeats ? 'Processing...' : 'Generate Add-on Proforma (PI)'}
+                    </button>
+
+                    {/* Record Payment & Tax Invoice */}
+                    <button
+                      type="button"
+                      onClick={() => handleProcessAddonSeats('tax_invoice')}
+                      disabled={processingSeats}
+                      style={{
+                        padding: '0.5rem 1.15rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: '#059669',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <CreditCard size={14} />
+                      {processingSeats ? 'Processing...' : 'Record Payment & Paid Tax Invoice'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL: CREATE NEW CLIENT TENANT WORKSPACE (MASTER ADMIN EXCLUSIVE) */}
       {showCreateTenantModal && (
