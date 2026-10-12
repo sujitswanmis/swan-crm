@@ -90,7 +90,7 @@ export default function SuperAdminSaasPanel() {
 
   // Active Invoice View State (for Add-on or Ledger Invoices)
   const [activeInvoiceData, setActiveInvoiceData] = useState(null);
-  const [showGstSplit, setShowGstSplit] = useState(false);
+  const [invoiceGstMode, setInvoiceGstMode] = useState('IGST'); // 'IGST' | 'CGST_SGST' | 'NON_GST'
 
   // Create Client Tenant Modal State (Master Admin Exclusive)
   const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
@@ -393,7 +393,7 @@ export default function SuperAdminSaasPanel() {
         setActiveInvoiceData(res.invoice);
         setInvoiceTenant(tenantCopy);
         setInvoiceType(invType);
-        setShowGstSplit(seatGstType === 'CGST_SGST');
+        setInvoiceGstMode(seatGstType);
       } else {
         showNotification(res.error, true);
       }
@@ -428,15 +428,20 @@ export default function SuperAdminSaasPanel() {
     setActiveInvoiceData(inv);
     setInvoiceTenant(historyModalTenant);
     setInvoiceType(inv.invoice_type || (inv.status === 'PAID' ? 'tax_invoice' : 'proforma'));
-    setShowGstSplit(inv.gst_type === 'CGST_SGST');
+    setInvoiceGstMode(inv.gst_type || (inv.tax_amount === 0 ? 'NON_GST' : 'IGST'));
   };
 
   const handleShareWhatsApp = (inv, tenant) => {
-    const total = inv?.total_payable || Math.round((tenant?.subscription?.amount || 0) * 1.18);
+    const isNonGst = (inv?.gst_type === 'NON_GST') || (invoiceGstMode === 'NON_GST');
     const subtotal = inv?.amount || tenant?.subscription?.amount || 0;
-    const tax = inv?.tax_amount || Math.round(subtotal * 0.18);
+    const tax = isNonGst ? 0 : (inv?.tax_amount != null ? inv.tax_amount : Math.round(Number(subtotal) * 0.18));
+    const total = isNonGst ? Number(subtotal) : (inv?.total_payable != null ? inv.total_payable : Math.round(Number(subtotal) * 1.18));
     const invNo = inv?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${tenant?.tenant_code || 'WS'}-PAID` : `PI-${tenant?.tenant_code || 'EST'}-01`);
-    const typeLabel = invoiceType === 'tax_invoice' ? 'TAX INVOICE (PAID)' : 'PROFORMA INVOICE (ESTIMATE)';
+
+    let typeLabel = invoiceType === 'tax_invoice' ? 'TAX INVOICE (PAID)' : 'PROFORMA INVOICE (ESTIMATE)';
+    if (isNonGst) {
+      typeLabel = invoiceType === 'tax_invoice' ? 'COMMERCIAL INVOICE (NON-GST / PAID)' : 'PROFORMA BILL (NON-GST / ESTIMATE)';
+    }
     const seatsDesc = inv?.additional_seats ? `+${inv.additional_seats} Additional Seats (Total Limit: ${inv.total_seats || tenant?.user_seat_limit} Users)` : `${tenant?.user_seat_limit || 5} User Seats`;
 
     const text = `*NEW SWAN CRM - ${typeLabel}*
@@ -445,7 +450,7 @@ export default function SuperAdminSaasPanel() {
 📄 *Invoice #:* ${invNo}
 👥 *Seats:* ${seatsDesc}
 💰 *Subtotal:* ₹${Number(subtotal).toLocaleString('en-IN')}
-🏛️ *GST (18%):* ₹${Number(tax).toLocaleString('en-IN')}
+🏛️ *GST:* ${isNonGst ? 'NIL (Non-GST Commercial Bill)' : `₹${Number(tax).toLocaleString('en-IN')} (18%)`}
 💵 *Total Payable:* ₹${Number(total).toLocaleString('en-IN')}
 📌 *Status:* ${invoiceType === 'tax_invoice' ? '✅ PAID & ACTIVE' : '⏳ PENDING PAYMENT'}
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -564,7 +569,7 @@ Thank you for choosing New Swan CRM!`;
 
   const handleOpenInvoice = (t, type = 'proforma') => {
     setActiveInvoiceData(null);
-    setShowGstSplit(false);
+    setInvoiceGstMode('IGST');
     setInvoiceTenant(t);
     setInvoiceType(type);
     setPayAmount(t.subscription?.amount || 0);
@@ -579,7 +584,8 @@ Thank you for choosing New Swan CRM!`;
         amount: payAmount || invoiceTenant.subscription?.amount || 0,
         paymentMode: payMode,
         transactionId: payUtr,
-        months: payMonths
+        months: payMonths,
+        gstType: invoiceGstMode
       });
       if (res.success) {
         showNotification(res.message);
@@ -1742,6 +1748,7 @@ Thank you for choosing New Swan CRM!`;
                   >
                     <option value="IGST">18% IGST (Inter-state / Default)</option>
                     <option value="CGST_SGST">9% CGST + 9% SGST (Intra-state)</option>
+                    <option value="NON_GST">NON-GST (0% Tax / Commercial Bill)</option>
                   </select>
 
                   <div style={{ marginTop: '0.5rem', fontSize: '0.76rem', color: '#334155', background: '#fff', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
@@ -1750,12 +1757,21 @@ Thank you for choosing New Swan CRM!`;
                       <strong>₹{Number(seatDealPrice || 0).toLocaleString('en-IN')}</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>GST (18%):</span>
-                      <strong>₹{Math.round(Number(seatDealPrice || 0) * 0.18).toLocaleString('en-IN')}</strong>
+                      <span>GST:</span>
+                      <strong>
+                        {seatGstType === 'NON_GST'
+                          ? 'NIL (0% / Non-GST)'
+                          : `₹${Math.round(Number(seatDealPrice || 0) * 0.18).toLocaleString('en-IN')} (18%)`}
+                      </strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', marginTop: '3px', paddingTop: '3px', color: '#1e3a8a', fontWeight: 800 }}>
                       <span>Total Payable:</span>
-                      <span>₹{Math.round(Number(seatDealPrice || 0) * 1.18).toLocaleString('en-IN')}</span>
+                      <span>
+                        ₹{(seatGstType === 'NON_GST'
+                          ? Number(seatDealPrice || 0)
+                          : Math.round(Number(seatDealPrice || 0) * 1.18)
+                        ).toLocaleString('en-IN')}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2489,11 +2505,19 @@ Thank you for choosing New Swan CRM!`;
                     borderRadius: '6px',
                     fontSize: '0.85rem',
                     fontWeight: 800,
-                    background: invoiceType === 'tax_invoice' ? '#d1fae5' : '#fef3c7',
-                    color: invoiceType === 'tax_invoice' ? '#065f46' : '#92400e',
-                    border: `1px solid ${invoiceType === 'tax_invoice' ? '#6ee7b7' : '#fde68a'}`
+                    background: invoiceGstMode === 'NON_GST'
+                      ? (invoiceType === 'tax_invoice' ? '#e0f2fe' : '#f1f5f9')
+                      : (invoiceType === 'tax_invoice' ? '#d1fae5' : '#fef3c7'),
+                    color: invoiceGstMode === 'NON_GST'
+                      ? (invoiceType === 'tax_invoice' ? '#0369a1' : '#334155')
+                      : (invoiceType === 'tax_invoice' ? '#065f46' : '#92400e'),
+                    border: `1px solid ${invoiceGstMode === 'NON_GST'
+                      ? (invoiceType === 'tax_invoice' ? '#7dd3fc' : '#cbd5e1')
+                      : (invoiceType === 'tax_invoice' ? '#6ee7b7' : '#fde68a')}`
                   }}>
-                    {invoiceType === 'tax_invoice' ? 'TAX INVOICE' : 'PROFORMA INVOICE'}
+                    {invoiceGstMode === 'NON_GST'
+                      ? (invoiceType === 'tax_invoice' ? 'COMMERCIAL INVOICE (NON-GST)' : 'PROFORMA BILL (NON-GST)')
+                      : (invoiceType === 'tax_invoice' ? 'TAX INVOICE' : 'PROFORMA INVOICE')}
                   </span>
                   <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.4rem', color: '#111827' }}>
                     #{activeInvoiceData?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${invoiceTenant.tenant_code || 'WS'}-PAID` : `PI-${invoiceTenant.tenant_code || 'EST'}-01`)}
@@ -2614,17 +2638,27 @@ Thank you for choosing New Swan CRM!`;
                 </div>
 
                 <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb', textAlign: 'right' }}>
-                  {/* Optional GST Split Toggle */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
-                    <label style={{ fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#4b5563', userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={showGstSplit}
-                        onChange={(e) => setShowGstSplit(e.target.checked)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span>🏛️ <strong>GST Split (CGST + SGST)</strong></span>
-                    </label>
+                  {/* Tax Mode Selector */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px', marginBottom: '0.6rem' }}>
+                    <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#475569' }}>Billing Mode:</span>
+                    <select
+                      value={invoiceGstMode}
+                      onChange={(e) => setInvoiceGstMode(e.target.value)}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        borderRadius: '4px',
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        color: invoiceGstMode === 'NON_GST' ? '#0369a1' : '#1e293b',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="IGST">18% IGST (Inter-state)</option>
+                      <option value="CGST_SGST">9% CGST + 9% SGST (Intra-state)</option>
+                      <option value="NON_GST">NON-GST (0% Commercial Bill)</option>
+                    </select>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
@@ -2632,7 +2666,12 @@ Thank you for choosing New Swan CRM!`;
                     <span>₹{(activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)).toLocaleString('en-IN')}</span>
                   </div>
 
-                  {showGstSplit ? (
+                  {invoiceGstMode === 'NON_GST' ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem', color: '#0284c7' }}>
+                      <span style={{ fontWeight: 600 }}>GST (Non-GST / Commercial):</span>
+                      <span style={{ fontWeight: 700 }}>NIL (₹0)</span>
+                    </div>
+                  ) : invoiceGstMode === 'CGST_SGST' ? (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem' }}>
                         <span style={{ color: '#6b7280' }}>CGST (9% Intra-state):</span>
@@ -2646,13 +2685,21 @@ Thank you for choosing New Swan CRM!`;
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
                       <span style={{ color: '#6b7280' }}>IGST (18% Inter-state):</span>
-                      <span>₹{(activeInvoiceData?.tax_amount != null ? Number(activeInvoiceData.tax_amount) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.18)).toLocaleString('en-IN')}</span>
+                      <span>₹{(activeInvoiceData?.tax_amount != null && activeInvoiceData.gst_type !== 'NON_GST' ? Number(activeInvoiceData.tax_amount) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.18)).toLocaleString('en-IN')}</span>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '2px solid #111827', marginTop: '4px', fontWeight: 800, fontSize: '0.95rem', color: '#1e1b4b' }}>
                     <span>Grand Total:</span>
-                    <span>₹{(activeInvoiceData?.total_payable != null ? Number(activeInvoiceData.total_payable) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 1.18)).toLocaleString('en-IN')}</span>
+                    <span>
+                      ₹{(invoiceGstMode === 'NON_GST'
+                        ? (activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0))
+                        : (activeInvoiceData?.total_payable != null && activeInvoiceData.gst_type !== 'NON_GST'
+                          ? Number(activeInvoiceData.total_payable)
+                          : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 1.18)
+                        )
+                      ).toLocaleString('en-IN')}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -2797,9 +2844,14 @@ Thank you for choosing New Swan CRM!`;
                               +{inv.additional_seats} Seats (Total: {inv.total_seats})
                             </span>
                           )}
+                          {inv.gst_type === 'NON_GST' && (
+                            <span style={{ fontSize: '0.68rem', background: '#e0f2fe', color: '#0369a1', padding: '1px 5px', borderRadius: '4px', fontWeight: 700, marginLeft: '4px' }}>
+                              Non-GST
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
-                          ₹{Number(inv.total_payable || Math.round((inv.amount || 0) * 1.18)).toLocaleString('en-IN')}
+                          ₹{Number(inv.gst_type === 'NON_GST' ? (inv.amount || 0) : (inv.total_payable || Math.round((inv.amount || 0) * 1.18))).toLocaleString('en-IN')}
                           <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 400 }}>
                             (Base: ₹{Number(inv.amount || 0).toLocaleString('en-IN')})
                           </div>

@@ -1237,7 +1237,8 @@ export async function recordPaymentAndGenerateInvoice({
   amount,
   paymentMode = 'UPI',
   transactionId = '',
-  months = 12
+  months = 12,
+  gstType = 'IGST'
 }) {
   try {
     const admin = getAdminClient();
@@ -1284,6 +1285,10 @@ export async function recordPaymentAndGenerateInvoice({
 
     // Log to TENANT_BILLING_HISTORY
     try {
+      const isNonGst = gstType === 'NON_GST';
+      const taxAmount = isNonGst ? 0 : Math.round(Number(amount || 0) * 0.18);
+      const totalPayable = isNonGst ? Number(amount || 0) : Math.round(Number(amount || 0) * 1.18);
+
       const invRecord = {
         id: `PAY-${Date.now()}`,
         invoice_number: invoiceNumber,
@@ -1296,10 +1301,10 @@ export async function recordPaymentAndGenerateInvoice({
         months_added: Number(months || 12),
         valid_until: newExpiry.toISOString(),
         amount: Number(amount || 0),
-        gst_type: 'IGST',
-        gst_rate: 18,
-        tax_amount: Math.round(Number(amount || 0) * 0.18),
-        total_payable: Math.round(Number(amount || 0) * 1.18),
+        gst_type: gstType || 'IGST',
+        gst_rate: isNonGst ? 0 : 18,
+        tax_amount: taxAmount,
+        total_payable: totalPayable,
         payment_mode: paymentMode || 'UPI',
         transaction_id: transactionId || '',
         status: 'PAID',
@@ -1488,8 +1493,9 @@ export async function processAddonSeatsAndInvoice({
       ? `INV-ADD-${code}-${stamp}`
       : `PI-ADD-${code}-${stamp}`;
 
-    const taxAmount = Math.round(finalAmount * 0.18);
-    const totalPayable = Math.round(finalAmount * 1.18);
+    const isNonGst = gstType === 'NON_GST';
+    const taxAmount = isNonGst ? 0 : Math.round(finalAmount * 0.18);
+    const totalPayable = isNonGst ? finalAmount : Math.round(finalAmount * 1.18);
 
     const invoiceRecord = {
       id: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -1504,7 +1510,7 @@ export async function processAddonSeatsAndInvoice({
       valid_until: newExpiry.toISOString(),
       amount: finalAmount,
       gst_type: gstType || 'IGST',
-      gst_rate: 18,
+      gst_rate: isNonGst ? 0 : 18,
       tax_amount: taxAmount,
       total_payable: totalPayable,
       payment_mode: paymentMode || 'UPI',
