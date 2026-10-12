@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity, DollarSign } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity, DollarSign, MessageSquare } from 'lucide-react';
 
 // Subcomponents (to be implemented)
 import BusinessProfile from './BusinessProfile';
@@ -17,28 +17,39 @@ import PageNavigationConfig from './PageNavigationConfig';
 import ManageDepartments from './ManageDepartments';
 import SystemStatusHealth from './SystemStatusHealth';
 import SuperAdminSaasPanel from '../SaaS/SuperAdminSaasPanel';
+import WorkspaceMessageTemplates from './WorkspaceMessageTemplates';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
-  { id: 'business', label: 'Business Profile', icon: <Building2 size={18} /> },
+  { id: 'business', label: 'Business Profile & Branches', icon: <Building2 size={18} /> },
   { id: 'crm', label: 'CRM & Lead Config', icon: <Settings2 size={18} /> },
   { id: 'fields', label: 'Custom Fields', icon: <FormInput size={18} /> },
+  { id: 'templates', label: 'Message & WhatsApp Templates', icon: <MessageSquare size={18} /> },
   { id: 'notifications', label: 'Notifications & Alerts', icon: <Bell size={18} /> },
+  { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
+  { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
+  { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
+  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
   { id: 'roles', label: 'Roles & Permissions', icon: <Shield size={18} /> },
   { id: 'automation', label: 'Automation & API', icon: <Workflow size={18} /> },
   { id: 'sessions', label: 'Monitor Sessions', icon: <Monitor size={18} /> },
   { id: 'audit', label: 'Activity Audit Logs', icon: <Clock size={18} /> },
-  { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
-  { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
-  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
   { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> },
-  { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
   { id: 'status', label: 'System Health & Status', icon: <Activity size={18} /> },
   { id: 'saas_master', label: 'SaaS Billing & Pricing Studio', icon: <DollarSign size={18} /> }
 ];
 
-export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '' }) {
-  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
+export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
+  const allPermitted = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
+
+  const visibleTabs = allPermitted.filter(t => {
+    if (isMasterAdmin) return true;
+    // Strictly Master Admin tabs hidden from Client Workspaces
+    if (['automation', 'status', 'navigation', 'saas_master'].includes(t.id)) return false;
+    // Redundant User Management tabs hidden from Client Workspaces settings
+    if (['roles', 'sessions', 'audit'].includes(t.id)) return false;
+    return true;
+  });
 
   const [activeTab, setActiveTab] = useState('business');
 
@@ -128,6 +139,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '', us
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'crm' && <CRMConfig />}
         {activeTab === 'fields' && <CustomFields />}
+        {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}
         {activeTab === 'notifications' && <NotificationsConfig />}
         {activeTab === 'roles' && <RolesPermissions />}
         {activeTab === 'automation' && <AutomationAPI />}

@@ -177,13 +177,18 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
     return false;
   }
 
-  // 2. SaaS Studio & Workflow Builder Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
-  if (tabId === 'saas_studio' || tabId === 'workplace' || tabId === 'workflow') {
+  // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
+  if (tabId === 'saas_studio' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
     const isMaster = (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
                      (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
                      (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
-                     (typeof userRole === 'string' && (userRole.toLowerCase() === 'masteradmin' || userRole.toLowerCase() === 'admin')) ||
-                     moduleAccess?.is_master_admin === true;
+                     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
+                     moduleAccess?.is_master_admin === true ||
+                     (typeof userRole === 'string' && userRole.toLowerCase() === 'admin' && (
+                       !(moduleAccess?._company || '') ||
+                       (moduleAccess?._company || '').toLowerCase().includes('swan') ||
+                       (moduleAccess?._company || '').toLowerCase().includes('supuja')
+                     ));
     return isMaster;
   }
 
@@ -367,8 +372,9 @@ export default function CRMContainer({
   const isMasterAdmin = (userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
     (userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
     (userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
-    (typeof userRole === 'string' && (userRole.toLowerCase() === 'masteradmin' || userRole.toLowerCase() === 'admin')) ||
-    moduleAccess?.is_master_admin === true;
+    (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
+    moduleAccess?.is_master_admin === true ||
+    (isAdmin && (!userCompany || userCompany.toLowerCase().includes('swan') || userCompany.toLowerCase().includes('supuja')));
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -6929,7 +6935,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('settings', moduleAccess, userRole) && visitedTabs.has('settings')}
               >
                 <ErrorBoundary>
-                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} />
+                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

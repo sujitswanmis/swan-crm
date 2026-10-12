@@ -1,0 +1,21 @@
+{
+  "SuPuja Creations": [
+    {
+      "id": "br_hq_1791830835870",
+      "company": "SuPuja Creations",
+      "branch_code": "HQ-MAIN-01",
+      "branch_name": "Headquarters (Main Office)",
+      "location_type": "Headquarters",
+      "address": "Main Office Complex",
+      "city": "Headquarters City",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "",
+      "incharge_name": "Director / Branch Head",
+      "is_active": true,
+      "created_at": "2026-10-12T18:47:15.870Z"
+    }
+  ]
+}
