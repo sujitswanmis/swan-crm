@@ -489,11 +489,11 @@
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 3625,
-      "idleSeconds": 2570,
+      "activeSeconds": 4057,
+      "idleSeconds": 3103,
       "firstSeen": "2026-10-12T13:11:43.366646+00:00",
-      "lastSeen": "2026-10-12T15:09:20.828Z",
-      "status": "working",
+      "lastSeen": "2026-10-12T15:36:51.649Z",
+      "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
   }

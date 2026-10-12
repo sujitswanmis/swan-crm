@@ -30,7 +30,7 @@ import ConfirmActionModal from './modals/ConfirmActionModal';
 
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 
-export default function UserManagementContainer({ initialUsers = [], activeSubTab = 'user_manage', onTabChange = () => {} }) {
+export default function UserManagementContainer({ initialUsers = [], activeSubTab = 'user_manage', onTabChange = () => {}, currentUserCompany = '' }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
   const [activeTab, setActiveTab] = useState(activeSubTab || 'user_manage');
@@ -84,7 +84,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
   const fetchUsers = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const data = await getTeamMembers();
+      const data = await getTeamMembers(currentUserCompany);
       setUsers(data || []);
     } catch (err) {
       console.error('Error fetching users:', err);

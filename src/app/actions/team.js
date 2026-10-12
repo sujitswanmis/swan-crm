@@ -14,7 +14,7 @@ const getAdminClient = () => {
   );
 };
 
-export async function getTeamMembers() {
+export async function getTeamMembers(requesterCompany = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
@@ -26,7 +26,21 @@ export async function getTeamMembers() {
     return [];
   }
 
-  return (data || []).map(u => ({
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const reqLower = String(requesterCompany || '').toLowerCase().trim();
+  const isSwanRequester = !requesterCompany || SWAN_COMPANIES.includes(reqLower);
+
+  const scopedData = (data || []).filter(u => {
+    const userComp = String(u.company || '').toLowerCase().trim();
+    if (!isSwanRequester) {
+      // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
+      return userComp === reqLower;
+    }
+    // New Swan Group: return New Swan Group members, exclude separate client tenants
+    return SWAN_COMPANIES.includes(userComp) || !userComp;
+  });
+
+  return scopedData.map(u => ({
     ...u,
     emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
     emp_sub_department: u.emp_sub_department || (u.module_access && u.module_access.emp_sub_department) || '',

@@ -135,7 +135,7 @@ const WORK_LOCATION_TYPES = [
   'National/Global'
 ];
 
-export default function TeamManagement({ initialUsers = [] }) {
+export default function TeamManagement({ initialUsers = [], currentUserCompany = '' }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
 
@@ -482,7 +482,7 @@ export default function TeamManagement({ initialUsers = [] }) {
   const fetchUsers = async (showLoader = false) => {
     if (showLoader && users.length === 0) setLoading(true);
     try {
-      const data = await getTeamMembers();
+      const data = await getTeamMembers(currentUserCompany);
       if (data && Array.isArray(data)) {
         setUsers(data);
       }
@@ -2662,9 +2662,20 @@ export default function TeamManagement({ initialUsers = [] }) {
                     onChange={e => setAddForm({...addForm, company: e.target.value})}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
-                    <option value="">Select Company...</option>
-                    <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
+                    {(() => {
+                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+                      const isSwan = !currentUserCompany || SWAN_COMPANIES.includes(String(currentUserCompany).toLowerCase().trim());
+                      if (!isSwan && currentUserCompany) {
+                        return <option value={currentUserCompany}>{currentUserCompany}</option>;
+                      }
+                      return (
+                        <>
+                          <option value="">Select Company...</option>
+                          <option value="NSMLR">NSMLR</option>
+                          <option value="NSTLP">NSTLP</option>
+                        </>
+                      );
+                    })()}
                   </select>
                 </div>
                 <div>
@@ -3090,9 +3101,20 @@ export default function TeamManagement({ initialUsers = [] }) {
                     onChange={e => setEditForm({...editForm, company: e.target.value})}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
                   >
-                    <option value="">All Companies</option>
-                    <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
+                    {(() => {
+                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+                      const isSwan = !currentUserCompany || SWAN_COMPANIES.includes(String(currentUserCompany).toLowerCase().trim());
+                      if (!isSwan && currentUserCompany) {
+                        return <option value={currentUserCompany}>{currentUserCompany}</option>;
+                      }
+                      return (
+                        <>
+                          <option value="">All Companies</option>
+                          <option value="NSMLR">NSMLR</option>
+                          <option value="NSTLP">NSTLP</option>
+                        </>
+                      );
+                    })()}
                   </select>
                 </div>
                 <div>

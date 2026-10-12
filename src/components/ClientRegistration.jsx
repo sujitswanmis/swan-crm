@@ -437,9 +437,13 @@ function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
   );
 }
 
-export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null, teamMembers: propTeamMembers = null }) {
+export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null, teamMembers: propTeamMembers = null, userCompany = '' }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
+  const defaultWorkspaceCompany = (!isSwanWorkspace && userCompany) ? userCompany : '';
 
   // Bulk Importer States
   const [importFile, setImportFile] = useState(null);
@@ -591,7 +595,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [formData, setFormData] = useState({
     // Lead Info
     assigned_to: '',
-    our_company: '',
+    our_company: defaultWorkspaceCompany,
     lead_date: new Date().toISOString().split('T')[0],
     source: '',
     source_name: '',
@@ -1064,7 +1068,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         // Reset form (keeping defaults)
         setFormData(prev => ({
           ...prev,
-          source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: '',
+          source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
           business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
           business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
           name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
@@ -1786,9 +1790,15 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Our Company Name <span style={{color: 'red'}}>*</span></label>
                   <select name="our_company" value={formData.our_company === 'NSTL' ? 'NSTLP' : formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Company</option>
-                    <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
+                    {isSwanWorkspace ? (
+                      <>
+                        <option value="">Select Company</option>
+                        <option value="NSMLR">NSMLR</option>
+                        <option value="NSTLP">NSTLP</option>
+                      </>
+                    ) : (
+                      <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
+                    )}
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
