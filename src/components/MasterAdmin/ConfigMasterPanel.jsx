@@ -7,29 +7,41 @@ import {
   Workflow,
   Compass,
   Sliders,
-  Settings2
+  Settings2,
+  WifiOff,
+  Users
 } from 'lucide-react';
 import AdminMessageConfig from '../AdminMessageConfig/AdminMessageConfig';
 import SystemStatusHealth from '../Settings/SystemStatusHealth';
 import AutomationAPI from '../Settings/AutomationAPI';
 import PageNavigationConfig from '../Settings/PageNavigationConfig';
+import OfflineRuleModule from '../Offline/OfflineRuleModule';
+import PublicUserManagement from '../PublicUserManagement';
 
 const CONFIG_TABS = [
   { id: 'messages', label: 'Platform Messaging & OTPs', icon: ShieldCheck, description: 'Central OTP templates, SMTP authentication & global DLT/WABA gateways' },
   { id: 'status', label: 'System Health & Server Logs', icon: Activity, description: 'Database performance, telephony metrics, system uptime & latency logs' },
   { id: 'automation', label: 'Automation & Webhook API', icon: Workflow, description: 'Platform API keys, external CRM webhooks & scheduled triggers' },
-  { id: 'navigation', label: 'Page Navigation Rules', icon: Compass, description: 'Table column sizing defaults, page jumps & pagination rules' }
+  { id: 'navigation', label: 'Page Navigation Rules', icon: Compass, description: 'Table column sizing defaults, page jumps & pagination rules' },
+  { id: 'offline_rule', label: 'Offline Rules & Sync Policy', icon: WifiOff, description: 'Network disconnect policies, offline queue retention & local caching rules' },
+  { id: 'public_users', label: 'Public User Management', icon: Users, description: 'External candidate applicants, job portal registrations & public user controls' }
 ];
 
-export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTab = null, onSubTabChange = null }) {
+export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTab = null, onSubTabChange = null, userRole = 'admin' }) {
   const [activeTab, setActiveTab] = useState(() => {
-    if (activeSubTab && CONFIG_TABS.some(t => t.id === activeSubTab)) return activeSubTab;
-    return initialTab || 'messages';
+    let raw = activeSubTab || initialTab || 'messages';
+    if (raw === 'admin_messages') raw = 'messages';
+    if (raw === 'offline-rule') raw = 'offline_rule';
+    if (raw === 'public-users') raw = 'public_users';
+    if (CONFIG_TABS.some(t => t.id === raw)) return raw;
+    return 'messages';
   });
 
   useEffect(() => {
     if (activeSubTab && activeSubTab !== activeTab) {
-      const canonical = activeSubTab === 'admin_messages' ? 'messages' : activeSubTab;
+      let canonical = activeSubTab === 'admin_messages' ? 'messages' : activeSubTab;
+      if (canonical === 'offline-rule') canonical = 'offline_rule';
+      if (canonical === 'public-users') canonical = 'public_users';
       if (CONFIG_TABS.some(t => t.id === canonical)) {
         setActiveTab(canonical);
       }
@@ -134,6 +146,8 @@ export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTa
         {activeTab === 'status' && <SystemStatusHealth />}
         {activeTab === 'automation' && <AutomationAPI />}
         {activeTab === 'navigation' && <PageNavigationConfig />}
+        {activeTab === 'offline_rule' && <OfflineRuleModule userRole={userRole} />}
+        {activeTab === 'public_users' && <PublicUserManagement />}
       </div>
     </div>
   );

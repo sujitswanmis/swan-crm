@@ -428,6 +428,9 @@ export default function CRMContainer({
     if (['config-master', 'config_master', 'configmaster', 'admin-message-config', 'admin_message_config'].includes(path) || (path && (path.startsWith('config-master') || path.startsWith('config_master')))) {
       return isMasterAdmin ? 'config_master' : 'dashboard';
     }
+    if (isMasterAdmin && (path === 'offline_rule' || path === 'offline-rule' || path === 'public_users' || path === 'public-users')) {
+      return 'config_master';
+    }
 
     if (!path) {
       const isAdmin = userRole === 'admin' || userRole === 'Admin';
@@ -598,7 +601,7 @@ export default function CRMContainer({
   const [configMasterMenuExpanded, setConfigMasterMenuExpanded] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
-    return cleanPath.startsWith('config-master') || cleanPath.startsWith('config_master') || cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config';
+    return cleanPath.startsWith('config-master') || cleanPath.startsWith('config_master') || cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config' || (isMasterAdmin && (cleanPath === 'offline_rule' || cleanPath === 'offline-rule' || cleanPath === 'public_users' || cleanPath === 'public-users'));
   });
   const [configMasterSubTab, setConfigMasterSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -607,15 +610,25 @@ export default function CRMContainer({
     if (cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config') {
       return 'messages';
     }
+    if (cleanPath === 'offline_rule' || cleanPath === 'offline-rule') {
+      return 'offline_rule';
+    }
+    if (cleanPath === 'public_users' || cleanPath === 'public-users') {
+      return 'public_users';
+    }
     if (cleanPath && (cleanPath.startsWith('config-master/') || cleanPath.startsWith('config_master/'))) {
       const sub = cleanPath.split('/')[1];
       if (sub === 'admin_messages' || sub === 'admin-messages' || sub === 'otps') return 'messages';
       if (sub === 'health' || sub === 'logs') return 'status';
-      if (['messages', 'status', 'automation', 'navigation'].includes(sub)) return sub;
+      if (sub === 'offline-rule') return 'offline_rule';
+      if (sub === 'public-users') return 'public_users';
+      if (['messages', 'status', 'automation', 'navigation', 'offline_rule', 'public_users'].includes(sub)) return sub;
     }
-    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'navigation'].includes(queryTab)) {
+    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'navigation', 'offline_rule', 'offline-rule', 'public_users', 'public-users'].includes(queryTab)) {
       if (queryTab === 'admin_messages' || queryTab === 'admin-messages') return 'messages';
       if (queryTab === 'health') return 'status';
+      if (queryTab === 'offline-rule') return 'offline_rule';
+      if (queryTab === 'public-users') return 'public_users';
       return queryTab;
     }
     return 'messages';
@@ -2851,6 +2864,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'offline_rule' && isMasterAdmin) {
+      handleConfigMasterSubTabChange('offline_rule');
+      return;
+    }
+
+    if (tabId === 'public_users' && isMasterAdmin) {
+      handleConfigMasterSubTabChange('public_users');
+      return;
+    }
+
     if (tabId === 'workplace' || tabId === 'workflow') {
       if (!isMasterAdmin) return;
       setActiveTab('workplace');
@@ -2986,6 +3009,8 @@ export default function CRMContainer({
     let canonical = (subTabId === 'admin_messages' || subTabId === 'admin-messages' || subTabId === 'otps') ? 'messages' : (subTabId || 'messages');
     if (canonical === 'health' || canonical === 'logs') canonical = 'status';
     if (canonical === 'routes') canonical = 'navigation';
+    if (canonical === 'offline-rule') canonical = 'offline_rule';
+    if (canonical === 'public-users') canonical = 'public_users';
     setConfigMasterSubTab(canonical);
     if (activeTab !== 'config_master') {
       setActiveTab('config_master');
@@ -3964,6 +3989,20 @@ export default function CRMContainer({
                   >
                     🧭 Page Navigation Rules
                   </button>
+                  <button
+                    onClick={() => handleConfigMasterSubTabChange('offline_rule')}
+                    className="submenu-item"
+                    data-active={activeTab === 'config_master' && configMasterSubTab === 'offline_rule'}
+                  >
+                    📴 Offline Rules & Sync Policy
+                  </button>
+                  <button
+                    onClick={() => handleConfigMasterSubTabChange('public_users')}
+                    className="submenu-item"
+                    data-active={activeTab === 'config_master' && configMasterSubTab === 'public_users'}
+                  >
+                    👥 Public User Management
+                  </button>
                 </div>
               </div>
             </SidebarSubmenu>
@@ -4874,7 +4913,7 @@ export default function CRMContainer({
                     )}
 
                     {/* Public User Management */}
-                    {(userRole === 'admin' || userRole === 'Admin') && (
+                    {!isMasterAdmin && (userRole === 'admin' || userRole === 'Admin') && (
                       <button 
                         onClick={() => handleTabChange('public_users')}
                         className="nav-item" 
@@ -4964,7 +5003,7 @@ export default function CRMContainer({
                     )}
 
                     {/* Offline Rule (System Page) */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['offline_rule']?.view !== false) && (
+                    {!isMasterAdmin && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['offline_rule']?.view !== false) && (
                       <button 
                         onClick={() => handleTabChange('offline_rule')}
                         className="nav-item" 
@@ -5169,7 +5208,9 @@ export default function CRMContainer({
                     configMasterSubTab === 'messages' ? '⚙️ Config Master — Platform Messaging & OTPs' :
                     configMasterSubTab === 'status' ? '⚙️ Config Master — System Health & Server Logs' :
                     configMasterSubTab === 'automation' ? '⚙️ Config Master — Automation & Webhook API' :
-                    '⚙️ Config Master — Page Navigation Rules'
+                    configMasterSubTab === 'navigation' ? '⚙️ Config Master — Page Navigation Rules' :
+                    configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
+                    '⚙️ Config Master — Public User Management'
                   )}
                 </h1>
               </div>
@@ -7057,6 +7098,7 @@ export default function CRMContainer({
                       initialTab={configMasterSubTab}
                       activeSubTab={configMasterSubTab}
                       onSubTabChange={handleConfigMasterSubTabChange}
+                      userRole={userRole}
                     />
                   ) : null}
                 </ErrorBoundary>
