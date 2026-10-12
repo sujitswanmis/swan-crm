@@ -68,10 +68,6 @@ import {
   getAllMasterInvoices
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
-import AdminMessageConfig from '../AdminMessageConfig/AdminMessageConfig';
-import SystemStatusHealth from '../Settings/SystemStatusHealth';
-import AutomationAPI from '../Settings/AutomationAPI';
-import PageNavigationConfig from '../Settings/PageNavigationConfig';
 
 export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubTab, onSubTabChange }) {
   const [activeTab, setActiveTab] = useState(activeSubTab || initialTab || 'pricing'); // 'pricing' | 'tenants'
@@ -958,124 +954,56 @@ Thank you for choosing New Swan CRM!`;
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', gap: '0.75rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '2px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', gap: '1rem' }}>
         <button
           onClick={() => handleTabSwitch('pricing')}
           style={{
-            padding: '0.75rem 1.15rem',
+            padding: '0.75rem 1.25rem',
             border: 'none',
             background: 'none',
             cursor: 'pointer',
-            fontSize: '0.92rem',
+            fontSize: '0.95rem',
             fontWeight: 600,
             borderBottom: activeTab === 'pricing' ? '2px solid #2563eb' : '2px solid transparent',
             color: activeTab === 'pricing' ? '#2563eb' : 'var(--text-secondary)'
           }}
         >
           <DollarSign size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Dynamic Pricing & Catalog
+          Dynamic Pricing & Module Catalog
         </button>
 
         <button
           onClick={() => handleTabSwitch('tenants')}
           style={{
-            padding: '0.75rem 1.15rem',
+            padding: '0.75rem 1.25rem',
             border: 'none',
             background: 'none',
             cursor: 'pointer',
-            fontSize: '0.92rem',
+            fontSize: '0.95rem',
             fontWeight: 600,
             borderBottom: activeTab === 'tenants' ? '2px solid #2563eb' : '2px solid transparent',
             color: activeTab === 'tenants' ? '#2563eb' : 'var(--text-secondary)'
           }}
         >
           <Building size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Client Workspaces ({tenants.length})
+          Client Workspaces & Subscriptions ({tenants.length})
         </button>
 
         <button
           onClick={() => handleTabSwitch('billing')}
           style={{
-            padding: '0.75rem 1.15rem',
+            padding: '0.75rem 1.25rem',
             border: 'none',
             background: 'none',
             cursor: 'pointer',
-            fontSize: '0.92rem',
+            fontSize: '0.95rem',
             fontWeight: 600,
             borderBottom: activeTab === 'billing' ? '2px solid #2563eb' : '2px solid transparent',
             color: activeTab === 'billing' ? '#2563eb' : 'var(--text-secondary)'
           }}
         >
           <Receipt size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Master Invoices ({masterInvoices.length})
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('admin_messages')}
-          style={{
-            padding: '0.75rem 1.15rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.92rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'admin_messages' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'admin_messages' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <ShieldCheck size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Platform Messaging & OTPs
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('status')}
-          style={{
-            padding: '0.75rem 1.15rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.92rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'status' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'status' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <Activity size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          System Health & Logs
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('automation')}
-          style={{
-            padding: '0.75rem 1.15rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.92rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'automation' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'automation' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <Workflow size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Automation & Webhook API
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('navigation')}
-          style={{
-            padding: '0.75rem 1.15rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.92rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'navigation' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'navigation' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <Compass size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Page Navigation Rules
+          Master Billing & Invoices ({masterInvoices.length})
         </button>
       </div>
 
@@ -2602,34 +2530,6 @@ Thank you for choosing New Swan CRM!`;
           </div>
         );
       })()}
-
-      {/* TAB 4: PLATFORM MESSAGING & OTPS */}
-      {activeTab === 'admin_messages' && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <AdminMessageConfig />
-        </div>
-      )}
-
-      {/* TAB 5: SYSTEM HEALTH & SERVER LOGS */}
-      {activeTab === 'status' && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <SystemStatusHealth />
-        </div>
-      )}
-
-      {/* TAB 6: AUTOMATION & WEBHOOK API */}
-      {activeTab === 'automation' && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <AutomationAPI />
-        </div>
-      )}
-
-      {/* TAB 7: PAGE NAVIGATION RULES */}
-      {activeTab === 'navigation' && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <PageNavigationConfig />
-        </div>
-      )}
 
       {/* MODAL: CREATE NEW CLIENT TENANT WORKSPACE (MASTER ADMIN EXCLUSIVE) */}
       {showCreateTenantModal && (
