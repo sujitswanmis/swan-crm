@@ -180,7 +180,10 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   // 2. SaaS Studio & Workflow Builder Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
   if (tabId === 'saas_studio' || tabId === 'workplace' || tabId === 'workflow') {
     const isMaster = (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
-                     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
+                     (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
+                     (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
+                     (typeof userRole === 'string' && (userRole.toLowerCase() === 'masteradmin' || userRole.toLowerCase() === 'admin')) ||
+                     moduleAccess?.is_master_admin === true;
     return isMaster;
   }
 
@@ -361,7 +364,11 @@ export default function CRMContainer({
   }, [userId, supabase]);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
-  const isMasterAdmin = (userEmail || '').toLowerCase() === 'supujacreations@gmail.com';
+  const isMasterAdmin = (userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
+    (userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
+    (userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
+    (typeof userRole === 'string' && (userRole.toLowerCase() === 'masteradmin' || userRole.toLowerCase() === 'admin')) ||
+    moduleAccess?.is_master_admin === true;
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -413,7 +420,7 @@ export default function CRMContainer({
     if (path === 'party' || (path && path.startsWith('party/'))) {
       return 'party';
     }
-    if (['saas-studio', 'saas_studio', 'saasstudio'].includes(path)) {
+    if (['saas-studio', 'saas_studio', 'saasstudio'].includes(path) || (path && (path.startsWith('saas-studio') || path.startsWith('saas_studio')))) {
       return isMasterAdmin ? 'saas_studio' : 'dashboard';
     }
 
@@ -559,6 +566,20 @@ export default function CRMContainer({
     if (queryTab === 'r03' || queryTab === 'party-master-report') queryTab = 'report';
     if (queryTab) return queryTab;
     return 'dashboard';
+  });
+  const [saasSubTab, setSaasSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('saas-studio/') || cleanPath.startsWith('saas_studio/'))) {
+      const sub = cleanPath.split('/')[1];
+      if (sub === 'workspaces' || sub === 'clients') return 'tenants';
+      if (['pricing', 'tenants'].includes(sub)) return sub;
+    }
+    if (queryTab && ['pricing', 'tenants', 'workspaces'].includes(queryTab)) {
+      return queryTab === 'workspaces' ? 'tenants' : queryTab;
+    }
+    return 'pricing';
   });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
@@ -2764,7 +2785,8 @@ export default function CRMContainer({
     if (tabId === 'saas_studio') {
       if (!isMasterAdmin) return;
       setActiveTab('saas_studio');
-      window.history.pushState(null, '', '/saas-studio');
+      const targetSub = saasSubTab || 'pricing';
+      window.history.pushState(null, '', `/saas-studio/${targetSub}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
@@ -2883,6 +2905,19 @@ export default function CRMContainer({
     const newPath = `/party/${cleanSub}`;
     window.history.pushState(null, '', newPath);
     
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleSaasSubTabChange = (subTabId) => {
+    const canonical = (subTabId === 'workspaces' || subTabId === 'clients') ? 'tenants' : (subTabId || 'pricing');
+    setSaasSubTab(canonical);
+    if (activeTab !== 'saas_studio') {
+      setActiveTab('saas_studio');
+    }
+    const newPath = `/saas-studio/${canonical}`;
+    window.history.pushState(null, '', newPath);
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
     }
@@ -6852,7 +6887,13 @@ export default function CRMContainer({
                 isVisited={isMasterAdmin && (visitedTabs.has('saas_studio') || activeTab === 'saas_studio')}
               >
                 <ErrorBoundary>
-                  {isMasterAdmin ? <SuperAdminSaasPanel /> : null}
+                  {isMasterAdmin ? (
+                    <SuperAdminSaasPanel 
+                      initialTab={saasSubTab}
+                      activeSubTab={saasSubTab}
+                      onSubTabChange={handleSaasSubTabChange}
+                    />
+                  ) : null}
                 </ErrorBoundary>
               </KeepAliveTab>
             </React.Suspense>

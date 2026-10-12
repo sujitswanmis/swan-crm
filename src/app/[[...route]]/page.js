@@ -42,7 +42,10 @@ export default async function Home({ params, searchParams }) {
     .eq('user_id', user.id)
     .single();
 
-  const isMasterAdminEmail = (user.email || '').toLowerCase() === 'supujacreations@gmail.com';
+  const userEmailLower = (user.email || '').toLowerCase();
+  const isMasterAdminEmail = userEmailLower === 'supujacreations@gmail.com' ||
+    userEmailLower === 'admin@newswangroup.com' ||
+    userEmailLower === 'sujitswanmis@gmail.com';
   const callerRole = isMasterAdminEmail ? 'Admin' : (roleData?.role || 'agent');
   const isAdmin = isMasterAdminEmail || callerRole === 'admin' || callerRole === 'Admin';
 

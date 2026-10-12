@@ -58,8 +58,24 @@ import {
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
-export default function SuperAdminSaasPanel() {
-  const [activeTab, setActiveTab] = useState('pricing'); // 'pricing' | 'tenants'
+export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubTab, onSubTabChange }) {
+  const [activeTab, setActiveTab] = useState(activeSubTab || initialTab || 'pricing'); // 'pricing' | 'tenants'
+
+  useEffect(() => {
+    if (activeSubTab && activeSubTab !== activeTab) {
+      setActiveTab(activeSubTab);
+    }
+  }, [activeSubTab]);
+
+  const handleTabSwitch = (tab) => {
+    setActiveTab(tab);
+    if (onSubTabChange) {
+      onSubTabChange(tab);
+    } else if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', `/saas-studio/${tab}`);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [savingCode, setSavingCode] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
@@ -830,7 +846,7 @@ Thank you for choosing New Swan CRM!`;
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', gap: '1rem' }}>
         <button
-          onClick={() => setActiveTab('pricing')}
+          onClick={() => handleTabSwitch('pricing')}
           style={{
             padding: '0.75rem 1.25rem',
             border: 'none',
@@ -847,7 +863,7 @@ Thank you for choosing New Swan CRM!`;
         </button>
 
         <button
-          onClick={() => setActiveTab('tenants')}
+          onClick={() => handleTabSwitch('tenants')}
           style={{
             padding: '0.75rem 1.25rem',
             border: 'none',
