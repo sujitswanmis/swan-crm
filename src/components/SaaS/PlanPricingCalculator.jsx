@@ -47,7 +47,9 @@ export default function PlanPricingCalculator({
   showHeading = true,
   onPlanChange = null,
   onProceed = null,
-  proceedButtonText = 'Select Plan & Continue'
+  proceedButtonText = 'Select Plan & Continue',
+  onSaveDraft = null,
+  draftButtonText = 'Save as Draft 📝'
 }) {
   const [catalog, setCatalog] = useState([]);
   const [cycles, setCycles] = useState([]);
@@ -604,44 +606,85 @@ export default function PlanPricingCalculator({
           </span>
         </div>
 
-        {onProceed && (
-          <button
-            type="button"
-            onClick={() => {
-              onProceed({
-                processCodes: selectedProcesses,
-                seats: seatCount,
-                cycleCode: selectedCycle,
-                calculation: {
-                  ratePerSeatMonthly,
-                  seatCount,
-                  months,
-                  discountPercent,
-                  monthlySubtotal,
-                  grossTotal,
-                  discountAmount,
-                  netTotal,
-                  effectiveMonthlyPerSeat
-                }
-              });
-            }}
-            style={{
-              width: '100%',
-              padding: '0.85rem',
-              backgroundColor: '#4f46e5',
-              color: '#ffffff',
-              border: '1px solid rgba(255,255,255,0.3)',
-              borderRadius: '9px',
-              fontSize: '1rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              marginTop: '0.25rem'
-            }}
-          >
-            {proceedButtonText}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+          {onSaveDraft && (
+            <button
+              type="button"
+              onClick={() => {
+                onSaveDraft({
+                  processCodes: selectedProcesses,
+                  seats: seatCount,
+                  cycleCode: selectedCycle,
+                  calculation: {
+                    ratePerSeatMonthly,
+                    seatCount,
+                    months,
+                    discountPercent,
+                    monthlySubtotal,
+                    grossTotal,
+                    discountAmount,
+                    netTotal,
+                    effectiveMonthlyPerSeat
+                  }
+                });
+              }}
+              style={{
+                flex: 1,
+                minWidth: '160px',
+                padding: '0.85rem',
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '9px',
+                fontSize: '0.95rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {draftButtonText}
+            </button>
+          )}
+
+          {onProceed && (
+            <button
+              type="button"
+              onClick={() => {
+                onProceed({
+                  processCodes: selectedProcesses,
+                  seats: seatCount,
+                  cycleCode: selectedCycle,
+                  calculation: {
+                    ratePerSeatMonthly,
+                    seatCount,
+                    months,
+                    discountPercent,
+                    monthlySubtotal,
+                    grossTotal,
+                    discountAmount,
+                    netTotal,
+                    effectiveMonthlyPerSeat
+                  }
+                });
+              }}
+              style={{
+                flex: onSaveDraft ? 1.5 : 1,
+                minWidth: '200px',
+                padding: '0.85rem',
+                backgroundColor: '#4f46e5',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '9px',
+                fontSize: '1rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {proceedButtonText}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

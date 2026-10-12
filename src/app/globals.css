@@ -808,8 +808,7 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sidebar.collapsed,
-.sidebar.collapsed .category-modules-list {
+.sidebar.collapsed {
   overflow: visible !important;
 }
 
@@ -1086,60 +1085,83 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   pointer-events: none;
 }
 
-/* Floating hover popover for desktop collapsed sidebar */
+/* Scroll the icon rail independently; submenus render outside it in a portal. */
 @media (min-width: 769px) {
-  .sidebar.collapsed .nav-item-wrapper {
-    position: relative;
+  .sidebar.collapsed {
+    min-height: 0;
+    flex-shrink: 0;
   }
 
-  .sidebar.collapsed .submenu-list {
-    position: absolute !important;
-    left: 62px !important; /* Positions next to collapsed icons */
-    top: -5px !important;
-    width: 210px !important;
-    background-color: var(--bg-surface) !important;
-    border: var(--neumorphic-border) !important;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
-    border-radius: 12px !important;
-    z-index: 10000 !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-    transform: translateX(10px) !important;
-    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.2s !important;
-    grid-template-rows: none !important;
-    display: block !important;
-    max-height: none !important;
-    padding: 0.6rem !important;
-    margin: 0 !important;
+  .sidebar.collapsed .sidebar-header {
+    flex-shrink: 0;
   }
 
-  .sidebar.collapsed .nav-item-wrapper:hover .submenu-list {
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-    transform: translateX(0) !important;
+  .sidebar.collapsed .nav-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    padding: 0.65rem 0.35rem;
   }
 
-  .sidebar.collapsed .submenu-inner {
-    padding: 0 !important;
-    gap: 0.35rem !important;
-    min-height: auto !important;
+  .sidebar.collapsed .nav-list > * {
+    flex-shrink: 0;
   }
 
-  .sidebar.collapsed .submenu-inner::before {
+  .sidebar.collapsed .nav-item {
+    gap: 0;
+  }
+
+  .sidebar.collapsed .nav-item > span,
+  .sidebar.collapsed .nav-item > div {
     display: none !important;
   }
+}
 
-  .sidebar.collapsed .submenu-item {
-    width: 100% !important;
-    margin-left: 0 !important;
-    padding: 0.5rem 0.75rem !important;
-  }
+.sidebar-submenu-popover {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 0.6rem;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+}
 
-  .sidebar.collapsed .submenu-item::before {
-    display: none !important;
-  }
+.sidebar-submenu-title {
+  padding: 0.35rem 0.75rem 0.6rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.sidebar-submenu-popover .submenu-inner {
+  padding: 0;
+  gap: 0.35rem;
+  min-height: auto;
+}
+
+.sidebar-submenu-popover .submenu-inner::before,
+.sidebar-submenu-popover .submenu-item::before {
+  display: none;
+}
+
+.sidebar-submenu-popover .submenu-item {
+  width: 100%;
+  margin-left: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-submenu-popover .submenu-item:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
 }
 
 .sidebar-collapse-toggle {
@@ -1664,6 +1686,10 @@ input.search-input-field:not([type="checkbox"]):not([type="radio"]),
   .sidebar.collapsed .nav-item {
     justify-content: flex-start !important;
     padding: 0.75rem 1rem !important;
+    width: calc(100% - 0.7rem) !important;
+    height: auto !important;
+    margin: 0.12rem 0.35rem !important;
+    border-radius: 10px !important;
     border-left: 3px solid transparent;
   }
   .sidebar.collapsed .nav-item span {
@@ -1673,6 +1699,7 @@ input.search-input-field:not([type="checkbox"]):not([type="radio"]),
   }
   .sidebar.collapsed .nav-chevron {
     opacity: 1 !important;
+    display: flex !important;
   }
   .sidebar.collapsed .category-header {
     height: auto !important;

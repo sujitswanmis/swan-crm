@@ -17,6 +17,7 @@ import { logAuditAction } from '@/app/actions/audit';
 import { uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import WorkspaceSkeleton from './WorkspaceSkeleton';
+import SidebarSubmenu from './SidebarSubmenu';
 import ResponsiveTableResizer from './ResponsiveTableResizer';
 import GlobalSpotlightModal from './GlobalSearch/GlobalSpotlightModal';
 import SessionExpiryTracker from './SessionExpiryTracker';
@@ -3750,7 +3751,7 @@ export default function CRMContainer({
 
           {/* Smart Attendance (Positioned Above Sales) */}
           {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['attendance']?.view) && (
-            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
                   if (isSidebarCollapsed) {
@@ -3773,7 +3774,7 @@ export default function CRMContainer({
                 <span>Smart Attendance</span>
               </button>
               
-              <div className={`submenu-list ${attendanceMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+              <div className={`submenu-list ${attendanceMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
                   <button
                     onClick={() => handleAttendanceSubTabChange('my_attendance')}
@@ -3816,12 +3817,12 @@ export default function CRMContainer({
                   )}
                 </div>
               </div>
-            </div>
+            </SidebarSubmenu>
           )}
 
           {/* Smart Checklist (Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, 1-Year) */}
           {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.view !== false) && (
-            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
                   if (isSidebarCollapsed) {
@@ -3844,7 +3845,7 @@ export default function CRMContainer({
                 <span>Smart Checklist</span>
               </button>
               
-              <div className={`submenu-list ${checklistMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+              <div className={`submenu-list ${checklistMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
                   <button
                     onClick={() => handleChecklistSubTabChange('dashboard')}
@@ -3889,12 +3890,12 @@ export default function CRMContainer({
                   </button>
                 </div>
               </div>
-            </div>
+            </SidebarSubmenu>
           )}
 
           {/* Delegation Tasks (Emp-to-Emp Task Management) */}
           {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.view !== false) && (
-            <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
                   if (isSidebarCollapsed) {
@@ -3917,7 +3918,7 @@ export default function CRMContainer({
                 <span>Delegation Tasks</span>
               </button>
               
-              <div className={`submenu-list ${delegationMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+              <div className={`submenu-list ${delegationMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
                   {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.dashboard?.view !== false) && (
                     <button
@@ -3957,7 +3958,7 @@ export default function CRMContainer({
                   )}
                 </div>
               </div>
-            </div>
+            </SidebarSubmenu>
           )}
 
           {['Sales', 'Purchase', 'Human Resource'].map(category => {
@@ -3981,7 +3982,7 @@ export default function CRMContainer({
                 <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories[category]) ? 'expanded' : ''}`}>
                   <div className="category-modules-inner">
                     {visibleModules.map(module => (
-                      <div key={module.id} className="nav-item-wrapper" style={{ position: 'relative' }}>
+                      <SidebarSubmenu key={module.id} collapsed={isSidebarCollapsed}>
                         <button 
                           onClick={() => { 
                             if (module.id === 'leads') {
@@ -4053,7 +4054,7 @@ export default function CRMContainer({
                         </button>
                         
                         {module.id === 'recruiter' && (
-                          <div className={`submenu-list ${recruiterMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className={`submenu-list ${recruiterMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               {/* Determine allowed stages for this user */}
                               {(() => {
@@ -4137,7 +4138,7 @@ export default function CRMContainer({
                         )}
                         
                         {module.id === 'leads' && (
-                          <div className={`submenu-list ${leadDataExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className={`submenu-list ${leadDataExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               {(() => {
                                 const canSeeDashboard = getSubItemPermissions(moduleAccess, userRole, 'leads', 'lead_dashboard').view;
@@ -4204,7 +4205,7 @@ export default function CRMContainer({
                         )}
 
                         {module.id === 'party' && (
-                          <div className={`submenu-list ${partyMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                          <div className={`submenu-list ${partyMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                 Channel Partner Pipeline
@@ -4362,7 +4363,7 @@ export default function CRMContainer({
                             </div>
                           </div>
                         )}
-                      </div>
+                      </SidebarSubmenu>
                     ))}
                   </div>
                 </div>
@@ -4545,7 +4546,7 @@ export default function CRMContainer({
 
                     {/* AI Admin */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
-                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
                         <button 
                           onClick={() => {
                             if (isSidebarCollapsed) {
@@ -4567,7 +4568,7 @@ export default function CRMContainer({
                           <span>AI Admin</span>
                         </button>
                         
-                        <div className={`submenu-list ${aiMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                        <div className={`submenu-list ${aiMenuExpanded ? 'expanded' : ''}`}>
                           <div className="submenu-inner">
                             {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
                               <button
@@ -4589,12 +4590,12 @@ export default function CRMContainer({
                             )}
                           </div>
                         </div>
-                      </div>
+                      </SidebarSubmenu>
                     )}
 
                     {/* Call Admin */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
-                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
                         <button 
                           onClick={() => {
                             if (isSidebarCollapsed) {
@@ -4617,7 +4618,7 @@ export default function CRMContainer({
                           <span>Call Admin</span>
                         </button>
                         
-                        <div className={`submenu-list ${callAdminMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                        <div className={`submenu-list ${callAdminMenuExpanded ? 'expanded' : ''}`}>
                           <div className="submenu-inner">
                             <button
                               onClick={() => handleCallAdminSubTabChange('agents')}
@@ -4656,7 +4657,7 @@ export default function CRMContainer({
                             </button>
                           </div>
                         </div>
-                      </div>
+                      </SidebarSubmenu>
                     )}
                     
                     {/* AI Call Center */}
@@ -4675,7 +4676,7 @@ export default function CRMContainer({
 
                     {/* Message Config */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
-                      <div className="nav-item-wrapper" style={{ position: 'relative' }}>
+                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
                         <button 
                           onClick={() => {
                             if (isSidebarCollapsed) {
@@ -4697,7 +4698,7 @@ export default function CRMContainer({
                           <span>Message Config</span>
                         </button>
                         
-                        <div className={`submenu-list ${messageMenuExpanded && !isSidebarCollapsed ? 'expanded' : ''}`}>
+                        <div className={`submenu-list ${messageMenuExpanded ? 'expanded' : ''}`}>
                           <div className="submenu-inner">
                             {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
                               <button
@@ -4746,7 +4747,7 @@ export default function CRMContainer({
                             )}
                           </div>
                         </div>
-                      </div>
+                      </SidebarSubmenu>
                     )}
 
                     {/* Admin Message Config (SuPuja Creations / Admin System) */}

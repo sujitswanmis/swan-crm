@@ -25,7 +25,11 @@ import {
   FileText,
   Printer,
   Sliders,
-  Sparkles
+  Sparkles,
+  Trash2,
+  RotateCcw,
+  Edit3,
+  FolderClock
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -39,7 +43,11 @@ import {
   createTenantWorkspace,
   updateTenantEntitlements,
   extendTenantSubscriptionTrial,
-  recordPaymentAndGenerateInvoice
+  recordPaymentAndGenerateInvoice,
+  updateTenantValidityAndStatus,
+  softDeleteTenantWorkspace,
+  restoreTenantWorkspace,
+  permanentDeleteTenantWorkspace
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
@@ -94,6 +102,18 @@ export default function SuperAdminSaasPanel() {
   const [payUtr, setPayUtr] = useState('');
   const [payMonths, setPayMonths] = useState(12);
   const [recordingPay, setRecordingPay] = useState(false);
+
+  // Workspace Tabs & Lifecycle States
+  const [workspaceSubTab, setWorkspaceSubTab] = useState('active'); // 'active' | 'draft' | 'deleted'
+  const [deleteConfirmTenant, setDeleteConfirmTenant] = useState(null);
+  const [permanentDeleteConfirmTenant, setPermanentDeleteConfirmTenant] = useState(null);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+
+  // Custom Expiry Date Picker & Status Editor Modal State
+  const [editValidityTenant, setEditValidityTenant] = useState(null);
+  const [inputValidityDate, setInputValidityDate] = useState('');
+  const [inputValidityStatus, setInputValidityStatus] = useState('ACTIVE');
+  const [savingValidity, setSavingValidity] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -255,7 +275,7 @@ export default function SuperAdminSaasPanel() {
     }
   };
 
-  const handleCreateClientWorkspace = async (planData) => {
+  const handleCreateClientWorkspace = async (planData, isDraft = false) => {
     setCreateLoading(true);
     setCreateError(null);
     setCreateSuccess(null);
@@ -270,7 +290,8 @@ export default function SuperAdminSaasPanel() {
         processCodes: planData?.processCodes || ['LEADS_WITH_CALLING'],
         userSeats: planData?.seats || 5,
         cycleCode: planData?.cycleCode || 'YEARLY',
-        trialDays: createTrialDays
+        trialDays: createTrialDays,
+        isDraft
       });
 
       if (res.success) {
@@ -382,6 +403,109 @@ export default function SuperAdminSaasPanel() {
       setRecordingPay(false);
     }
   };
+
+  const handleSoftDelete = async () => {
+    if (!deleteConfirmTenant) return;
+    setDeletingWorkspace(true);
+    try {
+      const res = await softDeleteTenantWorkspace(deleteConfirmTenant.id);
+      if (res.success) {
+        showNotification(res.message);
+        setDeleteConfirmTenant(null);
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setDeletingWorkspace(false);
+    }
+  };
+
+  const handleRestore = async (t) => {
+    try {
+      const res = await restoreTenantWorkspace(t.id);
+      if (res.success) {
+        showNotification(res.message);
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!permanentDeleteConfirmTenant) return;
+    setDeletingWorkspace(true);
+    try {
+      const res = await permanentDeleteTenantWorkspace(permanentDeleteConfirmTenant.id);
+      if (res.success) {
+        showNotification(res.message);
+        setPermanentDeleteConfirmTenant(null);
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setDeletingWorkspace(false);
+    }
+  };
+
+  const handleOpenEditValidity = (t) => {
+    setEditValidityTenant(t);
+    let dateStr = '';
+    if (t.subscription?.valid_until) {
+      const d = new Date(t.subscription.valid_until);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      dateStr = `${year}-${month}-${day}`;
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      dateStr = d.toISOString().split('T')[0];
+    }
+    setInputValidityDate(dateStr);
+    setInputValidityStatus(t.status || 'ACTIVE');
+  };
+
+  const handleSaveValidity = async () => {
+    if (!editValidityTenant) return;
+    setSavingValidity(true);
+    try {
+      const res = await updateTenantValidityAndStatus({
+        tenantId: editValidityTenant.id,
+        validUntil: inputValidityDate,
+        status: inputValidityStatus
+      });
+      if (res.success) {
+        showNotification(res.message);
+        setEditValidityTenant(null);
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setSavingValidity(false);
+    }
+  };
+
+  const activeTenants = tenants.filter(t => t.status !== 'DRAFT' && t.status !== 'DELETED');
+  const draftTenants = tenants.filter(t => t.status === 'DRAFT');
+  const deletedTenants = tenants.filter(t => t.status === 'DELETED');
+
+  const displayedTenants = workspaceSubTab === 'draft'
+    ? draftTenants
+    : workspaceSubTab === 'deleted'
+      ? deletedTenants
+      : activeTenants;
 
   return (
     <div style={{ width: '100%', color: 'var(--text-primary)' }}>
@@ -685,6 +809,69 @@ export default function SuperAdminSaasPanel() {
             </button>
           </div>
 
+          {/* Sub-tab switcher */}
+          <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setWorkspaceSubTab('active')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.45rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                backgroundColor: workspaceSubTab === 'active' ? '#2563eb' : 'var(--bg-muted)',
+                color: workspaceSubTab === 'active' ? '#ffffff' : 'var(--text-secondary)'
+              }}
+            >
+              <Building size={15} /> Active Workspaces ({activeTenants.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWorkspaceSubTab('draft')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.45rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                backgroundColor: workspaceSubTab === 'draft' ? '#4b5563' : 'var(--bg-muted)',
+                color: workspaceSubTab === 'draft' ? '#ffffff' : 'var(--text-secondary)'
+              }}
+            >
+              <FolderClock size={15} /> 📝 Drafts ({draftTenants.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWorkspaceSubTab('deleted')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.45rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                backgroundColor: workspaceSubTab === 'deleted' ? '#b91c1c' : 'var(--bg-muted)',
+                color: workspaceSubTab === 'deleted' ? '#ffffff' : 'var(--text-secondary)'
+              }}
+            >
+              <Trash2 size={15} /> 🗑️ Deleted Archive (90-Day Retention) ({deletedTenants.length})
+            </button>
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <MobileTableView id="SaaS/SuperAdminSaasPanel-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
@@ -694,11 +881,13 @@ export default function SuperAdminSaasPanel() {
                   <th style={{ padding: '0.75rem 1rem' }}>Seats (Active / Limit)</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Active Modules</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Expiry Date (IST)</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '280px' }}>Quick Actions</th>
+                  <th style={{ padding: '0.75rem 1rem', width: '280px' }}>
+                    {workspaceSubTab === 'deleted' ? 'Archive Management' : 'Quick Actions'}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {tenants.map(t => {
+                {displayedTenants.map(t => {
                   const isDefault = t.id === '00000000-0000-0000-0000-000000000001';
                   const sub = t.subscription;
                   const expiryFormatted = sub?.valid_until
@@ -734,16 +923,53 @@ export default function SuperAdminSaasPanel() {
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: '12px',
-                          background: sub?.is_expired ? '#fee2e2' : (sub?.is_expiring_soon ? '#fef3c7' : '#dbeafe'),
-                          color: sub?.is_expired ? '#991b1b' : (sub?.is_expiring_soon ? '#92400e' : '#1e40af')
-                        }}>
-                          {sub?.is_expired ? 'EXPIRED' : (sub?.is_expiring_soon ? 'EXPIRING SOON' : 'ACTIVE')}
-                        </span>
+                        {(() => {
+                          const status = t.status || (sub?.is_expired ? 'EXPIRED' : (sub?.is_expiring_soon ? 'EXPIRING SOON' : 'ACTIVE'));
+                          let bg = '#dbeafe';
+                          let color = '#1e40af';
+                          let label = status;
+
+                          if (status === 'TRIAL') {
+                            bg = '#fef3c7';
+                            color = '#b45309';
+                            label = '🎁 FREE TRIAL';
+                          } else if (status === 'DRAFT') {
+                            bg = '#f3f4f6';
+                            color = '#4b5563';
+                            label = '📝 DRAFT';
+                          } else if (status === 'DELETED') {
+                            bg = '#fee2e2';
+                            color = '#991b1b';
+                            label = '🗑️ DELETED (ARCHIVE)';
+                          } else if (status === 'EXPIRED' || sub?.is_expired) {
+                            bg = '#fee2e2';
+                            color = '#991b1b';
+                            label = 'EXPIRED';
+                          } else if (status === 'EXPIRING SOON' || sub?.is_expiring_soon) {
+                            bg = '#fef3c7';
+                            color = '#92400e';
+                            label = 'EXPIRING SOON';
+                          } else {
+                            bg = '#dcfce7';
+                            color = '#15803d';
+                            label = 'ACTIVE';
+                          }
+
+                          return (
+                            <span style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '12px',
+                              background: bg,
+                              color: color,
+                              display: 'inline-block',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
@@ -800,14 +1026,36 @@ export default function SuperAdminSaasPanel() {
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                        <div>{expiryFormatted}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600 }}>{expiryFormatted}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditValidity(t)}
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              border: '1px solid #c7d2fe',
+                              background: '#eff6ff',
+                              color: '#3730a3',
+                              cursor: 'pointer',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}
+                            title="Edit exact validity date or revert accidental +1M/+6M/+1Y clicks"
+                          >
+                            <Edit3 size={11} /> Edit Date
+                          </button>
+                        </div>
                         {sub && sub.days_remaining != null && (
-                          <div style={{ fontSize: '0.75rem', color: sub.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)' }}>
+                          <div style={{ fontSize: '0.75rem', color: sub.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)', marginTop: '2px' }}>
                             {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
                           </div>
                         )}
                         {sub?.billing_cycle && (
-                          <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600 }}>
+                          <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600, marginTop: '2px' }}>
                             {sub.billing_cycle}
                           </div>
                         )}
@@ -815,104 +1063,191 @@ export default function SuperAdminSaasPanel() {
 
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                          {/* Invoice Button */}
-                          <button
-                            onClick={() => handleOpenInvoice(t, sub?.status === 'ACTIVE' ? 'tax_invoice' : 'proforma')}
-                            style={{
-                              padding: '0.3rem 0.6rem',
-                              borderRadius: '6px',
-                              border: '1px solid #8b5cf6',
-                              background: '#f5f3ff',
-                              color: '#6d28d9',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              fontWeight: 600,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px'
-                            }}
-                            title="Generate Proforma or Paid Tax Invoice"
-                          >
-                            <FileText size={12} /> Invoice
-                          </button>
+                          {workspaceSubTab === 'deleted' ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleRestore(t)}
+                                style={{
+                                  padding: '0.35rem 0.75rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #10b981',
+                                  background: '#ecfdf5',
+                                  color: '#047857',
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="Restore this workspace back to Active"
+                              >
+                                <RotateCcw size={13} /> Restore
+                              </button>
 
-                          {/* Free Trial Button */}
-                          <button
-                            onClick={() => {
-                              setTrialModalTenant(t);
-                              setTrialDaysInput(7);
-                              setCustomTrialInput('');
-                            }}
-                            style={{
-                              padding: '0.3rem 0.6rem',
-                              borderRadius: '6px',
-                              border: '1px solid #f59e0b',
-                              background: '#fffbeb',
-                              color: '#b45309',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              fontWeight: 600
-                            }}
-                            title="Assign 1, 3, 7, 10 or custom days trial"
-                          >
-                            🎁 Trial
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => setPermanentDeleteConfirmTenant(t)}
+                                style={{
+                                  padding: '0.35rem 0.75rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #dc2626',
+                                  background: '#fef2f2',
+                                  color: '#b91c1c',
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="Permanently remove this workspace from database"
+                              >
+                                <Trash2 size={13} /> Permanent Delete
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* Invoice Button */}
+                              <button
+                                onClick={() => handleOpenInvoice(t, sub?.status === 'ACTIVE' ? 'tax_invoice' : 'proforma')}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #8b5cf6',
+                                  background: '#f5f3ff',
+                                  color: '#6d28d9',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                                title="Generate Proforma or Paid Tax Invoice"
+                              >
+                                <FileText size={12} /> Invoice
+                              </button>
 
-                          {/* Extend Buttons */}
-                          <button
-                            onClick={() => handleExtend(t.id, 1)}
-                            disabled={extendingId === t.id}
-                            style={{
-                              padding: '0.3rem 0.55rem',
-                              borderRadius: '6px',
-                              border: '1px solid #d1d5db',
-                              background: '#fff',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              fontWeight: 500
-                            }}
-                          >
-                            +1M
-                          </button>
+                              {/* Free Trial Button */}
+                              <button
+                                onClick={() => {
+                                  setTrialModalTenant(t);
+                                  setTrialDaysInput(7);
+                                  setCustomTrialInput('');
+                                }}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #f59e0b',
+                                  background: '#fffbeb',
+                                  color: '#b45309',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600
+                                }}
+                                title="Assign 1, 3, 7, 10 or custom days trial"
+                              >
+                                🎁 Trial
+                              </button>
 
-                          <button
-                            onClick={() => handleExtend(t.id, 6)}
-                            disabled={extendingId === t.id}
-                            style={{
-                              padding: '0.3rem 0.55rem',
-                              borderRadius: '6px',
-                              border: '1px solid #2563eb',
-                              background: '#eff6ff',
-                              color: '#1d4ed8',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              fontWeight: 500
-                            }}
-                          >
-                            +6M
-                          </button>
+                              {/* Extend Buttons */}
+                              <button
+                                onClick={() => handleExtend(t.id, 1)}
+                                disabled={extendingId === t.id}
+                                style={{
+                                  padding: '0.3rem 0.55rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #d1d5db',
+                                  background: '#fff',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 500
+                                }}
+                                title="Add 1 Month"
+                              >
+                                +1M
+                              </button>
 
-                          <button
-                            onClick={() => handleExtend(t.id, 12)}
-                            disabled={extendingId === t.id}
-                            style={{
-                              padding: '0.3rem 0.55rem',
-                              borderRadius: '6px',
-                              border: 'none',
-                              background: '#10b981',
-                              color: '#fff',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              fontWeight: 500
-                            }}
-                          >
-                            +1Y
-                          </button>
+                              <button
+                                onClick={() => handleExtend(t.id, 6)}
+                                disabled={extendingId === t.id}
+                                style={{
+                                  padding: '0.3rem 0.55rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #2563eb',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 500
+                                }}
+                                title="Add 6 Months"
+                              >
+                                +6M
+                              </button>
+
+                              <button
+                                onClick={() => handleExtend(t.id, 12)}
+                                disabled={extendingId === t.id}
+                                style={{
+                                  padding: '0.3rem 0.55rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: '#10b981',
+                                  color: '#fff',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 500
+                                }}
+                                title="Add 1 Year"
+                              >
+                                +1Y
+                              </button>
+
+                              {/* Soft Delete Button (Protected for Master Default Tenant) */}
+                              {!isDefault && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmTenant(t)}
+                                  style={{
+                                    padding: '0.3rem 0.55rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid #fecaca',
+                                    background: '#fef2f2',
+                                    color: '#dc2626',
+                                    fontSize: '0.76rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
+                                  }}
+                                  title="Move to Deleted Archive (90-Day Safe Retention)"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
                 })}
+
+                {displayedTenants.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      {workspaceSubTab === 'deleted'
+                        ? 'No workspaces in Deleted Archive.'
+                        : workspaceSubTab === 'draft'
+                          ? 'No draft workspaces found. Save client onboarding as draft to see them here.'
+                          : 'No active client workspaces found.'}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table></MobileTableView>
           </div>
@@ -1184,8 +1519,10 @@ export default function SuperAdminSaasPanel() {
                   initialSeats={5}
                   initialCycle="YEARLY"
                   showHeading={true}
-                  onProceed={handleCreateClientWorkspace}
+                  onProceed={(planData) => handleCreateClientWorkspace(planData, false)}
                   proceedButtonText={createLoading ? "Provisioning Workspace..." : "Activate Client Workspace 🚀"}
+                  onSaveDraft={(planData) => handleCreateClientWorkspace(planData, true)}
+                  draftButtonText={createLoading ? "Saving Draft..." : "Save as Draft 📝"}
                 />
 
                 <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1rem' }}>
@@ -1737,6 +2074,313 @@ export default function SuperAdminSaasPanel() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Centered Soft Delete Confirmation Modal */}
+      {deleteConfirmTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '480px', borderRadius: '14px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626', flexShrink: 0 }}>
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#111827' }}>
+                  Move to Deleted Archive?
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Workspace: <strong>{deleteConfirmTenant.name}</strong> ({deleteConfirmTenant.tenant_code})
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.83rem', color: '#92400e', lineHeight: 1.5 }}>
+              📦 <strong>90-Day Safe Retention:</strong> This workspace will be deactivated and moved to the <strong>Deleted Archive</strong> tab for 1 to 3 months. No data will be lost, and you can restore it anytime with a single click.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTenant(null)}
+                disabled={deletingWorkspace}
+                style={{
+                  padding: '0.6rem 1.15rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSoftDelete}
+                disabled={deletingWorkspace}
+                style={{
+                  padding: '0.6rem 1.4rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                {deletingWorkspace ? 'Archiving...' : 'Move to Deleted Archive 🗑️'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Centered Permanent Delete Confirmation Modal */}
+      {permanentDeleteConfirmTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '480px', borderRadius: '14px', border: '1.5px solid #fecaca', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b91c1c', flexShrink: 0 }}>
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#991b1b' }}>
+                  Permanent Deletion Warning
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Workspace: <strong>{permanentDeleteConfirmTenant.name}</strong> ({permanentDeleteConfirmTenant.tenant_code})
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.83rem', color: '#991b1b', lineHeight: 1.5 }}>
+              ⚠️ <strong>Irreversible Action:</strong> This workspace, its subscriptions, and entitlements will be <strong>permanently deleted</strong> from the database. This cannot be undone.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setPermanentDeleteConfirmTenant(null)}
+                disabled={deletingWorkspace}
+                style={{
+                  padding: '0.6rem 1.15rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePermanentDelete}
+                disabled={deletingWorkspace}
+                style={{
+                  padding: '0.6rem 1.4rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#991b1b',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                {deletingWorkspace ? 'Deleting...' : 'Delete Permanently ❌'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Centered Validity & Status Editor Modal (Revert Accidental Extensions / Fix Expiry) */}
+      {editValidityTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '460px', borderRadius: '14px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#111827' }}>
+                  <Edit3 size={18} color="#4338ca" /> Expiry Date & Status Editor
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Company: <strong>{editValidityTenant.name}</strong> ({editValidityTenant.tenant_code})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditValidityTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                Exact Expiry Date (YYYY-MM-DD):
+              </label>
+              <input
+                type="date"
+                value={inputValidityDate}
+                onChange={(e) => setInputValidityDate(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }}
+              />
+            </div>
+
+            {/* Quick Presets to easily revert or advance */}
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+              Quick Presets (Click to set):
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '1.25rem' }}>
+              {[
+                { label: 'Today', days: 0 },
+                { label: '7 Days (Trial)', days: 7 },
+                { label: '14 Days', days: 14 },
+                { label: '1 Month', days: 30 },
+                { label: '6 Months', days: 180 },
+                { label: '1 Year', days: 365 }
+              ].map(preset => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + preset.days);
+                    setInputValidityDate(d.toISOString().split('T')[0]);
+                  }}
+                  style={{
+                    padding: '0.4rem 0.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-surface)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                Workspace Status:
+              </label>
+              <select
+                value={inputValidityStatus}
+                onChange={(e) => setInputValidityStatus(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                <option value="ACTIVE">ACTIVE (Paid)</option>
+                <option value="TRIAL">TRIAL (Free Trial)</option>
+                <option value="EXPIRING_SOON">EXPIRING SOON</option>
+                <option value="EXPIRED">EXPIRED</option>
+                <option value="DRAFT">DRAFT</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setEditValidityTenant(null)}
+                style={{
+                  padding: '0.6rem 1.15rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveValidity}
+                disabled={savingValidity}
+                style={{
+                  padding: '0.6rem 1.4rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#4338ca',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                {savingValidity ? 'Saving...' : 'Save Expiry & Status'}
+              </button>
+            </div>
           </div>
         </div>
       )}

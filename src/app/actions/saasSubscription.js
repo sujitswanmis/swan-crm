@@ -362,6 +362,21 @@ export async function getAllTenantsWithSubscriptions() {
         isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
       }
 
+      let resolvedStatus = 'ACTIVE';
+      if (t.status === 'DELETED') {
+        resolvedStatus = 'DELETED';
+      } else if (t.status === 'DRAFT') {
+        resolvedStatus = 'DRAFT';
+      } else if (t.status === 'TRIAL' || sub?.status === 'TRIAL' || String(sub?.billing_cycle || '').startsWith('TRIAL')) {
+        resolvedStatus = isExpired ? 'EXPIRED' : 'TRIAL';
+      } else if (isExpired) {
+        resolvedStatus = 'EXPIRED';
+      } else if (isExpiringSoon) {
+        resolvedStatus = 'EXPIRING_SOON';
+      } else {
+        resolvedStatus = sub?.status || t.status || 'ACTIVE';
+      }
+
       const branches = t.id === DEFAULT_TENANT_ID ? ['NSMLR', 'NSTLP'] : (t.branches || []);
 
       return {
@@ -370,13 +385,15 @@ export async function getAllTenantsWithSubscriptions() {
         name: t.name,
         primary_contact_email: t.primary_contact_email || (t.id === DEFAULT_TENANT_ID ? 'admin@newswangroup.com' : null),
         branches,
-        status: t.status || 'ACTIVE',
+        status: resolvedStatus,
+        raw_status: t.status,
         created_at: t.created_at,
         subscription: sub ? {
           ...sub,
           days_remaining: daysRemaining,
           is_expired: isExpired,
-          is_expiring_soon: isExpiringSoon
+          is_expiring_soon: isExpiringSoon,
+          status: resolvedStatus
         } : null,
         entitlements: tEntitlements,
         active_users_count: activeUserCount,
@@ -540,7 +557,8 @@ export async function createTenantWorkspace({
   processCodes = ['LEADS_WITH_CALLING'],
   userSeats = 5,
   cycleCode = 'YEARLY',
-  trialDays = 0
+  trialDays = 0,
+  isDraft = false
 }) {
   try {
     const admin = getAdminClient();
@@ -553,6 +571,7 @@ export async function createTenantWorkspace({
     const cleanCompany = companyName.trim();
     const cleanName = adminName.trim();
     const cleanMobile = adminMobile ? adminMobile.trim() : '';
+    const initialStatus = isDraft ? 'DRAFT' : (Number(trialDays) > 0 ? 'TRIAL' : 'ACTIVE');
 
     // Generate clean slug tenant_code
     const baseSlug = cleanCompany
@@ -577,7 +596,7 @@ export async function createTenantWorkspace({
         name: cleanCompany,
         primary_contact_email: cleanEmail,
         primary_contact_mobile: cleanMobile || null,
-        status: 'ACTIVE'
+        status: initialStatus
       }])
       .select()
       .single();
@@ -682,7 +701,7 @@ export async function createTenantWorkspace({
         user_seat_limit: Math.max(1, parseInt(userSeats, 10) || 5),
         valid_from: now.toISOString(),
         valid_until: expiryDate.toISOString(),
-        status: isTrial ? 'TRIAL' : 'ACTIVE',
+        status: initialStatus,
         billing_cycle: assignedCycle,
         amount: finalAmount
       }]);
@@ -716,18 +735,22 @@ export async function createTenantWorkspace({
         tenant_id: newTenant.id,
         code: `${tenantCode}_MAIN`,
         name: cleanCompany,
-        status: 'ACTIVE'
+        status: initialStatus
       }]);
     } catch (compErr) {
       console.warn('Default company insert note:', compErr.message);
     }
+
+    const successMessage = isDraft
+      ? `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) ड्राफ्ट के रूप में सुरक्षित सेव हो गया!`
+      : `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) सफलतापूर्वक सक्रिय हो गया!`;
 
     return {
       success: true,
       tenantId: newTenant.id,
       tenantCode,
       adminEmail: cleanEmail,
-      message: `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) सफलतापूर्वक सक्रिय हो गया!`
+      message: successMessage
     };
   } catch (err) {
     console.error('createTenantWorkspace error:', err);
@@ -904,12 +927,195 @@ export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
       if (error) throw error;
     }
 
+    // Sync tenants table status to TRIAL
+    await admin.from('tenants').update({ status: 'TRIAL', updated_at: now.toISOString() }).eq('id', tenantId);
+
     return {
       success: true,
       message: `${days} दिन का फ्री ट्रायल सक्रिय हो गया! (Expiry: ${newExpiry.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })})`
     };
   } catch (err) {
     console.error('extendTenantSubscriptionTrial error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Manually edit Expiry Date, change status, and fix accidental extensions
+ */
+export async function updateTenantValidityAndStatus({
+  tenantId,
+  validUntil,
+  status = 'ACTIVE',
+  billingCycle = null
+}) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const now = new Date();
+    let expiryIso;
+    if (validUntil) {
+      const parsed = new Date(validUntil);
+      expiryIso = isNaN(parsed.getTime()) ? now.toISOString() : parsed.toISOString();
+    } else {
+      expiryIso = now.toISOString();
+    }
+
+    const normalizedStatus = status === 'FREE TRIAL' ? 'TRIAL' : status;
+
+    // 1. Update tenants table
+    await admin.from('tenants').update({
+      status: normalizedStatus,
+      updated_at: now.toISOString()
+    }).eq('id', tenantId);
+
+    // 2. Update subscription record
+    const { data: existing } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const subPayload = {
+      valid_until: expiryIso,
+      status: normalizedStatus,
+      updated_at: now.toISOString()
+    };
+    if (billingCycle) {
+      subPayload.billing_cycle = billingCycle;
+    }
+
+    if (existing) {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .update(subPayload)
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'CUSTOM_PLAN',
+          user_seat_limit: 5,
+          valid_from: now.toISOString(),
+          ...subPayload
+        }]);
+      if (error) throw error;
+    }
+
+    return {
+      success: true,
+      message: `वैलिडिटी और स्टेटस सफलतापूर्वक अपडेट हो गया! (New Expiry: ${new Date(expiryIso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })})`
+    };
+  } catch (err) {
+    console.error('updateTenantValidityAndStatus error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Soft delete workspace (Move to Deleted Archive for 1-3 months retention)
+ */
+export async function softDeleteTenantWorkspace(tenantId) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+    if (tenantId === DEFAULT_TENANT_ID) {
+      throw new Error('New Swan Group (Master Workspace) को डिलीट नहीं किया जा सकता!');
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: tErr } = await admin
+      .from('tenants')
+      .update({ status: 'DELETED', updated_at: now })
+      .eq('id', tenantId);
+    if (tErr) throw tErr;
+
+    await admin
+      .from('tenant_subscriptions')
+      .update({ status: 'DELETED', updated_at: now })
+      .eq('tenant_id', tenantId);
+
+    return {
+      success: true,
+      message: 'कंपनी वर्कस्पेस को Deleted Archive में भेज दिया गया है (1-3 माह की सुरक्षा के साथ)!'
+    };
+  } catch (err) {
+    console.error('softDeleteTenantWorkspace error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Restore workspace from Deleted Archive back to Active
+ */
+export async function restoreTenantWorkspace(tenantId) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+    if (tenantId === DEFAULT_TENANT_ID) throw new Error('Action not allowed.');
+
+    const now = new Date().toISOString();
+
+    const { error: tErr } = await admin
+      .from('tenants')
+      .update({ status: 'ACTIVE', updated_at: now })
+      .eq('id', tenantId);
+    if (tErr) throw tErr;
+
+    await admin
+      .from('tenant_subscriptions')
+      .update({ status: 'ACTIVE', updated_at: now })
+      .eq('tenant_id', tenantId);
+
+    return {
+      success: true,
+      message: 'कंपनी वर्कस्पेस को सफलतापूर्वक Restore कर दिया गया है!'
+    };
+  } catch (err) {
+    console.error('restoreTenantWorkspace error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Permanently delete workspace and wipe test records
+ */
+export async function permanentDeleteTenantWorkspace(tenantId) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+    if (tenantId === DEFAULT_TENANT_ID) {
+      throw new Error('New Swan Group (Master Workspace) को स्थायी रूप से डिलीट नहीं किया जा सकता!');
+    }
+
+    const { data: tenant } = await admin
+      .from('tenants')
+      .select('name, tenant_code')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    await admin.from('tenant_subscriptions').delete().eq('tenant_id', tenantId);
+    await admin.from('tenant_entitlements').delete().eq('tenant_id', tenantId);
+    await admin.from('companies').delete().eq('tenant_id', tenantId);
+    const { error: delErr } = await admin.from('tenants').delete().eq('id', tenantId);
+    if (delErr) throw delErr;
+
+    if (tenant?.name) {
+      await admin.from('user_roles').update({ company: '' }).eq('company', tenant.name);
+    }
+
+    return {
+      success: true,
+      message: `कंपनी वर्कस्पेस '${tenant?.name || tenantId}' को स्थायी रूप से डिलीट कर दिया गया है!`
+    };
+  } catch (err) {
+    console.error('permanentDeleteTenantWorkspace error:', err);
     return { success: false, error: err.message };
   }
 }
@@ -966,6 +1172,8 @@ export async function recordPaymentAndGenerateInvoice({
         }]);
     }
 
+    await admin.from('tenants').update({ status: 'ACTIVE', updated_at: now.toISOString() }).eq('id', tenantId);
+
     return {
       success: true,
       invoiceNumber,
@@ -978,6 +1186,7 @@ export async function recordPaymentAndGenerateInvoice({
     return { success: false, error: err.message };
   }
 }
+
 
 
 
