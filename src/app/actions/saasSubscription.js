@@ -1282,6 +1282,47 @@ export async function recordPaymentAndGenerateInvoice({
 
     await admin.from('tenants').update({ status: 'ACTIVE', updated_at: now.toISOString() }).eq('id', tenantId);
 
+    // Log to TENANT_BILLING_HISTORY
+    try {
+      const invRecord = {
+        id: `PAY-${Date.now()}`,
+        invoice_number: invoiceNumber,
+        invoice_type: 'tax_invoice',
+        category: 'RENEWAL_PAYMENT',
+        description: `Full Plan Subscription Renewal / Payment (${sub?.user_seat_limit || 5} User Seats)`,
+        additional_seats: 0,
+        total_seats: sub?.user_seat_limit || 5,
+        billing_mode: 'RENEWAL',
+        months_added: Number(months || 12),
+        valid_until: newExpiry.toISOString(),
+        amount: Number(amount || 0),
+        gst_type: 'IGST',
+        gst_rate: 18,
+        tax_amount: Math.round(Number(amount || 0) * 0.18),
+        total_payable: Math.round(Number(amount || 0) * 1.18),
+        payment_mode: paymentMode || 'UPI',
+        transaction_id: transactionId || '',
+        status: 'PAID',
+        created_at: now.toISOString()
+      };
+      const { data: entRow } = await admin
+        .from('tenant_entitlements')
+        .select('config_json')
+        .eq('tenant_id', tenantId)
+        .eq('module_key', 'TENANT_BILLING_HISTORY')
+        .maybeSingle();
+      const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
+      existingInvoices.unshift(invRecord);
+      await admin.from('tenant_entitlements').upsert({
+        tenant_id: tenantId,
+        module_key: 'TENANT_BILLING_HISTORY',
+        is_enabled: true,
+        config_json: { invoices: existingInvoices, updated_at: now.toISOString() }
+      }, { onConflict: 'tenant_id,module_key' });
+    } catch (_hErr) {
+      console.warn('Billing history log notice:', _hErr.message);
+    }
+
     return {
       success: true,
       invoiceNumber,
@@ -1291,6 +1332,218 @@ export async function recordPaymentAndGenerateInvoice({
     };
   } catch (err) {
     console.error('recordPaymentAndGenerateInvoice error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+const BILLING_HISTORY_MODULE_KEY = 'TENANT_BILLING_HISTORY';
+
+/**
+ * Super Admin: Fetch all historical invoices & payments for a workspace
+ */
+export async function getTenantBillingHistory(tenantId) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const [{ data: tenant }, { data: sub }] = await Promise.all([
+      admin.from('tenants').select('*').eq('id', tenantId).maybeSingle(),
+      admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    ]);
+
+    const { data: entRow } = await admin
+      .from('tenant_entitlements')
+      .select('config_json')
+      .eq('tenant_id', tenantId)
+      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
+      .maybeSingle();
+
+    let invoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
+
+    if (invoices.length === 0 && sub) {
+      const isPaid = sub.status === 'ACTIVE';
+      const initialInvoice = {
+        id: `INIT-${tenant?.id || '01'}`,
+        invoice_number: isPaid ? `INV-${tenant?.tenant_code || 'WS'}-01` : `PI-${tenant?.tenant_code || 'WS'}-01`,
+        invoice_type: isPaid ? 'tax_invoice' : 'proforma',
+        category: 'INITIAL_SUBSCRIPTION',
+        description: `Initial Workspace Setup & Onboarding (${sub.user_seat_limit || 5} User Seats)`,
+        additional_seats: 0,
+        total_seats: sub.user_seat_limit || 5,
+        billing_mode: 'INITIAL',
+        amount: Number(sub.amount || 0),
+        gst_type: 'IGST',
+        gst_rate: 18,
+        tax_amount: Math.round(Number(sub.amount || 0) * 0.18),
+        total_payable: Math.round(Number(sub.amount || 0) * 1.18),
+        payment_mode: 'UPI',
+        transaction_id: 'ONBOARDING-DIRECT',
+        status: isPaid ? 'PAID' : 'PENDING',
+        created_at: sub.created_at || tenant?.created_at || new Date().toISOString()
+      };
+      invoices.push(initialInvoice);
+    }
+
+    invoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    return {
+      success: true,
+      tenant,
+      subscription: sub,
+      invoices
+    };
+  } catch (err) {
+    console.error('getTenantBillingHistory error:', err);
+    return { success: false, error: err.message, invoices: [] };
+  }
+}
+
+/**
+ * Super Admin: Process Add-on User Seats Expansion and generate dedicated invoice
+ */
+export async function processAddonSeatsAndInvoice({
+  tenantId,
+  currentSeats = 5,
+  newSeats = 10,
+  billingMode = 'SAME_EXPIRY', // 'SAME_EXPIRY' | 'EXTEND_VALIDITY'
+  monthsToAdd = 0,
+  dealPrice = 0,
+  invoiceType = 'tax_invoice', // 'proforma' | 'tax_invoice'
+  paymentMode = 'UPI',
+  transactionId = '',
+  gstType = 'IGST' // 'IGST' | 'CGST_SGST'
+}) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const now = new Date();
+    const cSeats = Math.max(1, parseInt(currentSeats, 10) || 1);
+    const nSeats = Math.max(cSeats, parseInt(newSeats, 10) || cSeats);
+    const addSeats = Math.max(0, nSeats - cSeats);
+    const finalAmount = Math.max(0, Number(dealPrice) || 0);
+
+    const { data: sub, error: subErr } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (subErr) throw subErr;
+
+    const { data: tenant } = await admin
+      .from('tenants')
+      .select('*')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    let newExpiry = sub?.valid_until ? new Date(sub.valid_until) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (billingMode === 'EXTEND_VALIDITY' && Number(monthsToAdd) > 0) {
+      const baseDate = newExpiry > now ? newExpiry : now;
+      newExpiry = new Date(baseDate);
+      newExpiry.setMonth(newExpiry.getMonth() + Number(monthsToAdd));
+    }
+
+    const updateSubPayload = {
+      user_seat_limit: nSeats
+    };
+    if (billingMode === 'EXTEND_VALIDITY') {
+      updateSubPayload.valid_until = newExpiry.toISOString();
+    }
+    if (invoiceType === 'tax_invoice') {
+      updateSubPayload.status = 'ACTIVE';
+    }
+
+    if (sub) {
+      const { error: updErr } = await admin
+        .from('tenant_subscriptions')
+        .update(updateSubPayload)
+        .eq('id', sub.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'SAAS_MODULAR',
+          user_seat_limit: nSeats,
+          valid_from: now.toISOString(),
+          valid_until: newExpiry.toISOString(),
+          status: invoiceType === 'tax_invoice' ? 'ACTIVE' : 'TRIAL',
+          billing_cycle: 'YEARLY',
+          amount: finalAmount
+        }]);
+      if (insErr) throw insErr;
+    }
+
+    if (invoiceType === 'tax_invoice') {
+      await admin.from('tenants').update({ status: 'ACTIVE', updated_at: now.toISOString() }).eq('id', tenantId);
+    }
+
+    const code = tenant?.tenant_code || 'WS';
+    const stamp = String(Math.floor(Date.now() / 1000)).slice(-4);
+    const invoiceNumber = invoiceType === 'tax_invoice'
+      ? `INV-ADD-${code}-${stamp}`
+      : `PI-ADD-${code}-${stamp}`;
+
+    const taxAmount = Math.round(finalAmount * 0.18);
+    const totalPayable = Math.round(finalAmount * 1.18);
+
+    const invoiceRecord = {
+      id: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      invoice_number: invoiceNumber,
+      invoice_type: invoiceType,
+      category: 'ADDON_SEATS',
+      description: `Add-on User Seats Expansion (+${addSeats} Users; Total Limit: ${nSeats} Users)`,
+      additional_seats: addSeats,
+      total_seats: nSeats,
+      billing_mode: billingMode,
+      months_added: billingMode === 'EXTEND_VALIDITY' ? Number(monthsToAdd) : 0,
+      valid_until: newExpiry.toISOString(),
+      amount: finalAmount,
+      gst_type: gstType || 'IGST',
+      gst_rate: 18,
+      tax_amount: taxAmount,
+      total_payable: totalPayable,
+      payment_mode: paymentMode || 'UPI',
+      transaction_id: transactionId || '',
+      status: invoiceType === 'tax_invoice' ? 'PAID' : 'PENDING',
+      created_at: now.toISOString()
+    };
+
+    const { data: entRow } = await admin
+      .from('tenant_entitlements')
+      .select('config_json')
+      .eq('tenant_id', tenantId)
+      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
+      .maybeSingle();
+
+    const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
+    existingInvoices.unshift(invoiceRecord);
+
+    await admin
+      .from('tenant_entitlements')
+      .upsert({
+        tenant_id: tenantId,
+        module_key: BILLING_HISTORY_MODULE_KEY,
+        is_enabled: true,
+        config_json: {
+          invoices: existingInvoices,
+          updated_at: now.toISOString()
+        }
+      }, { onConflict: 'tenant_id,module_key' });
+
+    return {
+      success: true,
+      invoice: invoiceRecord,
+      newSeatLimit: nSeats,
+      additionalSeats: addSeats,
+      message: `सफलतापूर्वक ${addSeats} अतिरिक्त सीट्स जोड़ दी गईं! कुल सीमा: ${nSeats} Users. Invoice #${invoiceNumber} जनरेट हो गया।`
+    };
+  } catch (err) {
+    console.error('processAddonSeatsAndInvoice error:', err);
     return { success: false, error: err.message };
   }
 }

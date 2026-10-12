@@ -29,7 +29,11 @@ import {
   Trash2,
   RotateCcw,
   Edit3,
-  FolderClock
+  FolderClock,
+  Share2,
+  MessageCircle,
+  CreditCard,
+  Send
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -48,7 +52,9 @@ import {
   softDeleteTenantWorkspace,
   restoreTenantWorkspace,
   permanentDeleteTenantWorkspace,
-  addNewProcessModule
+  addNewProcessModule,
+  processAddonSeatsAndInvoice,
+  getTenantBillingHistory
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
@@ -69,6 +75,22 @@ export default function SuperAdminSaasPanel() {
   const [extendingId, setExtendingId] = useState(null);
   const [seatModalTenant, setSeatModalTenant] = useState(null);
   const [newSeatValue, setNewSeatValue] = useState(5);
+  const [seatBillingMode, setSeatBillingMode] = useState('SAME_EXPIRY'); // 'SAME_EXPIRY' | 'EXTEND_VALIDITY'
+  const [seatExtendMonths, setSeatExtendMonths] = useState(12);
+  const [seatDealPrice, setSeatDealPrice] = useState('');
+  const [seatPaymentMode, setSeatPaymentMode] = useState('UPI');
+  const [seatTransactionId, setSeatTransactionId] = useState('');
+  const [seatGstType, setSeatGstType] = useState('IGST'); // 'IGST' | 'CGST_SGST'
+  const [processingSeats, setProcessingSeats] = useState(false);
+
+  // Billing History Ledger Modal State
+  const [historyModalTenant, setHistoryModalTenant] = useState(null);
+  const [billingHistoryList, setBillingHistoryList] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Active Invoice View State (for Add-on or Ledger Invoices)
+  const [activeInvoiceData, setActiveInvoiceData] = useState(null);
+  const [showGstSplit, setShowGstSplit] = useState(false);
 
   // Create Client Tenant Modal State (Master Admin Exclusive)
   const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
@@ -271,6 +293,61 @@ export default function SuperAdminSaasPanel() {
     }
   };
 
+  const calculateSuggestedSeatPrice = (tenant, targetSeats, mode, months) => {
+    if (!tenant) return 0;
+    const currSeats = tenant.user_seat_limit || 5;
+    const addSeats = Math.max(0, targetSeats - currSeats);
+    const sub = tenant.subscription;
+    const expiry = sub?.valid_until ? new Date(sub.valid_until) : new Date(Date.now() + 30 * 86400000);
+    const daysRemaining = Math.max(1, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+    let monthlyRatePerUser = 0;
+    (tenant.entitlements || []).forEach(m => {
+      const mod = catalog.find(c => c.process_code === m);
+      monthlyRatePerUser += (mod?.monthly_rate_per_user || 99);
+    });
+    if (monthlyRatePerUser === 0) monthlyRatePerUser = 299;
+
+    if (mode === 'SAME_EXPIRY') {
+      return Math.round(addSeats * monthlyRatePerUser * (daysRemaining / 30));
+    } else {
+      return Math.round(targetSeats * monthlyRatePerUser * Number(months || 12));
+    }
+  };
+
+  const handleOpenEditSeats = (t) => {
+    setSeatModalTenant(t);
+    const curr = t.user_seat_limit || 5;
+    const target = curr + 5;
+    setNewSeatValue(target);
+    setSeatBillingMode('SAME_EXPIRY');
+    setSeatExtendMonths(12);
+    setSeatGstType('IGST');
+    setSeatPaymentMode('UPI');
+    setSeatTransactionId('');
+    const suggested = calculateSuggestedSeatPrice(t, target, 'SAME_EXPIRY', 12);
+    setSeatDealPrice(suggested);
+  };
+
+  const handleSeatSeatsChange = (val) => {
+    const num = Math.max(1, parseInt(val, 10) || 1);
+    setNewSeatValue(num);
+    const suggested = calculateSuggestedSeatPrice(seatModalTenant, num, seatBillingMode, seatExtendMonths);
+    setSeatDealPrice(suggested);
+  };
+
+  const handleSeatModeChange = (mode) => {
+    setSeatBillingMode(mode);
+    const suggested = calculateSuggestedSeatPrice(seatModalTenant, newSeatValue, mode, seatExtendMonths);
+    setSeatDealPrice(suggested);
+  };
+
+  const handleSeatMonthsChange = (months) => {
+    setSeatExtendMonths(months);
+    const suggested = calculateSuggestedSeatPrice(seatModalTenant, newSeatValue, 'EXTEND_VALIDITY', months);
+    setSeatDealPrice(suggested);
+  };
+
   const handleUpdateSeats = async () => {
     if (!seatModalTenant) return;
     try {
@@ -285,6 +362,102 @@ export default function SuperAdminSaasPanel() {
     } catch (err) {
       showNotification(err.message, true);
     }
+  };
+
+  const handleProcessAddonSeats = async (invType) => {
+    if (!seatModalTenant) return;
+    setProcessingSeats(true);
+    try {
+      const currSeats = seatModalTenant.user_seat_limit || 5;
+      const targetSeats = parseInt(newSeatValue, 10) || currSeats;
+      const res = await processAddonSeatsAndInvoice({
+        tenantId: seatModalTenant.id,
+        currentSeats: currSeats,
+        newSeats: targetSeats,
+        billingMode: seatBillingMode,
+        monthsToAdd: seatExtendMonths,
+        dealPrice: seatDealPrice,
+        invoiceType: invType,
+        paymentMode: seatPaymentMode,
+        transactionId: seatTransactionId,
+        gstType: seatGstType
+      });
+
+      if (res.success) {
+        showNotification(res.message);
+        const tenantCopy = { ...seatModalTenant, user_seat_limit: res.newSeatLimit };
+        setSeatModalTenant(null);
+        await loadData();
+
+        // Open generated invoice modal
+        setActiveInvoiceData(res.invoice);
+        setInvoiceTenant(tenantCopy);
+        setInvoiceType(invType);
+        setShowGstSplit(seatGstType === 'CGST_SGST');
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setProcessingSeats(false);
+    }
+  };
+
+  const handleOpenBillingHistory = async (t) => {
+    setHistoryModalTenant(t);
+    setLoadingHistory(true);
+    try {
+      const res = await getTenantBillingHistory(t.id);
+      if (res.success) {
+        setBillingHistoryList(res.invoices || []);
+      } else {
+        setBillingHistoryList([]);
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      console.error('Error fetching billing history:', err);
+      setBillingHistoryList([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleViewHistoricalInvoice = (inv) => {
+    if (!historyModalTenant) return;
+    setActiveInvoiceData(inv);
+    setInvoiceTenant(historyModalTenant);
+    setInvoiceType(inv.invoice_type || (inv.status === 'PAID' ? 'tax_invoice' : 'proforma'));
+    setShowGstSplit(inv.gst_type === 'CGST_SGST');
+  };
+
+  const handleShareWhatsApp = (inv, tenant) => {
+    const total = inv?.total_payable || Math.round((tenant?.subscription?.amount || 0) * 1.18);
+    const subtotal = inv?.amount || tenant?.subscription?.amount || 0;
+    const tax = inv?.tax_amount || Math.round(subtotal * 0.18);
+    const invNo = inv?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${tenant?.tenant_code || 'WS'}-PAID` : `PI-${tenant?.tenant_code || 'EST'}-01`);
+    const typeLabel = invoiceType === 'tax_invoice' ? 'TAX INVOICE (PAID)' : 'PROFORMA INVOICE (ESTIMATE)';
+    const seatsDesc = inv?.additional_seats ? `+${inv.additional_seats} Additional Seats (Total Limit: ${inv.total_seats || tenant?.user_seat_limit} Users)` : `${tenant?.user_seat_limit || 5} User Seats`;
+
+    const text = `*NEW SWAN CRM - ${typeLabel}*
+━━━━━━━━━━━━━━━━━━━━━━
+🏢 *Client:* ${tenant?.name || ''}
+📄 *Invoice #:* ${invNo}
+👥 *Seats:* ${seatsDesc}
+💰 *Subtotal:* ₹${Number(subtotal).toLocaleString('en-IN')}
+🏛️ *GST (18%):* ₹${Number(tax).toLocaleString('en-IN')}
+💵 *Total Payable:* ₹${Number(total).toLocaleString('en-IN')}
+📌 *Status:* ${invoiceType === 'tax_invoice' ? '✅ PAID & ACTIVE' : '⏳ PENDING PAYMENT'}
+━━━━━━━━━━━━━━━━━━━━━━
+🏦 *Bank / UPI Details:*
+A/c Name: New Swan Multitech Limited
+Bank: HDFC Bank Ltd | A/c: 50200039281746
+IFSC: HDFC0000259 | UPI: newswan@okhdfcbank
+━━━━━━━━━━━━━━━━━━━━━━
+Thank you for choosing New Swan CRM!`;
+
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
   const handleCreateClientWorkspace = async (planData, isDraft = false) => {
@@ -390,6 +563,8 @@ export default function SuperAdminSaasPanel() {
   };
 
   const handleOpenInvoice = (t, type = 'proforma') => {
+    setActiveInvoiceData(null);
+    setShowGstSplit(false);
     setInvoiceTenant(t);
     setInvoiceType(type);
     setPayAmount(t.subscription?.amount || 0);
@@ -1062,10 +1237,7 @@ export default function SuperAdminSaasPanel() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <strong>{t.active_users_count}</strong> / {t.user_seat_limit}
                         <button
-                          onClick={() => {
-                            setSeatModalTenant(t);
-                            setNewSeatValue(t.user_seat_limit);
-                          }}
+                          onClick={() => handleOpenEditSeats(t)}
                           style={{
                             marginLeft: '0.5rem',
                             border: 'none',
@@ -1217,6 +1389,27 @@ export default function SuperAdminSaasPanel() {
                                 <FileText size={12} /> Invoice
                               </button>
 
+                              {/* Billing History Ledger Button */}
+                              <button
+                                onClick={() => handleOpenBillingHistory(t)}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #0284c7',
+                                  background: '#f0f9ff',
+                                  color: '#0369a1',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                                title="View complete billing ledger and all past invoices"
+                              >
+                                <FolderClock size={12} /> Ledger
+                              </button>
+
                               {/* Free Trial Button */}
                               <button
                                 onClick={() => {
@@ -1341,7 +1534,7 @@ export default function SuperAdminSaasPanel() {
         </div>
       )}
 
-      {/* Seat Edit Modal */}
+      {/* User Seats Expansion & Add-on Invoice Modal */}
       {seatModalTenant && (
         <div style={{
           position: 'fixed',
@@ -1349,51 +1542,328 @@ export default function SuperAdminSaasPanel() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(3px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 100000
+          zIndex: 100000,
+          padding: '1rem'
         }}>
-          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '400px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Update Seat Limit</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              Company: <strong>{seatModalTenant.name}</strong>
-            </p>
-
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.4rem', fontWeight: 500 }}>
-              Authorized Total Seats (User Limit):
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="10000"
-              value={newSeatValue}
-              onChange={(e) => setNewSeatValue(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.6rem',
-                borderRadius: '8px',
-                border: '1px solid var(--border-light)',
-                marginBottom: '1.5rem',
-                fontSize: '1rem',
-                fontWeight: 600
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '640px', maxHeight: '92vh', overflowY: 'auto', background: '#fff', borderRadius: '12px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.85rem', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Users size={22} color="#2563eb" />
+                  User Seats Expansion & Add-on Invoice
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.25rem 0 0 0' }}>
+                  Workspace: <strong>{seatModalTenant.name}</strong> (<code>{seatModalTenant.tenant_code}</code>) | Current: <strong>{seatModalTenant.user_seat_limit || 5} Users</strong>
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setSeatModalTenant(null)}
-                style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Step 1: Seat Expansion Counter */}
+            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.5rem' }}>
+                1. SELECT NEW TOTAL SEAT LIMIT:
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.45rem 0.85rem', fontSize: '0.88rem', color: '#64748b' }}>
+                  Current: <strong>{seatModalTenant.user_seat_limit || 5}</strong> Seats
+                </div>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#94a3b8' }}>➜</span>
+                <input
+                  type="number"
+                  min={Math.max(1, seatModalTenant.user_seat_limit || 1)}
+                  max="10000"
+                  value={newSeatValue}
+                  onChange={(e) => handleSeatSeatsChange(e.target.value)}
+                  style={{
+                    width: '120px',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '2px solid #2563eb',
+                    fontSize: '1.05rem',
+                    fontWeight: 700,
+                    color: '#1e3a8a',
+                    outline: 'none'
+                  }}
+                />
+                <span style={{
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '16px',
+                  background: Number(newSeatValue) > (seatModalTenant.user_seat_limit || 5) ? '#dcfce7' : '#f1f5f9',
+                  color: Number(newSeatValue) > (seatModalTenant.user_seat_limit || 5) ? '#15803d' : '#64748b',
+                  fontSize: '0.82rem',
+                  fontWeight: 800
+                }}>
+                  +{Math.max(0, Number(newSeatValue) - (seatModalTenant.user_seat_limit || 5))} Additional Seats
+                </span>
+              </div>
+            </div>
+
+            {/* Step 2: Dual Billing Modes */}
+            <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.6rem' }}>
+                2. BILLING & EXPANSION CONTRACT MODE:
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                {/* Mode A */}
+                <div
+                  onClick={() => handleSeatModeChange('SAME_EXPIRY')}
+                  style={{
+                    border: `2px solid ${seatBillingMode === 'SAME_EXPIRY' ? '#2563eb' : '#e2e8f0'}`,
+                    background: seatBillingMode === 'SAME_EXPIRY' ? '#eff6ff' : '#fff',
+                    borderRadius: '8px',
+                    padding: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="seat_billing_mode"
+                      checked={seatBillingMode === 'SAME_EXPIRY'}
+                      onChange={() => handleSeatModeChange('SAME_EXPIRY')}
+                    />
+                    Mode A: Coterminous (Same Expiry)
+                  </label>
+                  <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
+                    New seats expire on current contract validity date (<strong>{seatModalTenant.subscription?.valid_until ? new Date(seatModalTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Existing Expiry'}</strong>). Prorated for remaining days.
+                  </p>
+                </div>
+
+                {/* Mode B */}
+                <div
+                  onClick={() => handleSeatModeChange('EXTEND_VALIDITY')}
+                  style={{
+                    border: `2px solid ${seatBillingMode === 'EXTEND_VALIDITY' ? '#2563eb' : '#e2e8f0'}`,
+                    background: seatBillingMode === 'EXTEND_VALIDITY' ? '#eff6ff' : '#fff',
+                    borderRadius: '8px',
+                    padding: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: '#1e3a8a', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="seat_billing_mode"
+                      checked={seatBillingMode === 'EXTEND_VALIDITY'}
+                      onChange={() => handleSeatModeChange('EXTEND_VALIDITY')}
+                    />
+                    Mode B: Add Seats + Extend Validity
+                  </label>
+                  <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
+                    Increase seats AND extend the workspace subscription contract validity for another billing cycle.
+                  </p>
+                  {seatBillingMode === 'EXTEND_VALIDITY' && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem' }}>
+                      {[1, 3, 6, 12].map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleSeatMonthsChange(m); }}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            border: `1px solid ${seatExtendMonths === m ? '#2563eb' : '#cbd5e1'}`,
+                            background: seatExtendMonths === m ? '#2563eb' : '#fff',
+                            color: seatExtendMonths === m ? '#fff' : '#334155',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          +{m}M
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Agreed Deal Price (Kitna me deal hua tha) & GST Mode */}
+            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1rem', alignItems: 'flex-start' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                    3. AGREED DEAL PRICE (₹):
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      value={seatDealPrice}
+                      onChange={(e) => setSeatDealPrice(e.target.value)}
+                      placeholder="Agreed Base Price (₹)"
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '1rem',
+                        fontWeight: 700,
+                        color: '#0f172a'
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.35rem' }}>
+                    Negotiated amount. Automatically computed, but fully editable to match your custom deal.
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                    GST INVOICE BILLING:
+                  </label>
+                  <select
+                    value={seatGstType}
+                    onChange={(e) => setSeatGstType(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <option value="IGST">18% IGST (Inter-state / Default)</option>
+                    <option value="CGST_SGST">9% CGST + 9% SGST (Intra-state)</option>
+                  </select>
+
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.76rem', color: '#334155', background: '#fff', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Subtotal:</span>
+                      <strong>₹{Number(seatDealPrice || 0).toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>GST (18%):</span>
+                      <strong>₹{Math.round(Number(seatDealPrice || 0) * 0.18).toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', marginTop: '3px', paddingTop: '3px', color: '#1e3a8a', fontWeight: 800 }}>
+                      <span>Total Payable:</span>
+                      <span>₹{Math.round(Number(seatDealPrice || 0) * 1.18).toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Payment Details (For Paid Tax Invoice) */}
+            <div style={{ background: '#f0fdf4', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.4rem' }}>
+                4. PAYMENT MODE & TRANSACTION ID (IF RECORDING PAYMENT):
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.5rem' }}>
+                <select
+                  value={seatPaymentMode}
+                  onChange={(e) => setSeatPaymentMode(e.target.value)}
+                  style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem', fontWeight: 600 }}
+                >
+                  <option value="UPI">UPI Transfer</option>
+                  <option value="NEFT">Bank NEFT / RTGS</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Cash">Cash</option>
+                </select>
+                <input
+                  type="text"
+                  value={seatTransactionId}
+                  onChange={(e) => setSeatTransactionId(e.target.value)}
+                  placeholder="UTR / Transaction Ref (e.g. UPI/62019482)"
+                  style={{ padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setSeatModalTenant(null)}
+                style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontSize: '0.82rem' }}
               >
                 Cancel
               </button>
-              <button
-                onClick={handleUpdateSeats}
-                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-              >
-                Save Changes
-              </button>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {/* Quick Save */}
+                <button
+                  type="button"
+                  onClick={handleUpdateSeats}
+                  style={{
+                    padding: '0.5rem 0.85rem',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#334155',
+                    fontWeight: 600,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                  title="Update seat count only without generating an invoice"
+                >
+                  ⚡ Quick Seats Only
+                </button>
+
+                {/* Generate Proforma Invoice */}
+                <button
+                  type="button"
+                  onClick={() => handleProcessAddonSeats('proforma')}
+                  disabled={processingSeats}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#4338ca',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <FileText size={14} />
+                  {processingSeats ? 'Processing...' : 'Generate Add-on Proforma (PI)'}
+                </button>
+
+                {/* Record Payment & Tax Invoice */}
+                <button
+                  type="button"
+                  onClick={() => handleProcessAddonSeats('tax_invoice')}
+                  disabled={processingSeats}
+                  style={{
+                    padding: '0.5rem 1.15rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#059669',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <CreditCard size={14} />
+                  {processingSeats ? 'Processing...' : 'Record Payment & Paid Tax Invoice'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1922,6 +2392,26 @@ export default function SuperAdminSaasPanel() {
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
                   type="button"
+                  onClick={() => handleShareWhatsApp(activeInvoiceData, invoiceTenant)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '0.4rem 0.8rem',
+                    borderRadius: '6px',
+                    border: '1px solid #16a34a',
+                    background: '#f0fdf4',
+                    color: '#15803d',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                  title="Share this invoice directly to Client on WhatsApp"
+                >
+                  <MessageCircle size={14} /> WhatsApp Share
+                </button>
+                <button
+                  type="button"
                   onClick={() => window.print()}
                   style={{
                     display: 'inline-flex',
@@ -1941,7 +2431,11 @@ export default function SuperAdminSaasPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setInvoiceTenant(null)}
+                  onClick={() => {
+                    setInvoiceTenant(null);
+                    setActiveInvoiceData(null);
+                    setShowGstSplit(false);
+                  }}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
                 >
                   <X size={20} />
@@ -2002,10 +2496,12 @@ export default function SuperAdminSaasPanel() {
                     {invoiceType === 'tax_invoice' ? 'TAX INVOICE' : 'PROFORMA INVOICE'}
                   </span>
                   <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.4rem', color: '#111827' }}>
-                    #{invoiceType === 'tax_invoice' ? 'INV-202610-8421' : `PI-${invoiceTenant.tenant_code || 'EST'}-01`}
+                    #{activeInvoiceData?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${invoiceTenant.tenant_code || 'WS'}-PAID` : `PI-${invoiceTenant.tenant_code || 'EST'}-01`)}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                    Date: {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
+                    Date: {activeInvoiceData?.created_at
+                      ? new Date(activeInvoiceData.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
+                      : new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
                   </div>
                 </div>
               </div>
@@ -2019,7 +2515,13 @@ export default function SuperAdminSaasPanel() {
                   <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>{invoiceTenant.name}</div>
                   <div style={{ color: '#4b5563' }}>Workspace Code: <code>{invoiceTenant.tenant_code}</code></div>
                   <div style={{ color: '#4b5563' }}>Admin Email: {invoiceTenant.primary_contact_email}</div>
-                  <div style={{ color: '#4b5563' }}>User Seats Allowed: {invoiceTenant.user_seat_limit} Users</div>
+                  <div style={{ color: '#4b5563' }}>
+                    User Seats Allowed: {activeInvoiceData ? (
+                      <span><strong>{activeInvoiceData.total_seats || invoiceTenant.user_seat_limit} Users</strong> {activeInvoiceData.additional_seats > 0 && <span style={{ color: '#16a34a', fontWeight: 700 }}>(+{activeInvoiceData.additional_seats} Users Added)</span>}</span>
+                    ) : (
+                      <span><strong>{invoiceTenant.user_seat_limit} Users</strong></span>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
@@ -2030,7 +2532,11 @@ export default function SuperAdminSaasPanel() {
                     Cycle: <strong>{invoiceTenant.subscription?.billing_cycle || 'YEARLY'}</strong>
                   </div>
                   <div style={{ color: '#4b5563' }}>
-                    Valid Till: {invoiceTenant.subscription?.valid_until ? new Date(invoiceTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
+                    Valid Till: {activeInvoiceData?.valid_until
+                      ? new Date(activeInvoiceData.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+                      : invoiceTenant.subscription?.valid_until
+                        ? new Date(invoiceTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+                        : 'N/A'}
                   </div>
                   <div style={{ marginTop: '0.3rem' }}>
                     Status: <span style={{ fontWeight: 700, color: invoiceType === 'tax_invoice' ? '#059669' : '#d97706' }}>
@@ -2051,22 +2557,46 @@ export default function SuperAdminSaasPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invoiceTenant.entitlements.map(modKey => {
-                    const modObj = catalog.find(c => c.process_code === modKey);
-                    const rate = modObj?.monthly_rate_per_user || 99;
-                    const seats = invoiceTenant.user_seat_limit || 5;
-                    return (
-                      <tr key={modKey} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <td style={{ padding: '0.55rem 0.75rem' }}>
-                          <div style={{ fontWeight: 600 }}>{modObj?.display_name || modKey}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{modObj?.description}</div>
-                        </td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center' }}>{seats}</td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>₹{rate}</td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>₹{rate * seats}</td>
-                      </tr>
-                    );
-                  })}
+                  {activeInvoiceData ? (
+                    <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.65rem 0.75rem' }}>
+                        <div style={{ fontWeight: 700, color: '#1e1b4b' }}>
+                          {activeInvoiceData.description || 'Add-on User Seats Expansion'}
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#6b7280', marginTop: '2px' }}>
+                          {activeInvoiceData.billing_mode === 'EXTEND_VALIDITY'
+                            ? `Seat limit expansion (+${activeInvoiceData.additional_seats} seats) with ${activeInvoiceData.months_added || 12} months validity extension`
+                            : `Coterminous prorated seat expansion (+${activeInvoiceData.additional_seats} seats, valid till current contract expiry)`}
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>
+                        +{activeInvoiceData.additional_seats || 0} Seats
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
+                        ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>
+                        ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  ) : (
+                    invoiceTenant.entitlements.map(modKey => {
+                      const modObj = catalog.find(c => c.process_code === modKey);
+                      const rate = modObj?.monthly_rate_per_user || 99;
+                      const seats = invoiceTenant.user_seat_limit || 5;
+                      return (
+                        <tr key={modKey} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.55rem 0.75rem' }}>
+                            <div style={{ fontWeight: 600 }}>{modObj?.display_name || modKey}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{modObj?.description}</div>
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center' }}>{seats}</td>
+                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>₹{rate}</td>
+                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>₹{rate * seats}</td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
 
@@ -2084,17 +2614,45 @@ export default function SuperAdminSaasPanel() {
                 </div>
 
                 <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb', textAlign: 'right' }}>
+                  {/* Optional GST Split Toggle */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+                    <label style={{ fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#4b5563', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={showGstSplit}
+                        onChange={(e) => setShowGstSplit(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span>🏛️ <strong>GST Split (CGST + SGST)</strong></span>
+                    </label>
+                  </div>
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
                     <span style={{ color: '#6b7280' }}>Subtotal:</span>
-                    <span>₹{invoiceTenant.subscription?.amount || 0}</span>
+                    <span>₹{(activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)).toLocaleString('en-IN')}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                    <span style={{ color: '#6b7280' }}>GST (18%):</span>
-                    <span>₹{Math.round((invoiceTenant.subscription?.amount || 0) * 0.18)}</span>
-                  </div>
+
+                  {showGstSplit ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem' }}>
+                        <span style={{ color: '#6b7280' }}>CGST (9% Intra-state):</span>
+                        <span>₹{Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.09).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem' }}>
+                        <span style={{ color: '#6b7280' }}>SGST (9% Intra-state):</span>
+                        <span>₹{Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.09).toLocaleString('en-IN')}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                      <span style={{ color: '#6b7280' }}>IGST (18% Inter-state):</span>
+                      <span>₹{(activeInvoiceData?.tax_amount != null ? Number(activeInvoiceData.tax_amount) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.18)).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '2px solid #111827', marginTop: '4px', fontWeight: 800, fontSize: '0.95rem', color: '#1e1b4b' }}>
                     <span>Grand Total:</span>
-                    <span>₹{Math.round((invoiceTenant.subscription?.amount || 0) * 1.18)}</span>
+                    <span>₹{(activeInvoiceData?.total_payable != null ? Number(activeInvoiceData.total_payable) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 1.18)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>
@@ -2161,6 +2719,141 @@ export default function SuperAdminSaasPanel() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Tenant Billing History Ledger */}
+      {historyModalTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '850px', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FolderClock size={20} color="#0284c7" />
+                  Subscription & Invoicing Billing Ledger
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Company: <strong>{historyModalTenant.name}</strong> (<code>{historyModalTenant.tenant_code}</code>) | Seats Limit: <strong>{historyModalTenant.user_seat_limit} Users</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryModalTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-secondary)' }}>
+                Loading billing history...
+              </div>
+            ) : billingHistoryList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-secondary)' }}>
+                No invoices generated yet for this workspace.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Date</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Invoice #</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Description & Scope</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>Status</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billingHistoryList.map(inv => {
+                    const isPaid = inv.status === 'PAID';
+                    const isAddon = inv.category === 'ADDON_SEATS';
+                    const dStr = inv.created_at ? new Date(inv.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    return (
+                      <tr key={inv.id || inv.invoice_number} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '0.65rem 0.75rem', color: '#64748b' }}>{dStr}</td>
+                        <td style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: '#0f172a' }}>
+                          <code>{inv.invoice_number}</code>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem' }}>
+                          <div style={{ fontWeight: 600, color: '#334155' }}>{inv.description || (isAddon ? 'Add-on Seats Expansion' : 'Workspace Subscription')}</div>
+                          {isAddon && (
+                            <span style={{ fontSize: '0.7rem', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                              +{inv.additional_seats} Seats (Total: {inv.total_seats})
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
+                          ₹{Number(inv.total_payable || Math.round((inv.amount || 0) * 1.18)).toLocaleString('en-IN')}
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 400 }}>
+                            (Base: ₹{Number(inv.amount || 0).toLocaleString('en-IN')})
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            background: isPaid ? '#dcfce7' : '#fef3c7',
+                            color: isPaid ? '#15803d' : '#b45309'
+                          }}>
+                            {isPaid ? 'PAID' : 'PENDING'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleViewHistoricalInvoice(inv)}
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: '6px',
+                              border: '1px solid #cbd5e1',
+                              background: '#f8fafc',
+                              color: '#334155',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                            title="View printable invoice"
+                          >
+                            <Eye size={12} /> View
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setHistoryModalTenant(null)}
+                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: '#f8fafc', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Close Ledger
+              </button>
+            </div>
           </div>
         </div>
       )}
