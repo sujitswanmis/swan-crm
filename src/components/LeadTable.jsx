@@ -23,6 +23,9 @@ import Papa from 'papaparse';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
 import { useTableViewPreference, TableViewToggle } from '@/components/common/MobileTableView';
 import { getLeadRuntimeProfile, getMobileLeadPage, createLeadRowReader } from '@/utils/leadPerformance';
+import { getPrimaryClaimAssignees, getLeadStageAccess,
+  getPrimaryLeadHandoff, canClaimPrimaryTeamLead } from '@/utils/reportingHierarchy';
+import { claimPrimaryReportingLead } from '@/app/actions/reportingLeadClaims';
 
 const LeadFormModal = dynamic(() => import('./LeadFormModal'));
 const LeadProfilePanel = dynamic(() => import('./LeadProfilePanel'));
@@ -221,10 +224,50 @@ const LeadAssigneeCell = React.memo(({ info }) => {
   const teamMembers = info.table.options.meta?.teamMembers || [];
   const userRole = info.table.options.meta?.userRole;
   const [isInteracting, setIsInteracting] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
   
   const assignedMember = teamMembers.find(m => m.user_id === assignedToId);
   const moduleAccess = info.table.options.meta?.moduleAccess || {};
   const isManager = userRole === 'admin' || userRole === 'Admin' || moduleAccess?.['leads']?.is_manager === true || moduleAccess?.can_assign_leads === true;
+  const meta = info.table.options.meta || {};
+  const canClaimTeamLead = canClaimPrimaryTeamLead(lead, {
+    user_id: meta.userId, emp_name: meta.userName, role: userRole,
+    module_access: moduleAccess, can_write: meta.canWrite
+  }, meta.primaryLeadAssignees || new Set());
+  const claimTeamLead = () => {
+    if (isClaiming || !canClaimTeamLead) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showSyncToast('Connect to the internet to claim a reporting team lead.', 'error', 4500);
+      return;
+    }
+    setIsClaiming(true);
+    React.startTransition(async () => {
+      try {
+        const result = await claimPrimaryReportingLead(lead.id, lead.assigned_to);
+        if (!result?.success) {
+          showSyncToast(result?.error || 'Could not claim this lead.', 'error', 5000);
+          if (result?.conflict && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('crm_trigger_delta_sync'));
+          return;
+        }
+        const updated = { ...lead, ...result.lead, is_offline_pending: false,
+          lead_notes: result.note ? [result.note, ...(lead.lead_notes || [])] : lead.lead_notes || [] };
+        meta.updateLeadInState?.(processLeads([updated], teamMembers)[0]);
+        showSyncToast('Lead claimed successfully.', 'success', 3500);
+      } catch (error) {
+        showSyncToast('Could not claim this lead. Check your connection and retry.', 'error', 5000);
+      } finally {
+        setIsClaiming(false);
+      }
+    });
+  };
+  const teamClaimButton = canClaimTeamLead ? (
+    <button type="button" onClick={claimTeamLead} disabled={isClaiming}
+      title="Claim this reporting team lead under your name"
+      style={{ padding: '0.25rem 0.5rem', background: '#3b82f6', color: 'white', borderRadius: '4px', border: 'none',
+        cursor: isClaiming ? 'wait' : 'pointer', fontSize: '0.75rem', fontWeight: 'bold', opacity: isClaiming ? 0.65 : 1 }}>
+      {isClaiming ? 'Claiming...' : 'Claim Lead'}
+    </button>
+  ) : null;
   
   const updateAssignee = async (newAssignee) => {
     const supabase = createClient();
@@ -317,12 +360,17 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         </button>
       );
     }
-    return <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : 'Open Lead'}</span>;
+    return <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
+      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{assignedMember ? assignedMember.emp_name : assignedToId}</span>
+      {teamClaimButton}
+    </div>;
   }
 
   const currentDisplayName = assignedMember ? assignedMember.emp_name : 'Open Lead (Unassigned)';
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+    {teamClaimButton}
     <select 
       value={assignedToId || ''} 
       onFocus={() => setIsInteracting(true)}
@@ -358,6 +406,7 @@ const LeadAssigneeCell = React.memo(({ info }) => {
         </>
       )}
     </select>
+    </div>
   );
 });
 
@@ -372,23 +421,8 @@ const LeadStatusCell = React.memo(({ info }) => {
     const userRole = info.table.options.meta?.userRole;
     const moduleAccess = info.table.options.meta?.moduleAccess || {};
     const leadsAccess = moduleAccess?.leads || {};
-    const assignedSteps = leadsAccess.assigned_steps || [];
     
-    const getStageFromStatus = (st) => {
-      if (!st) return '01 - New Stage';
-      const s = String(st).trim();
-      if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
-      if (s.startsWith('1;')) return '01 - New Stage';
-      if (s.startsWith('2;')) return '02 - Contact Stage';
-      if (s.startsWith('3;')) return '03 - Qualification Stage';
-      if (s.startsWith('4;')) return '04 - Follow Up Stage';
-      if (s.startsWith('5;')) return '05 - Sales Process Stage';
-      if (s.startsWith('6;')) return '06 - Conversion Stage';
-      if (s.startsWith('7;')) return '07 - Final Stage';
-      if (['New', 'Pending'].includes(s)) return '01 - New Stage';
-      if (['Converted', 'Order Received', 'Closed'].includes(s)) return '07 - Final Stage';
-      return '01 - New Stage';
-    };
+
 
     const cleanOldStatus = (!status || status === 'None' || status === 'null' || status.toLowerCase() === 'new' || status.toLowerCase() === 'pending') 
       ? '01 - New Stage' 
@@ -397,12 +431,16 @@ const LeadStatusCell = React.memo(({ info }) => {
     let updates = { status: newStatus };
     let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
 
-    // Auto-Handoff: If agent changes to a stage they don't own, unassign the lead
+    // Preserve the owner for the primary's team view until the primary claims it.
     if (userRole !== 'admin' && userRole !== 'Admin' && !leadsAccess.is_manager) {
-      const newStage = getStageFromStatus(newStatus);
-      if (!assignedSteps.includes(newStage)) {
-        updates.assigned_to = null;
-        noteText += ` (Auto-released to Pool)`;
+      if (!getLeadStageAccess({ role: userRole, module_access: moduleAccess }, newStatus).view) {
+        const primary = getPrimaryLeadHandoff(lead, newStatus, teamMembers);
+        if (primary) {
+          noteText += ` (Handed off to Primary Reporting Person: ${primary.emp_name || primary.email}; pending claim)`;
+        } else {
+          updates.assigned_to = null;
+          noteText += ` (Auto-released to Pool)`;
+        }
       }
     }
     const nowIso = new Date().toISOString();
@@ -1149,6 +1187,9 @@ export default function LeadTable({
 }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
+  const primaryLeadAssignees = useMemo(() => getPrimaryClaimAssignees(teamMembers, {
+    user_id: userId, emp_name: userName
+  }), [teamMembers, userId, userName]);
   const [leadProfile] = useState(getLeadRuntimeProfile);
 
   const [initialPreparation] = useState(() => ({
@@ -1864,6 +1905,8 @@ export default function LeadTable({
       userName,
       moduleAccess,
       userId,
+      canWrite,
+      primaryLeadAssignees,
       setPendingStatusChange,
       onOpenProfile: (lead, mode) => {
         setProfileMode(mode);
@@ -2132,23 +2175,8 @@ export default function LeadTable({
   const handleDirectStatusChange = async (lead, newStatus) => {
     const supabase = createClient();
     const leadsAccess = moduleAccess?.leads || {};
-    const assignedSteps = leadsAccess.assigned_steps || [];
     
-    const getStageFromStatus = (st) => {
-      if (!st) return '01 - New Stage';
-      const s = String(st).trim();
-      if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
-      if (s.startsWith('1;')) return '01 - New Stage';
-      if (s.startsWith('2;')) return '02 - Contact Stage';
-      if (s.startsWith('3;')) return '03 - Qualification Stage';
-      if (s.startsWith('4;')) return '04 - Follow Up Stage';
-      if (s.startsWith('5;')) return '05 - Sales Process Stage';
-      if (s.startsWith('6;')) return '06 - Conversion Stage';
-      if (s.startsWith('7;')) return '07 - Final Stage';
-      if (['New', 'Pending'].includes(s)) return '01 - New Stage';
-      if (['Converted', 'Order Received', 'Closed'].includes(s)) return '07 - Final Stage';
-      return '01 - New Stage';
-    };
+
 
     const cleanOldStatus = (!lead.status || lead.status === 'None' || lead.status === 'null' || lead.status.toLowerCase() === 'new' || lead.status.toLowerCase() === 'pending') 
       ? '01 - New Stage' 
@@ -2157,12 +2185,16 @@ export default function LeadTable({
     let updates = { status: newStatus };
     let noteText = `Status changed from ${oldStatus} to ${newStatus}`;
 
-    // Auto-Handoff: If agent changes to a stage they don't own, unassign the lead
+    // Desktop and mobile stage changes use the same primary reporting handoff.
     if (userRole !== 'admin' && userRole !== 'Admin' && !leadsAccess.is_manager) {
-      const newStage = getStageFromStatus(newStatus);
-      if (!assignedSteps.includes(newStage)) {
-        updates.assigned_to = null;
-        noteText += ` (Auto-released to Pool)`;
+      if (!getLeadStageAccess({ role: userRole, module_access: moduleAccess }, newStatus).view) {
+        const primary = getPrimaryLeadHandoff(lead, newStatus, teamMembers);
+        if (primary) {
+          noteText += ` (Handed off to Primary Reporting Person: ${primary.emp_name || primary.email}; pending claim)`;
+        } else {
+          updates.assigned_to = null;
+          noteText += ` (Auto-released to Pool)`;
+        }
       }
     }
     
@@ -2791,13 +2823,7 @@ export default function LeadTable({
                   }}>
                     <div>
                       <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', display: 'block' }}>Assigned To</span>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                        {(() => {
-                          if (!lead.assigned_to) return <span style={{ color: '#94a3b8' }}>Unassigned</span>;
-                          const member = (teamMembers || []).find(t => t.user_id === lead.assigned_to);
-                          return member ? member.emp_name : lead.assigned_to.substring(0, 8);
-                        })()}
-                      </span>
+                      <LeadAssigneeCell info={{ getValue: () => lead.assigned_to, row: { original: lead }, table }} />
                     </div>
 
                     <div>

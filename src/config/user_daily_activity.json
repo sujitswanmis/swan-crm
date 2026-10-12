@@ -472,5 +472,29 @@
       "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
+  },
+  "2026-10-12": {
+    "7712ec30-c633-4e21-94ca-b12408a8dafa": {
+      "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "email": "sujitswanmis@gmail.com",
+      "empName": "Sujit Gupta",
+      "activeSeconds": 2177,
+      "idleSeconds": 4931,
+      "firstSeen": "2026-10-12T11:45:58.552728+00:00",
+      "lastSeen": "2026-10-12T13:09:36.724Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 150,
+      "idleSeconds": 30,
+      "firstSeen": "2026-10-12T13:11:43.366646+00:00",
+      "lastSeen": "2026-10-12T13:16:44.440Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    }
   }
 }

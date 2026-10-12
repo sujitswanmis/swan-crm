@@ -29,7 +29,7 @@ import { getTransferredLeads } from '@/app/actions/partyHandoff';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
-import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope } from '@/utils/reportingHierarchy';
+import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadStageKey, getLeadStageAccess } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
@@ -104,19 +104,7 @@ const SETTINGS_MODULE_ITEMS = [
 
 // Helper to map DB status to Team Management Stage format
 export const getStageFromStatus = (status) => {
-  if (!status) return '01 - New Stage';
-  const st = String(status).trim();
-  if (st.startsWith('8;') || st.startsWith('08') || st.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
-  if (st.startsWith('1;')) return '01 - New Stage';
-  if (st.startsWith('2;')) return '02 - Contact Stage';
-  if (st.startsWith('3;')) return '03 - Qualification Stage';
-  if (st.startsWith('4;')) return '04 - Follow Up Stage';
-  if (st.startsWith('5;')) return '05 - Sales Process Stage';
-  if (st.startsWith('6;')) return '06 - Conversion Stage';
-  if (st.startsWith('7;')) return '07 - Final Stage';
-  if (['New', 'Pending'].includes(st)) return '01 - New Stage';
-  if (['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => (st || '').toLowerCase().includes(k.toLowerCase()))) return '07 - Final Stage';
-  return '01 - New Stage';
+  return getLeadStageKey(status);
 };
 
 // Formats follow-up date with exact 4-digit year DD/MM/YYYY and hh:mm am/pm
@@ -188,8 +176,8 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
     return false;
   }
 
-  // 2. SaaS Studio Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
-  if (tabId === 'saas_studio') {
+  // 2. SaaS Studio & Workflow Builder Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
+  if (tabId === 'saas_studio' || tabId === 'workplace' || tabId === 'workflow') {
     const isMaster = (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
                      (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
     return isMaster;
@@ -215,7 +203,6 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (tabId === 'delegation') return moduleAccess['delegation']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'user_management_new') return moduleAccess['user_management_new']?.view === true || moduleAccess['team']?.view === true || isAdmin;
-  if (tabId === 'workplace') return moduleAccess['workplace']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'party' || (typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_')))) return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'location_master' || tabId === 'location_territory' || tabId === 'location-master') {
     return moduleAccess['location_master']?.view === true || moduleAccess['location_territory']?.view === true;
@@ -1333,6 +1320,7 @@ export default function CRMContainer({
   const saveLeadsTimeoutRef = useRef(null);
   const recentLocalUpdatesRef = useRef(new Map());
   const isLocalLeadsUpdateRef = useRef(false);
+  const handleLeadsChangeRef = useRef(null);
 
   const debouncedSaveLeadsLocally = (updatedLeads) => {
     if (saveLeadsTimeoutRef.current) {
@@ -1363,6 +1351,7 @@ export default function CRMContainer({
       return;
     }
     let effectActive = true;
+    const supabase = createClient();
     const removedDuringSync = new Set();
     const changedDuringSync = new Set();
     const refreshStagePreview = generation => {
@@ -2113,7 +2102,7 @@ export default function CRMContainer({
 
     const handleLeadsImported = (e) => {
       if (e.detail) {
-        handleLeadsChange(e.detail);
+        handleLeadsChangeRef.current?.(e.detail);
       }
     };
 
@@ -2220,9 +2209,11 @@ export default function CRMContainer({
       : Object.keys(leadsAccess.sub_items || {}).filter(k => k !== 'lead_dashboard' && k !== 'hourly_work' && leadsAccess.sub_items[k]?.view === true);
     
     if (assignedSteps.length > 0) {
+      const permittedStages = new Set(assignedSteps.map(step =>
+        /^(?:S)?0?[1-8](?:\s*[-;:]|$)/i.test(String(step).trim()) ? getLeadStageKey(step) : step));
       const filteredLeads = preFilteredLeads.filter(lead => {
         const leadStage = getStageFromStatus(lead.status);
-        return assignedSteps.includes(leadStage) && 
+        return permittedStages.has(leadStage) &&
                 isLeadInAssignmentScope(lead, leadAssigneeScope);
       });
       updateLeadsIfChanged(filteredLeads);
@@ -2233,7 +2224,7 @@ export default function CRMContainer({
   }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope]);
 
   // Handle local updates from child components so background fetches don't overwrite them
-  const handleLeadsChange = (updatedFilteredLeads) => {
+  const handleLeadsChange = useCallback((updatedFilteredLeads) => {
     const leadsArray = Array.isArray(updatedFilteredLeads) ? updatedFilteredLeads : (updatedFilteredLeads ? [updatedFilteredLeads] : []);
     if (leadsArray.length === 0) return;
 
@@ -2266,20 +2257,37 @@ export default function CRMContainer({
     });
 
     setLeads(prevLeads => {
+      const isVisibleUpdate = lead => {
+        const admin = userRole === 'admin' || userRole === 'Admin';
+        if (admin) return adminCompanyFilter === 'All' || (adminCompanyFilter === 'NSTL'
+          ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === adminCompanyFilter);
+        const companyMatches = !userCompany || (['NSTL', 'NSTLP'].includes(userCompany)
+          ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === userCompany);
+        if (!companyMatches && !leadAssigneeScope.has(lead.assigned_to)) return false;
+        if (moduleAccess?.leads?.is_manager || globalRolePermissions?.viewAll) return true;
+        return isLeadInAssignmentScope(lead, leadAssigneeScope) &&
+          getLeadStageAccess({ role: userRole, module_access: moduleAccess }, lead.status).view;
+      };
       const updatedMap = new Map(leadsArray.map(l => [l.id, l]));
       const existingIds = new Set(prevLeads.map(l => l.id));
-      const brandNew = leadsArray.filter(l => l && l.id && !existingIds.has(l.id));
-      const updatedExisting = prevLeads.map(l => {
+      const brandNew = leadsArray.filter(l => l && l.id && !existingIds.has(l.id) && isVisibleUpdate(l));
+      const updatedExisting = [];
+      for (const l of prevLeads) {
         if (updatedMap.has(l.id)) {
-          return { ...l, ...updatedMap.get(l.id) };
+          const updated = { ...l, ...updatedMap.get(l.id) };
+          if (isVisibleUpdate(updated)) updatedExisting.push(updated);
+        } else {
+          updatedExisting.push(l);
         }
-        return l;
-      });
+      }
       return brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
     });
-  };
+  }, [userRole, adminCompanyFilter, userCompany, moduleAccess, globalRolePermissions, leadAssigneeScope]);
 
   const [currentTime] = useState(() => Date.now());
+  React.useLayoutEffect(() => {
+    handleLeadsChangeRef.current = handleLeadsChange;
+  }, [handleLeadsChange]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'yesterday' | 'today' | 'tomorrow' | 'overdue' | 'upcoming'
   const [notifSearch, setNotifSearch] = useState('');
@@ -2738,6 +2746,7 @@ export default function CRMContainer({
     }
 
     if (tabId === 'workplace' || tabId === 'workflow') {
+      if (!isMasterAdmin) return;
       setActiveTab('workplace');
       const targetSub = workflowSubTab || 'active';
       window.history.pushState(null, '', `/workflow?tab=${targetSub}`);
@@ -4420,8 +4429,8 @@ export default function CRMContainer({
             </div>
           )}
 
-          {/* WORKFLOW BUILDER CATEGORY (Strictly positioned between User Management and System) */}
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['workplace']?.view !== false || moduleAccess['team']?.view) && (
+          {/* WORKFLOW BUILDER CATEGORY (Strictly positioned between User Management and System - MASTER ADMIN ONLY) */}
+          {isMasterAdmin && (
             <div>
               <button
                 onClick={() => {
@@ -6681,18 +6690,20 @@ export default function CRMContainer({
                 </ErrorBoundary>
               </KeepAliveTab>
 
-              {/* Workplace */}
+              {/* Workplace (Master Admin Only) */}
               <KeepAliveTab 
                 isActive={activeTab === 'workplace'} 
-                isVisited={isTabPermitted('workplace', moduleAccess, userRole) && visitedTabs.has('workplace')}
+                isVisited={isMasterAdmin && (visitedTabs.has('workplace') || activeTab === 'workplace')}
               >
                 <ErrorBoundary>
-                  <UniversalWorkplaceModule 
-                    moduleAccess={moduleAccess} 
-                    userRole={userRole} 
-                    initialSubTab={workflowSubTab} 
-                    onSubTabChange={handleWorkflowSubTabChange} 
-                  />
+                  {isMasterAdmin ? (
+                    <UniversalWorkplaceModule 
+                      moduleAccess={moduleAccess} 
+                      userRole={userRole} 
+                      initialSubTab={workflowSubTab} 
+                      onSubTabChange={handleWorkflowSubTabChange} 
+                    />
+                  ) : null}
                 </ErrorBoundary>
               </KeepAliveTab>
 

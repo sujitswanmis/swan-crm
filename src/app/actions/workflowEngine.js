@@ -17,14 +17,11 @@ async function access(operation = 'view', tenantId) {
   const { data: actor, error: roleError } = await client.from('user_roles').select('*').eq('user_id', user.id).maybeSingle();
   if (roleError || !actor) throw new Error('Workflow permission denied');
   const role = String(actor.role || '').toLowerCase();
-  const admin = ['admin', 'superadmin', 'masteradmin'].includes(role);
-  if (!admin) {
-    const hasWorkflowSub = getSubItemPermissions(actor.module_access, role, 'workplace', 'workflow')?.[operation];
-    const hasWorkplacePerm = actor.module_access?.['workplace']?.[operation] !== false && (actor.module_access?.['workplace']?.view === true || actor.module_access?.['team']?.view === true);
-    if (!hasWorkflowSub && !hasWorkplacePerm) {
-      throw new Error('Workflow permission denied');
-    }
+  const isMaster = role === 'masteradmin' || (user.email || '').toLowerCase() === 'supujacreations@gmail.com';
+  if (!isMaster) {
+    throw new Error('Workflow permission denied: Master Admin only');
   }
+  const admin = true;
   const resolvedTenant = actor.tenant_id || DEFAULT_TENANT_ID;
   if (tenantId && tenantId !== resolvedTenant) throw new Error('Workflow tenant mismatch');
   return { client, tenantId: resolvedTenant, actor, user, admin };
