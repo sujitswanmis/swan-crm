@@ -329,7 +329,7 @@ export async function getAllTenantsWithSubscriptions() {
 
     const { data: userCounts } = await admin
       .from('user_roles')
-      .select('tenant_id, user_id, role');
+      .select('company, user_id, role, emp_official_mail_id');
 
     const now = new Date();
 
@@ -339,10 +339,16 @@ export async function getAllTenantsWithSubscriptions() {
         .filter(e => e.tenant_id === t.id && e.is_enabled)
         .map(e => e.module_key);
 
-      const activeUserCount = (userCounts || []).filter(u => 
-        (u.tenant_id === t.id || (!u.tenant_id && t.id === DEFAULT_TENANT_ID)) && 
-        u.role !== 'customer'
-      ).length;
+      const activeUserCount = (userCounts || []).filter(u => {
+        if (u.role === 'customer') return false;
+        const comp = String(u.company || '').trim().toLowerCase();
+        const tName = String(t.name || '').trim().toLowerCase();
+        const tCode = String(t.tenant_code || '').trim().toLowerCase();
+        if (t.id === DEFAULT_TENANT_ID) {
+          return comp === 'nstlp' || comp === 'nsmlr' || comp === 'new swan group' || comp === 'swan agro' || !comp;
+        }
+        return comp === tName || comp === tCode || (u.emp_official_mail_id && u.emp_official_mail_id.toLowerCase() === (t.primary_contact_email || '').toLowerCase());
+      }).length;
 
       let daysRemaining = null;
       let isExpired = false;
@@ -533,7 +539,8 @@ export async function createTenantWorkspace({
   adminMobile = '',
   processCodes = ['LEADS_WITH_CALLING'],
   userSeats = 5,
-  cycleCode = 'YEARLY'
+  cycleCode = 'YEARLY',
+  trialDays = 0
 }) {
   try {
     const admin = getAdminClient();
@@ -547,14 +554,20 @@ export async function createTenantWorkspace({
     const cleanName = adminName.trim();
     const cleanMobile = adminMobile ? adminMobile.trim() : '';
 
-    // Generate unique slug tenant_code
+    // Generate clean slug tenant_code
     const baseSlug = cleanCompany
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '_')
       .replace(/__+/g, '_')
-      .substring(0, 14) || 'WORKSPACE';
-    const randSuffix = Math.floor(1000 + Math.random() * 9000);
-    const tenantCode = `${baseSlug}_${randSuffix}`;
+      .replace(/^_|_$/g, '') || 'WORKSPACE';
+
+    const { data: existingSlug } = await admin
+      .from('tenants')
+      .select('id')
+      .eq('tenant_code', baseSlug)
+      .maybeSingle();
+
+    const tenantCode = existingSlug ? `${baseSlug}_${Math.floor(1000 + Math.random() * 9000)}` : baseSlug;
 
     // 1. Create tenant row
     const { data: newTenant, error: tenantErr } = await admin
@@ -605,10 +618,9 @@ export async function createTenantWorkspace({
       userId = authData.user.id;
     }
 
-    // 3. Setup Administrator in user_roles
+    // 3. Setup Administrator in user_roles (uses company column)
     const userRolePayload = {
       user_id: userId,
-      tenant_id: newTenant.id,
       role: 'admin',
       is_approved: true,
       can_read: true,
@@ -633,34 +645,45 @@ export async function createTenantWorkspace({
 
     // 4. Calculate Subscription Dates strictly in IST
     const now = new Date();
-    let monthsToAdd = 1;
-    if (cycleCode === 'QUARTERLY') monthsToAdd = 3;
-    else if (cycleCode === 'HALF_YEARLY') monthsToAdd = 6;
-    else if (cycleCode === 'YEARLY') monthsToAdd = 12;
+    const isTrial = Number(trialDays) > 0;
+    let expiryDate;
+    let finalAmount = 0;
+    let assignedCycle = cycleCode;
 
-    const expiryDate = new Date(now);
-    expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
+    if (isTrial) {
+      const tDays = Math.max(1, parseInt(trialDays, 10));
+      expiryDate = new Date(now.getTime() + tDays * 24 * 60 * 60 * 1000);
+      assignedCycle = `TRIAL_${tDays}D`;
+      finalAmount = 0;
+    } else {
+      let monthsToAdd = 1;
+      if (cycleCode === 'QUARTERLY') monthsToAdd = 3;
+      else if (cycleCode === 'HALF_YEARLY') monthsToAdd = 6;
+      else if (cycleCode === 'YEARLY') monthsToAdd = 12;
 
-    // Calculate dynamic price
-    const priceRes = await calculatePlanPrice({
-      processCodes,
-      userSeats,
-      cycleCode,
-      tenantId: newTenant.id
-    });
-    const finalAmount = priceRes.success ? priceRes.final_amount : 0;
+      expiryDate = new Date(now);
+      expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
+
+      const priceRes = await calculatePlanPrice({
+        processCodes,
+        userSeats,
+        cycleCode,
+        tenantId: newTenant.id
+      });
+      finalAmount = priceRes.success ? priceRes.final_amount : 0;
+    }
 
     // 5. Insert Subscription Record
     const { error: subError } = await admin
       .from('tenant_subscriptions')
       .insert([{
         tenant_id: newTenant.id,
-        plan_name: 'SAAS_MODULAR',
+        plan_name: isTrial ? 'FREE_TRIAL' : 'SAAS_MODULAR',
         user_seat_limit: Math.max(1, parseInt(userSeats, 10) || 5),
         valid_from: now.toISOString(),
         valid_until: expiryDate.toISOString(),
-        status: 'ACTIVE',
-        billing_cycle: cycleCode,
+        status: isTrial ? 'TRIAL' : 'ACTIVE',
+        billing_cycle: assignedCycle,
         amount: finalAmount
       }]);
 
@@ -801,5 +824,160 @@ export async function purchaseAddonModule(tenantId, processCode) {
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Super Admin: Toggle / Manage enabled modules for a specific tenant
+ */
+export async function updateTenantEntitlements(tenantId, enabledModuleKeys = []) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+
+    const allModules = DEFAULT_PROCESS_CATALOG.map(p => p.process_code);
+    const updates = allModules.map(code => ({
+      tenant_id: tenantId,
+      module_key: code,
+      is_enabled: enabledModuleKeys.includes(code),
+      config_json: {
+        updated_at: new Date().toISOString(),
+        manual_override: true
+      }
+    }));
+
+    const { error } = await admin
+      .from('tenant_entitlements')
+      .upsert(updates, { onConflict: 'tenant_id,module_key' });
+
+    if (error) throw error;
+    return {
+      success: true,
+      message: 'कंपनी के मॉड्यूल्स सफलतापूर्वक अपडेट हो गए!'
+    };
+  } catch (err) {
+    console.error('updateTenantEntitlements error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Extend or assign Free Trial (1, 3, 7, 10, or custom days)
+ */
+export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
+  try {
+    const admin = getAdminClient();
+    const days = Math.max(1, parseInt(trialDays, 10) || 7);
+    const now = new Date();
+    const newExpiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+    const { data: existing } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .update({
+          valid_until: newExpiry.toISOString(),
+          status: 'TRIAL',
+          billing_cycle: `TRIAL_${days}D`,
+          updated_at: now.toISOString()
+        })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'FREE_TRIAL',
+          user_seat_limit: 5,
+          valid_from: now.toISOString(),
+          valid_until: newExpiry.toISOString(),
+          status: 'TRIAL',
+          billing_cycle: `TRIAL_${days}D`,
+          amount: 0
+        }]);
+      if (error) throw error;
+    }
+
+    return {
+      success: true,
+      message: `${days} दिन का फ्री ट्रायल सक्रिय हो गया! (Expiry: ${newExpiry.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })})`
+    };
+  } catch (err) {
+    console.error('extendTenantSubscriptionTrial error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Record offline/bank payment and generate Tax Invoice
+ */
+export async function recordPaymentAndGenerateInvoice({
+  tenantId,
+  amount,
+  paymentMode = 'UPI',
+  transactionId = '',
+  months = 12
+}) {
+  try {
+    const admin = getAdminClient();
+    const now = new Date();
+    const newExpiry = new Date(now);
+    newExpiry.setMonth(newExpiry.getMonth() + Number(months || 12));
+
+    const { data: sub } = await admin
+      .from('tenant_subscriptions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const invoiceNumber = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    if (sub) {
+      await admin
+        .from('tenant_subscriptions')
+        .update({
+          valid_until: newExpiry.toISOString(),
+          status: 'ACTIVE',
+          amount: Number(amount || 0),
+          billing_cycle: Number(months) === 12 ? 'YEARLY' : (Number(months) === 6 ? 'HALF_YEARLY' : 'MONTHLY'),
+          updated_at: now.toISOString()
+        })
+        .eq('id', sub.id);
+    } else {
+      await admin
+        .from('tenant_subscriptions')
+        .insert([{
+          tenant_id: tenantId,
+          plan_name: 'SAAS_MODULAR',
+          user_seat_limit: 5,
+          valid_from: now.toISOString(),
+          valid_until: newExpiry.toISOString(),
+          status: 'ACTIVE',
+          billing_cycle: Number(months) === 12 ? 'YEARLY' : 'MONTHLY',
+          amount: Number(amount || 0)
+        }]);
+    }
+
+    return {
+      success: true,
+      invoiceNumber,
+      paidAt: now.toISOString(),
+      newExpiry: newExpiry.toISOString(),
+      message: `भुगतान रिकॉर्ड हो गया! Tax Invoice #${invoiceNumber} जनरेट हो गया।`
+    };
+  } catch (err) {
+    console.error('recordPaymentAndGenerateInvoice error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 
 

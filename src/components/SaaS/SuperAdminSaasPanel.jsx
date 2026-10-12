@@ -21,7 +21,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Eye,
-  EyeOff
+  EyeOff,
+  FileText,
+  Printer,
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -32,7 +36,10 @@ import {
   extendTenantSubscription,
   updateTenantSeats,
   updateTenantCustomRate,
-  createTenantWorkspace
+  createTenantWorkspace,
+  updateTenantEntitlements,
+  extendTenantSubscriptionTrial,
+  recordPaymentAndGenerateInvoice
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
@@ -66,6 +73,27 @@ export default function SuperAdminSaasPanel() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(null);
+  const [createTrialDays, setCreateTrialDays] = useState(0);
+
+  // Manage Modules Modal State
+  const [modulesModalTenant, setModulesModalTenant] = useState(null);
+  const [selectedModuleKeys, setSelectedModuleKeys] = useState(new Set());
+  const [savingModules, setSavingModules] = useState(false);
+
+  // Free Trial Modal State
+  const [trialModalTenant, setTrialModalTenant] = useState(null);
+  const [trialDaysInput, setTrialDaysInput] = useState(7);
+  const [customTrialInput, setCustomTrialInput] = useState('');
+  const [grantingTrial, setGrantingTrial] = useState(false);
+
+  // Invoice / Proforma Modal State
+  const [invoiceTenant, setInvoiceTenant] = useState(null);
+  const [invoiceType, setInvoiceType] = useState('proforma'); // 'proforma' | 'tax_invoice'
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState('UPI');
+  const [payUtr, setPayUtr] = useState('');
+  const [payMonths, setPayMonths] = useState(12);
+  const [recordingPay, setRecordingPay] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -241,7 +269,8 @@ export default function SuperAdminSaasPanel() {
         adminMobile: newAdminMobile,
         processCodes: planData?.processCodes || ['LEADS_WITH_CALLING'],
         userSeats: planData?.seats || 5,
-        cycleCode: planData?.cycleCode || 'YEARLY'
+        cycleCode: planData?.cycleCode || 'YEARLY',
+        trialDays: createTrialDays
       });
 
       if (res.success) {
@@ -256,6 +285,7 @@ export default function SuperAdminSaasPanel() {
           setNewAdminEmail('');
           setNewAdminMobile('');
           setNewAdminPassword('');
+          setCreateTrialDays(0);
           setCreateSuccess(null);
         }, 1500);
       } else {
@@ -265,6 +295,91 @@ export default function SuperAdminSaasPanel() {
       setCreateError(err.message || 'An error occurred.');
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  const handleOpenModulesModal = (t) => {
+    setModulesModalTenant(t);
+    setSelectedModuleKeys(new Set(t.entitlements || []));
+  };
+
+  const handleToggleModuleKey = (code) => {
+    const next = new Set(selectedModuleKeys);
+    if (next.has(code)) {
+      next.delete(code);
+    } else {
+      next.add(code);
+    }
+    setSelectedModuleKeys(next);
+  };
+
+  const handleSaveModules = async () => {
+    if (!modulesModalTenant) return;
+    setSavingModules(true);
+    try {
+      const res = await updateTenantEntitlements(modulesModalTenant.id, Array.from(selectedModuleKeys));
+      if (res.success) {
+        showNotification(res.message);
+        setModulesModalTenant(null);
+        await loadData();
+      } else {
+        showNotification(res.error || 'Failed to update modules', true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setSavingModules(false);
+    }
+  };
+
+  const handleGrantTrial = async () => {
+    if (!trialModalTenant) return;
+    setGrantingTrial(true);
+    try {
+      const days = trialDaysInput === 'custom' ? parseInt(customTrialInput, 10) || 7 : parseInt(trialDaysInput, 10);
+      const res = await extendTenantSubscriptionTrial(trialModalTenant.id, days);
+      if (res.success) {
+        showNotification(res.message);
+        setTrialModalTenant(null);
+        await loadData();
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setGrantingTrial(false);
+    }
+  };
+
+  const handleOpenInvoice = (t, type = 'proforma') => {
+    setInvoiceTenant(t);
+    setInvoiceType(type);
+    setPayAmount(t.subscription?.amount || 0);
+  };
+
+  const handleRecordPayment = async () => {
+    if (!invoiceTenant) return;
+    setRecordingPay(true);
+    try {
+      const res = await recordPaymentAndGenerateInvoice({
+        tenantId: invoiceTenant.id,
+        amount: payAmount || invoiceTenant.subscription?.amount || 0,
+        paymentMode: payMode,
+        transactionId: payUtr,
+        months: payMonths
+      });
+      if (res.success) {
+        showNotification(res.message);
+        await loadData();
+        setInvoiceType('tax_invoice');
+      } else {
+        showNotification(res.error, true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setRecordingPay(false);
     }
   };
 
@@ -653,18 +768,34 @@ export default function SuperAdminSaasPanel() {
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
                           {isDefault ? (
-                            <span style={{ fontSize: '0.75rem', background: '#ecfdf5', color: '#047857', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '0.75rem', background: '#ecfdf5', color: '#047857', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
                               All 8 Modules
                             </span>
                           ) : (
                             t.entitlements.map(mod => (
-                              <span key={mod} style={{ fontSize: '0.72rem', background: 'var(--bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                              <span key={mod} style={{ fontSize: '0.72rem', background: 'var(--bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
                                 {mod}
                               </span>
                             ))
                           )}
+                          <button
+                            onClick={() => handleOpenModulesModal(t)}
+                            style={{
+                              padding: '2px 8px',
+                              border: '1px solid #93c5fd',
+                              borderRadius: '4px',
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                            title="Edit active business modules for this company"
+                          >
+                            ⚙️ Edit
+                          </button>
                         </div>
                       </td>
 
@@ -675,58 +806,107 @@ export default function SuperAdminSaasPanel() {
                             {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
                           </div>
                         )}
+                        {sub?.billing_cycle && (
+                          <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600 }}>
+                            {sub.billing_cycle}
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                          {/* Invoice Button */}
+                          <button
+                            onClick={() => handleOpenInvoice(t, sub?.status === 'ACTIVE' ? 'tax_invoice' : 'proforma')}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid #8b5cf6',
+                              background: '#f5f3ff',
+                              color: '#6d28d9',
+                              fontSize: '0.76rem',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                            title="Generate Proforma or Paid Tax Invoice"
+                          >
+                            <FileText size={12} /> Invoice
+                          </button>
+
+                          {/* Free Trial Button */}
+                          <button
+                            onClick={() => {
+                              setTrialModalTenant(t);
+                              setTrialDaysInput(7);
+                              setCustomTrialInput('');
+                            }}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid #f59e0b',
+                              background: '#fffbeb',
+                              color: '#b45309',
+                              fontSize: '0.76rem',
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                            title="Assign 1, 3, 7, 10 or custom days trial"
+                          >
+                            🎁 Trial
+                          </button>
+
+                          {/* Extend Buttons */}
                           <button
                             onClick={() => handleExtend(t.id, 1)}
                             disabled={extendingId === t.id}
                             style={{
-                              padding: '0.3rem 0.6rem',
+                              padding: '0.3rem 0.55rem',
                               borderRadius: '6px',
                               border: '1px solid #d1d5db',
                               background: '#fff',
-                              fontSize: '0.78rem',
+                              fontSize: '0.76rem',
                               cursor: 'pointer',
                               fontWeight: 500
                             }}
                           >
-                            +1 Month
+                            +1M
                           </button>
 
                           <button
                             onClick={() => handleExtend(t.id, 6)}
                             disabled={extendingId === t.id}
                             style={{
-                              padding: '0.3rem 0.6rem',
+                              padding: '0.3rem 0.55rem',
                               borderRadius: '6px',
                               border: '1px solid #2563eb',
                               background: '#eff6ff',
                               color: '#1d4ed8',
-                              fontSize: '0.78rem',
+                              fontSize: '0.76rem',
                               cursor: 'pointer',
                               fontWeight: 500
                             }}
                           >
-                            +6 Months
+                            +6M
                           </button>
 
                           <button
                             onClick={() => handleExtend(t.id, 12)}
                             disabled={extendingId === t.id}
                             style={{
-                              padding: '0.3rem 0.6rem',
+                              padding: '0.3rem 0.55rem',
                               borderRadius: '6px',
                               border: 'none',
                               background: '#10b981',
                               color: '#fff',
-                              fontSize: '0.78rem',
+                              fontSize: '0.76rem',
                               cursor: 'pointer',
                               fontWeight: 500
                             }}
                           >
-                            +1 Year
+                            +1Y
                           </button>
                         </div>
                       </td>
@@ -1027,6 +1207,532 @@ export default function SuperAdminSaasPanel() {
                     }}
                   >
                     <ArrowLeft size={16} /> ← Edit Company Details
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Manage Modules Modal */}
+      {modulesModalTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Sliders size={20} color="#4338ca" /> Manage Active Modules
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
+                  Company: <strong>{modulesModalTenant.name}</strong> ({modulesModalTenant.tenant_code})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModulesModalTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: '#6366f1', background: '#eef2ff', padding: '0.6rem 0.8rem', borderRadius: '6px', marginBottom: '1.2rem', lineHeight: 1.4 }}>
+              💡 <strong>Instant Access Control:</strong> Uncheck any module that this company does not require. The tab will immediately vanish from their navigation bar, and it will be excluded from their invoices.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.5rem' }}>
+              {catalog.map(mod => {
+                const isChecked = selectedModuleKeys.has(mod.process_code);
+                return (
+                  <label
+                    key={mod.process_code}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.75rem',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '8px',
+                      border: `1.5px solid ${isChecked ? '#4338ca' : 'var(--border-light)'}`,
+                      backgroundColor: isChecked ? '#f5f3ff' : 'var(--bg-surface)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleModuleKey(mod.process_code)}
+                      style={{ marginTop: '0.2rem', width: '16px', height: '16px', accentColor: '#4338ca', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: isChecked ? '#312e81' : 'var(--text-primary)' }}>
+                          {mod.display_name}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'var(--bg-muted)', fontWeight: 600 }}>
+                          ₹{mod.monthly_rate_per_user}/user/mo
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.3 }}>
+                        {mod.description}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                {selectedModuleKeys.size} of {catalog.length} Modules Active
+              </span>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setModulesModalTenant(null)}
+                  style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveModules}
+                  disabled={savingModules}
+                  style={{
+                    padding: '0.55rem 1.4rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#4338ca',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {savingModules ? 'Saving...' : 'Save Module Access'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Free Trial Modal */}
+      {trialModalTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '420px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🎁 Assign Free Trial
+              </h3>
+              <button
+                type="button"
+                onClick={() => setTrialModalTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Company: <strong>{trialModalTenant.name}</strong>
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+              Select Trial Duration:
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
+              {[1, 3, 7, 10].map(days => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => setTrialDaysInput(days)}
+                  style={{
+                    padding: '0.5rem',
+                    borderRadius: '6px',
+                    border: trialDaysInput === days ? '2px solid #f59e0b' : '1px solid var(--border-light)',
+                    background: trialDaysInput === days ? '#fef3c7' : 'var(--bg-surface)',
+                    color: trialDaysInput === days ? '#92400e' : 'var(--text-primary)',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {days} {days === 1 ? 'Day' : 'Days'}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>
+                Or enter custom days:
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="e.g. 15, 30"
+                value={customTrialInput}
+                onChange={(e) => {
+                  setCustomTrialInput(e.target.value);
+                  setTrialDaysInput('custom');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.8rem',
+                  borderRadius: '6px',
+                  border: trialDaysInput === 'custom' ? '2px solid #f59e0b' : '1px solid var(--border-light)',
+                  fontSize: '0.9rem'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setTrialModalTenant(null)}
+                style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGrantTrial}
+                disabled={grantingTrial}
+                style={{
+                  padding: '0.55rem 1.4rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#f59e0b',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {grantingTrial ? 'Activating...' : 'Activate Free Trial 🚀'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice / Proforma Modal */}
+      {invoiceTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '2rem', width: '100%', maxWidth: '750px', maxHeight: '92vh', overflowY: 'auto', background: '#fff' }}>
+            {/* Top Toolbar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceType('proforma')}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    background: invoiceType === 'proforma' ? '#4338ca' : '#f3f4f6',
+                    color: invoiceType === 'proforma' ? '#fff' : '#4b5563'
+                  }}
+                >
+                  Proforma Invoice (PI)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceType('tax_invoice')}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    background: invoiceType === 'tax_invoice' ? '#059669' : '#f3f4f6',
+                    color: invoiceType === 'tax_invoice' ? '#fff' : '#4b5563'
+                  }}
+                >
+                  Tax Invoice (Paid)
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '0.4rem 0.8rem',
+                    borderRadius: '6px',
+                    border: '1px solid #d1d5db',
+                    background: '#fff',
+                    color: '#374151',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Printer size={14} /> Print / Save PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceTenant(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Invoice Sheet */}
+            <div id="saas-invoice-sheet" style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.75rem', background: '#fafafa', position: 'relative' }}>
+              {/* Paid Watermark Stamp */}
+              {invoiceType === 'tax_invoice' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '40%',
+                  right: '15%',
+                  transform: 'rotate(-20deg)',
+                  border: '4px solid #059669',
+                  color: '#059669',
+                  padding: '0.4rem 1.5rem',
+                  fontSize: '2rem',
+                  fontWeight: 900,
+                  borderRadius: '12px',
+                  letterSpacing: '4px',
+                  opacity: 0.35,
+                  pointerEvents: 'none',
+                  textTransform: 'uppercase'
+                }}>
+                  PAID
+                </div>
+              )}
+
+              {/* Company Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #4338ca', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#1e1b4b', margin: 0 }}>NEW SWAN MULTITECH LIMITED</h2>
+                  <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '0.2rem' }}>
+                    SaaS Cloud Solutions & Enterprise Software Division
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: '#4b5563', marginTop: '0.1rem' }}>
+                    CIN: L29222PB2014PLC038891 | GSTIN: 03AABCN5123K1Z4
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: '#4b5563' }}>
+                    Registered Office: C-222, Phase VIII, Focal Point, Ludhiana - 141010, Punjab, India
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '0.35rem 0.8rem',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    background: invoiceType === 'tax_invoice' ? '#d1fae5' : '#fef3c7',
+                    color: invoiceType === 'tax_invoice' ? '#065f46' : '#92400e',
+                    border: `1px solid ${invoiceType === 'tax_invoice' ? '#6ee7b7' : '#fde68a'}`
+                  }}>
+                    {invoiceType === 'tax_invoice' ? 'TAX INVOICE' : 'PROFORMA INVOICE'}
+                  </span>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.4rem', color: '#111827' }}>
+                    #{invoiceType === 'tax_invoice' ? 'INV-202610-8421' : `PI-${invoiceTenant.tenant_code || 'EST'}-01`}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                    Date: {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Billed To */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem', fontSize: '0.82rem' }}>
+                <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ fontWeight: 700, color: '#374151', textTransform: 'uppercase', fontSize: '0.72rem', marginBottom: '0.3rem' }}>
+                    BILLED TO (CLIENT):
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>{invoiceTenant.name}</div>
+                  <div style={{ color: '#4b5563' }}>Workspace Code: <code>{invoiceTenant.tenant_code}</code></div>
+                  <div style={{ color: '#4b5563' }}>Admin Email: {invoiceTenant.primary_contact_email}</div>
+                  <div style={{ color: '#4b5563' }}>User Seats Allowed: {invoiceTenant.user_seat_limit} Users</div>
+                </div>
+
+                <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ fontWeight: 700, color: '#374151', textTransform: 'uppercase', fontSize: '0.72rem', marginBottom: '0.3rem' }}>
+                    SUBSCRIPTION PERIOD & STATUS:
+                  </div>
+                  <div style={{ color: '#111827' }}>
+                    Cycle: <strong>{invoiceTenant.subscription?.billing_cycle || 'YEARLY'}</strong>
+                  </div>
+                  <div style={{ color: '#4b5563' }}>
+                    Valid Till: {invoiceTenant.subscription?.valid_until ? new Date(invoiceTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
+                  </div>
+                  <div style={{ marginTop: '0.3rem' }}>
+                    Status: <span style={{ fontWeight: 700, color: invoiceType === 'tax_invoice' ? '#059669' : '#d97706' }}>
+                      {invoiceType === 'tax_invoice' ? 'PAID & ACTIVE' : (invoiceTenant.subscription?.status || 'TRIAL / UNPAID')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Itemized Table */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginBottom: '1.25rem', background: '#fff' }}>
+                <thead>
+                  <tr style={{ background: '#f3f4f6', borderBottom: '1px solid #d1d5db', textAlign: 'left' }}>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Item / Module Description</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>Seats</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Monthly Rate</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceTenant.entitlements.map(modKey => {
+                    const modObj = catalog.find(c => c.process_code === modKey);
+                    const rate = modObj?.monthly_rate_per_user || 99;
+                    const seats = invoiceTenant.user_seat_limit || 5;
+                    return (
+                      <tr key={modKey} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.55rem 0.75rem' }}>
+                          <div style={{ fontWeight: 600 }}>{modObj?.display_name || modKey}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{modObj?.description}</div>
+                        </td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center' }}>{seats}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>₹{rate}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>₹{rate * seats}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* Totals & Bank Details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '1rem', fontSize: '0.8rem' }}>
+                <div style={{ background: '#f9fafb', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ fontWeight: 700, color: '#374151', marginBottom: '0.3rem', fontSize: '0.78rem' }}>
+                    🏦 BANK TRANSFER / UPI DETAILS FOR PAYMENT:
+                  </div>
+                  <div>Account Name: <strong>New Swan Multitech Limited</strong></div>
+                  <div>Bank Name: <strong>HDFC Bank Ltd</strong></div>
+                  <div>Account No: <strong>50200039281746</strong></div>
+                  <div>IFSC Code: <strong>HDFC0000259</strong></div>
+                  <div>UPI VPA: <strong>newswan@okhdfcbank</strong></div>
+                </div>
+
+                <div style={{ background: '#fff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span style={{ color: '#6b7280' }}>Subtotal:</span>
+                    <span>₹{invoiceTenant.subscription?.amount || 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span style={{ color: '#6b7280' }}>GST (18%):</span>
+                    <span>₹{Math.round((invoiceTenant.subscription?.amount || 0) * 0.18)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '2px solid #111827', marginTop: '4px', fontWeight: 800, fontSize: '0.95rem', color: '#1e1b4b' }}>
+                    <span>Grand Total:</span>
+                    <span>₹{Math.round((invoiceTenant.subscription?.amount || 0) * 1.18)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Offline Payment Confirmation Form for Super Admin */}
+            {invoiceType === 'proforma' && (
+              <div style={{ marginTop: '1.25rem', padding: '1rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#065f46', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Sparkles size={16} /> Mark Payment Received & Generate Official Tax Invoice
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Paid Amount (₹)</label>
+                    <input
+                      type="number"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      placeholder="Amount"
+                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Payment Mode</label>
+                    <select
+                      value={payMode}
+                      onChange={(e) => setPayMode(e.target.value)}
+                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                    >
+                      <option value="UPI">UPI Transfer</option>
+                      <option value="NEFT">Bank NEFT / RTGS</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Cash">Cash</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>UTR / Transaction ID</label>
+                    <input
+                      type="text"
+                      value={payUtr}
+                      onChange={(e) => setPayUtr(e.target.value)}
+                      placeholder="e.g. UPI/6284910294"
+                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRecordPayment}
+                    disabled={recordingPay}
+                    style={{
+                      padding: '0.45rem 1rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: '#059669',
+                      color: '#fff',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {recordingPay ? 'Processing...' : 'Confirm & Generate Tax Invoice'}
                   </button>
                 </div>
               </div>
