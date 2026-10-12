@@ -159,11 +159,11 @@ export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
           subscription: {
             tenant_id: DEFAULT_TENANT_ID,
             plan_name: 'ENTERPRISE_ALL_MODULES',
-            user_seat_limit: 999999,
-            valid_from: '2026-01-01T00:00:00+05:30',
-            valid_until: '2099-12-31T23:59:59+05:30',
+            user_seat_limit: 200,
+            valid_from: '2026-10-01T00:00:00+05:30',
+            valid_until: '2027-10-01T23:59:59+05:30',
             status: 'ACTIVE',
-            days_remaining: 26000,
+            days_remaining: 354,
             is_expiring_soon: false,
             is_expired: false
           }
@@ -197,9 +197,9 @@ export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
       subscription: {
         tenant_id: DEFAULT_TENANT_ID,
         plan_name: 'ENTERPRISE_ALL_MODULES',
-        user_seat_limit: 999999,
+        user_seat_limit: 200,
         status: 'ACTIVE',
-        days_remaining: 26000,
+        days_remaining: 354,
         is_expiring_soon: false,
         is_expired: false
       }
@@ -215,15 +215,6 @@ export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
     const admin = getAdminClient();
     const targetTenantId = tenantId || DEFAULT_TENANT_ID;
 
-    // For default New Swan Group, all modules are always enabled
-    if (targetTenantId === DEFAULT_TENANT_ID) {
-      const allEnabled = {};
-      DEFAULT_PROCESS_CATALOG.forEach(p => {
-        allEnabled[p.process_code] = true;
-      });
-      return { success: true, entitlements: allEnabled };
-    }
-
     const { data: rows, error } = await admin
       .from('tenant_entitlements')
       .select('module_key, is_enabled')
@@ -232,9 +223,17 @@ export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
     if (error) throw error;
 
     const entitlements = {};
-    (rows || []).forEach(row => {
-      entitlements[row.module_key] = !!row.is_enabled;
-    });
+    if (rows && rows.length > 0) {
+      rows.forEach(row => {
+        entitlements[row.module_key] = !!row.is_enabled;
+      });
+    } else if (targetTenantId === DEFAULT_TENANT_ID) {
+      // Safe fallback for initial setup if no DB rows configured yet
+      DEFAULT_PROCESS_CATALOG.forEach(p => {
+        entitlements[p.process_code] = true;
+      });
+      return { success: true, entitlements };
+    }
 
     return { success: true, entitlements };
   } catch (err) {
@@ -357,10 +356,14 @@ export async function getAllTenantsWithSubscriptions() {
         isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
       }
 
+      const branches = t.id === DEFAULT_TENANT_ID ? ['NSMLR', 'NSTLP'] : (t.branches || []);
+
       return {
         id: t.id,
         tenant_code: t.tenant_code,
         name: t.name,
+        primary_contact_email: t.primary_contact_email || (t.id === DEFAULT_TENANT_ID ? 'admin@newswangroup.com' : null),
+        branches,
         status: t.status || 'ACTIVE',
         created_at: t.created_at,
         subscription: sub ? {
@@ -371,7 +374,7 @@ export async function getAllTenantsWithSubscriptions() {
         } : null,
         entitlements: tEntitlements,
         active_users_count: activeUserCount,
-        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 999999 : 5)
+        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5)
       };
     });
 

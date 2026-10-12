@@ -1,7 +1,7 @@
 /**
  * SaaS Multi-Tenant Feature Entitlements & Tab Mapping
  * Enforces modular access for all 8 standalone / combo SaaS business processes.
- * Ensures New Swan Group (00000000-0000-0000-0000-000000000001) has 100% unconditional access.
+ * Evaluates tenant entitlements dynamically from database.
  */
 
 export const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -152,12 +152,7 @@ export const UNIVERSAL_TABS = [
  * @returns {boolean}
  */
 export function isFeatureEntitled(tabId, tenantEntitlements = null, tenantId = DEFAULT_TENANT_ID) {
-  // 1. New Swan Group (Master Production) has unconditional access to all tabs
-  if (!tenantId || tenantId === DEFAULT_TENANT_ID) {
-    return true;
-  }
-
-  // 2. If no entitlements passed, grant safe default access
+  // 1. If no entitlements passed, grant safe default access
   if (!tenantEntitlements) {
     return true;
   }

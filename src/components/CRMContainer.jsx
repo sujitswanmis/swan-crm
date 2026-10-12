@@ -2259,7 +2259,7 @@ export default function CRMContainer({
     setLeads(prevLeads => {
       const isVisibleUpdate = lead => {
         const admin = userRole === 'admin' || userRole === 'Admin';
-        if (admin) return adminCompanyFilter === 'All' || (adminCompanyFilter === 'NSTL'
+        if (admin) return adminCompanyFilter === 'All' || ((adminCompanyFilter === 'NSTL' || adminCompanyFilter === 'NSTLP')
           ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === adminCompanyFilter);
         const companyMatches = !userCompany || (['NSTL', 'NSTLP'].includes(userCompany)
           ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === userCompany);
@@ -5076,7 +5076,7 @@ export default function CRMContainer({
                 >
                   <option value="All">All Companies</option>
                   <option value="NSMLR">NSMLR</option>
-                  <option value="NSTL">NSTL</option>
+                  <option value="NSTLP">NSTLP</option>
                 </select>
               </div>
             )}

@@ -317,7 +317,7 @@ export async function getTransferredLeads() {
 
         const partyMeta = parsePartyMeta(party.business_nature);
         const rawComp = lead.our_company || party.our_company || partyMeta.our_company || 'NSMLR';
-        const effectiveCompany = rawComp === 'NSTLP' ? 'NSTL' : rawComp;
+        const effectiveCompany = (rawComp === 'NSTL' || rawComp === 'NSTLP') ? 'NSTLP' : rawComp;
 
         return {
           id: h.id,
@@ -376,7 +376,7 @@ export async function getTransferredLeads() {
       const isConfirmed = p.party_status !== 'Draft_From_Lead';
       const partyMeta = parsePartyMeta(p.business_nature);
       const rawComp = lead.our_company || p.our_company || partyMeta.our_company || 'NSMLR';
-      const effectiveCompany = rawComp === 'NSTLP' ? 'NSTL' : rawComp;
+      const effectiveCompany = (rawComp === 'NSTL' || rawComp === 'NSTLP') ? 'NSTLP' : rawComp;
 
       return {
         id: p.id,

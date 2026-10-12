@@ -42,7 +42,7 @@ export default function PartyImportModal({
       lookupSheet.state = 'hidden';
 
       const partyTiers = ['Distributor', 'Dealer', 'Sub-Dealer'];
-      const operatingCompanies = ['NSMLR', 'NSTL'];
+      const operatingCompanies = ['NSMLR', 'NSTLP'];
       const constitutionTypes = ['PROPRIETORSHIP', 'PARTNERSHIP', 'PVT_LTD', 'LTD', 'LLP'];
       const locationStates = ALL_INDIAN_STATES && ALL_INDIAN_STATES.length > 0 ? ALL_INDIAN_STATES : ['Punjab', 'Haryana', 'Uttar Pradesh', 'Rajasthan'];
       const locationDistricts = Array.from(new Set(Object.values(INDIAN_STATE_DISTRICTS || {}).flat())).filter(Boolean).sort();
@@ -297,7 +297,7 @@ export default function PartyImportModal({
           'Malwa Kisan Seva Center',
           'Malwa Kisan Seva Center',
           'Sub-Dealer',
-          'NSTL',
+          'NSTLP',
           'PROPRIETORSHIP',
           '',
           '',

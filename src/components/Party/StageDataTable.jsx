@@ -322,7 +322,7 @@ export default function StageDataTable({
           `"${(p.firm_name || '').replace(/"/g, '""')}"`,
           `"${(p.legal_name || '').replace(/"/g, '""')}"`,
           `"${p.party_type || 'Dealer'}"`,
-          `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || m.our_company || 'NSMLR')}"`,
+          `"${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || m.our_company || 'NSMLR')}"`,
           `"${p.constitution_type || m.constitution_type || 'PROPRIETORSHIP'}"`,
           `"${p.gstin || ''}"`,
           `"${p.pan || ''}"`,
@@ -373,7 +373,7 @@ export default function StageDataTable({
         `"${(p.firm_name || '').replace(/"/g, '""')}"`,
         `"${(p.legal_name || '').replace(/"/g, '""')}"`,
         `"${p.party_type || 'Dealer'}"`,
-        `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}"`,
+        `"${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR')}"`,
         `"${contactPerson.replace(/"/g, '""')}"`,
         `"${mobile}"`,
         `"${altMob}"`,
@@ -855,7 +855,7 @@ export default function StageDataTable({
           >
             <option value="ALL">All Companies (Our Company)</option>
             <option value="NSMLR">NSMLR</option>
-            <option value="NSTL">NSTL</option>
+            <option value="NSTLP">NSTLP</option>
           </select>
         </div>
       </div>
@@ -958,7 +958,7 @@ export default function StageDataTable({
                         color: (party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
                         border: `1px solid ${(party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                       }}>
-                        {party.our_company === 'NSTLP' ? 'NSTL' : (party.our_company || 'NSMLR')}
+                        {(party.our_company === 'NSTL' || party.our_company === 'NSTLP') ? 'NSTLP' : (party.our_company || 'NSMLR')}
                       </span>
                     </td>
 

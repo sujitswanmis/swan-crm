@@ -28,7 +28,7 @@ export default function PartyMasterDashboard({
   monthlyFeedbacks = [],
   complaints = []
 }) {
-  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTL'
+  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefreshAll = async () => {
@@ -47,7 +47,7 @@ export default function PartyMasterDashboard({
     if (companyFilter === 'ALL') return parties;
     return parties.filter(p => {
       const comp = (p.our_company || '').toUpperCase();
-      if (companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
+      if (companyFilter === 'NSTLP' || companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
       return comp === 'NSMLR';
     });
   }, [parties, companyFilter]);
@@ -58,7 +58,7 @@ export default function PartyMasterDashboard({
     if (companyFilter === 'ALL') return transferredLeads;
     return transferredLeads.filter(l => {
       const comp = (l.our_company || l.lead?.our_company || '').toUpperCase();
-      if (companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
+      if (companyFilter === 'NSTLP' || companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
       return comp === 'NSMLR';
     });
   }, [transferredLeads, companyFilter]);
@@ -255,9 +255,9 @@ export default function PartyMasterDashboard({
                 cursor: 'pointer'
               }}
             >
-              <option value="ALL">All Companies (NSMLR & NSTL)</option>
+              <option value="ALL">All Companies (NSMLR & NSTLP)</option>
               <option value="NSMLR">NSMLR</option>
-              <option value="NSTL">NSTL</option>
+              <option value="NSTLP">NSTLP</option>
             </select>
           </div>
 
@@ -1127,7 +1127,7 @@ export default function PartyMasterDashboard({
                 </tr>
               ) : (
                 pendingS00Leads.slice(0, 5).map(lead => {
-                  const comp = lead.our_company === 'NSTLP' ? 'NSTL' : (lead.our_company || 'NSMLR');
+                  const comp = (lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? 'NSTLP' : (lead.our_company || 'NSMLR');
                   return (
                     <tr key={lead.handoff_id || lead.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                       <td style={{ padding: '0.75rem 1rem', fontWeight: 800, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
@@ -1139,9 +1139,9 @@ export default function PartyMasterDashboard({
                           fontWeight: 800,
                           padding: '0.15rem 0.5rem',
                           borderRadius: '4px',
-                          background: comp === 'NSTL' ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                          color: comp === 'NSTL' ? '#ec4899' : '#f59e0b',
-                          border: `1px solid ${comp === 'NSTL' ? 'rgba(236,72,153,0.3)' : 'rgba(245,158,11,0.3)'}`
+                          background: comp === 'NSTLP' ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: comp === 'NSTLP' ? '#ec4899' : '#f59e0b',
+                          border: `1px solid ${comp === 'NSTLP' ? 'rgba(236,72,153,0.3)' : 'rgba(245,158,11,0.3)'}`
                         }}>
                           {comp}
                         </span>
@@ -1279,7 +1279,7 @@ export default function PartyMasterDashboard({
                 activePartners.slice(0, 6).map(p => {
                   const isDist = p.party_type === 'Distributor';
                   const isDealer = p.party_type === 'Dealer';
-                  const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTL' : 'NSMLR';
+                  const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : 'NSMLR';
                   const code = p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code;
 
                   return (
@@ -1307,8 +1307,8 @@ export default function PartyMasterDashboard({
                           fontWeight: 800,
                           padding: '0.15rem 0.5rem',
                           borderRadius: '4px',
-                          background: comp === 'NSTL' ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
-                          color: comp === 'NSTL' ? '#ec4899' : '#f59e0b'
+                          background: comp === 'NSTLP' ? 'rgba(236,72,153,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: comp === 'NSTLP' ? '#ec4899' : '#f59e0b'
                         }}>
                           {comp}
                         </span>

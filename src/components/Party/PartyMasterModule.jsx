@@ -757,7 +757,7 @@ export default function PartyMasterModule({
       const matchesType = typeFilter === 'ALL' || p.party_type === typeFilter;
       const matchesBilling = billingFilter === 'ALL' || p.billing_route_type === billingFilter;
       const matchesCompany = companyFilter === 'ALL' || 
-        (companyFilter === 'NSTL' 
+        ((companyFilter === 'NSTL' || companyFilter === 'NSTLP')
           ? (p.our_company === 'NSTL' || p.our_company === 'NSTLP')
           : (p.our_company || 'NSMLR') === companyFilter);
       
@@ -913,7 +913,7 @@ export default function PartyMasterModule({
         `"${(p.firm_name || '').replace(/"/g, '""')}"`,
         `"${(p.legal_name || '').replace(/"/g, '""')}"`,
         `"${p.party_type || ''}"`,
-        `"${p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}"`,
+        `"${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR')}"`,
         `"${parentCombined.replace(/"/g, '""')}"`,
         `"${p.constitution_type || 'PROPRIETORSHIP'}"`,
         `"${(p.contact_person_name_1 || p.owner_name || '').replace(/"/g, '""')}"`,
@@ -1247,8 +1247,8 @@ export default function PartyMasterModule({
 
       // Company filter
       if (allStageCompanyFilter !== 'ALL') {
-        const comp = p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR');
-        if (comp !== allStageCompanyFilter) return false;
+        const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR');
+        if (comp !== allStageCompanyFilter && !(allStageCompanyFilter === 'NSTL' && comp === 'NSTLP')) return false;
       }
 
       // State filter
@@ -1354,8 +1354,8 @@ export default function PartyMasterModule({
         activeCount++;
       }
 
-      const comp = p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR');
-      if (comp === 'NSTL') nstlCount++;
+      const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR');
+      if (comp === 'NSTLP') nstlCount++;
       else nsmlrCount++;
 
       const secDep = Number(p.security_deposit_amount || p.party_commercial_terms?.[0]?.security_deposit_amount || 0);
@@ -2446,7 +2446,7 @@ export default function PartyMasterModule({
               >
                 <option value="ALL">All Companies</option>
                 <option value="NSMLR">NSMLR</option>
-                <option value="NSTL">NSTL</option>
+                <option value="NSTLP">NSTLP</option>
               </select>
 
               <select
@@ -2651,7 +2651,7 @@ export default function PartyMasterModule({
                             color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
                             border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                           }}>
-                            {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
+                            {(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR')}
                           </span>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                             {p.state_name || 'Punjab'}{p.district_name ? ` • ${p.district_name}` : ''}
@@ -3173,7 +3173,7 @@ export default function PartyMasterModule({
                             color: (lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
                             border: `1px solid ${(lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                           }}>
-                            {lead.our_company === 'NSTLP' ? 'NSTL' : (lead.our_company || 'NSMLR')}
+                            {(lead.our_company === 'NSTL' || lead.our_company === 'NSTLP') ? 'NSTLP' : (lead.our_company || 'NSMLR')}
                           </span>
                         </td>
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -3938,7 +3938,7 @@ export default function PartyMasterModule({
               >
                 <option value="ALL">All Companies</option>
                 <option value="NSMLR">NSMLR</option>
-                <option value="NSTL">NSTL</option>
+                <option value="NSTLP">NSTLP</option>
               </select>
 
               {/* Tier Filter */}
@@ -4228,7 +4228,7 @@ export default function PartyMasterModule({
                               color: (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? '#ec4899' : '#f59e0b',
                               border: `1px solid ${(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.35)'}`
                             }}>
-                              {p.our_company === 'NSTLP' ? 'NSTL' : (p.our_company || 'NSMLR')}
+                              {(p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || 'NSMLR')}
                             </span>
                           </td>
                         )}
@@ -6121,7 +6121,7 @@ export default function PartyMasterModule({
                     color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24',
                     border: `1px solid ${(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b640' : '#fbbf2440'}`
                   }}>
-                    {view360Party.our_company === 'NSTLP' ? 'NSTL' : (view360Party.our_company || 'NSMLR')}
+                    {(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'NSTLP' : (view360Party.our_company || 'NSMLR')}
                   </span>
 
                   {/* Operational Status */}
@@ -6230,7 +6230,7 @@ export default function PartyMasterModule({
                   <div>
                     <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Operating Company</span>
                     <strong style={{ color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24' }}>
-                      {view360Party.our_company === 'NSTLP' ? 'NSTL' : (view360Party.our_company || 'NSMLR')}
+                      {(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'NSTLP' : (view360Party.our_company || 'NSMLR')}
                     </strong>
                   </div>
                   <div>

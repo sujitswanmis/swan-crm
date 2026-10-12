@@ -167,7 +167,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         ...item,
         lead: lead,
         party_type: pType,
-        our_company: (item.our_company || meta.our_company || lead?.our_company || 'NSMLR') === 'NSTLP' ? 'NSTL' : (item.our_company || meta.our_company || lead?.our_company || 'NSMLR'),
+        our_company: ['NSTL', 'NSTLP'].includes(item.our_company || meta.our_company || lead?.our_company) ? 'NSTLP' : (item.our_company || meta.our_company || lead?.our_company || 'NSMLR'),
         final_status: item.party_status === 'Draft_From_Lead' ? 'Draft' : (item.party_status || 'Draft'),
         workflow_status: item.party_status === 'Draft_From_Lead' ? 'S00_TRANSFERRED' : (item.onboarding_stage || 'S01_Approved'),
         state_name: item.state_name || primaryAddress?.state_name || lead?.state_name || lead?.state || 'Punjab',
@@ -1017,7 +1017,7 @@ export async function getParty360Details(partyId) {
     parent_dealer: parentDlr,
     parent_distributor_name: parentDist?.firm_name || meta.parent_distributor_name || null,
     parent_dealer_name: parentDlr?.firm_name || meta.parent_dealer_name || null,
-    our_company: (rawParty.our_company || meta.our_company || 'NSMLR') === 'NSTLP' ? 'NSTL' : (rawParty.our_company || meta.our_company || 'NSMLR'),
+    our_company: ['NSTL', 'NSTLP'].includes(rawParty.our_company || meta.our_company) ? 'NSTLP' : (rawParty.our_company || meta.our_company || 'NSMLR'),
     state_name: rawParty.state_name || meta.state_name || primaryAddress?.state_name || 'Punjab',
     district_name: rawParty.district_name || meta.district_name || primaryAddress?.district_name || '',
     address: rawParty.address || meta.address || primaryAddress?.address_line_1 || '',
@@ -1592,7 +1592,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       const channelCode = `${channelPrefix}-${tsPart}`;
 
       const rawComp = String(row.our_company || row['Operating Company'] || row.company_name || 'NSMLR').trim().toUpperCase();
-      const ourCompany = rawComp === 'NSTL' || rawComp === 'NSTLP' ? 'NSTL' : 'NSMLR';
+      const ourCompany = rawComp === 'NSTL' || rawComp === 'NSTLP' ? 'NSTLP' : 'NSMLR';
 
       let constitution = String(row.constitution_type || row['Constitution Type'] || 'PROPRIETORSHIP').trim().toUpperCase();
       if (!['PROPRIETORSHIP', 'PARTNERSHIP', 'PVT_LTD', 'LTD', 'LLP'].includes(constitution)) {

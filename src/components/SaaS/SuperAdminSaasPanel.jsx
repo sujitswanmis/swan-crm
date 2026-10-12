@@ -345,11 +345,11 @@ export default function SuperAdminSaasPanel() {
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-            <span>Master Production Tenant</span>
+            <span>Primary Client Workspace</span>
             <ShieldCheck size={18} style={{ color: '#10b981' }} />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#10b981' }}>New Swan Group</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Branches: NSMLR & NSTLP (Unlimited)</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Branches: NSMLR & NSTLP (200 Seats)</div>
         </div>
       </div>
 
@@ -600,8 +600,22 @@ export default function SuperAdminSaasPanel() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ fontWeight: 600 }}>{t.name}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                          {t.tenant_code} {isDefault && '• (Master Production)'}
+                          {t.tenant_code}
                         </div>
+                        {t.primary_contact_email && (
+                          <div style={{ fontSize: '0.74rem', color: '#4f46e5', marginTop: '0.2rem', fontWeight: 500 }}>
+                            Admin: {t.primary_contact_email}
+                          </div>
+                        )}
+                        {t.branches && t.branches.length > 0 && (
+                          <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.3rem' }}>
+                            {t.branches.map(b => (
+                              <span key={b} style={{ fontSize: '0.68rem', background: '#f3f4f6', color: '#374151', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, border: '1px solid #e5e7eb' }}>
+                                🏢 {b}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
@@ -610,34 +624,32 @@ export default function SuperAdminSaasPanel() {
                           fontWeight: 600,
                           padding: '0.2rem 0.6rem',
                           borderRadius: '12px',
-                          background: isDefault ? '#d1fae5' : (sub?.is_expired ? '#fee2e2' : (sub?.is_expiring_soon ? '#fef3c7' : '#dbeafe')),
-                          color: isDefault ? '#065f46' : (sub?.is_expired ? '#991b1b' : (sub?.is_expiring_soon ? '#92400e' : '#1e40af'))
+                          background: sub?.is_expired ? '#fee2e2' : (sub?.is_expiring_soon ? '#fef3c7' : '#dbeafe'),
+                          color: sub?.is_expired ? '#991b1b' : (sub?.is_expiring_soon ? '#92400e' : '#1e40af')
                         }}>
-                          {isDefault ? 'LIFETIME ACTIVE' : (sub?.is_expired ? 'EXPIRED' : (sub?.is_expiring_soon ? 'EXPIRING SOON' : 'ACTIVE'))}
+                          {sub?.is_expired ? 'EXPIRED' : (sub?.is_expiring_soon ? 'EXPIRING SOON' : 'ACTIVE')}
                         </span>
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <strong>{t.active_users_count}</strong> / {isDefault ? 'Unlimited' : t.user_seat_limit}
-                        {!isDefault && (
-                          <button
-                            onClick={() => {
-                              setSeatModalTenant(t);
-                              setNewSeatValue(t.user_seat_limit);
-                            }}
-                            style={{
-                              marginLeft: '0.5rem',
-                              border: 'none',
-                              background: 'none',
-                              color: '#2563eb',
-                              cursor: 'pointer',
-                              fontSize: '0.78rem',
-                              textDecoration: 'underline'
-                            }}
-                          >
-                            Edit
-                          </button>
-                        )}
+                        <strong>{t.active_users_count}</strong> / {t.user_seat_limit}
+                        <button
+                          onClick={() => {
+                            setSeatModalTenant(t);
+                            setNewSeatValue(t.user_seat_limit);
+                          }}
+                          style={{
+                            marginLeft: '0.5rem',
+                            border: 'none',
+                            background: 'none',
+                            color: '#2563eb',
+                            cursor: 'pointer',
+                            fontSize: '0.78rem',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          Edit
+                        </button>
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
@@ -658,7 +670,7 @@ export default function SuperAdminSaasPanel() {
 
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
                         <div>{expiryFormatted}</div>
-                        {sub?.days_remaining !== null && !isDefault && (
+                        {sub?.days_remaining !== null && (
                           <div style={{ fontSize: '0.75rem', color: sub?.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)' }}>
                             {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
                           </div>
@@ -666,61 +678,57 @@ export default function SuperAdminSaasPanel() {
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        {isDefault ? (
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Protected Master</span>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <button
-                              onClick={() => handleExtend(t.id, 1)}
-                              disabled={extendingId === t.id}
-                              style={{
-                                padding: '0.3rem 0.6rem',
-                                borderRadius: '6px',
-                                border: '1px solid #d1d5db',
-                                background: '#fff',
-                                fontSize: '0.78rem',
-                                cursor: 'pointer',
-                                fontWeight: 500
-                              }}
-                            >
-                              +1 Month
-                            </button>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => handleExtend(t.id, 1)}
+                            disabled={extendingId === t.id}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid #d1d5db',
+                              background: '#fff',
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                              fontWeight: 500
+                            }}
+                          >
+                            +1 Month
+                          </button>
 
-                            <button
-                              onClick={() => handleExtend(t.id, 6)}
-                              disabled={extendingId === t.id}
-                              style={{
-                                padding: '0.3rem 0.6rem',
-                                borderRadius: '6px',
-                                border: '1px solid #2563eb',
-                                background: '#eff6ff',
-                                color: '#1d4ed8',
-                                fontSize: '0.78rem',
-                                cursor: 'pointer',
-                                fontWeight: 500
-                              }}
-                            >
-                              +6 Months
-                            </button>
+                          <button
+                            onClick={() => handleExtend(t.id, 6)}
+                            disabled={extendingId === t.id}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid #2563eb',
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                              fontWeight: 500
+                            }}
+                          >
+                            +6 Months
+                          </button>
 
-                            <button
-                              onClick={() => handleExtend(t.id, 12)}
-                              disabled={extendingId === t.id}
-                              style={{
-                                padding: '0.3rem 0.6rem',
-                                borderRadius: '6px',
-                                border: 'none',
-                                background: '#10b981',
-                                color: '#fff',
-                                fontSize: '0.78rem',
-                                cursor: 'pointer',
-                                fontWeight: 500
-                              }}
-                            >
-                              +1 Year
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            onClick={() => handleExtend(t.id, 12)}
+                            disabled={extendingId === t.id}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              border: 'none',
+                              background: '#10b981',
+                              color: '#fff',
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                              fontWeight: 500
+                            }}
+                          >
+                            +1 Year
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
