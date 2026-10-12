@@ -73,6 +73,7 @@ export default async function Home({ params, searchParams }) {
   const userRole = isMasterAdminUser ? 'Admin' : (effectiveRoleData?.role || 'agent');
   const canImportExport = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
   const canRead = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
+  const canWrite = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
   let userTenantId = effectiveRoleData?.tenant_id;
   if (!userTenantId && effectiveRoleData?.company) {
     const compLower = String(effectiveRoleData.company).toLowerCase().trim();
