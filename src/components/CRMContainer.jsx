@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -87,20 +87,15 @@ const THEMES = [
 ];
 
 const SETTINGS_MODULE_ITEMS = [
-  { id: 'business', label: 'Business Profile', icon: Building2 },
+  { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
+  { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
   { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-  { id: 'roles', label: 'Roles & Permissions', icon: Shield },
-  { id: 'automation', label: 'Automation & API', icon: Workflow },
-  { id: 'sessions', label: 'Monitor Sessions', icon: Monitor },
-  { id: 'audit', label: 'Activity Audit Logs', icon: Clock },
-  { id: 'data', label: 'Data Management', icon: Database },
-  { id: 'targets', label: 'Targets & Performance', icon: Target },
-  { id: 'media', label: 'File & Media Settings', icon: FileType },
-  { id: 'navigation', label: 'Page Navigation', icon: Compass },
   { id: 'departments', label: 'Manage Departments', icon: Layers },
-  { id: 'status', label: 'System Health & Status', icon: Activity }
+  { id: 'targets', label: 'Targets & Performance', icon: Target },
+  { id: 'data', label: 'Data Management', icon: Database },
+  { id: 'media', label: 'File & Media Settings', icon: FileType }
 ];
 
 // Helper to map DB status to Team Management Stage format
@@ -541,6 +536,7 @@ export default function CRMContainer({
     return 'active';
   });
   const [callAdminMenuExpanded, setCallAdminMenuExpanded] = useState(false);
+  const [callCenterMenuExpanded, setCallCenterMenuExpanded] = useState(false);
   const [callAdminSubTab, setCallAdminSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -582,13 +578,18 @@ export default function CRMContainer({
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
     let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config') {
+      return 'admin_messages';
+    }
     if (cleanPath && (cleanPath.startsWith('saas-studio/') || cleanPath.startsWith('saas_studio/'))) {
       const sub = cleanPath.split('/')[1];
       if (sub === 'workspaces' || sub === 'clients') return 'tenants';
       if (sub === 'invoices' || sub === 'ledger') return 'billing';
-      if (['pricing', 'tenants', 'billing'].includes(sub)) return sub;
+      if (sub === 'messages' || sub === 'admin-messages' || sub === 'otps') return 'admin_messages';
+      if (sub === 'health' || sub === 'logs') return 'status';
+      if (['pricing', 'tenants', 'billing', 'admin_messages', 'status', 'automation', 'navigation'].includes(sub)) return sub;
     }
-    if (queryTab && ['pricing', 'tenants', 'workspaces', 'billing', 'invoices'].includes(queryTab)) {
+    if (queryTab && ['pricing', 'tenants', 'workspaces', 'billing', 'invoices', 'admin_messages', 'status', 'automation', 'navigation'].includes(queryTab)) {
       if (queryTab === 'workspaces') return 'tenants';
       if (queryTab === 'invoices') return 'billing';
       return queryTab;
@@ -977,9 +978,9 @@ export default function CRMContainer({
     setChecklistMenuExpanded(activeTab === 'checklist');
     setDelegationMenuExpanded(activeTab === 'delegation');
     setPartyMenuExpanded(activeTab === 'party');
-    setAiMenuExpanded(['aiadmin', 'aiknowledgebase'].includes(activeTab));
+    setAiMenuExpanded(['ai', 'aiadmin', 'aiknowledgebase'].includes(activeTab));
     setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
-    setCallAdminMenuExpanded(activeTab === 'calladmin');
+    setCallCenterMenuExpanded(['callcenter', 'calladmin', 'aicallcenter'].includes(activeTab));
     setWorkflowMenuExpanded(activeTab === 'workplace');
     setSettingsMenuExpanded(activeTab === 'settings');
   }, [activeTab]);
@@ -2807,6 +2808,12 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'admin_message_config') {
+      if (!isMasterAdmin) return;
+      handleSaasSubTabChange('admin_messages');
+      return;
+    }
+
     if (tabId === 'workplace' || tabId === 'workflow') {
       if (!isMasterAdmin) return;
       setActiveTab('workplace');
@@ -2927,6 +2934,9 @@ export default function CRMContainer({
   const handleSaasSubTabChange = (subTabId) => {
     let canonical = (subTabId === 'workspaces' || subTabId === 'clients') ? 'tenants' : (subTabId || 'pricing');
     if (canonical === 'invoices' || canonical === 'ledger') canonical = 'billing';
+    if (canonical === 'admin_message_config' || canonical === 'messages' || canonical === 'otps') canonical = 'admin_messages';
+    if (canonical === 'health' || canonical === 'logs') canonical = 'status';
+    if (canonical === 'routes') canonical = 'navigation';
     setSaasSubTab(canonical);
     if (activeTab !== 'saas_studio') {
       setActiveTab('saas_studio');
@@ -3780,7 +3790,7 @@ export default function CRMContainer({
                 </span>
                 <Crown size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                  <span style={{ fontWeight: activeTab === 'saas_studio' ? 600 : 500 }}>SaaS Studio</span>
+                  <span style={{ fontWeight: activeTab === 'saas_studio' ? 600 : 500 }}>Master Admin Studio</span>
                   <span style={{ 
                     fontSize: '0.62rem', 
                     background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 
@@ -3819,6 +3829,34 @@ export default function CRMContainer({
                   >
                     🧾 Master Invoices
                   </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('admin_messages')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && saasSubTab === 'admin_messages'}
+                  >
+                    🛡️ Platform Messaging & OTPs
+                  </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('status')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && saasSubTab === 'status'}
+                  >
+                    🩺 System Health & Logs
+                  </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('automation')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && saasSubTab === 'automation'}
+                  >
+                    ⚡ Automation & Webhook API
+                  </button>
+                  <button
+                    onClick={() => handleSaasSubTabChange('navigation')}
+                    className="submenu-item"
+                    data-active={activeTab === 'saas_studio' && saasSubTab === 'navigation'}
+                  >
+                    🧭 Page Navigation Rules
+                  </button>
                 </div>
               </div>
             </SidebarSubmenu>
@@ -3837,30 +3875,118 @@ export default function CRMContainer({
             </button>
           )}
 
-          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['ai']?.view || moduleAccess['new_swan_ai']?.view) && (
-            <button
-              onClick={() => handleTabChange('ai')}
-              className="nav-item"
-              data-active={activeTab === 'ai'}
-              title={isSidebarCollapsed ? "AI Chatbot" : undefined}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-            >
-              <Bot size={20} style={{ flexShrink: 0 }} />
-              <span>AI Chatbot</span>
-            </button>
+          {/* AI Chatbot & AI Suite */}
+          {(isTabPermitted('ai', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['ai']?.view || moduleAccess['new_swan_ai']?.view) && (
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setAiMenuExpanded(true);
+                  } else {
+                    setAiMenuExpanded(!aiMenuExpanded);
+                  }
+                  handleTabChange('ai');
+                }}
+                className="nav-item" 
+                data-active={['ai', 'aiadmin', 'aiknowledgebase'].includes(activeTab)}
+                title={isSidebarCollapsed ? "AI Chatbot" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <Bot size={20} style={{ flexShrink: 0 }} />
+                <span>AI Chatbot</span>
+              </button>
+              
+              <div className={`submenu-list ${aiMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleTabChange('ai')}
+                    className="submenu-item"
+                    data-active={activeTab === 'ai'}
+                  >
+                    💬 AI Assistant Chat
+                  </button>
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
+                    <button
+                      onClick={() => handleTabChange('aiadmin')}
+                      className="submenu-item"
+                      data-active={activeTab === 'aiadmin'}
+                    >
+                      ⚙️ AI Admin & Models
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
+                    <button
+                      onClick={() => handleTabChange('aiknowledgebase')}
+                      className="submenu-item"
+                      data-active={activeTab === 'aiknowledgebase'}
+                    >
+                      📚 Knowledge Base (RAG)
+                    </button>
+                  )}
+                </div>
+              </div>
+            </SidebarSubmenu>
           )}
 
-          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && (
-            <button 
-              onClick={() => handleTabChange('callcenter')}
-              className="nav-item" 
-              data-active={activeTab === 'callcenter'}
-              title={isSidebarCollapsed ? "Call Center" : undefined}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-            >
-              <PhoneCall size={20} style={{ flexShrink: 0 }} />
-              <span>Call Center</span>
-            </button>
+          {/* Call Center */}
+          {(isTabPermitted('callcenter', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && (
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setCallCenterMenuExpanded(true);
+                  } else {
+                    setCallCenterMenuExpanded(!callCenterMenuExpanded);
+                  }
+                  handleTabChange('callcenter');
+                }}
+                className="nav-item" 
+                data-active={['callcenter', 'calladmin', 'aicallcenter'].includes(activeTab)}
+                title={isSidebarCollapsed ? "Call Center" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {callCenterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <PhoneCall size={20} style={{ flexShrink: 0 }} />
+                <span>Call Center</span>
+              </button>
+              
+              <div className={`submenu-list ${callCenterMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleTabChange('callcenter')}
+                    className="submenu-item"
+                    data-active={activeTab === 'callcenter'}
+                  >
+                    📞 Telecalling Desk
+                  </button>
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+                    <button
+                      onClick={() => handleTabChange('calladmin')}
+                      className="submenu-item"
+                      data-active={activeTab === 'calladmin'}
+                    >
+                      ⚙️ Call Admin & SIP
+                    </button>
+                  )}
+                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+                    <button
+                      onClick={() => handleTabChange('aicallcenter')}
+                      className="submenu-item"
+                      data-active={activeTab === 'aicallcenter'}
+                    >
+                      🤖 AI Voice Call Center
+                    </button>
+                  )}
+                </div>
+              </div>
+            </SidebarSubmenu>
           )}
 
           {/* Smart Attendance (Positioned Above Sales) */}
@@ -4608,16 +4734,12 @@ export default function CRMContainer({
           {/* SYSTEM CATEGORY ACCORDION */}
           {((userRole === 'admin' || userRole === 'Admin') || 
             moduleAccess['team']?.view || 
-            moduleAccess['aiadmin']?.view || 
-            moduleAccess['aiknowledgebase']?.view || 
-            moduleAccess['calladmin']?.view || 
-            moduleAccess['aicallcenter']?.view || 
+            moduleAccess['public_users']?.view || 
             moduleAccess['whatsapp_official']?.view || 
             moduleAccess['whatsapp_unofficial']?.view || 
             moduleAccess['sms_config']?.view || 
             moduleAccess['rcs_config']?.view || 
             moduleAccess['email_config']?.view ||
-            moduleAccess['admin_message_config']?.view ||
             moduleAccess['offline_rule']?.view) && (
               <div>
                 <button
@@ -4655,136 +4777,6 @@ export default function CRMContainer({
                       >
                         <Users size={20} style={{ flexShrink: 0 }} />
                         <span>Public User Management</span>
-                      </button>
-                    )}
-
-                    {/* AI Admin */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view || moduleAccess['aiknowledgebase']?.view) && (
-                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
-                        <button 
-                          onClick={() => {
-                            if (isSidebarCollapsed) {
-                              setIsSidebarCollapsed(false);
-                              setAiMenuExpanded(true);
-                            } else {
-                              setAiMenuExpanded(!aiMenuExpanded);
-                            }
-                          }}
-                          className="nav-item" 
-                          data-active={['aiadmin', 'aiknowledgebase'].includes(activeTab)}
-                          title={isSidebarCollapsed ? "AI Admin" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                        >
-                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
-                            {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </span>
-                          <Bot size={20} style={{ flexShrink: 0 }} />
-                          <span>AI Admin</span>
-                        </button>
-                        
-                        <div className={`submenu-list ${aiMenuExpanded ? 'expanded' : ''}`}>
-                          <div className="submenu-inner">
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('aiadmin')}
-                                className="submenu-item"
-                                data-active={activeTab === 'aiadmin'}
-                              >
-                                User AI Usage
-                              </button>
-                            )}
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('aiknowledgebase')}
-                                className="submenu-item"
-                                data-active={activeTab === 'aiknowledgebase'}
-                              >
-                                AI Knowledge Base (RAG)
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </SidebarSubmenu>
-                    )}
-
-                    {/* Call Admin */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
-                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
-                        <button 
-                          onClick={() => {
-                            if (isSidebarCollapsed) {
-                              setIsSidebarCollapsed(false);
-                              setCallAdminMenuExpanded(true);
-                            } else {
-                              setCallAdminMenuExpanded(!callAdminMenuExpanded);
-                            }
-                            handleTabChange('calladmin');
-                          }}
-                          className="nav-item" 
-                          data-active={activeTab === 'calladmin'}
-                          title={isSidebarCollapsed ? "Call Admin" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                        >
-                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
-                            {callAdminMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </span>
-                          <Phone size={20} style={{ flexShrink: 0 }} />
-                          <span>Call Admin</span>
-                        </button>
-                        
-                        <div className={`submenu-list ${callAdminMenuExpanded ? 'expanded' : ''}`}>
-                          <div className="submenu-inner">
-                            <button
-                              onClick={() => handleCallAdminSubTabChange('agents')}
-                              className="submenu-item"
-                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'agents'}
-                            >
-                              👥 Agents & Endpoints
-                            </button>
-                            <button
-                              onClick={() => handleCallAdminSubTabChange('endpoints')}
-                              className="submenu-item"
-                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'endpoints'}
-                            >
-                              🖥️ SIP Endpoints
-                            </button>
-                            <button
-                              onClick={() => handleCallAdminSubTabChange('calllogs')}
-                              className="submenu-item"
-                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'calllogs'}
-                            >
-                              📞 Call Logs
-                            </button>
-                            <button
-                              onClick={() => handleCallAdminSubTabChange('monitor')}
-                              className="submenu-item"
-                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'monitor'}
-                            >
-                              📡 Live Monitor
-                            </button>
-                            <button
-                              onClick={() => handleCallAdminSubTabChange('settings')}
-                              className="submenu-item"
-                              data-active={activeTab === 'calladmin' && callAdminSubTab === 'settings'}
-                            >
-                              ⚙️ Settings
-                            </button>
-                          </div>
-                        </div>
-                      </SidebarSubmenu>
-                    )}
-                    
-                    {/* AI Call Center */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
-                      <button 
-                        onClick={() => handleTabChange('aicallcenter')}
-                        className="nav-item" 
-                        data-active={activeTab === 'aicallcenter'}
-                        title={isSidebarCollapsed ? "AI Call Center" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <Bot size={20} style={{ flexShrink: 0 }} />
-                        <span>AI Call Center</span>
                       </button>
                     )}
 
@@ -4862,20 +4854,6 @@ export default function CRMContainer({
                           </div>
                         </div>
                       </SidebarSubmenu>
-                    )}
-
-                    {/* Admin Message Config (SuPuja Creations / Admin System) */}
-                    {(userRole === 'admin' || userRole === 'Admin') && (
-                      <button 
-                        onClick={() => handleTabChange('admin_message_config')}
-                        className="nav-item" 
-                        data-active={activeTab === 'admin_message_config'}
-                        title={isSidebarCollapsed ? "Admin Message Config" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <ShieldCheck size={20} style={{ flexShrink: 0, color: '#4338ca' }} />
-                        <span>Admin Message Config</span>
-                      </button>
                     )}
 
                     {/* Offline Rule (System Page) */}

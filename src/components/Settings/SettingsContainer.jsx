@@ -1,22 +1,15 @@
 import React, { useState } from 'react';
-import { Building2, Settings2, FormInput, Bell, Shield, Workflow, Lock, Database, Target, FileType, Monitor, Clock, Activity, DollarSign, MessageSquare } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare } from 'lucide-react';
 
-// Subcomponents (to be implemented)
+// Subcomponents
 import BusinessProfile from './BusinessProfile';
 import CRMConfig from './CRMConfig';
 import CustomFields from './CustomFields';
 import NotificationsConfig from './NotificationsConfig';
-import RolesPermissions from './RolesPermissions';
-import AutomationAPI from './AutomationAPI';
-import ActiveSessionsConfig from './ActiveSessionsConfig';
-import AuditLogsConfig from './AuditLogsConfig';
 import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
-import PageNavigationConfig from './PageNavigationConfig';
 import ManageDepartments from './ManageDepartments';
-import SystemStatusHealth from './SystemStatusHealth';
-import SuperAdminSaasPanel from '../SaaS/SuperAdminSaasPanel';
 import WorkspaceMessageTemplates from './WorkspaceMessageTemplates';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
@@ -29,28 +22,11 @@ const SETTINGS_TABS = [
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
-  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
-  { id: 'roles', label: 'Roles & Permissions', icon: <Shield size={18} /> },
-  { id: 'automation', label: 'Automation & API', icon: <Workflow size={18} /> },
-  { id: 'sessions', label: 'Monitor Sessions', icon: <Monitor size={18} /> },
-  { id: 'audit', label: 'Activity Audit Logs', icon: <Clock size={18} /> },
-  { id: 'navigation', label: 'Page Navigation', icon: <Database size={18} /> },
-  { id: 'status', label: 'System Health & Status', icon: <Activity size={18} /> },
-  { id: 'saas_master', label: 'SaaS Billing & Pricing Studio', icon: <DollarSign size={18} /> }
+  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> }
 ];
 
-export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
-  const allPermitted = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
-
-  const visibleTabs = allPermitted.filter(t => {
-    if (isMasterAdmin) return true;
-    // Strictly Master Admin tabs hidden from Client Workspaces
-    if (['automation', 'status', 'navigation', 'saas_master'].includes(t.id)) return false;
-    // Redundant User Management tabs hidden from Client Workspaces settings
-    if (['roles', 'sessions', 'audit'].includes(t.id)) return false;
-    return true;
-  });
-
+export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '' }) {
+  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
   const [activeTab, setActiveTab] = useState('business');
 
   // Sync with URL param after mount (prevents SSR hydration mismatch)
@@ -141,17 +117,10 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '', us
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}
         {activeTab === 'notifications' && <NotificationsConfig />}
-        {activeTab === 'roles' && <RolesPermissions />}
-        {activeTab === 'automation' && <AutomationAPI />}
-        {activeTab === 'sessions' && <ActiveSessionsConfig />}
-        {activeTab === 'audit' && <AuditLogsConfig />}
-        {activeTab === 'data' && <DataManagement />}
-        {activeTab === 'targets' && <TargetPerformance />}
-        {activeTab === 'media' && <FileMedia />}
-        {activeTab === 'navigation' && <PageNavigationConfig />}
         {activeTab === 'departments' && <ManageDepartments />}
-        {activeTab === 'status' && <SystemStatusHealth />}
-        {activeTab === 'saas_master' && <SuperAdminSaasPanel />}
+        {activeTab === 'targets' && <TargetPerformance />}
+        {activeTab === 'data' && <DataManagement />}
+        {activeTab === 'media' && <FileMedia />}
       </div>
     </div>
   );

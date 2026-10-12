@@ -81,6 +81,15 @@ export const DEFAULT_PROCESS_CATALOG = [
     description: 'Dealers, Distributors, Vendors, Clients directory, territory mapping & ledger accounts',
     is_active: true,
     sort_order: 8
+  },
+  {
+    process_code: 'AI_SUITE',
+    display_name: 'AI Chatbot & Knowledge Base (RAG)',
+    category: 'AI',
+    monthly_rate_per_user: 199.00,
+    description: 'AI Conversational Assistant, custom model tuning, prompt builder & vector knowledge base',
+    is_active: true,
+    sort_order: 9
   }
 ];
 
@@ -102,7 +111,8 @@ export const PROCESS_TO_TABS_MAP = {
   SMART_CHECKLIST: ['checklist'],
   ATTENDANCE: ['attendance', 'joining'],
   RECRUITER: ['recruiter'],
-  PARTY_MASTER: ['party', 'location_master', 'location_territory']
+  PARTY_MASTER: ['party', 'location_master', 'location_territory'],
+  AI_SUITE: ['ai', 'aiadmin', 'aiknowledgebase']
 };
 
 /**
@@ -123,7 +133,10 @@ export const TAB_TO_ALLOWED_PROCESSES = {
   recruiter: ['RECRUITER'],
   party: ['PARTY_MASTER'],
   location_master: ['PARTY_MASTER'],
-  location_territory: ['PARTY_MASTER']
+  location_territory: ['PARTY_MASTER'],
+  ai: ['AI_SUITE'],
+  aiadmin: ['AI_SUITE'],
+  aiknowledgebase: ['AI_SUITE']
 };
 
 /**
@@ -136,7 +149,6 @@ export const UNIVERSAL_TABS = [
   'workplace',
   'settings',
   'public_users',
-  'admin_message_config',
   'email_config',
   'sms_config',
   'rcs_config',
@@ -152,6 +164,11 @@ export const UNIVERSAL_TABS = [
  * @returns {boolean}
  */
 export function isFeatureEntitled(tabId, tenantEntitlements = null, tenantId = DEFAULT_TENANT_ID) {
+  // 0. Primary HQ / Default tenant has unconditional full access to all features
+  if (!tenantId || tenantId === DEFAULT_TENANT_ID) {
+    return true;
+  }
+
   // 1. If no entitlements passed, grant safe default access
   if (!tenantEntitlements) {
     return true;
