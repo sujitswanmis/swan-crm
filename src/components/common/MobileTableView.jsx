@@ -191,7 +191,7 @@ export default function MobileTableView({ id, children, view: controlledView, hi
               background: row.props.style?.backgroundColor || 'var(--bg-surface, white)',
               color: row.props.style?.color || 'var(--text-primary, #111827)',
               opacity: row.props.style?.opacity, pointerEvents: row.props.style?.pointerEvents, minWidth: 0 }}>
-            {actions.length > 0 && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            {actions.length > 0 && <div key="mobile-row-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               gap: 8, paddingBottom: 6, marginBottom: 3, borderBottom: '1px solid var(--border-light)' }}>
               {actions.map(({ cell, index: cellIndex }) => <div {...interactionProps(cell.props)} key={cell.key || cellIndex}>
                 {cell.props.children}

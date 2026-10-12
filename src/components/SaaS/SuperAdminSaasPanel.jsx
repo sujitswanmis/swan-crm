@@ -670,8 +670,8 @@ export default function SuperAdminSaasPanel() {
 
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
                         <div>{expiryFormatted}</div>
-                        {sub?.days_remaining !== null && (
-                          <div style={{ fontSize: '0.75rem', color: sub?.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)' }}>
+                        {sub && sub.days_remaining != null && (
+                          <div style={{ fontSize: '0.75rem', color: sub.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)' }}>
                             {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
                           </div>
                         )}
