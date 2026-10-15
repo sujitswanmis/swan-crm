@@ -1,7 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Mail, Save, Plus, Trash2, Edit3, Send, CheckCircle2, AlertCircle, 
   RefreshCw, Shield, Key, Eye, EyeOff, Server, Play, Clock, 
@@ -104,8 +104,65 @@ const RECRUITER_STAGES = [
   { id: 'S09', label: 'S09 - Joined' }
 ];
 
-export default function EmailConfigModule({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
-  const [activeTab, setActiveTab] = useState('smtp');
+export default function EmailConfigModule({ 
+  moduleAccess = {}, 
+  userRole = '', 
+  userCompany = '', 
+  isMasterAdmin = false,
+  initialTab = null,
+  onSubTabChange = null
+}) {
+  const [activeTab, setActiveTabState] = useState(() => {
+    // 1. Initial tab from props
+    if (initialTab && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(initialTab)) {
+      return initialTab;
+    }
+    // 2. URL query param or path
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const qTab = (urlParams.get('tab') || urlParams.get('subtab') || '').toLowerCase();
+      if (['smtp', 'templates', 'automations', 'test', 'logs'].includes(qTab)) {
+        return qTab;
+      }
+      const pathParts = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase().split('/');
+      if (pathParts[0]?.startsWith('email') && pathParts[1] && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(pathParts[1])) {
+        return pathParts[1];
+      }
+    }
+    return 'smtp';
+  });
+
+  // Sync state if initialTab prop changes externally
+  useEffect(() => {
+    if (initialTab && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(initialTab) && initialTab !== activeTab) {
+      setActiveTabState(initialTab);
+    }
+  }, [initialTab]);
+
+  // Sync browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const urlParams = new URLSearchParams(window.location.search);
+      const qTab = (urlParams.get('tab') || urlParams.get('subtab') || '').toLowerCase();
+      if (['smtp', 'templates', 'automations', 'test', 'logs'].includes(qTab)) {
+        setActiveTabState(qTab);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const setActiveTab = useCallback((tabId) => {
+    setActiveTabState(tabId);
+    if (typeof onSubTabChange === 'function') {
+      onSubTabChange(tabId);
+    } else if (typeof window !== 'undefined') {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('tab', tabId);
+      window.history.pushState(null, '', currentUrl.pathname + currentUrl.search);
+    }
+  }, [onSubTabChange]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(null);
@@ -184,6 +241,18 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     client_name: '',
     branch: 'All Branches'
   });
+
+  const handleDragDropBlocksChange = useCallback((updatedBlocks) => {
+    setCurrentTemplate(prev => {
+      if (!prev) return prev;
+      if (prev.blocks === updatedBlocks) return prev;
+      return {
+        ...prev,
+        blocks: updatedBlocks,
+        design_preset: 'drag_drop'
+      };
+    });
+  }, []);
 
   // Template Search, Selection, Pagination & Resizing States
   const [templateSearch, setTemplateSearch] = useState('');
@@ -3333,13 +3402,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   companyName={currentTemplate.client_name || getActiveComp()}
                   branchName={currentTemplate.branch || 'All Branches'}
                   targetPipeline={currentTemplate.target_pipeline || 'sales'}
-                  onChange={(updatedBlocks) => {
-                    setCurrentTemplate(prev => ({
-                      ...prev,
-                      blocks: updatedBlocks,
-                      design_preset: 'drag_drop'
-                    }));
-                  }}
+                  onChange={handleDragDropBlocksChange}
                 />
               </div>
             )}

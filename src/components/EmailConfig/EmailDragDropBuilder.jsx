@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   MoveUp, MoveDown, Copy, Trash2, Plus, Image as ImageIcon, 
   Type, MousePointer, Tag, Columns, Calendar, Minus, 
@@ -125,12 +125,31 @@ export default function EmailDragDropBuilder({
   const [copiedTag, setCopiedTag] = useState(null);
   const [previewViewport, setPreviewViewport] = useState('desktop');
 
-  // Trigger parent onChange whenever blocks change
+  // Safe parent onChange trigger: skip initial mount and decouple from inline callback references
+  const onChangeRef = useRef(onChange);
   useEffect(() => {
-    if (typeof onChange === 'function') {
-      onChange(blocks);
+    onChangeRef.current = onChange;
+  });
+
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
     }
-  }, [blocks, onChange]);
+    if (typeof onChangeRef.current === 'function') {
+      onChangeRef.current(blocks);
+    }
+  }, [blocks]);
+
+  // Sync state if initialBlocks changes externally (e.g., switched template)
+  const prevInitialBlocksRef = useRef(initialBlocks);
+  useEffect(() => {
+    if (initialBlocks && initialBlocks !== prevInitialBlocksRef.current && initialBlocks !== blocks) {
+      prevInitialBlocksRef.current = initialBlocks;
+      setBlocks(initialBlocks);
+    }
+  }, [initialBlocks, blocks]);
 
   const selectedBlock = blocks.find(b => b.id === selectedBlockId) || null;
 

@@ -61,6 +61,7 @@ const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskMo
 const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const SuperAdminSaasPanel = dynamic(() => import('./SaaS/SuperAdminSaasPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const ConfigMasterPanel = dynamic(() => import('./MasterAdmin/ConfigMasterPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
+const BroadcastNotificationReceiver = dynamic(() => import('./common/BroadcastNotificationReceiver'), { ssr: false });
 
 markLeadStartupTiming('crm-module-ready');
 
@@ -422,6 +423,9 @@ export default function CRMContainer({
     if (path === 'party' || (path && path.startsWith('party/'))) {
       return 'party';
     }
+    if (['email', 'email-config', 'email_config', 'email-campaigns', 'email_campaigns'].includes(path) || (path && (path.startsWith('email-config') || path.startsWith('email_config') || path.startsWith('email/')))) {
+      return 'email_config';
+    }
     if (['saas-master', 'saas_master', 'saasmaster', 'saas-studio', 'saas_studio', 'saasstudio'].includes(path) || (path && (path.startsWith('saas-master') || path.startsWith('saas_master') || path.startsWith('saas-studio') || path.startsWith('saas_studio')))) {
       return isMasterAdmin ? 'saas_master' : 'dashboard';
     }
@@ -622,9 +626,9 @@ export default function CRMContainer({
       if (sub === 'health' || sub === 'logs') return 'status';
       if (sub === 'offline-rule') return 'offline_rule';
       if (sub === 'public-users') return 'public_users';
-      if (['messages', 'status', 'automation', 'navigation', 'offline_rule', 'public_users'].includes(sub)) return sub;
+      if (['messages', 'status', 'automation', 'navigation', 'offline_rule', 'public_users', 'notifications'].includes(sub)) return sub;
     }
-    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'navigation', 'offline_rule', 'offline-rule', 'public_users', 'public-users'].includes(queryTab)) {
+    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'navigation', 'offline_rule', 'offline-rule', 'public_users', 'public-users', 'notifications'].includes(queryTab)) {
       if (queryTab === 'admin_messages' || queryTab === 'admin-messages') return 'messages';
       if (queryTab === 'health') return 'status';
       if (queryTab === 'offline-rule') return 'offline_rule';
@@ -635,6 +639,19 @@ export default function CRMContainer({
   });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
+  const [emailSubTab, setEmailSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('email-config/') || cleanPath.startsWith('email_config/') || cleanPath.startsWith('email/'))) {
+      const sub = cleanPath.split('/')[1];
+      if (['smtp', 'templates', 'automations', 'test', 'logs'].includes(sub)) return sub;
+    }
+    if (queryTab && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(queryTab)) {
+      return queryTab;
+    }
+    return 'smtp';
+  });
 
   // Load and listen for pending Stage 07 transferred leads count
   useEffect(() => {
@@ -2890,6 +2907,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'email_config' || tabId === 'email' || tabId === 'email-config') {
+      setActiveTab('email_config');
+      const targetSub = emailSubTab || 'smtp';
+      window.history.pushState(null, '', `/email-config?tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
@@ -3966,6 +3993,13 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${configMasterMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
+                  <button
+                    onClick={() => handleConfigMasterSubTabChange('notifications')}
+                    className="submenu-item"
+                    data-active={activeTab === 'config_master' && configMasterSubTab === 'notifications'}
+                  >
+                    🔔 User Notifications
+                  </button>
                   <button
                     onClick={() => handleConfigMasterSubTabChange('messages')}
                     className="submenu-item"
@@ -5217,6 +5251,7 @@ export default function CRMContainer({
                     '👑 SaaS Master — Client Workspaces & Subscriptions'
                   )}
                   {activeTab === 'config_master' && (
+                    configMasterSubTab === 'notifications' ? '⚙️ Config Master — User Notifications' :
                     configMasterSubTab === 'messages' ? '⚙️ Config Master — Platform Messaging & OTPs' :
                     configMasterSubTab === 'status' ? '⚙️ Config Master — System Health & Server Logs' :
                     configMasterSubTab === 'automation' ? '⚙️ Config Master — Automation & Webhook API' :
@@ -7049,7 +7084,17 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('email_config', moduleAccess, userRole) && visitedTabs.has('email_config')}
               >
                 <ErrorBoundary>
-                  <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
+                  <EmailConfigModule 
+                    moduleAccess={moduleAccess} 
+                    userRole={userRole} 
+                    userCompany={userCompany} 
+                    isMasterAdmin={isMasterAdmin} 
+                    initialTab={emailSubTab}
+                    onSubTabChange={(sub) => {
+                      setEmailSubTab(sub);
+                      window.history.pushState(null, '', `/email-config?tab=${sub}`);
+                    }}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
@@ -7121,6 +7166,7 @@ export default function CRMContainer({
         </div>
       </main>
       {isCallingEntitled && <GlobalSoftphoneWidget userId={userId} />}
+      {userId && <ErrorBoundary key={`broadcast-${userId}`} fallback={null}><BroadcastNotificationReceiver key={userId} userId={userId} /></ErrorBoundary>}
 
       {/* Intelligent Global Spotlight Command Palette */}
       <GlobalSpotlightModal
