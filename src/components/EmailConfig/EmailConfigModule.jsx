@@ -703,6 +703,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   const handleOpenAddTemplate = async (pipelineOverride = null) => {
     const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
     const comp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+    setModalTenantId(selectedTenantId || '');
     const pipe = pipelineOverride || (templateFilter === 'recruiter' ? 'recruiter' : 'sales');
     const defaultPreset = pipe === 'recruiter' ? 'interview_call' : 'marketing';
     const presetMeta = DESIGN_PRESETS.find(p => p.id === defaultPreset) || DESIGN_PRESETS[0];
@@ -745,11 +746,12 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   };
 
   const handleOpenEditTemplate = async (tpl) => {
-    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    const targetTenant = tenantsList.find(t => t.id === (tpl.target_tenant_id || selectedTenantId)) || null;
     const comp = tpl.client_name || (targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations'));
+    setModalTenantId(tpl.target_tenant_id || selectedTenantId || '');
 
     try {
-      const bRes = await getTenantBranches(tpl.target_tenant_id || comp);
+      const bRes = await getTenantBranches(tpl.target_tenant_id || (targetTenant ? (targetTenant.name || targetTenant.id) : comp));
       if (bRes.success && Array.isArray(bRes.branches)) {
         setModalBranches(bRes.branches);
       } else {
@@ -1358,11 +1360,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 >
                   <option value="all">🌐 All Scopes ({templates.length})</option>
                   <option value="All Branches">🌐 All Branches (Global)</option>
-                  {branches.map(b => (
-                    <option key={b.id || b.name} value={b.name}>
-                      🏢 {b.name}
-                    </option>
-                  ))}
+                  {branches
+                    .map(b => {
+                      const bName = b.branch_name || b.name || b.branch_code;
+                      if (!bName) return null;
+                      return (
+                        <option key={b.id || bName} value={bName}>
+                          🏢 {bName}
+                        </option>
+                      );
+                    })
+                    .filter(Boolean)}
                 </select>
               </div>
             </div>
@@ -2648,10 +2656,12 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                             const compName = tObj ? (tObj.name || tObj.tenant_code) : (userCompany || 'SuPuja Creations');
                             setCurrentTemplate(prev => ({ ...prev, target_tenant_id: tid, client_name: compName, branch: 'All Branches' }));
                             if (tid) {
-                              const bRes = await getTenantBranches(tid).catch(() => ({ branches: [] }));
+                              const bRes = await getTenantBranches(tObj ? (tObj.name || tObj.id) : tid).catch(() => ({ branches: [] }));
                               setModalBranches(bRes.branches || []);
                             } else {
-                              setModalBranches(branches || []);
+                              const hqName = userCompany || 'SuPuja Creations';
+                              const bRes = await getTenantBranches(hqName).catch(() => ({ branches: [] }));
+                              setModalBranches(bRes.branches || branches || []);
                             }
                           }}
                           style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: 'var(--bg-surface)', fontWeight: 600, color: 'var(--text-primary)' }}
@@ -2683,11 +2693,18 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                         style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: 'var(--bg-surface)', fontWeight: 600, color: 'var(--text-primary)' }}
                       >
                         <option value="All Branches">🌐 All Branches (Global for this Client)</option>
-                        {(modalBranches.length > 0 ? modalBranches : branches).map(b => (
-                          <option key={b.id || b.name} value={b.name}>
-                            🏢 {b.name} {b.location ? `(${b.location})` : ''}
-                          </option>
-                        ))}
+                        {((modalBranches && modalBranches.length > 0) ? modalBranches : branches)
+                          .map(b => {
+                            const bName = b.branch_name || b.name || b.branch_code;
+                            if (!bName) return null;
+                            const subLabel = b.location_type || b.city || b.location;
+                            return (
+                              <option key={b.id || bName} value={bName}>
+                                🏢 {bName} {subLabel ? `(${subLabel})` : ''}
+                              </option>
+                            );
+                          })
+                          .filter(Boolean)}
                       </select>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
                         This template will only be accessible and triggered for candidates/leads in this branch scope.
