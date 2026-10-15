@@ -7049,7 +7049,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('email_config', moduleAccess, userRole) && visitedTabs.has('email_config')}
               >
                 <ErrorBoundary>
-                  <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} />
+                  <EmailConfigModule moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

@@ -98,12 +98,16 @@ const RECRUITER_STAGES = [
   { id: 'S09', label: 'S09 - Joined' }
 ];
 
-export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) {
+export default function EmailConfigModule({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
   const [activeTab, setActiveTab] = useState('smtp');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Addon Quota State
+  const [smtpLimit, setSmtpLimit] = useState(1);
+  const [isUnlimitedQuota, setIsUnlimitedQuota] = useState(false);
 
   // Config State & Multiple SMTP Accounts
   const [smtp, setSmtp] = useState({
@@ -220,13 +224,15 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
     setErrorMsg(null);
     try {
       const [res, branchRes] = await Promise.all([
-        getEmailConfig(),
+        getEmailConfig(userCompany, isMasterAdmin),
         getAllTenantBranches().catch(() => ({ success: false, branches: [] }))
       ]);
       if (res.success && res.data) {
         setSmtp(res.data.smtp || {});
         const accounts = res.data.smtp_accounts || [];
         setSmtpAccounts(accounts);
+        setSmtpLimit(res.data.smtp_limit || 1);
+        setIsUnlimitedQuota(!!res.data.is_unlimited);
         if (accounts.length > 0) {
           const def = accounts.find(a => a.is_default) || accounts[0];
           setSelectedTestSmtpId(def.id);
@@ -248,6 +254,10 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
 
   // --- SMTP Server Accounts Handlers ---
   const handleOpenAddSmtp = () => {
+    if (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) {
+      alert(`SMTP Server Quota Reached!\n\nYour current subscription plan allows up to ${smtpLimit} active SMTP server account(s).\n\nTo connect additional outbound email servers or branches, please contact your Master Admin to increase your quota.`);
+      return;
+    }
     setEditingSmtp({
       id: '',
       account_name: '',
@@ -283,7 +293,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
     }
     setSaving(true);
     try {
-      const res = await saveSmtpAccount(editingSmtp);
+      const res = await saveSmtpAccount(editingSmtp, userCompany, isMasterAdmin);
       if (res.success) {
         setSaveSuccessMsg(`SMTP Server "${editingSmtp.account_name}" saved successfully!`);
         setShowSmtpModal(false);
@@ -682,10 +692,23 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
           {/* Header Action Bar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Server size={18} style={{ color: 'var(--accent-color)' }} />
-                <span>Configured SMTP Server Accounts</span>
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Server size={18} style={{ color: 'var(--accent-color)' }} />
+                  <span>Configured SMTP Server Accounts</span>
+                </h3>
+                <span style={{
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '6px',
+                  background: (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#fef2f2' : '#ecfdf5',
+                  color: (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#b91c1c' : '#047857',
+                  border: `1px solid ${(!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#fecaca' : '#a7f3d0'}`
+                }}>
+                  Quota: {smtpAccounts.length} / {isUnlimitedQuota || isMasterAdmin ? '∞ Unlimited' : `${smtpLimit} Allowed`}
+                </span>
+              </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
                 Add and manage multiple outbound email gateways. Assign primary defaults, set branch scopes, and run live verification tests.
               </p>
@@ -701,6 +724,26 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '' }) 
               <span>Add SMTP Server</span>
             </button>
           </div>
+
+          {/* Quota limit warning notice if reached */}
+          {!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              padding: '0.75rem 1rem',
+              borderRadius: '8px',
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              color: '#92400e',
+              fontSize: '0.84rem'
+            }}>
+              <AlertCircle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
+              <div>
+                <strong>Addon Quota Reached:</strong> You have reached your allocated SMTP server limit (<strong>{smtpAccounts.length}/{smtpLimit}</strong>). To connect additional branches or multiple SMTP gateways, please contact Master Admin to increase your quota.
+              </div>
+            </div>
+          )}
 
           {/* SMTP Server Accounts Cards */}
           {smtpAccounts.length === 0 ? (

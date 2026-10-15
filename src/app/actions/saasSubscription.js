@@ -422,6 +422,14 @@ export async function getAllTenantsWithSubscriptions() {
       .from('user_roles')
       .select('company, user_id, role, emp_official_mail_id');
 
+    // Load tenant SMTP limits map
+    const { data: smtpLimitsData } = await admin
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'tenant_smtp_limits')
+      .maybeSingle();
+    const smtpLimitsMap = smtpLimitsData?.value || {};
+
     const now = new Date();
 
     const enriched = (tenantsList || []).map(t => {
@@ -470,6 +478,11 @@ export async function getAllTenantsWithSubscriptions() {
 
       const branches = t.id === DEFAULT_TENANT_ID ? ['NSMLR', 'NSTLP'] : (t.branches || []);
 
+      const isHq = t.id === DEFAULT_TENANT_ID;
+      const smtpLimit = isHq 
+        ? 999 
+        : (Number(smtpLimitsMap[t.id]) || Number(smtpLimitsMap[t.tenant_code]) || Number(smtpLimitsMap[t.name]) || 1);
+
       return {
         id: t.id,
         tenant_code: t.tenant_code,
@@ -488,7 +501,8 @@ export async function getAllTenantsWithSubscriptions() {
         } : null,
         entitlements: tEntitlements,
         active_users_count: activeUserCount,
-        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5)
+        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5),
+        smtp_accounts_limit: smtpLimit
       };
     });
 
@@ -982,6 +996,65 @@ export async function updateTenantEntitlements(tenantId, enabledModuleKeys = [])
   } catch (err) {
     console.error('updateTenantEntitlements error:', err);
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Update allowed SMTP server accounts limit for a tenant
+ */
+export async function updateTenantSmtpLimit(tenantId, limit = 1) {
+  try {
+    const admin = getAdminClient();
+    if (!tenantId) throw new Error('Tenant ID missing.');
+    const parsedLimit = Math.max(1, parseInt(limit, 10) || 1);
+
+    const { data: existing } = await admin
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'tenant_smtp_limits')
+      .maybeSingle();
+
+    const currentMap = existing?.value || {};
+    currentMap[tenantId] = parsedLimit;
+
+    const { error } = await admin
+      .from('system_settings')
+      .upsert({
+        key: 'tenant_smtp_limits',
+        value: currentMap,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' });
+
+    if (error) throw error;
+    return {
+      success: true,
+      message: `SMTP Server Addon Quota updated to ${parsedLimit} account(s)!`,
+      limit: parsedLimit
+    };
+  } catch (err) {
+    console.error('updateTenantSmtpLimit error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Get all tenant SMTP limits map
+ */
+export async function getTenantSmtpLimitsMap() {
+  try {
+    const admin = getAdminClient();
+    const { data, error } = await admin
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'tenant_smtp_limits')
+      .maybeSingle();
+    if (!error && data?.value) {
+      return { success: true, limits: data.value };
+    }
+    return { success: true, limits: {} };
+  } catch (err) {
+    console.error('getTenantSmtpLimitsMap error:', err);
+    return { success: true, limits: {} };
   }
 }
 

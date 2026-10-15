@@ -166,11 +166,67 @@ function normalizeSmtpAccounts(rawObj = {}) {
   return { accounts, defaultAccount, primarySmtp };
 }
 
+// Helper: Check Tenant SMTP Account Quota from SaaS Settings
+export async function getTenantSmtpQuota(companyOrTenantId = '', isMasterAdmin = false) {
+  if (isMasterAdmin) {
+    return { limit: 999, is_unlimited: true };
+  }
+  try {
+    const supabase = getAdminClient();
+    const { data: limitsData } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'tenant_smtp_limits')
+      .maybeSingle();
+
+    const limitsMap = limitsData?.value || {};
+    const normalizedKey = String(companyOrTenantId || '').trim();
+
+    // Check direct match in limits map
+    if (normalizedKey && limitsMap[normalizedKey] !== undefined) {
+      return { limit: Math.max(1, Number(limitsMap[normalizedKey])), is_unlimited: false };
+    }
+
+    // Try finding tenant in tenants table by id, code, or name
+    if (normalizedKey) {
+      const { data: tenants } = await supabase
+        .from('tenants')
+        .select('id, name, tenant_code');
+
+      const found = (tenants || []).find(t => 
+        t.id === normalizedKey ||
+        (t.tenant_code && t.tenant_code.toLowerCase() === normalizedKey.toLowerCase()) ||
+        (t.name && t.name.toLowerCase() === normalizedKey.toLowerCase())
+      );
+
+      if (found) {
+        // Master/HQ tenant is unlimited
+        if (found.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4') {
+          return { limit: 999, is_unlimited: true };
+        }
+        const lim = limitsMap[found.id] ?? limitsMap[found.tenant_code] ?? limitsMap[found.name];
+        if (lim !== undefined) {
+          return { limit: Math.max(1, Number(lim)), is_unlimited: false };
+        }
+      }
+    }
+
+    // Default 1 SMTP account for any standard tenant
+    return { limit: 1, is_unlimited: false };
+  } catch (err) {
+    console.error('getTenantSmtpQuota error:', err);
+    return { limit: 1, is_unlimited: false };
+  }
+}
+
 // Get Email Campaign & SMTP Configuration
-export async function getEmailConfig() {
+export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = false) {
   try {
     await ensureConfigFile();
     
+    // Fetch quota for tenant
+    const quota = await getTenantSmtpQuota(companyOrTenantId, isMasterAdmin);
+
     // First try Supabase system_settings
     const supabase = getAdminClient();
     const { data: dbData, error } = await supabase
@@ -186,6 +242,8 @@ export async function getEmailConfig() {
         data: {
           smtp: primarySmtp,
           smtp_accounts: accounts,
+          smtp_limit: quota.limit,
+          is_unlimited: quota.is_unlimited,
           templates: dbData.value.templates || DEFAULT_CONFIG.templates,
           automations: dbData.value.automations || DEFAULT_CONFIG.automations,
           logs: (dbData.value.logs || []).slice(0, 50)
@@ -202,6 +260,8 @@ export async function getEmailConfig() {
       data: {
         smtp: primarySmtp,
         smtp_accounts: accounts,
+        smtp_limit: quota.limit,
+        is_unlimited: quota.is_unlimited,
         templates: parsed.templates || DEFAULT_CONFIG.templates,
         automations: parsed.automations || DEFAULT_CONFIG.automations,
         logs: (parsed.logs || []).slice(0, 50)
@@ -215,7 +275,9 @@ export async function getEmailConfig() {
       data: {
         ...DEFAULT_CONFIG,
         smtp: primarySmtp,
-        smtp_accounts: accounts
+        smtp_accounts: accounts,
+        smtp_limit: 1,
+        is_unlimited: false
       }
     };
   }
@@ -261,16 +323,25 @@ export async function saveEmailConfig(newConfig) {
   }
 }
 
-// Save or Update an SMTP Server Account
-export async function saveSmtpAccount(account) {
+// Save or Update an SMTP Server Account with Addon Quota Enforcement
+export async function saveSmtpAccount(account, companyOrTenantId = '', isMasterAdmin = false) {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId, isMasterAdmin);
     const currentConfig = res.data;
     let accounts = currentConfig.smtp_accounts || [];
 
     const existingIndex = accounts.findIndex(a => a.id === account.id);
     const isNew = existingIndex < 0;
     const isDefault = account.is_default || accounts.length === 0;
+
+    // Quota Enforcement: block adding new account if quota is reached
+    const quota = await getTenantSmtpQuota(companyOrTenantId, isMasterAdmin);
+    if (isNew && !quota.is_unlimited && accounts.length >= quota.limit) {
+      return {
+        success: false,
+        error: `SMTP server limit reached! Your current subscription allows up to ${quota.limit} SMTP server account(s). Please contact Master Admin or purchase an SMTP Server Addon to connect additional servers.`
+      };
+    }
 
     if (isDefault) {
       accounts = accounts.map(a => ({ ...a, is_default: false }));

@@ -54,6 +54,7 @@ import {
   updateTenantCustomRate,
   createTenantWorkspace,
   updateTenantEntitlements,
+  updateTenantSmtpLimit,
   extendTenantSubscriptionTrial,
   recordPaymentAndGenerateInvoice,
   updateTenantValidityAndStatus,
@@ -152,6 +153,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   // Manage Modules Modal State
   const [modulesModalTenant, setModulesModalTenant] = useState(null);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState(new Set());
+  const [smtpLimitInput, setSmtpLimitInput] = useState(1);
   const [savingModules, setSavingModules] = useState(false);
 
   // Free Trial Modal State
@@ -642,6 +644,7 @@ Thank you for choosing New Swan CRM!`;
   const handleOpenModulesModal = (t) => {
     setModulesModalTenant(t);
     setSelectedModuleKeys(new Set(t.entitlements || []));
+    setSmtpLimitInput(t.smtp_accounts_limit || 1);
   };
 
   const handleToggleModuleKey = (code) => {
@@ -658,13 +661,16 @@ Thank you for choosing New Swan CRM!`;
     if (!modulesModalTenant) return;
     setSavingModules(true);
     try {
-      const res = await updateTenantEntitlements(modulesModalTenant.id, Array.from(selectedModuleKeys));
-      if (res.success) {
-        showNotification(res.message);
+      const [resEntitlements, resSmtp] = await Promise.all([
+        updateTenantEntitlements(modulesModalTenant.id, Array.from(selectedModuleKeys)),
+        updateTenantSmtpLimit(modulesModalTenant.id, smtpLimitInput)
+      ]);
+      if (resEntitlements.success && resSmtp.success) {
+        showNotification(`${resEntitlements.message} | SMTP quota updated to ${smtpLimitInput} account(s)!`);
         setModulesModalTenant(null);
         await loadData();
       } else {
-        showNotification(res.error || 'Failed to update modules', true);
+        showNotification(resEntitlements.error || resSmtp.error || 'Failed to update modules & SMTP quota', true);
       }
     } catch (err) {
       showNotification(err.message, true);
@@ -1414,6 +1420,9 @@ Thank you for choosing New Swan CRM!`;
                               </span>
                             ))
                           )}
+                          <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #fde68a', fontWeight: 600 }} title="Allowed SMTP server account connections">
+                            📧 SMTP: {t.smtp_accounts_limit || 1}
+                          </span>
                           <button
                             onClick={() => handleOpenModulesModal(t)}
                             style={{
@@ -1426,7 +1435,7 @@ Thank you for choosing New Swan CRM!`;
                               fontWeight: 600,
                               cursor: 'pointer'
                             }}
-                            title="Edit active business modules for this company"
+                            title="Edit active business modules and SMTP quota for this company"
                           >
                             ⚙️ Edit
                           </button>
@@ -2849,6 +2858,103 @@ Thank you for choosing New Swan CRM!`;
                   </label>
                 );
               })}
+            </div>
+
+            {/* Outbound SMTP Server Addon Quota */}
+            <div style={{
+              marginTop: '0.5rem',
+              marginBottom: '1.5rem',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              background: '#f8fafc',
+              border: '1.5px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>📧 Outbound SMTP Server Addon Quota</span>
+                    {modulesModalTenant?.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4' && (
+                      <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#15803d', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>HQ Unlimited</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Total simultaneous outbound SMTP server connections purchased & allowed for this company
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSmtpLimitInput(prev => Math.max(1, prev - 1))}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={smtpLimitInput}
+                    onChange={(e) => setSmtpLimitInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    style={{
+                      width: '54px',
+                      textAlign: 'center',
+                      padding: '0.3rem',
+                      borderRadius: '6px',
+                      border: '1.5px solid #6366f1',
+                      fontWeight: 700,
+                      fontSize: '0.92rem'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSmtpLimitInput(prev => prev + 1)}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Quick Presets:</span>
+                {[1, 2, 3, 5, 10].map(cnt => (
+                  <button
+                    key={cnt}
+                    type="button"
+                    onClick={() => setSmtpLimitInput(cnt)}
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.72rem',
+                      fontWeight: smtpLimitInput === cnt ? 700 : 500,
+                      background: smtpLimitInput === cnt ? '#4338ca' : '#fff',
+                      color: smtpLimitInput === cnt ? '#fff' : '#475569',
+                      border: `1px solid ${smtpLimitInput === cnt ? '#4338ca' : '#cbd5e1'}`,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {cnt} {cnt === 1 ? 'Server (Default)' : 'Servers'}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
