@@ -99,7 +99,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [catalogSearch, setCatalogSearch] = useState('');
   const [clientAllocations, setClientAllocations] = useState({});
   const [tenantsList, setTenantsList] = useState([]);
+  const [selectedHqForAllocation, setSelectedHqForAllocation] = useState('NEW_SWAN_GROUP');
   const [selectedClientForAllocation, setSelectedClientForAllocation] = useState('NEW_SWAN_GROUP');
+  const [overviewTableHqFilter, setOverviewTableHqFilter] = useState('All');
   const [activeAdminSubTab, setActiveAdminSubTab] = useState('catalog'); // 'catalog' | 'allocations' | 'credentials'
   const [isClientScoped, setIsClientScoped] = useState(false);
   const [assignedBsps, setAssignedBsps] = useState([]);
@@ -255,9 +257,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // --- CLIENT & BRANCH ALLOCATION HELPERS (TIER 2) ---
   const allClients = React.useMemo(() => {
     const list = [
-      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP', type: 'headquarters', group: 'New Swan Group' },
-      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR', type: 'branch', group: 'New Swan Group' },
-      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP', type: 'branch', group: 'New Swan Group' }
+      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP', type: 'headquarters', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' },
+      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR', type: 'branch', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' },
+      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP', type: 'branch', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' }
     ];
 
     // 1. Automatically import all Registered Tenants as Headquarters
@@ -277,6 +279,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           name: t.name.toLowerCase().includes('headquarter') ? t.name : `${t.name} (Headquarters)`, 
           code: code, 
           type: 'headquarters', 
+          hqCode: code,
           group: t.name 
         });
       }
@@ -309,11 +312,23 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           displayName = displayName.startsWith('🏢') ? displayName : `🏢 ${displayName}${displayName.includes('(') ? '' : suffix}`;
         }
 
+        // Determine parent HQ code
+        let parentHqCode = 'NEW_SWAN_GROUP';
+        if (b.company) {
+          const matchedTenant = (tenantsList || []).find(t => t.name?.toLowerCase() === b.company.toLowerCase() || t.tenant_code?.toLowerCase() === b.company.toLowerCase());
+          if (matchedTenant) {
+            parentHqCode = matchedTenant.tenant_code || matchedTenant.name;
+          } else {
+            parentHqCode = b.company;
+          }
+        }
+
         list.push({
           id: b.id || bCode,
           name: displayName,
           code: bCode,
           type: isHQ ? 'headquarters' : 'branch',
+          hqCode: parentHqCode,
           group: b.company || 'Branch Office'
         });
       }
@@ -321,6 +336,115 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     return list;
   }, [tenantsList, branches]);
+
+  const hqOptions = React.useMemo(() => {
+    const list = [
+      { code: 'NEW_SWAN_GROUP', name: 'New Swan Group' }
+    ];
+    (tenantsList || []).forEach(t => {
+      const code = (t.tenant_code || t.name || '').trim();
+      if (code && !list.some(x => x.code.toLowerCase() === code.toLowerCase())) {
+        list.push({ code, name: t.name });
+      }
+    });
+    return list;
+  }, [tenantsList]);
+
+  const branchOptionsForSelectedHq = React.useMemo(() => {
+    const targetHq = String(selectedHqForAllocation || 'NEW_SWAN_GROUP').toLowerCase();
+    const hqItem = hqOptions.find(h => h.code.toLowerCase() === targetHq);
+    const hqName = (hqItem?.name || '').toLowerCase();
+
+    return allClients.filter(c => {
+      const cHq = (c.hqCode || '').toLowerCase();
+      const cGroup = (c.group || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+    });
+  }, [allClients, selectedHqForAllocation, hqOptions]);
+
+  const handleHqChange = (newHqCode) => {
+    setSelectedHqForAllocation(newHqCode);
+    const targetHq = String(newHqCode || '').toLowerCase();
+    const hqItem = hqOptions.find(h => h.code.toLowerCase() === targetHq);
+    const hqName = (hqItem?.name || '').toLowerCase();
+
+    const matching = allClients.filter(c => {
+      const cHq = (c.hqCode || '').toLowerCase();
+      const cGroup = (c.group || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+    });
+
+    if (matching.length > 0) {
+      setSelectedClientForAllocation(matching[0].code || matching[0].name);
+    } else {
+      setSelectedClientForAllocation(newHqCode);
+    }
+  };
+
+  const filteredTableClients = React.useMemo(() => {
+    if (overviewTableHqFilter === 'All') return allClients;
+    const targetHq = overviewTableHqFilter.toLowerCase();
+    const hqItem = hqOptions.find(h => h.code.toLowerCase() === targetHq);
+    const hqName = (hqItem?.name || '').toLowerCase();
+
+    return allClients.filter(c => {
+      const cHq = (c.hqCode || '').toLowerCase();
+      const cGroup = (c.group || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+    });
+  }, [allClients, overviewTableHqFilter, hqOptions]);
+
+  // Resizable columns state for Allocation Matrix Table (Lead Data Pattern)
+  const defaultColWidths = {
+    office: 240,
+    type: 140,
+    bsps: 260,
+    defaultBsp: 160,
+    quota: 110,
+    action: 90
+  };
+  const [tableColWidths, setTableColWidths] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_wa_table_col_widths');
+        if (saved) return { ...defaultColWidths, ...JSON.parse(saved) };
+      } catch (e) {}
+    }
+    return defaultColWidths;
+  });
+  const [resizingCol, setResizingCol] = useState(null);
+
+  const handleColumnResizeMouseDown = (colKey, e) => {
+    e.preventDefault();
+    setResizingCol(colKey);
+    const startX = e.clientX;
+    const startWidth = tableColWidths[colKey] || defaultColWidths[colKey];
+
+    const onMouseMove = (moveEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const minW = colKey === 'action' ? 70 : 90;
+      const newWidth = Math.max(minW, startWidth + diff);
+      setTableColWidths(prev => {
+        const updated = { ...prev, [colKey]: newWidth };
+        try {
+          localStorage.setItem('crm_wa_table_col_widths', JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   const getInitialClientAlloc = (clientCode) => {
     const code = String(clientCode || '').toUpperCase();
@@ -1133,40 +1257,69 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </p>
                   </div>
 
-                  {/* CLIENT / BRANCH SELECTOR */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                      Target Headquarters / Branch Office:
-                    </label>
-                    <select
-                      value={selectedClientForAllocation}
-                      onChange={(e) => setSelectedClientForAllocation(e.target.value)}
-                      style={{
-                        padding: '0.55rem 0.85rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--accent-color, #2563eb)',
-                        backgroundColor: 'var(--bg-surface)',
-                        fontWeight: 700,
-                        fontSize: '0.88rem',
-                        color: 'var(--text-primary)',
-                        minWidth: '260px'
-                      }}
-                    >
-                      <optgroup label="🏢 Headquarters & Main Offices">
-                        {allClients.filter(c => c.type === 'headquarters').map(c => (
-                          <option key={c.id || c.code} value={c.code || c.name}>
-                            {c.name}
+                  {/* 2 LINKED CASCADING FILTERS: HEADQUARTERS -> USKE ANUSAR BRANCH */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    {/* FILTER 1: HEADQUARTERS */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>🏢</span> Headquarters:
+                      </label>
+                      <select
+                        value={selectedHqForAllocation}
+                        onChange={(e) => handleHqChange(e.target.value)}
+                        style={{
+                          padding: '0.55rem 0.85rem',
+                          borderRadius: '6px',
+                          border: '1.5px solid var(--accent-color, #2563eb)',
+                          backgroundColor: 'var(--bg-surface)',
+                          fontWeight: 700,
+                          fontSize: '0.88rem',
+                          color: 'var(--text-primary)',
+                          minWidth: '220px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {hqOptions.map(hq => (
+                          <option key={hq.code} value={hq.code}>
+                            {hq.name}
                           </option>
                         ))}
-                      </optgroup>
-                      <optgroup label="🏭 Operational Branches & Plants">
-                        {allClients.filter(c => c.type === 'branch').map(c => (
-                          <option key={c.id || c.code} value={c.code || c.name}>
-                            {c.name}
+                      </select>
+                    </div>
+
+                    {/* FILTER 2: USKE ANUSAR BRANCH / OFFICE */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>🏭</span> Branch / Office:
+                      </label>
+                      <select
+                        value={selectedClientForAllocation}
+                        onChange={(e) => setSelectedClientForAllocation(e.target.value)}
+                        style={{
+                          padding: '0.55rem 0.85rem',
+                          borderRadius: '6px',
+                          border: '1.5px solid var(--accent-color, #2563eb)',
+                          backgroundColor: 'var(--bg-surface)',
+                          fontWeight: 700,
+                          fontSize: '0.88rem',
+                          color: 'var(--text-primary)',
+                          minWidth: '240px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {branchOptionsForSelectedHq.length > 0 ? (
+                          branchOptionsForSelectedHq.map(b => (
+                            <option key={b.id || b.code} value={b.code || b.name}>
+                              {b.name}
+                            </option>
+                          ))
+                        ) : (
+                          <option value={selectedHqForAllocation}>
+                            {selectedHqForAllocation} (Headquarters)
                           </option>
-                        ))}
-                      </optgroup>
-                    </select>
+                        )}
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -1326,7 +1479,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
               </div>
 
-              {/* OVERVIEW TABLE OF ALL ALLOCATIONS */}
+              {/* OVERVIEW TABLE OF ALL ALLOCATIONS WITH HQ FILTER & RESIZABLE COLUMNS */}
               <div style={{ padding: '1.25rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <div>
@@ -1337,30 +1490,224 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       All registered headquarters and branch units with assigned WhatsApp gateways.
                     </span>
                   </div>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 600, padding: '0.25rem 0.65rem', borderRadius: '12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    {allClients.length} Offices Active
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                        Filter by Headquarters:
+                      </label>
+                      <select
+                        value={overviewTableHqFilter}
+                        onChange={(e) => setOverviewTableHqFilter(e.target.value)}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="All">All Headquarters ({allClients.length})</option>
+                        {hqOptions.map(hq => (
+                          <option key={hq.code} value={hq.code}>{hq.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, padding: '0.25rem 0.65rem', borderRadius: '12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                      {filteredTableClients.length} Offices
+                    </span>
+                  </div>
                 </div>
+
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem', tableLayout: 'fixed' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Headquarters / Branch Office</th>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Office Type</th>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Assigned BSP Gateways</th>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Default Gateway</th>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Quota</th>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Action</th>
+                        {/* 1. Office Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.office}px`, padding: '0.65rem 0.75rem', minWidth: '160px', userSelect: 'none' }}>
+                          <span>Headquarters / Branch Office</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('office', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, office: defaultColWidths.office }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'office' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'office' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
+
+                        {/* 2. Type Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.type}px`, padding: '0.65rem 0.75rem', minWidth: '110px', userSelect: 'none' }}>
+                          <span>Office Type</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('type', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, type: defaultColWidths.type }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'type' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'type' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
+
+                        {/* 3. Assigned BSPs Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.bsps}px`, padding: '0.65rem 0.75rem', minWidth: '180px', userSelect: 'none' }}>
+                          <span>Assigned BSP Gateways</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('bsps', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, bsps: defaultColWidths.bsps }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'bsps' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'bsps' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
+
+                        {/* 4. Default Gateway Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.defaultBsp}px`, padding: '0.65rem 0.75rem', minWidth: '120px', userSelect: 'none' }}>
+                          <span>Default Gateway</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('defaultBsp', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, defaultBsp: defaultColWidths.defaultBsp }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'defaultBsp' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'defaultBsp' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
+
+                        {/* 5. Quota Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.quota}px`, padding: '0.65rem 0.75rem', minWidth: '80px', userSelect: 'none' }}>
+                          <span>Quota</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('quota', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, quota: defaultColWidths.quota }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'quota' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'quota' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
+
+                        {/* 6. Action Header */}
+                        <th style={{ position: 'relative', width: `${tableColWidths.action}px`, padding: '0.65rem 0.75rem', minWidth: '70px', userSelect: 'none' }}>
+                          <span>Action</span>
+                          <div
+                            onMouseDown={(e) => handleColumnResizeMouseDown('action', e)}
+                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, action: defaultColWidths.action }))}
+                            title="Drag to resize | Double-click to reset"
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              height: '100%',
+                              width: '10px',
+                              cursor: 'col-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 10
+                            }}
+                          >
+                            <div style={{
+                              width: resizingCol === 'action' ? '3px' : '2px',
+                              height: '70%',
+                              backgroundColor: resizingCol === 'action' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
+                              borderRadius: '2px'
+                            }} />
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {allClients.map(c => {
+                      {filteredTableClients.map(c => {
                         const alloc = clientAllocations[c.code] || clientAllocations[c.name] || getInitialClientAlloc(c.code);
                         const isHQ = c.type === 'headquarters';
                         const isNstlp = (c.code || '').toUpperCase().includes('NSTLP');
                         return (
                           <tr key={c.id || c.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                            <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
                               {c.name}
                             </td>
                             <td style={{ padding: '0.75rem' }}>
@@ -1371,7 +1718,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                                 fontWeight: 700,
                                 backgroundColor: isHQ ? 'rgba(37, 99, 235, 0.1)' : 'rgba(16, 185, 129, 0.1)',
                                 color: isHQ ? 'var(--accent-color, #2563eb)' : '#059669',
-                                border: isHQ ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)'
+                                border: isHQ ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)',
+                                whiteSpace: 'nowrap'
                               }}>
                                 {isHQ ? '🏢 Headquarters' : '🏭 Branch Office'}
                               </span>
@@ -1400,6 +1748,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (c.hqCode) setSelectedHqForAllocation(c.hqCode);
                                   setSelectedClientForAllocation(c.code || c.name);
                                   window.scrollTo({ top: 150, behavior: 'smooth' });
                                 }}
