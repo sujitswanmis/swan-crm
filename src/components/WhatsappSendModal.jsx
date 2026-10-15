@@ -48,7 +48,7 @@ export default function WhatsappSendModal({ lead, onClose }) {
     const res = await sendWhatsappMessage(lead.id, selectedTemplateId, selectedPhones);
     
     if (res.success) {
-      setResult({ type: 'success', message: 'Message sent successfully to AiSensy!' });
+      setResult({ type: 'success', message: res.message || 'WhatsApp message sent successfully!' });
       setTimeout(() => onClose(), 2000);
     } else {
       setResult({ type: 'error', message: res.error || 'Failed to send message.' });

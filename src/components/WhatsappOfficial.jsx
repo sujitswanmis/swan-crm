@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
-  Building2, Filter, Briefcase
+  Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { 
@@ -76,6 +76,21 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [watiConfig, setWatiConfig] = useState({ endpoint_url: '', access_token: '' });
   const [nextelConfig, setNextelConfig] = useState({ endpoint_url: '' });
 
+  // Custom BSP State - Dynamic Self-Serve Gateway Engine
+  const [customBsps, setCustomBsps] = useState([]);
+  const [showCustomBspModal, setShowCustomBspModal] = useState(false);
+  const [showCustomToken, setShowCustomToken] = useState(false);
+  const [customBspForm, setCustomBspForm] = useState({
+    id: '',
+    name: '',
+    endpoint_url: '',
+    method: 'POST',
+    auth_type: 'Bearer',
+    auth_header_name: 'apikey',
+    auth_token: '',
+    payload_format: '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
+  });
+
   // Legacy fallback states
   const [apiKeyNsmlr, setApiKeyNsmlr] = useState('');
   const [apiKeyNstlp, setApiKeyNstlp] = useState('');
@@ -140,6 +155,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     
     if (setRes.success && setRes.data) {
       const d = setRes.data;
+      if (Array.isArray(d.custom_bsps)) {
+        setCustomBsps(d.custom_bsps);
+      }
+
       const initialEnabled = Array.isArray(d.enabled_providers) && d.enabled_providers.length > 0
         ? d.enabled_providers
         : (d.api_key_nstlp ? ['aisensy', 'nextel'] : ['aisensy']);
@@ -185,13 +204,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
 
   // --- SETTINGS LOGIC ---
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = async (customBspsOverride, enabledProvidersOverride) => {
     setLoading(true);
+    const activeCustomBsps = customBspsOverride || customBsps;
+    const activeEnabled = enabledProvidersOverride || enabledProviders;
     const payload = {
-      enabled_providers: enabledProviders,
+      enabled_providers: activeEnabled,
       default_provider: defaultProvider,
       provider: defaultProvider,
-      account_limit: Number(accountLimit) || enabledProviders.length,
+      account_limit: Number(accountLimit) || activeEnabled.length,
+      custom_bsps: activeCustomBsps,
       meta: metaConfig,
       aisensy: aisensyConfig,
       interakt: interaktConfig,
@@ -202,8 +224,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     };
     const res = await saveWhatsappSettings(payload);
     setLoading(false);
-    if (res.success) alert('WhatsApp multi-provider settings saved securely!');
-    else alert('Error saving settings: ' + res.error);
+    if (res.success) {
+      if (!customBspsOverride) {
+        alert('WhatsApp multi-provider settings saved securely!');
+      }
+    } else {
+      alert('Error saving settings: ' + res.error);
+    }
+    return res;
   };
 
   const handleTestConnection = async () => {
@@ -218,11 +246,127 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       aisensy: aisensyConfig,
       interakt: interaktConfig,
       wati: watiConfig,
-      nextel: nextelConfig
+      nextel: nextelConfig,
+      custom_bsps: customBsps
     };
     const res = await testWhatsappProviderConnection({ provider: testProvider, config, testPhone });
     setTestingConnection(false);
     setTestFeedback(res);
+  };
+
+  // --- CUSTOM BSP SELF-SERVE ENGINE LOGIC ---
+  const handleOpenAddCustomBsp = () => {
+    setCustomBspForm({
+      id: '',
+      name: '',
+      endpoint_url: '',
+      method: 'POST',
+      auth_type: 'Bearer',
+      auth_header_name: 'apikey',
+      auth_token: '',
+      payload_format: '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
+    });
+    setShowCustomBspModal(true);
+  };
+
+  const handleOpenEditCustomBsp = (bsp, e) => {
+    if (e) e.stopPropagation();
+    setCustomBspForm({
+      id: bsp.id,
+      name: bsp.name || '',
+      endpoint_url: bsp.endpoint_url || '',
+      method: bsp.method || 'POST',
+      auth_type: bsp.auth_type || 'Bearer',
+      auth_header_name: bsp.auth_header_name || 'apikey',
+      auth_token: bsp.auth_token || '',
+      payload_format: bsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
+    });
+    setShowCustomBspModal(true);
+  };
+
+  const handleSaveCustomBsp = async () => {
+    if (!customBspForm.name.trim()) {
+      alert('Please enter a BSP Name (e.g., Gupshup, Twilio, DoubleTick).');
+      return;
+    }
+    if (!customBspForm.endpoint_url.trim()) {
+      alert('Please enter the API Endpoint URL.');
+      return;
+    }
+
+    const testJson = customBspForm.payload_format
+      .replace(/\{\{PHONE\}\}/g, '919876543210')
+      .replace(/\{\{NAME\}\}/g, 'Customer')
+      .replace(/\{\{TEMPLATE_NAME\}\}/g, 'test_tpl')
+      .replace(/\{\{MESSAGE\}\}/g, 'Test')
+      .replace(/\{\{IMAGE_URL\}\}/g, 'https://example.com/img.jpg');
+    try {
+      JSON.parse(testJson);
+    } catch (err) {
+      alert('JSON Payload Format syntax error:\n' + err.message + '\n\nPlease ensure your payload format is valid JSON.');
+      return;
+    }
+
+    const bspId = customBspForm.id || ('custom_' + customBspForm.name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36));
+    const newBsp = {
+      ...customBspForm,
+      id: bspId,
+      name: customBspForm.name.trim(),
+      endpoint_url: customBspForm.endpoint_url.trim()
+    };
+
+    let updatedCustomBsps;
+    if (customBspForm.id) {
+      updatedCustomBsps = customBsps.map(b => b.id === customBspForm.id ? newBsp : b);
+    } else {
+      updatedCustomBsps = [...customBsps, newBsp];
+    }
+
+    let updatedEnabled = enabledProviders;
+    if (!updatedEnabled.includes(bspId)) {
+      updatedEnabled = [...updatedEnabled, bspId];
+    }
+
+    setCustomBsps(updatedCustomBsps);
+    setEnabledProviders(updatedEnabled);
+    setShowCustomBspModal(false);
+
+    await handleSaveSettings(updatedCustomBsps, updatedEnabled);
+    alert(`Custom BSP "${newBsp.name}" configured and activated successfully!`);
+  };
+
+  const handleDeleteCustomBsp = async (bspId, bspName, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete custom BSP "${bspName}"? Templates mapped to it will fall back to the default gateway.`)) {
+      return;
+    }
+
+    const updatedCustomBsps = customBsps.filter(b => b.id !== bspId);
+    let updatedEnabled = enabledProviders.filter(id => id !== bspId);
+    if (updatedEnabled.length === 0) updatedEnabled = ['aisensy'];
+
+    setCustomBsps(updatedCustomBsps);
+    setEnabledProviders(updatedEnabled);
+
+    if (defaultProvider === bspId) setDefaultProvider(updatedEnabled[0]);
+    if (testProvider === bspId) setTestProvider(updatedEnabled[0]);
+    if (selectedTemplateBsp === bspId) setSelectedTemplateBsp(updatedEnabled[0]);
+
+    await handleSaveSettings(updatedCustomBsps, updatedEnabled);
+    alert(`Custom BSP "${bspName}" removed.`);
+  };
+
+  const getBspDisplayName = (bspId) => {
+    if (!bspId) return 'AiSensy';
+    const lower = String(bspId).toLowerCase();
+    if (lower === 'meta') return 'Meta Cloud API';
+    if (lower === 'aisensy') return 'AiSensy';
+    if (lower === 'interakt') return 'Interakt';
+    if (lower === 'wati') return 'Wati';
+    if (lower === 'nextel') return 'Nextel.io';
+    const custom = customBsps.find(b => b.id.toLowerCase() === lower || (b.name && b.name.toLowerCase() === lower));
+    if (custom) return custom.name;
+    return bspId.toUpperCase();
   };
 
   // --- TEMPLATES LOGIC ---
@@ -255,7 +399,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     const match = raw.match(/\[(.*?)\]/);
     if (match && match[1]) {
-      bsp = match[1].toLowerCase();
+      bsp = match[1];
       branch = raw.replace(/\[.*?\]/, '').trim() || 'Headquarters (Main Office)';
     } else if (raw.toLowerCase() === 'nstlp') {
       bsp = 'nextel';
@@ -266,8 +410,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(raw.toLowerCase())) {
       bsp = raw.toLowerCase();
       branch = 'Headquarters (Main Office)';
-    } else if (raw && raw !== 'All') {
-      branch = raw;
+    } else {
+      const customMatch = customBsps.find(b => b.id.toLowerCase() === raw.toLowerCase() || (b.name && b.name.toLowerCase() === raw.toLowerCase()));
+      if (customMatch) {
+        bsp = customMatch.id;
+        branch = 'Headquarters (Main Office)';
+      } else if (raw && raw !== 'All') {
+        branch = raw;
+      }
     }
     return { bsp, branch };
   };
@@ -469,15 +619,36 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
           {/* MULTI-ACTIVE PROVIDER SELECTION */}
           <div style={{ marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div>
                 <label style={{ fontSize: '0.95rem', fontWeight: 700, display: 'block', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
                   Configured WhatsApp Gateways (Enable/Disable Accounts)
                 </label>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Check any provider you have purchased/subscribed to (e.g. AiSensy, Interakt, or both).
+                  Check any provider you have purchased/subscribed to, or add any custom WhatsApp BSP gateway dynamically.
                 </span>
               </div>
+              {settingsPerms.edit && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddCustomBsp}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.9rem',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    color: 'var(--accent-color, #2563eb)',
+                    border: '1px solid rgba(37, 99, 235, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={16} /> Add Custom BSP Gateway
+                </button>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.75rem' }}>
@@ -531,6 +702,98 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
                 );
               })}
+
+              {/* DYNAMIC CUSTOM BSPS */}
+              {customBsps.map(p => {
+                const isEnabled = enabledProviders.includes(p.id);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => toggleProvider(p.id)}
+                    style={{
+                      padding: '0.85rem',
+                      borderRadius: '8px',
+                      border: isEnabled ? '2px solid #8b5cf6' : '1px solid var(--border-light)',
+                      backgroundColor: isEnabled ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-primary)',
+                      cursor: settingsPerms.edit ? 'pointer' : 'default',
+                      transition: 'all 0.15s ease-in-out',
+                      position: 'relative',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isEnabled ? '#7c3aed' : 'var(--text-primary)' }}>
+                        {p.name}
+                      </span>
+                      {isEnabled ? (
+                        <CheckCircle2 size={16} color="#7c3aed" />
+                      ) : (
+                        <div style={{ width: '14px', height: '14px', borderRadius: '4px', border: '1.5px solid var(--border-light)' }} />
+                      )}
+                    </div>
+                    <span style={{ 
+                      display: 'inline-block', 
+                      fontSize: '0.68rem', 
+                      fontWeight: 600, 
+                      padding: '0.15rem 0.4rem', 
+                      borderRadius: '4px', 
+                      backgroundColor: isEnabled ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
+                      color: isEnabled ? '#6d28d9' : 'var(--text-secondary)',
+                      marginBottom: '0.35rem'
+                    }}>
+                      {isEnabled ? '● Active Custom BSP' : 'Custom Gateway'}
+                    </span>
+                    <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: '1.25', wordBreak: 'break-all' }}>
+                      {p.endpoint_url ? (p.endpoint_url.length > 32 ? p.endpoint_url.substring(0, 30) + '...' : p.endpoint_url) : 'Self-serve API'}
+                    </p>
+                    {settingsPerms.edit && (
+                      <div style={{ display: 'flex', gap: '0.35rem', marginTop: 'auto', paddingTop: '0.4rem', borderTop: '1px dashed var(--border-light)' }} onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditCustomBsp(p, e)}
+                          style={{
+                            flex: 1,
+                            padding: '0.25rem 0.45rem',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--bg-surface)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.25rem',
+                            color: 'var(--text-primary)'
+                          }}
+                        >
+                          <Edit3 size={12} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCustomBsp(p.id, p.name, e)}
+                          style={{
+                            padding: '0.25rem 0.45rem',
+                            fontSize: '0.72rem',
+                            borderRadius: '4px',
+                            border: 'none',
+                            backgroundColor: '#fee2e2',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title="Delete Custom BSP"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -572,7 +835,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               >
                 {enabledProviders.map(p => (
                   <option key={p} value={p}>
-                    {p === 'meta' ? 'Meta Cloud API' : p === 'aisensy' ? 'AiSensy' : p === 'interakt' ? 'Interakt' : p === 'wati' ? 'Wati' : 'Nextel.io'} (Default)
+                    {getBspDisplayName(p)} (Default)
                   </option>
                 ))}
               </select>
@@ -760,6 +1023,67 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
+          {/* DYNAMIC CREDENTIALS & PAYLOAD SUMMARY FOR ACTIVE CUSTOM BSPS */}
+          {customBsps.filter(b => enabledProviders.includes(b.id)).map(cb => (
+            <div key={cb.id} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
+                  <Globe size={20} />
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{cb.name} Gateway Configuration</h3>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#6d28d9' }}>Custom BSP</span>
+                </div>
+                {settingsPerms.edit && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenEditCustomBsp(cb, e)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid #8b5cf6',
+                      backgroundColor: 'transparent',
+                      color: '#7c3aed',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Edit3 size={14} /> Edit Endpoint & Payload Template
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                    API Endpoint URL:
+                  </label>
+                  <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.82rem', wordBreak: 'break-all' }}>
+                    <span style={{ fontWeight: 700, color: '#7c3aed', marginRight: '0.4rem' }}>{cb.method || 'POST'}</span> {cb.endpoint_url}
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                    Authentication:
+                  </label>
+                  <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}>
+                    {cb.auth_type === 'Bearer' ? 'Bearer Token' : cb.auth_type === 'HeaderKey' ? `Header (${cb.auth_header_name || 'apikey'})` : cb.auth_type === 'Basic' ? 'Basic Auth' : 'None / URL'}
+                    {' '}• {cb.auth_token ? '•••••••• (Configured)' : 'No Token'}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                  Payload Template Format:
+                </label>
+                <pre style={{ margin: 0, padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '110px', overflowY: 'auto' }}>
+                  {cb.payload_format}
+                </pre>
+              </div>
+            </div>
+          ))}
+
           {/* DUAL COMPANY BACKWARD COMPATIBILITY NOTICE */}
           <div style={{ 
             marginBottom: '1.5rem', 
@@ -807,7 +1131,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               >
                 {enabledProviders.map(p => (
                   <option key={p} value={p}>
-                    Test {p.toUpperCase()} Gateway
+                    Test {getBspDisplayName(p)} Gateway
                   </option>
                 ))}
               </select>
@@ -845,7 +1169,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 }}
               >
                 <RefreshCw size={16} className={testingConnection ? 'animate-spin' : ''} />
-                {testingConnection ? 'Verifying...' : `Test ${testProvider.toUpperCase()}`}
+                {testingConnection ? 'Verifying...' : `Test ${getBspDisplayName(testProvider)}`}
               </button>
             </div>
 
@@ -946,6 +1270,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               <option value="meta">Meta Cloud API</option>
               <option value="wati">Wati</option>
               <option value="nextel">Nextel.io</option>
+              {customBsps.map(cb => (
+                <option key={cb.id} value={cb.id}>{cb.name} (Custom)</option>
+              ))}
             </select>
 
             {/* Filter by Branch */}
@@ -983,14 +1310,25 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     onChange={e => setSelectedTemplateBsp(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                   >
-                    <option value="aisensy">AiSensy (Official Meta BSP)</option>
-                    <option value="interakt">Interakt (Jio Haptik BSP)</option>
-                    <option value="meta">Meta Cloud API (Direct v21.0)</option>
-                    <option value="wati">Wati (Clare.ai BSP)</option>
-                    <option value="nextel">Nextel.io (Session Webhook)</option>
+                    <optgroup label="Official Built-In BSPs">
+                      <option value="aisensy">AiSensy (Official Meta BSP)</option>
+                      <option value="interakt">Interakt (Jio Haptik BSP)</option>
+                      <option value="meta">Meta Cloud API (Direct v21.0)</option>
+                      <option value="wati">Wati (Clare.ai BSP)</option>
+                      <option value="nextel">Nextel.io (Session Webhook)</option>
+                    </optgroup>
+                    {customBsps.length > 0 && (
+                      <optgroup label="Custom Added BSPs">
+                        {customBsps.map(cb => (
+                          <option key={cb.id} value={cb.id}>
+                            ⚡ {cb.name} (Custom Gateway)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Auto-selected to active workspace default ({defaultProvider.toUpperCase()}).
+                    Auto-selected to active workspace default ({getBspDisplayName(defaultProvider)}).
                   </span>
                 </div>
 
@@ -1134,7 +1472,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           alignItems: 'center',
                           gap: '0.25rem'
                         }}>
-                          <Zap size={11} /> {meta.bsp.toUpperCase()}
+                          <Zap size={11} /> {getBspDisplayName(meta.bsp)}
                         </span>
 
                         <span style={{ 
@@ -1352,6 +1690,318 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </table></MobileTableView>
           </div>
 
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* CUSTOM BSP MODAL / FORM DIALOG                          */}
+      {/* ======================================================== */}
+      {showCustomBspModal && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(3px)',
+            zIndex: 99999, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+          onClick={() => setShowCustomBspModal(false)}
+        >
+          <div 
+            style={{ 
+              backgroundColor: 'var(--bg-surface)', 
+              borderRadius: '12px', 
+              width: '100%', 
+              maxWidth: '680px', 
+              maxHeight: '90vh',
+              overflowY: 'auto', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid var(--border-light)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {customBspForm.id ? `Edit Custom BSP: ${customBspForm.name}` : 'Add New Custom WhatsApp BSP Gateway'}
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Self-serve webhook/API integration for Gupshup, Twilio, DoubleTick, Gallabox, etc.
+                  </span>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowCustomBspModal(false)} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.25rem', borderRadius: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.5rem' }}>
+              
+              {/* Presets Bar */}
+              <div style={{ marginBottom: '1.25rem', padding: '0.75rem', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Quick Fill Preset Templates:
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {[
+                    {
+                      label: 'Gupshup Enterprise',
+                      name: 'Gupshup',
+                      url: 'https://api.gupshup.io/wa/api/v1/msg',
+                      method: 'POST',
+                      authType: 'HeaderKey',
+                      headerName: 'apikey',
+                      payload: '{\n  "channel": "whatsapp",\n  "source": "917834811114",\n  "destination": "{{PHONE}}",\n  "message": "{\\"type\\":\\"text\\",\\"text\\":\\"{{MESSAGE}}\\"}"\n}'
+                    },
+                    {
+                      label: 'Twilio WhatsApp',
+                      name: 'Twilio',
+                      url: 'https://api.twilio.com/2010-04-01/Accounts/{ACCOUNT_SID}/Messages.json',
+                      method: 'POST',
+                      authType: 'Basic',
+                      headerName: 'Authorization',
+                      payload: '{\n  "To": "whatsapp:+{{PHONE}}",\n  "From": "whatsapp:+14155238886",\n  "Body": "{{MESSAGE}}"\n}'
+                    },
+                    {
+                      label: 'DoubleTick / Gallabox',
+                      name: 'DoubleTick',
+                      url: 'https://public-api.doubletick.io/v1/whatsapp/message/template',
+                      method: 'POST',
+                      authType: 'HeaderKey',
+                      headerName: 'key',
+                      payload: '{\n  "to": "+{{PHONE}}",\n  "template": {\n    "name": "{{TEMPLATE_NAME}}",\n    "components": [\n      {\n        "type": "body",\n        "parameters": [\n          { "type": "text", "text": "{{NAME}}" }\n        ]\n      }\n    ]\n  }\n}'
+                    },
+                    {
+                      label: 'Generic JSON Webhook',
+                      name: 'Custom BSP',
+                      url: 'https://api.yourprovider.com/v1/messages',
+                      method: 'POST',
+                      authType: 'Bearer',
+                      headerName: 'Authorization',
+                      payload: '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
+                    }
+                  ].map(preset => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        setCustomBspForm(prev => ({
+                          ...prev,
+                          name: prev.name || preset.name,
+                          endpoint_url: prev.endpoint_url || preset.url,
+                          method: preset.method,
+                          auth_type: preset.authType,
+                          auth_header_name: preset.headerName,
+                          payload_format: preset.payload
+                        }));
+                      }}
+                      style={{
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: 'var(--text-primary)'
+                      }}
+                    >
+                      ⚡ {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Form Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    BSP Display Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customBspForm.name}
+                    onChange={e => setCustomBspForm({ ...customBspForm, name: e.target.value })}
+                    placeholder="e.g. Gupshup, Twilio, DoubleTick"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    HTTP Method
+                  </label>
+                  <select
+                    value={customBspForm.method}
+                    onChange={e => setCustomBspForm({ ...customBspForm, method: e.target.value })}
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem', fontWeight: 600 }}
+                  >
+                    <option value="POST">POST (Standard for message dispatch)</option>
+                    <option value="PUT">PUT</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Endpoint URL */}
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                  API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={customBspForm.endpoint_url}
+                  onChange={e => setCustomBspForm({ ...customBspForm, endpoint_url: e.target.value })}
+                  placeholder="https://api.yourprovider.com/v1/messages"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontFamily: 'monospace', fontSize: '0.82rem' }}
+                />
+              </div>
+
+              {/* Auth Settings */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    Authentication Type
+                  </label>
+                  <select
+                    value={customBspForm.auth_type}
+                    onChange={e => setCustomBspForm({ ...customBspForm, auth_type: e.target.value })}
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem' }}
+                  >
+                    <option value="Bearer">Bearer Token (Authorization: Bearer ...)</option>
+                    <option value="HeaderKey">Custom Header Key (e.g. apikey / x-api-key)</option>
+                    <option value="Basic">Basic Auth (Authorization: Basic ...)</option>
+                    <option value="None">None / Included in Endpoint URL</option>
+                  </select>
+                </div>
+
+                {customBspForm.auth_type === 'HeaderKey' && (
+                  <div>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Auth Header Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customBspForm.auth_header_name}
+                      onChange={e => setCustomBspForm({ ...customBspForm, auth_header_name: e.target.value })}
+                      placeholder="e.g. apikey, x-api-key, key"
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {customBspForm.auth_type !== 'None' && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                      API Token / Secret Key <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowCustomToken(!showCustomToken)} 
+                      style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem' }}
+                    >
+                      {showCustomToken ? <EyeOff size={13} /> : <Eye size={13} />} {showCustomToken ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <input
+                    type={showCustomToken ? 'text' : 'password'}
+                    value={customBspForm.auth_token}
+                    onChange={e => setCustomBspForm({ ...customBspForm, auth_token: e.target.value })}
+                    placeholder="Enter API token or Secret Key"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontFamily: 'monospace', fontSize: '0.82rem' }}
+                  />
+                </div>
+              )}
+
+              {/* Payload Template Format */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                    Dynamic JSON Payload Format <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                    {['{{PHONE}}', '{{NAME}}', '{{TEMPLATE_NAME}}', '{{MESSAGE}}', '{{IMAGE_URL}}'].map(tag => (
+                      <span
+                        key={tag}
+                        style={{
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-primary)',
+                          fontSize: '0.72rem',
+                          fontFamily: 'monospace',
+                          color: '#2563eb'
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <textarea
+                  value={customBspForm.payload_format}
+                  onChange={e => setCustomBspForm({ ...customBspForm, payload_format: e.target.value })}
+                  rows={7}
+                  placeholder="Enter JSON payload template..."
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontFamily: 'monospace', fontSize: '0.8rem', lineHeight: '1.4' }}
+                />
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                  Variables <code>{'{{PHONE}}'}</code>, <code>{'{{NAME}}'}</code>, <code>{'{{TEMPLATE_NAME}}'}</code>, <code>{'{{MESSAGE}}'}</code>, <code>{'{{IMAGE_URL}}'}</code> will be safely substituted when sending messages.
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomBspModal(false)}
+                  style={{ padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500, fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomBsp}
+                  disabled={loading}
+                  style={{
+                    padding: '0.6rem 1.6rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: 'var(--accent-color, #2563eb)',
+                    color: 'white',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+                  }}
+                >
+                  <Save size={16} /> {loading ? 'Saving...' : 'Save & Activate BSP Gateway'}
+                </button>
+              </div>
+
+            </div>
+          </div>
         </div>
       )}
 

@@ -28,6 +28,8 @@ export async function getWhatsappSettings() {
     } catch (_e) {}
   }
 
+  const customBsps = Array.isArray(parsedConfig?.custom_bsps) ? parsedConfig.custom_bsps : [];
+
   // Normalize multi-provider structure while guaranteeing 100% backward compatibility
   let defaultEnabled = ['aisensy'];
   if (data.api_key_nstlp) defaultEnabled.push('nextel');
@@ -41,6 +43,7 @@ export async function getWhatsappSettings() {
     default_provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
     provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
     account_limit: parsedConfig?.account_limit || Math.max(1, defaultEnabled.length),
+    custom_bsps: customBsps,
     meta: {
       phone_number_id: parsedConfig?.meta?.phone_number_id || '',
       waba_id: parsedConfig?.meta?.waba_id || '',
@@ -85,6 +88,7 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
       default_provider: primaryDefault,
       provider: primaryDefault,
       account_limit: Number(payload.account_limit || enabledList.length || 1),
+      custom_bsps: Array.isArray(payload.custom_bsps) ? payload.custom_bsps : [],
       meta: payload.meta || {},
       aisensy: payload.aisensy || {},
       interakt: payload.interakt || {},
@@ -180,6 +184,58 @@ export async function testWhatsappProviderConnection({ provider, config, testPho
       const endpoint = config?.nextel?.endpoint_url;
       if (!endpoint) return { success: false, error: 'Nextel Endpoint URL is required.' };
       return { success: true, message: 'Nextel Endpoint session URL verified ready.' };
+    } else {
+      // Check if it's a dynamic custom BSP
+      const customBsp = (config?.custom_bsps || []).find(b => b.id === provider || b.name?.toLowerCase() === provider?.toLowerCase());
+      if (customBsp) {
+        if (!customBsp.endpoint_url) {
+          return { success: false, error: `${customBsp.name || 'Custom BSP'} endpoint URL is required.` };
+        }
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (customBsp.auth_type === 'Bearer' && customBsp.auth_token) {
+          headers['Authorization'] = `Bearer ${customBsp.auth_token.trim()}`;
+        } else if (customBsp.auth_type === 'HeaderKey' && customBsp.auth_token) {
+          headers[customBsp.auth_header_name?.trim() || 'X-API-KEY'] = customBsp.auth_token.trim();
+        } else if (customBsp.auth_type === 'Basic' && customBsp.auth_token) {
+          headers['Authorization'] = `Basic ${customBsp.auth_token.trim()}`;
+        }
+
+        const renderedPayload = (customBsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
+          .replace(/\{\{PHONE\}\}/g, phoneStr)
+          .replace(/\{\{NAME\}\}/g, 'Test Customer')
+          .replace(/\{\{TEMPLATE_NAME\}\}/g, 'test_template')
+          .replace(/\{\{MESSAGE\}\}/g, 'CRM Connection Test')
+          .replace(/\{\{IMAGE_URL\}\}/g, '');
+
+        try {
+          JSON.parse(renderedPayload);
+        } catch (err) {
+          return { success: false, error: `Invalid JSON payload template format: ${err.message}` };
+        }
+
+        const testRes = await fetch(customBsp.endpoint_url, {
+          method: customBsp.method || 'POST',
+          headers,
+          body: renderedPayload
+        });
+
+        const resText = await testRes.text();
+        let resData = null;
+        try { resData = JSON.parse(resText); } catch (_) {}
+
+        if (!testRes.ok) {
+          return { 
+            success: false, 
+            error: `${customBsp.name} returned HTTP ${testRes.status}: ${resData?.message || resData?.error || resText.substring(0, 150) || 'Request failed'}` 
+          };
+        }
+
+        return { 
+          success: true, 
+          message: `${customBsp.name} connection test call succeeded (HTTP ${testRes.status})! Response: ${resData?.message || resData?.status || 'OK'}` 
+        };
+      }
     }
     return { success: false, error: 'Unknown provider selected.' };
   } catch (err) {
@@ -319,6 +375,7 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         // =========================================================================
         // HYBRID PROVIDER ROUTING: OPTION A (Template) -> OPTION B (Company) -> OPTION C (Default)
         // =========================================================================
+        const customBsps = Array.isArray(parsedProviderConfig?.custom_bsps) ? parsedProviderConfig.custom_bsps : [];
         let activeProvider = null;
 
         // OPTION A: Template-Level Specific Provider Selection
@@ -328,6 +385,13 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         else if (tplTarget.includes('meta')) activeProvider = 'meta';
         else if (tplTarget.includes('wati')) activeProvider = 'wati';
         else if (tplTarget.includes('nextel')) activeProvider = 'nextel';
+        else {
+          const matchedCustom = customBsps.find(b => 
+            tplTarget.includes(b.id?.toLowerCase()) || 
+            (b.name && tplTarget.includes(b.name.toLowerCase()))
+          );
+          if (matchedCustom) activeProvider = matchedCustom.id;
+        }
 
         // OPTION B: Company/Brand Routing (NSMLR -> AiSensy, NSTLP -> Nextel)
         if (!activeProvider) {
@@ -345,6 +409,8 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
                            (Array.isArray(parsedProviderConfig?.enabled_providers) ? parsedProviderConfig.enabled_providers[0] : null) || 
                            (settings.api_key_nstlp ? 'nextel' : 'aisensy');
         }
+
+        const matchedCustomBsp = customBsps.find(b => b.id === activeProvider || (b.name && b.name.toLowerCase() === String(activeProvider).toLowerCase()));
 
         if (activeProvider === 'meta') {
           // =======================
@@ -502,6 +568,54 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           const responseData = await response.json();
           if (!response.ok || responseData.status === 'error') {
              throw new Error((responseData.message || responseData.error || "Failed to send to " + phoneStr));
+          }
+
+        } else if (matchedCustomBsp) {
+          // =======================
+          // DYNAMIC CUSTOM BSP INTEGRATION
+          // =======================
+          if (!matchedCustomBsp.endpoint_url) {
+            throw new Error(`Custom BSP "${matchedCustomBsp.name}" endpoint URL is not configured`);
+          }
+
+          const headers = { 'Content-Type': 'application/json' };
+          if (matchedCustomBsp.auth_type === 'Bearer' && matchedCustomBsp.auth_token) {
+            headers['Authorization'] = `Bearer ${matchedCustomBsp.auth_token.trim()}`;
+          } else if (matchedCustomBsp.auth_type === 'HeaderKey' && matchedCustomBsp.auth_token) {
+            headers[matchedCustomBsp.auth_header_name?.trim() || 'X-API-KEY'] = matchedCustomBsp.auth_token.trim();
+          } else if (matchedCustomBsp.auth_type === 'Basic' && matchedCustomBsp.auth_token) {
+            headers['Authorization'] = `Basic ${matchedCustomBsp.auth_token.trim()}`;
+          }
+
+          const custName = lead.name || lead.company || lead.business_type || "Customer";
+          const tplName = template.campaign_name || template.template_name || "";
+          const msgBody = template.message_body || "";
+          const imgUrl = template.image_url || "";
+
+          const cleanName = JSON.stringify(custName).slice(1, -1);
+          const cleanTplName = JSON.stringify(tplName).slice(1, -1);
+          const cleanMsg = JSON.stringify(msgBody).slice(1, -1);
+          const cleanImg = JSON.stringify(imgUrl).slice(1, -1);
+
+          const renderedPayload = (matchedCustomBsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
+            .replace(/\{\{PHONE\}\}/g, phoneStr)
+            .replace(/\{\{NAME\}\}/g, cleanName)
+            .replace(/\{\{TEMPLATE_NAME\}\}/g, cleanTplName)
+            .replace(/\{\{MESSAGE\}\}/g, cleanMsg)
+            .replace(/\{\{IMAGE_URL\}\}/g, cleanImg);
+
+          const response = await fetch(matchedCustomBsp.endpoint_url, {
+            method: matchedCustomBsp.method || 'POST',
+            headers,
+            body: renderedPayload
+          });
+
+          const responseText = await response.text();
+          let responseData = null;
+          try { responseData = JSON.parse(responseText); } catch (_) {}
+
+          if (!response.ok) {
+            throw new Error(responseData?.message || responseData?.error || responseText.substring(0, 160) || `Custom BSP HTTP Error ${response.status}`);
           }
 
         } else {
