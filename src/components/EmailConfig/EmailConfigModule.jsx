@@ -135,6 +135,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   });
   const [smtpAccounts, setSmtpAccounts] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [modalBranches, setModalBranches] = useState([]);
+  const [loadingModalBranches, setLoadingModalBranches] = useState(false);
   const [showSmtpModal, setShowSmtpModal] = useState(false);
   const [editingSmtp, setEditingSmtp] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -318,9 +320,9 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   };
 
   // --- SMTP Server Accounts Handlers ---
-  const handleOpenAddSmtp = () => {
+  const handleOpenAddSmtp = async () => {
     const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
-    const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+    const isHqTarget = !targetTenant || targetTenant.name === 'SuPuja Creations' || targetTenant.tenant_code === 'SUPUJA_CREATIONS' || targetTenant.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
     const currentLimit = targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : (smtpLimit || 1));
 
     if (!isUnlimitedQuota && !(isMasterAdmin && isHqTarget) && smtpAccounts.length >= currentLimit) {
@@ -332,6 +334,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setModalQuotaInput(targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : 1));
 
     const activeCompName = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+
+    try {
+      const bRes = await getTenantBranches(targetTenant ? (targetTenant.name || targetTenant.id) : activeCompName);
+      if (bRes.success && Array.isArray(bRes.branches)) {
+        setModalBranches(bRes.branches);
+      } else {
+        setModalBranches(branches);
+      }
+    } catch {
+      setModalBranches(branches);
+    }
 
     setEditingSmtp({
       id: '',
@@ -354,11 +367,24 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setShowSmtpModal(true);
   };
 
-  const handleOpenEditSmtp = (acc) => {
+  const handleOpenEditSmtp = async (acc) => {
     const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
-    const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+    const isHqTarget = !targetTenant || targetTenant.name === 'SuPuja Creations' || targetTenant.tenant_code === 'SUPUJA_CREATIONS' || targetTenant.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
     setModalTenantId(selectedTenantId || '');
     setModalQuotaInput(targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : (smtpLimit || 1)));
+
+    const activeCompName = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+    try {
+      const bRes = await getTenantBranches(targetTenant ? (targetTenant.name || targetTenant.id) : activeCompName);
+      if (bRes.success && Array.isArray(bRes.branches)) {
+        setModalBranches(bRes.branches);
+      } else {
+        setModalBranches(branches);
+      }
+    } catch {
+      setModalBranches(branches);
+    }
+
     setEditingSmtp({ ...acc });
     setShowPassword(false);
     setShowSmtpModal(true);
@@ -414,7 +440,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     try {
       const targetTenant = tenantsList.find(t => t.id === (isMasterAdmin ? modalTenantId : selectedTenantId)) || (selectedTenantId ? tenantsList.find(t => t.id === selectedTenantId) : null);
       const targetComp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
-      const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+      const isHqTarget = !targetTenant || targetTenant.name === 'SuPuja Creations' || targetTenant.tenant_code === 'SUPUJA_CREATIONS' || targetTenant.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
 
       // If Master Admin updated quota inside modal for a client tenant
       if (isMasterAdmin && targetTenant && !isHqTarget && modalQuotaInput && modalQuotaInput !== targetTenant.smtp_accounts_limit) {
@@ -427,6 +453,9 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
         setShowSmtpModal(false);
         setEditingSmtp(null);
         if (isMasterAdmin) {
+          if (targetTenant?.id) {
+            setSelectedTenantId(targetTenant.id);
+          }
           const tRes = await getAllTenantsWithSubscriptions().catch(() => ({ success: false, tenants: [] }));
           if (tRes.success && Array.isArray(tRes.tenants)) {
             setTenantsList(tRes.tenants);
@@ -2412,14 +2441,41 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     </label>
                     <select
                       value={modalTenantId}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const tid = e.target.value;
                         setModalTenantId(tid);
                         const found = tenantsList.find(t => t.id === tid);
-                        if (found) {
-                          setModalQuotaInput(found.smtp_accounts_limit || 1);
-                        } else {
-                          setModalQuotaInput(999);
+                        setLoadingModalBranches(true);
+                        try {
+                          if (found) {
+                            setModalQuotaInput(found.smtp_accounts_limit || 1);
+                            const clientName = found.name || found.tenant_code;
+                            const bRes = await getTenantBranches(found.id || clientName);
+                            if (bRes.success && Array.isArray(bRes.branches)) {
+                              setModalBranches(bRes.branches);
+                            }
+                            setEditingSmtp(prev => ({
+                              ...prev,
+                              branch: 'All Branches',
+                              from_name: (!prev?.from_name || prev?.from_name.endsWith('Team')) ? `${clientName} Team` : prev?.from_name
+                            }));
+                          } else {
+                            setModalQuotaInput(999);
+                            const hqName = userCompany || 'SuPuja Creations';
+                            const bRes = await getTenantBranches(hqName);
+                            if (bRes.success && Array.isArray(bRes.branches)) {
+                              setModalBranches(bRes.branches);
+                            }
+                            setEditingSmtp(prev => ({
+                              ...prev,
+                              branch: 'All Branches',
+                              from_name: (!prev?.from_name || prev?.from_name.endsWith('Team')) ? `${hqName} Team` : prev?.from_name
+                            }));
+                          }
+                        } catch (err) {
+                          console.error('Error switching branches in modal:', err);
+                        } finally {
+                          setLoadingModalBranches(false);
                         }
                       }}
                       style={{
@@ -2698,14 +2754,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 <select
                   value={editingSmtp.branch || 'All Branches'}
                   onChange={(e) => setEditingSmtp({ ...editingSmtp, branch: e.target.value })}
+                  disabled={loadingModalBranches}
                   style={{ width: '100%', padding: '0.55rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: 'var(--bg-surface)' }}
                 >
                   <option value="All Branches">🌐 All Branches (Global)</option>
-                  {(branches || []).filter(b => b.branch_name).map(b => (
-                    <option key={b.id || b.branch_name} value={b.branch_name}>
-                      🏢 {b.branch_name}
-                    </option>
-                  ))}
+                  {((modalBranches && modalBranches.length > 0) ? modalBranches : branches)
+                    .filter(b => b.branch_name)
+                    .map(b => (
+                      <option key={b.id || b.branch_name} value={b.branch_name}>
+                        🏢 {b.branch_name}
+                      </option>
+                    ))}
                 </select>
               </div>
 
