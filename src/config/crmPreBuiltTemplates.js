@@ -7,8 +7,221 @@
 
 export const PREBUILT_EMAIL_TEMPLATES = [
   // =========================================================================
-  // 1. SALES & MARKETING PIPELINE (10 VISUAL DRAG & DROP TEMPLATES)
+  // 1. SALES & MARKETING PIPELINE (VISUAL DRAG & DROP TEMPLATES)
   // =========================================================================
+  {
+    id: 'tpl_mkt_swan_agro_crop_implements',
+    category: 'Sales Pipeline',
+    template_name: 'MKT-00: Swan Agro - End-to-End Crop Management Implements Showcase',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: 'Swan Agro: End-to-End Crop Management Implements - {{company}}',
+    badge_text: '🚜 Swan Agro Flagship Implements',
+    hero_headline: 'End-to-End Crop Management Implements',
+    hero_subheading: 'Heavy-Duty Farming Equipment Engineered for Maximum Yield & Durability',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Discover our comprehensive range of agricultural implements engineered for modern farming excellence.',
+    blocks: [
+      {
+        id: 'blk_swan_hdr',
+        type: 'header',
+        title: 'SWAN AGRO (A UNIT OF NEW SWAN GROUP)',
+        subtitle: 'End-to-End Crop Management Implements & Global Dealership Network',
+        logoUrl: '',
+        logoWidth: 160,
+        bgColor: '#0b1e3b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_swan_banner',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=900&auto=format&fit=crop&q=80',
+        width: 100,
+        maxWidth: 580,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'One Step Solution For All Kind Of Farming Implements',
+        linkUrl: 'https://newswangroup.com',
+        caption: 'ONE STEP SOLUTION FOR ALL KIND OF FARMING IMPLEMENTS • TILLAGE | SEEDING | CROP PROTECTION | HARVESTING'
+      },
+      {
+        id: 'blk_swan_intro',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Empowering Farming Operations at {{company}}',
+        body: 'Dear {{name}},\n\nSwan Agro brings decades of industrial engineering and manufacturing excellence to the agricultural implement sector. From primary tillage to post-harvest residue management, our equipment is built with Italian boron steel components, heavy-duty gearboxes, and precision laser alignment.\n\nKey Highlights for {{company}}:\n• Full-range compatibility with 25 HP to 120 HP tractors\n• Reduced fuel consumption per acre with low-vibration rotor technology\n• Factory warranty, fast-track spare parts dispatch, and technician training',
+        fontSize: 15,
+        color: '#1e293b',
+        align: 'left'
+      },
+      {
+        id: 'blk_swan_badges',
+        type: 'badge_pills',
+        align: 'center',
+        pills: [
+          { text: 'In-stock ready', bg: '#dcfce7', color: '#166534' },
+          { text: 'Fast-dispatch', bg: '#fee2e2', color: '#991b1b' },
+          { text: 'Heavy Duty Tested', bg: '#f1f5f9', color: '#334155' },
+          { text: '1 Year Warranty', bg: '#dbeafe', color: '#1e40af' }
+        ]
+      },
+      {
+        id: 'blk_swan_dual_cta',
+        type: 'dual_buttons',
+        align: 'center',
+        btn1Text: 'Apply for Dealership & Partnership →',
+        btn1Url: 'https://newswangroup.com',
+        btn1Bg: '#f59e0b',
+        btn1Color: '#ffffff',
+        btn2Text: 'Download Full Product Catalogue (PDF) →',
+        btn2Url: 'https://newswangroup.com/catalog.pdf',
+        btn2Bg: '#0b1e3b',
+        btn2Color: '#ffffff'
+      },
+      {
+        id: 'blk_swan_why_cols',
+        type: 'columns',
+        col1Title: '⚙️ Boron Steel Tines & Heavy Gearbox',
+        col1Text: 'Forged from high-grade European boron steel with induction hardening for 3x longer life in abrasive and rocky soil conditions.',
+        col1Img: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=400&auto=format&fit=crop&q=80',
+        col2Title: '🌍 Global Export Network (20+ Countries)',
+        col2Text: 'Proven performance in Southeast Asia, Africa, and the Middle East with comprehensive export logistics and dealer support.',
+        col2Img: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=400&auto=format&fit=crop&q=80'
+      },
+      {
+        id: 'blk_prod_rotavator',
+        type: 'product_item',
+        title: 'STANDARD SERIES ROTAVATOR',
+        desc: 'Soil Health: Improved soil structure, root aeration, and moisture retention. Perfect clod breaking in single pass.',
+        imgUrl: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_puddler',
+        type: 'product_item',
+        title: 'ROTO PUDDLER',
+        desc: 'One-Step: Combines a rotary tiller and a puddler in a single pass for optimal wetland preparation and rice paddies.',
+        imgUrl: 'https://images.unsplash.com/photo-1589923188900-85dae523342b?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_super_seeder',
+        type: 'product_item',
+        title: 'SUPER SEEDER',
+        desc: 'Single-Pass: Combines tilling, sowing, and mulching in one go. Directly handles paddy stubble without burning.',
+        imgUrl: 'https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_zero_till',
+        type: 'product_item',
+        title: 'ZERO TILL SEED DRILL',
+        desc: 'Tillage: Allows direct planting into untilled soil, eliminating plowing and conserving soil moisture & diesel.',
+        imgUrl: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_mini_rotavator',
+        type: 'product_item',
+        title: 'MINI SERIES ROTAVATOR',
+        desc: 'Orchard Prep: Breaks clods, combines multi-pass tillage tasks in one pass. Ideal for vineyards, orchards, and narrow rows.',
+        imgUrl: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_mulcher',
+        type: 'product_item',
+        title: 'MULCHER',
+        desc: 'Soil Health: Chops/shreds residual crop residue into organic matter, enriching soil nutrients naturally.',
+        imgUrl: 'https://images.unsplash.com/photo-1530507629858-e4977d30e9e0?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_potato_digger',
+        type: 'product_item',
+        title: 'POTATO DIGGER',
+        desc: 'Efficient: Expeditious harvesting and easy use for customers with minimal tuber damage and high recovery rate.',
+        imgUrl: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_potato_planter',
+        type: 'product_item',
+        title: 'NEW GENERATION POTATO PLANTER',
+        desc: 'Efficiency: Increases efficiency, precision planting, uniform seed spacing, and drastically reduces labor costs.',
+        imgUrl: 'https://images.unsplash.com/photo-1586771107445-d3ca888129ff?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_inter_row_weeder',
+        type: 'product_item',
+        title: 'INTER ROW WEEDER',
+        desc: 'Weed Control: Effectively removes weeds between crop rows while preserving root zone integrity.',
+        imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_straw_reaper',
+        type: 'product_item',
+        title: 'STRAW REAPER',
+        desc: 'Function: Cuts, threshes, and cleans straw in a single operation, producing high quality livestock fodder.',
+        imgUrl: 'https://images.unsplash.com/photo-1500651230702-0e2d8a49d4ad?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_laser_leveller',
+        type: 'product_item',
+        title: 'LASER LAND LEVELLER',
+        desc: 'Goal: Increases crop yield and precision water conservation by up to 35% with computerized laser guidance.',
+        imgUrl: 'https://images.unsplash.com/photo-1523741543316-beb7fc7023d8?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_prod_reverse_forward',
+        type: 'product_item',
+        title: 'REVERSE FORWARD',
+        desc: 'Tilling: Tills both forward and backwards for deep soil penetration and elimination of hard soil pans.',
+        imgUrl: 'https://images.unsplash.com/photo-1605000797499-95a51c5269ae?w=300&auto=format&fit=crop&q=80',
+        bgColor: '#0b1e3b',
+        titleColor: '#fbbf24',
+        textColor: '#f1f5f9'
+      },
+      {
+        id: 'blk_swan_footer',
+        type: 'footer',
+        company: 'Swan Agro (A Unit of New Swan Multitech Ltd.)',
+        branch: 'Ludhiana, Punjab',
+        address: 'C-210, Focal Point, Phase VII, Ludhiana, Punjab - 141010, India | sales@newswangroup.com | +91 161 5100000',
+        copyright: '© 2026 Swan Agro. All rights reserved.',
+        unsubscribeText: 'You received this catalog showcase because your enterprise is a recognized agricultural partner.'
+      }
+    ]
+  },
   {
     id: 'tpl_mkt_01_enterprise_showcase',
     category: 'Sales Pipeline',

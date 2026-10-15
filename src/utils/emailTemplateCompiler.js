@@ -307,6 +307,88 @@ export function compileBlocksToHtml(blocks = [], {
         </div>`;
       }
 
+      case 'product_item': {
+        const title = replaceTags(block.title || '');
+        const desc = replaceTags(block.desc || '');
+        const imgUrl = block.imgUrl || '';
+        const bgColor = block.bgColor || '#0b1e3b';
+        const titleColor = block.titleColor || '#fbbf24';
+        const textColor = block.textColor || '#f1f5f9';
+        const borderBottom = block.borderBottom !== false ? '1px solid rgba(255,255,255,0.08)' : 'none';
+
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="${bgColor}" style="background-color: ${bgColor}; border-bottom: ${borderBottom};">
+          <tr>
+            <td width="36%" align="center" valign="middle" style="padding: 14px 10px 14px 18px;">
+              ${imgUrl ? `
+              <div style="width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle, #ffffff 60%, #cbd5e1 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.3); margin: 0 auto; overflow: hidden; padding: 8px; box-sizing: border-box;">
+                <img src="${imgUrl}" alt="${title}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;" />
+              </div>` : `
+              <div style="width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle, #ffffff 60%, #cbd5e1 100%); display: flex; align-items: center; justify-content: center; font-size: 34px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+                🚜
+              </div>`}
+            </td>
+            <td width="64%" valign="middle" style="padding: 14px 20px 14px 10px;">
+              <h3 style="margin: 0 0 6px 0; color: ${titleColor}; font-size: 14px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.35; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                ${title}
+              </h3>
+              <p style="margin: 0; color: ${textColor}; font-size: 12.5px; line-height: 1.45; opacity: 0.95;">
+                ${desc}
+              </p>
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'badge_pills': {
+        const align = block.align || 'center';
+        const pills = Array.isArray(block.pills) ? block.pills : [
+          { text: 'In-stock ready', bg: '#dcfce7', color: '#166534' },
+          { text: 'Fast-dispatch', bg: '#fee2e2', color: '#991b1b' },
+          { text: 'Heavy Duty Tested', bg: '#f1f5f9', color: '#334155' },
+          { text: '1 Year Warranty', bg: '#dbeafe', color: '#1e40af' }
+        ];
+
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 14px 0;">
+          <tr>
+            <td align="${align}" style="padding: 0 24px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: ${align === 'left' ? 'flex-start' : (align === 'right' ? 'flex-end' : 'center')};">
+                ${pills.map(p => `
+                <span style="display: inline-block; padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; background-color: ${p.bg || '#f1f5f9'}; color: ${p.color || '#334155'}; border: 1px solid rgba(0,0,0,0.06); text-transform: uppercase; letter-spacing: 0.3px; margin: 3px;">
+                  ${replaceTags(p.text || '')}
+                </span>`).join('')}
+              </div>
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'dual_buttons': {
+        const align = block.align || 'center';
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 18px 0;">
+          <tr>
+            <td align="${align}" style="padding: 0 24px;">
+              <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td align="center" style="padding-right: 8px;">
+                    <a href="${wrapClick(block.btn1Url || '#')}" target="_blank" style="background-color: ${block.btn1Bg || '#f59e0b'}; color: ${block.btn1Color || '#ffffff'}; padding: 12px 24px; border-radius: 6px; font-size: 13.5px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+                      ${replaceTags(block.btn1Text || 'Apply for Partnership')}
+                    </a>
+                  </td>
+                  <td align="center" style="padding-left: 8px;">
+                    <a href="${wrapClick(block.btn2Url || '#')}" target="_blank" style="background-color: ${block.btn2Bg || '#0f2748'}; color: ${block.btn2Color || '#ffffff'}; padding: 12px 24px; border-radius: 6px; font-size: 13.5px; font-weight: 700; text-decoration: none; display: inline-block; border: 1px solid rgba(255,255,255,0.15);">
+                      ${replaceTags(block.btn2Text || 'View Catalog (PDF)')}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+      }
+
       case 'divider': {
         const gap = Math.round((block.gap || 20) / 2);
         return `

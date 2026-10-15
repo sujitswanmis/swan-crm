@@ -5,7 +5,7 @@ import {
   MoveUp, MoveDown, Copy, Trash2, Plus, Image as ImageIcon, 
   Type, MousePointer, Tag, Columns, Calendar, Minus, 
   Share2, Building2, AlignLeft, AlignCenter, AlignRight, 
-  Sliders, Link, Sparkles, Check, RefreshCw, Eye
+  Sliders, Link, Sparkles, Check, RefreshCw, Eye, Package
 } from 'lucide-react';
 
 export const DEFAULT_DRAG_DROP_BLOCKS = [
@@ -89,6 +89,9 @@ export const DEFAULT_DRAG_DROP_BLOCKS = [
 ];
 
 export const BLOCK_PALETTE = [
+  { type: 'product_item', label: 'Product Implement', icon: Package, desc: 'Circular pedestal disc, gold title & description' },
+  { type: 'badge_pills', label: 'Status Badges', icon: Sparkles, desc: 'Row of colored pill badges' },
+  { type: 'dual_buttons', label: 'Dual Action Buttons', icon: MousePointer, desc: 'Side-by-side gold & navy action buttons' },
   { type: 'image', label: 'Image (Resizable)', icon: ImageIcon, desc: 'Image with width slider, alignment & link' },
   { type: 'text', label: 'Rich Text / Heading', icon: Type, desc: 'Paragraphs, H1-H3 headings & tags' },
   { type: 'button', label: 'CTA Button', icon: MousePointer, desc: 'Clickable button with tracking' },
@@ -137,6 +140,43 @@ export default function EmailDragDropBuilder({
     let newBlock = { id: newId, type };
 
     switch (type) {
+      case 'product_item':
+        newBlock = {
+          ...newBlock,
+          title: 'STANDARD SERIES ROTAVATOR',
+          desc: 'Soil Health: Improved soil structure, root aeration, and aeration.',
+          imgUrl: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=300&auto=format&fit=crop&q=80',
+          bgColor: '#0b1e3b',
+          titleColor: '#fbbf24',
+          textColor: '#f1f5f9'
+        };
+        break;
+      case 'badge_pills':
+        newBlock = {
+          ...newBlock,
+          align: 'center',
+          pills: [
+            { text: 'In-stock ready', bg: '#dcfce7', color: '#166534' },
+            { text: 'Fast-dispatch', bg: '#fee2e2', color: '#991b1b' },
+            { text: 'Heavy Duty Tested', bg: '#f1f5f9', color: '#334155' },
+            { text: '1 Year Warranty', bg: '#dbeafe', color: '#1e40af' }
+          ]
+        };
+        break;
+      case 'dual_buttons':
+        newBlock = {
+          ...newBlock,
+          btn1Text: 'Apply for Partnership',
+          btn1Url: 'https://newswangroup.com',
+          btn1Bg: '#f59e0b',
+          btn1Color: '#ffffff',
+          btn2Text: 'Download Full Product Catalogue (PDF)',
+          btn2Url: 'https://newswangroup.com/catalog.pdf',
+          btn2Bg: '#0f2748',
+          btn2Color: '#ffffff',
+          align: 'center'
+        };
+        break;
       case 'image':
         newBlock = {
           ...newBlock,
@@ -548,6 +588,85 @@ export default function EmailDragDropBuilder({
 
                   {/* BLOCK RENDERING */}
                   
+                  {/* Product Implement Block */}
+                  {block.type === 'product_item' && (
+                    <div style={{
+                      backgroundColor: block.bgColor || '#0b1e3b',
+                      padding: '16px 20px',
+                      borderBottom: '1px solid rgba(255,255,255,0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '16px'
+                    }}>
+                      <div style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        background: 'radial-gradient(circle, #ffffff 60%, #cbd5e1 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+                        flexShrink: 0,
+                        overflow: 'hidden',
+                        padding: '6px'
+                      }}>
+                        {block.imgUrl ? (
+                          <img src={block.imgUrl} alt={block.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          <span style={{ fontSize: '28px' }}>🚜</span>
+                        )}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          color: block.titleColor || '#fbbf24',
+                          fontSize: '0.92rem',
+                          fontWeight: 800,
+                          letterSpacing: '0.5px',
+                          textTransform: 'uppercase',
+                          marginBottom: '4px'
+                        }}>
+                          {block.title || 'Product Implement Title'}
+                        </div>
+                        <div style={{
+                          color: block.textColor || '#f1f5f9',
+                          fontSize: '0.78rem',
+                          lineHeight: 1.45,
+                          opacity: 0.95
+                        }}>
+                          {block.desc || 'Product description and operational specifications.'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status Badges Block */}
+                  {block.type === 'badge_pills' && (
+                    <div style={{ padding: '12px 20px', textAlign: block.align || 'center' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: block.align === 'left' ? 'flex-start' : (block.align === 'right' ? 'flex-end' : 'center') }}>
+                        {(block.pills || [
+                          { text: 'In-stock ready', bg: '#dcfce7', color: '#166534' },
+                          { text: 'Fast-dispatch', bg: '#fee2e2', color: '#991b1b' },
+                          { text: 'Heavy Duty Tested', bg: '#f1f5f9', color: '#334155' },
+                          { text: '1 Year Warranty', bg: '#dbeafe', color: '#1e40af' }
+                        ]).map((p, idx) => (
+                          <span key={idx} style={{
+                            padding: '4px 12px',
+                            borderRadius: '16px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            backgroundColor: p.bg || '#f1f5f9',
+                            color: p.color || '#334155',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            textTransform: 'uppercase'
+                          }}>
+                            {p.text}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* 1. Header Block */}
                   {block.type === 'header' && (
                     <div style={{
@@ -639,6 +758,36 @@ export default function EmailDragDropBuilder({
                       }}>
                         {block.text || 'Action Button'}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Dual Action Buttons */}
+                  {block.type === 'dual_buttons' && (
+                    <div style={{ padding: '14px 20px', textAlign: block.align || 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <span style={{
+                          backgroundColor: block.btn1Bg || '#f59e0b',
+                          color: block.btn1Color || '#ffffff',
+                          padding: '10px 18px',
+                          borderRadius: '6px',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                        }}>
+                          {block.btn1Text || 'Apply for Partnership'}
+                        </span>
+                        <span style={{
+                          backgroundColor: block.btn2Bg || '#0f2748',
+                          color: block.btn2Color || '#ffffff',
+                          padding: '10px 18px',
+                          borderRadius: '6px',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                          {block.btn2Text || 'View Catalog (PDF)'}
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -1479,6 +1628,151 @@ export default function EmailDragDropBuilder({
                       value={selectedBlock.gap || 20}
                       onChange={(e) => updateBlockProp('gap', Number(e.target.value))}
                       style={{ width: '100%', accentColor: '#6366f1' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* J. PRODUCT IMPLEMENT BLOCK INSPECTOR */}
+              {selectedBlock.type === 'product_item' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.2rem' }}>Product / Implement Title *</label>
+                    <input
+                      type="text"
+                      value={selectedBlock.title || ''}
+                      onChange={(e) => updateBlockProp('title', e.target.value)}
+                      placeholder="e.g. STANDARD SERIES ROTAVATOR"
+                      style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.2rem' }}>Product Description / Spec *</label>
+                    <textarea
+                      rows={3}
+                      value={selectedBlock.desc || ''}
+                      onChange={(e) => updateBlockProp('desc', e.target.value)}
+                      placeholder="Soil Health: Improved soil structure, root aeration..."
+                      style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', lineHeight: 1.4 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.2rem' }}>Implement Image URL</label>
+                    <input
+                      type="text"
+                      value={selectedBlock.imgUrl || ''}
+                      onChange={(e) => updateBlockProp('imgUrl', e.target.value)}
+                      placeholder="https://images.unsplash.com/..."
+                      style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }}
+                    />
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                      Renders inside a circular 3D disc pedestal.
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.2rem' }}>Title Color</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <input
+                          type="color"
+                          value={selectedBlock.titleColor || '#fbbf24'}
+                          onChange={(e) => updateBlockProp('titleColor', e.target.value)}
+                          style={{ width: '28px', height: '28px', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                        />
+                        <span style={{ fontSize: '0.72rem', fontFamily: 'monospace' }}>{selectedBlock.titleColor || '#fbbf24'}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.2rem' }}>Background Color</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <input
+                          type="color"
+                          value={selectedBlock.bgColor || '#0b1e3b'}
+                          onChange={(e) => updateBlockProp('bgColor', e.target.value)}
+                          style={{ width: '28px', height: '28px', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                        />
+                        <span style={{ fontSize: '0.72rem', fontFamily: 'monospace' }}>{selectedBlock.bgColor || '#0b1e3b'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* K. BADGE PILLS INSPECTOR */}
+              {selectedBlock.type === 'badge_pills' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.2rem' }}>Alignment</label>
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      {['left', 'center', 'right'].map(al => (
+                        <button
+                          key={al}
+                          type="button"
+                          onClick={() => updateBlockProp('align', al)}
+                          style={{
+                            flex: 1,
+                            padding: '0.3rem',
+                            borderRadius: '4px',
+                            border: (selectedBlock.align || 'center') === al ? '1.5px solid #6366f1' : '1px solid #cbd5e1',
+                            background: (selectedBlock.align || 'center') === al ? '#6366f1' : '#fff',
+                            color: (selectedBlock.align || 'center') === al ? '#fff' : '#1e293b',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            textTransform: 'capitalize',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {al}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', padding: '0.5rem', background: '#f8fafc', borderRadius: '6px' }}>
+                    Displays 4 colored quality badges: In-stock ready, Fast-dispatch, Heavy Duty Tested, 1 Year Warranty.
+                  </div>
+                </div>
+              )}
+
+              {/* L. DUAL ACTION BUTTONS INSPECTOR */}
+              {selectedBlock.type === 'dual_buttons' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ padding: '0.55rem', borderRadius: '6px', background: '#fffbeb', border: '1px solid #fde68a' }}>
+                    <strong style={{ fontSize: '0.78rem', color: '#92400e', display: 'block', marginBottom: '0.3rem' }}>Primary Button (Gold)</strong>
+                    <input
+                      type="text"
+                      value={selectedBlock.btn1Text || ''}
+                      onChange={(e) => updateBlockProp('btn1Text', e.target.value)}
+                      placeholder="Button 1 Label"
+                      style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.78rem', marginBottom: '4px' }}
+                    />
+                    <input
+                      type="text"
+                      value={selectedBlock.btn1Url || ''}
+                      onChange={(e) => updateBlockProp('btn1Url', e.target.value)}
+                      placeholder="Button 1 Link URL"
+                      style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.78rem' }}
+                    />
+                  </div>
+
+                  <div style={{ padding: '0.55rem', borderRadius: '6px', background: '#f0f9ff', border: '1px solid #bae6fd' }}>
+                    <strong style={{ fontSize: '0.78rem', color: '#0369a1', display: 'block', marginBottom: '0.3rem' }}>Secondary Button (Navy)</strong>
+                    <input
+                      type="text"
+                      value={selectedBlock.btn2Text || ''}
+                      onChange={(e) => updateBlockProp('btn2Text', e.target.value)}
+                      placeholder="Button 2 Label"
+                      style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.78rem', marginBottom: '4px' }}
+                    />
+                    <input
+                      type="text"
+                      value={selectedBlock.btn2Url || ''}
+                      onChange={(e) => updateBlockProp('btn2Url', e.target.value)}
+                      placeholder="Button 2 Link URL"
+                      style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.78rem' }}
                     />
                   </div>
                 </div>
