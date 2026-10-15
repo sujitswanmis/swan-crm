@@ -7,7 +7,7 @@ import {
   RefreshCw, Shield, Key, Eye, EyeOff, Server, Play, Clock, 
   Sparkles, Briefcase, Database, Tag, Copy, Check, ChevronRight, X,
   LayoutGrid, List, ChevronLeft, ChevronsLeft, ChevronsRight, CheckSquare, Square,
-  Search, Star, Building2, Smartphone, Monitor, MousePointer, Activity, MapPin
+  Search, Star, Building2, Smartphone, Monitor, MousePointer, Activity, MapPin, Sliders
 } from 'lucide-react';
 import { 
   getEmailConfig, 
@@ -23,6 +23,7 @@ import {
   sendTestEmail
 } from '@/app/actions/emailConfig';
 import { compileEmailTemplateHtml, DESIGN_PRESETS } from '@/utils/emailTemplateCompiler';
+import EmailDragDropBuilder, { DEFAULT_DRAG_DROP_BLOCKS } from '@/components/EmailConfig/EmailDragDropBuilder';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
 
@@ -169,6 +170,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     hero_subheading: '',
     message_body: '',
     html_content: '',
+    blocks: [],
     cta_button_text: 'Learn More & Get Started →',
     cta_button_url: 'https://example.com/demo',
     cta_button_color: '#2563eb',
@@ -731,6 +733,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       hero_subheading: presetMeta.defaultSubheading || '',
       message_body: presetMeta.defaultBody || '',
       html_content: defaultPreset === 'custom_html' ? presetMeta.defaultBody : '',
+      blocks: defaultPreset === 'drag_drop' ? DEFAULT_DRAG_DROP_BLOCKS : [],
       cta_button_text: presetMeta.defaultCtaText || '',
       cta_button_url: presetMeta.defaultCtaUrl || '',
       cta_button_color: presetMeta.defaultColor || '#2563eb',
@@ -761,7 +764,16 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       setModalBranches(branches);
     }
 
-    const preset = tpl.design_preset || (tpl.template_type === 'custom_html' ? 'custom_html' : (tpl.template_type === 'plain' ? 'plain' : 'marketing'));
+    const preset = tpl.design_preset || (tpl.template_type === 'custom_html' ? 'custom_html' : (tpl.template_type === 'plain' ? 'plain' : ((Array.isArray(tpl.blocks) && tpl.blocks.length > 0) ? 'drag_drop' : 'marketing')));
+
+    let initialBlocks = [];
+    if (Array.isArray(tpl.blocks) && tpl.blocks.length > 0) {
+      initialBlocks = tpl.blocks;
+    } else if (typeof tpl.blocks_json === 'string') {
+      try { initialBlocks = JSON.parse(tpl.blocks_json); } catch (e) { initialBlocks = []; }
+    } else if (preset === 'drag_drop') {
+      initialBlocks = DEFAULT_DRAG_DROP_BLOCKS;
+    }
 
     setCurrentTemplate({
       ...tpl,
@@ -772,6 +784,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       hero_subheading: tpl.hero_subheading || '',
       message_body: tpl.message_body || '',
       html_content: tpl.html_content || (tpl.template_type === 'custom_html' ? tpl.message_body : ''),
+      blocks: initialBlocks,
       cta_button_text: tpl.cta_button_text || '',
       cta_button_url: tpl.cta_button_url || '',
       cta_button_color: tpl.cta_button_color || '#2563eb',
@@ -780,7 +793,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       client_name: comp,
       branch: tpl.branch || 'All Branches'
     });
-    setTemplateModalTab('editor');
+    setTemplateModalTab(preset === 'drag_drop' ? 'builder' : 'editor');
     setShowTemplateModal(true);
   };
 
@@ -831,9 +844,10 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   };
 
   const handleSaveTemplate = async () => {
-    const hasBody = !!(currentTemplate.message_body?.trim() || currentTemplate.html_content?.trim());
+    const hasBlocks = (Array.isArray(currentTemplate.blocks) && currentTemplate.blocks.length > 0);
+    const hasBody = !!(currentTemplate.message_body?.trim() || currentTemplate.html_content?.trim() || hasBlocks);
     if (!currentTemplate.template_name?.trim() || !currentTemplate.subject?.trim() || !hasBody) {
-      alert('Template Name, Subject, and Message Body/HTML are required.');
+      alert('Template Name, Subject, and Message Body/HTML/Blocks are required.');
       return;
     }
     const targetComp = currentTemplate.client_name || getActiveComp();
@@ -2579,8 +2593,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               </button>
             </div>
 
-            {/* Modal Navigation Tabs: Editor vs Live Realtime Preview */}
-            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.25rem' }}>
+            {/* Modal Navigation Tabs: Editor vs Drag & Drop Visual Builder vs Live Realtime Preview */}
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.25rem', overflowX: 'auto' }}>
               <button
                 type="button"
                 onClick={() => setTemplateModalTab('editor')}
@@ -2595,11 +2609,48 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   color: templateModalTab === 'editor' ? 'var(--accent-color)' : 'var(--text-secondary)',
                   fontWeight: templateModalTab === 'editor' ? 700 : 500,
                   fontSize: '0.88rem',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 <Edit3 size={15} />
-                <span>✏️ Template Editor</span>
+                <span>✏️ Template Settings</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!Array.isArray(currentTemplate.blocks) || currentTemplate.blocks.length === 0) {
+                    setCurrentTemplate(prev => ({
+                      ...prev,
+                      blocks: DEFAULT_DRAG_DROP_BLOCKS,
+                      design_preset: 'drag_drop'
+                    }));
+                  }
+                  setTemplateModalTab('builder');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 1rem',
+                  border: 'none',
+                  background: 'transparent',
+                  borderBottom: templateModalTab === 'builder' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
+                  color: templateModalTab === 'builder' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: templateModalTab === 'builder' ? 700 : 500,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Sliders size={15} />
+                <span>🧩 Visual Drag & Drop Builder</span>
+                {Array.isArray(currentTemplate.blocks) && currentTemplate.blocks.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', background: '#dbeafe', color: '#1d4ed8', padding: '0.1rem 0.45rem', borderRadius: '10px', fontWeight: 700 }}>
+                    {currentTemplate.blocks.length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -2616,7 +2667,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   color: templateModalTab === 'preview' ? 'var(--accent-color)' : 'var(--text-secondary)',
                   fontWeight: templateModalTab === 'preview' ? 700 : 500,
                   fontSize: '0.88rem',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 <Eye size={15} />
@@ -2738,13 +2790,23 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                         <div
                           key={preset.id}
                           onClick={() => {
+                            if (preset.id === 'drag_drop') {
+                              setCurrentTemplate(prev => ({
+                                ...prev,
+                                design_preset: 'drag_drop',
+                                template_type: 'marketing',
+                                blocks: (Array.isArray(prev.blocks) && prev.blocks.length > 0) ? prev.blocks : DEFAULT_DRAG_DROP_BLOCKS
+                              }));
+                              setTemplateModalTab('builder');
+                              return;
+                            }
                             setCurrentTemplate(prev => ({
                               ...prev,
                               design_preset: preset.id,
                               template_type: preset.id === 'plain' ? 'plain' : 'marketing',
-                              hero_headline: prev.hero_headline || preset.defaultSubject || '',
+                              hero_headline: prev.hero_headline || preset.defaultHeadline || '',
                               cta_button_text: prev.cta_button_text || (preset.id === 'promo_deal' ? 'Claim Offer Now →' : preset.id === 'interview_call' ? 'Confirm & Join Interview →' : preset.id === 'job_offer' ? 'Accept Offer Letter →' : 'Learn More →'),
-                              cta_button_url: prev.cta_button_url || 'https://supujacreations.com'
+                              cta_button_url: prev.cta_button_url || 'https://newswangroup.com'
                             }));
                           }}
                           style={{
@@ -2831,6 +2893,48 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     />
                   </div>
                 </div>
+
+                {/* Visual Drag & Drop Builder Quick Action Banner */}
+                {currentTemplate.design_preset === 'drag_drop' && (
+                  <div style={{
+                    marginBottom: '1rem',
+                    padding: '0.9rem 1.1rem',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
+                    border: '1.5px solid #93c5fd',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(37,99,235,0.25)' }}>
+                        <Sliders size={20} />
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: '0.88rem', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span>🧩 Drag &amp; Drop Visual Canvas Active</span>
+                          <span style={{ fontSize: '0.72rem', background: '#2563eb', color: '#fff', padding: '0.1rem 0.45rem', borderRadius: '12px' }}>
+                            {currentTemplate.blocks?.length || 0} Blocks
+                          </span>
+                        </strong>
+                        <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '0.15rem' }}>
+                          Live resizable images, buttons, voucher coupons, schedule cards, and custom columns configured visually.
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateModalTab('builder')}
+                      className="btn-primary"
+                      style={{ fontSize: '0.82rem', padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    >
+                      <Sliders size={14} />
+                      <span>Switch to Visual Builder Canvas &rarr;</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* 5. Preset-Specific Option: Voucher / Coupon Code for Promo Deal */}
                 {currentTemplate.design_preset === 'promo_deal' && (
@@ -3083,7 +3187,64 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               </div>
             )}
 
-            {/* TAB CONTENT: 2. LIVE REALTIME PREVIEW */}
+            {/* TAB CONTENT: 2. VISUAL DRAG & DROP BUILDER */}
+            {templateModalTab === 'builder' && (
+              <div style={{ marginBottom: '1.25rem' }}>
+                <div style={{
+                  marginBottom: '1rem',
+                  padding: '0.85rem 1.15rem',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)',
+                  border: '1px solid #bfdbfe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Sliders size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e3a8a' }}>
+                        🧩 Visual Drag & Drop Canvas & Image Resizer
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#3b82f6' }}>
+                        Add building blocks, slide image width (20%–100%), customize buttons, coupons, meeting schedules, and 2-column features.
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateModalTab('preview')}
+                      className="btn-action-secondary"
+                      style={{ fontSize: '0.78rem', padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <Eye size={13} />
+                      <span>Full Email Preview</span>
+                    </button>
+                  </div>
+                </div>
+
+                <EmailDragDropBuilder
+                  initialBlocks={currentTemplate.blocks}
+                  companyName={currentTemplate.client_name || getActiveComp()}
+                  branchName={currentTemplate.branch || 'All Branches'}
+                  targetPipeline={currentTemplate.target_pipeline || 'sales'}
+                  onChange={(updatedBlocks) => {
+                    setCurrentTemplate(prev => ({
+                      ...prev,
+                      blocks: updatedBlocks,
+                      design_preset: 'drag_drop'
+                    }));
+                  }}
+                />
+              </div>
+            )}
+
+            {/* TAB CONTENT: 3. LIVE REALTIME PREVIEW */}
             {templateModalTab === 'preview' && (
               <div>
                 {/* Device Selector & Viewport Info */}
@@ -3176,6 +3337,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     signature: smtp.signature || `Best regards,\n${activeTargetComp} Team`
                   });
 
+                  const previewHtml = typeof compiledPreview === 'string' ? compiledPreview : (compiledPreview?.html || '');
+
                   return (
                     <div style={{
                       display: 'flex',
@@ -3187,7 +3350,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     }}>
                       <iframe
                         title="Live Email Preview"
-                        srcDoc={compiledPreview}
+                        srcDoc={previewHtml}
                         style={{
                           width: previewDevice === 'mobile' ? '360px' : '600px',
                           height: '520px',

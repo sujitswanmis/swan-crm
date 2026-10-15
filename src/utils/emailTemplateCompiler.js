@@ -7,6 +7,19 @@
 
 export const DESIGN_PRESETS = [
   {
+    id: 'drag_drop',
+    name: '🧩 Drag & Drop Visual Builder',
+    icon: '🧩',
+    desc: 'Interactive visual design canvas with resizable images, customizable buttons, 2-column grids & voucher cards.',
+    defaultBadge: '⭐ Special Feature',
+    defaultHeadline: 'Visual Drag & Drop Campaign',
+    defaultSubheading: 'Built with resizable images and rich block components.',
+    defaultBody: 'Welcome {{name}},\n\nDiscover the next generation of precision manufacturing tailored for your requirements.',
+    defaultCtaText: 'Explore Interactive Catalogue →',
+    defaultCtaUrl: 'https://newswangroup.com',
+    defaultColor: '#2563eb'
+  },
+  {
     id: 'marketing',
     name: 'Modern Marketing Hero',
     icon: '🎨',
@@ -100,6 +113,244 @@ export const DESIGN_PRESETS = [
   }
 ];
 
+export function compileBlocksToHtml(blocks = [], {
+  replaceTags = (s) => s,
+  trackingId = null,
+  baseUrl = '',
+  companyName = 'New Swan Group',
+  branchLabel = 'All Branches'
+} = {}) {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return '';
+  }
+
+  const wrapClick = (url) => {
+    if (!url || url === '#') return '#';
+    if (trackingId) {
+      const trackingHost = baseUrl || (typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || ''));
+      return `${trackingHost}/api/email/track/click?tid=${encodeURIComponent(trackingId)}&url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
+  return blocks.map(block => {
+    switch (block.type) {
+      case 'header': {
+        const logo = block.logoUrl ? `<img src="${block.logoUrl}" width="${block.logoWidth || 140}" style="width: ${block.logoWidth || 140}px; max-width: 100%; height: auto; margin-bottom: 12px; display: inline-block;" alt="Logo" />` : '';
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="${block.bgColor || '#1e293b'}" style="background-color: ${block.bgColor || '#1e293b'}; padding: 28px 24px;">
+          <tr>
+            <td align="${block.align || 'center'}">
+              ${logo}
+              <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: ${block.textColor || '#ffffff'}; line-height: 1.3;">
+                ${replaceTags(block.title || companyName)}
+              </h1>
+              ${block.subtitle ? `
+              <p style="margin: 6px 0 0 0; font-size: 13px; color: ${block.textColor || '#ffffff'}; opacity: 0.9; line-height: 1.4;">
+                ${replaceTags(block.subtitle)}
+              </p>` : ''}
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'image': {
+        const imgWidth = block.width || 100;
+        const maxW = block.maxWidth || 600;
+        const bRad = block.borderRadius || 0;
+        const align = block.align || 'center';
+        const imgMarkup = `<img src="${block.url}" alt="${block.alt || ''}" style="width: 100%; max-width: 100%; height: auto; border-radius: ${bRad}px; display: block;" />`;
+        const wrappedImg = block.linkUrl ? `<a href="${wrapClick(block.linkUrl)}" target="_blank" style="text-decoration: none; display: block;">${imgMarkup}</a>` : imgMarkup;
+
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 16px 0;">
+          <tr>
+            <td align="${align}" style="padding: 0 24px;">
+              <div style="display: inline-block; width: ${imgWidth}%; max-width: ${maxW}px;">
+                ${wrappedImg}
+              </div>
+              ${block.caption ? `
+              <div style="font-size: 12px; color: #64748b; margin-top: 6px; text-align: ${align}; line-height: 1.4;">
+                ${replaceTags(block.caption)}
+              </div>` : ''}
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'text': {
+        const headingTag = block.headingLevel || 'h2';
+        const align = block.align || 'left';
+        const fSize = block.fontSize || 15;
+        const color = block.color || '#334155';
+        const bodyLines = (block.body || '')
+          .split('\n\n')
+          .map(p => `<p style="margin: 0 0 12px 0; line-height: 1.65;">${replaceTags(p).replace(/\n/g, '<br/>')}</p>`)
+          .join('');
+
+        return `
+        <div style="padding: 12px 24px; text-align: ${align};">
+          ${block.heading ? `
+          <${headingTag} style="margin: 0 0 10px 0; color: #1e293b; font-weight: 700; line-height: 1.35;">
+            ${replaceTags(block.heading)}
+          </${headingTag}>` : ''}
+          <div style="color: ${color}; font-size: ${fSize}px;">
+            ${bodyLines}
+          </div>
+        </div>`;
+      }
+
+      case 'button': {
+        const align = block.align || 'center';
+        const bgColor = block.bgColor || '#2563eb';
+        const textColor = block.textColor || '#ffffff';
+        const bRad = block.borderRadius || 8;
+        const isFull = !!block.fullWidth;
+
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+          <tr>
+            <td align="${align}" style="padding: 0 24px;">
+              <table border="0" cellpadding="0" cellspacing="0" style="${isFull ? 'width: 100%;' : ''}">
+                <tr>
+                  <td align="center" bgcolor="${bgColor}" style="border-radius: ${bRad}px; background-color: ${bgColor};">
+                    <a href="${wrapClick(block.url || '#')}" target="_blank" style="font-family: inherit; font-size: 15px; font-weight: 700; color: ${textColor}; text-decoration: none; display: inline-block; padding: 13px 30px; border-radius: ${bRad}px; letter-spacing: 0.3px; ${isFull ? 'display: block; width: 100%; box-sizing: border-box;' : ''}">
+                      ${replaceTags(block.text || 'Take Action →')}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'coupon': {
+        return `
+        <div style="padding: 0 24px; margin: 20px 0;">
+          <div style="padding: 20px; border: 2px dashed #f59e0b; border-radius: 12px; background-color: #fffbeb; text-align: center;">
+            <div style="font-size: 12px; font-weight: 800; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+              ${replaceTags(block.title || 'SPECIAL PRIVILEGE OFFER')}
+            </div>
+            <div style="display: inline-block; font-size: 22px; font-weight: 900; font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; color: #b45309; background: #fef3c7; border: 1.5px solid #f59e0b; padding: 8px 20px; border-radius: 8px; margin: 8px 0;">
+              ${replaceTags(block.code || 'SWAN-SAVE25')}
+            </div>
+            ${block.description ? `
+            <div style="font-size: 13px; color: #78350f; margin-top: 8px; line-height: 1.45;">
+              ${replaceTags(block.description)}
+            </div>` : ''}
+            ${block.expiry ? `
+            <div style="font-size: 11px; color: #92400e; margin-top: 6px; font-weight: 600;">
+              ⏰ ${replaceTags(block.expiry)}
+            </div>` : ''}
+          </div>
+        </div>`;
+      }
+
+      case 'columns': {
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+          <tr>
+            <td style="padding: 0 24px;">
+              <!-- 2-Column Responsive Layout -->
+              <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="48%" valign="top" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background-color: #ffffff;">
+                    ${block.col1Img ? `<img src="${block.col1Img}" style="width: 100%; height: auto; display: block; max-height: 150px; object-fit: cover;" alt="" />` : ''}
+                    <div style="padding: 14px;">
+                      <h4 style="margin: 0 0 6px 0; color: #1e293b; font-size: 15px; font-weight: 700;">${replaceTags(block.col1Title || '')}</h4>
+                      <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.45;">${replaceTags(block.col1Desc || '')}</p>
+                    </div>
+                  </td>
+                  <td width="4%">&nbsp;</td>
+                  <td width="48%" valign="top" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background-color: #ffffff;">
+                    ${block.col2Img ? `<img src="${block.col2Img}" style="width: 100%; height: auto; display: block; max-height: 150px; object-fit: cover;" alt="" />` : ''}
+                    <div style="padding: 14px;">
+                      <h4 style="margin: 0 0 6px 0; color: #1e293b; font-size: 15px; font-weight: 700;">${replaceTags(block.col2Title || '')}</h4>
+                      <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.45;">${replaceTags(block.col2Desc || '')}</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'interview_card': {
+        return `
+        <div style="padding: 0 24px; margin: 20px 0;">
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; overflow: hidden;">
+            <tr>
+              <td style="padding: 20px;">
+                <div style="font-size: 12px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                  📅 Scheduled Discussion Details
+                </div>
+                <div style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 12px;">
+                  ${replaceTags(block.title || 'Technical & Commercial Assessment')}
+                </div>
+                <table width="100%" border="0" cellpadding="5" cellspacing="0" style="font-size: 13px; color: #334155;">
+                  <tr><td width="100" style="font-weight: 600; color: #64748b;">Date:</td><td>${replaceTags(block.date || 'Upcoming Monday')}</td></tr>
+                  <tr><td style="font-weight: 600; color: #64748b;">Time (IST):</td><td>${replaceTags(block.time || '11:30 AM IST')}</td></tr>
+                  <tr><td style="font-weight: 600; color: #64748b;">Venue / Mode:</td><td>${replaceTags(block.venue || 'Google Meet (Online)')}</td></tr>
+                  ${block.panel ? `<tr><td style="font-weight: 600; color: #64748b;">Panel / Host:</td><td>${replaceTags(block.panel)}</td></tr>` : ''}
+                </table>
+                ${block.meetUrl ? `
+                <div style="margin-top: 16px;">
+                  <a href="${wrapClick(block.meetUrl)}" target="_blank" style="display: inline-block; background-color: #4f46e5; color: #ffffff; padding: 10px 22px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 700;">
+                    Join Video Conference &rarr;
+                  </a>
+                </div>` : ''}
+              </td>
+            </tr>
+          </table>
+        </div>`;
+      }
+
+      case 'divider': {
+        const gap = Math.round((block.gap || 20) / 2);
+        return `
+        <div style="padding: ${gap}px 24px;">
+          <hr style="border: 0; border-top: ${block.thickness || 1}px ${block.style || 'solid'} ${block.color || '#e2e8f0'}; margin: 0;" />
+        </div>`;
+      }
+
+      case 'social': {
+        const align = block.align || 'center';
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 16px 0;">
+          <tr>
+            <td align="${align}" style="padding: 0 24px;">
+              ${block.website ? `<a href="${wrapClick(block.website)}" target="_blank" style="margin: 0 10px; color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 600;">🌐 Official Website</a>` : ''}
+              ${block.linkedin ? `<a href="${wrapClick(block.linkedin)}" target="_blank" style="margin: 0 10px; color: #0a66c2; text-decoration: none; font-size: 13px; font-weight: 600;">💼 LinkedIn</a>` : ''}
+              ${block.twitter ? `<a href="${wrapClick(block.twitter)}" target="_blank" style="margin: 0 10px; color: #1da1f2; text-decoration: none; font-size: 13px; font-weight: 600;">🐦 Twitter</a>` : ''}
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      case 'footer': {
+        return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 24px; margin-top: 24px; text-align: center;">
+          <tr>
+            <td>
+              <div style="font-weight: 700; color: #475569; font-size: 13px; margin-bottom: 4px;">
+                ${replaceTags(block.company || companyName)} ${block.branch ? `• ${replaceTags(block.branch)}` : ''}
+              </div>
+              ${block.address ? `<div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">${replaceTags(block.address)}</div>` : ''}
+              ${block.copyright ? `<div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">${replaceTags(block.copyright)}</div>` : ''}
+              ${block.unsubscribeText ? `<div style="font-size: 11px; color: #cbd5e1; line-height: 1.4;">${replaceTags(block.unsubscribeText)}</div>` : ''}
+            </td>
+          </tr>
+        </table>`;
+      }
+
+      default:
+        return '';
+    }
+  }).join('');
+}
+
 export function compileEmailTemplateHtml({
   template,
   data = {},
@@ -177,6 +428,56 @@ export function compileEmailTemplateHtml({
     .join('');
 
   const formattedSig = cleanSig.replace(/\n/g, '<br/>');
+
+  // =========================================================================
+  // 0. VISUAL DRAG & DROP BUILDER MODE
+  // =========================================================================
+  const hasBlocks = (Array.isArray(template.blocks) && template.blocks.length > 0) || (typeof template.blocks_json === 'string' && template.blocks_json.length > 2);
+  if (presetType === 'drag_drop' || (hasBlocks && !rawBody.includes('<html'))) {
+    let parsedBlocks = template.blocks;
+    if (!Array.isArray(parsedBlocks) && typeof template.blocks_json === 'string') {
+      try { parsedBlocks = JSON.parse(template.blocks_json); } catch (e) { parsedBlocks = []; }
+    }
+    if (Array.isArray(parsedBlocks) && parsedBlocks.length > 0) {
+      const blocksHtml = compileBlocksToHtml(parsedBlocks, {
+        replaceTags,
+        trackingId,
+        baseUrl,
+        companyName,
+        branchLabel
+      });
+
+      return {
+        subject,
+        text: `${subject}\n\n${rawBody || 'Email from ' + companyName}\n\n${cleanSig}`,
+        html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="padding: 24px 12px; min-height: 100vh;">
+    <tr>
+      <td align="center">
+        <!-- Main Email Container -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="padding: 0; background-color: #ffffff;">
+              ${blocksHtml}
+            </td>
+          </tr>
+        </table>
+        ${trackingPixel}
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+      };
+    }
+  }
 
   // =========================================================================
   // 1. CUSTOM RAW HTML MODE
