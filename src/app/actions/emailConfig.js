@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import nodemailer from 'nodemailer';
 import { getTenantSmtpLimitsMap } from '@/app/actions/saasSubscription';
+import { compileEmailTemplateHtml } from '@/utils/emailTemplateCompiler';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'email_campaign_settings.json');
 
@@ -53,29 +54,89 @@ const DEFAULT_CONFIG = {
     {
       id: 'tpl_lead_welcome',
       category: 'Sales Pipeline',
-      template_name: 'Lead Welcome & Introduction',
-      subject: 'Welcome to SuPuja Creations, {{name}}!',
-      message_body: `Dear {{name}},\n\nThank you for reaching out to SuPuja Creations. We have received your inquiry for {{company}}.\n\nOur team is reviewing your requirements and your dedicated account representative {{rep_name}} will be in touch shortly.\n\nYour Reference ID: {{lead_ref_id}}\n\nWarm regards,\nSuPuja Creations Team`,
+      template_name: 'Lead Welcome & Product Showcase',
+      template_type: 'marketing',
+      badge_text: '⭐ Featured Partnership',
+      hero_headline: 'Welcome to Enterprise Excellence, {{name}}',
+      hero_subheading: 'Tailored solutions & priority engineering support for {{company}}',
+      subject: 'Welcome to {{company}}, {{name}}!',
+      message_body: `Dear {{name}},\n\nThank you for reaching out to us. We have received your inquiry for {{company}}.\n\nOur team is reviewing your requirements and your dedicated account representative {{rep_name}} will be in touch shortly.\n\nHere is what you can expect:\n• Rapid 24-hour assessment of your technical needs\n• Transparent pricing & milestone-based delivery\n• Dedicated engineering & account support\n\nYour Reference ID: {{lead_ref_id}}`,
+      cta_button_text: 'Explore Full Product Catalog',
+      cta_button_url: 'https://newswangroup.com',
+      cta_button_color: '#2563eb',
       target_pipeline: 'sales',
       target_stage: '01 - New Stage',
       created_at: new Date().toISOString()
     },
     {
+      id: 'tpl_sales_quote',
+      category: 'Sales Pipeline',
+      template_name: 'Quotation & Exclusive Privilege Offer',
+      template_type: 'marketing',
+      badge_text: '⚡ Special 20% Privilege Discount',
+      hero_headline: 'Custom Proposal Ready for {{company}}',
+      hero_subheading: 'Optimized commercial terms prepared exclusively for {{name}}',
+      subject: 'Quotation & Commercial Proposal - {{company}}',
+      message_body: `Dear {{name}},\n\nWe have prepared a comprehensive commercial proposal for {{company}}.\n\nHighlights of this proposal:\n• Tailored scope matching your precision requirements\n• Volume pricing discount valid for 15 days\n• Dedicated priority production & delivery slot\n\nPlease review the details by clicking the button below.`,
+      cta_button_text: 'Review Proposal & Claim Discount',
+      cta_button_url: 'https://newswangroup.com/quotations',
+      cta_button_color: '#16a34a',
+      target_pipeline: 'sales',
+      target_stage: '03 - Proposal Sent',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'tpl_sales_demo',
+      category: 'Sales Pipeline',
+      template_name: 'Discovery Call & Strategy Session',
+      template_type: 'marketing',
+      badge_text: '📅 Free 30-Min Consultation',
+      hero_headline: 'Accelerate Your Operations Today',
+      hero_subheading: 'One-on-one discovery session with our senior technical consultants',
+      subject: "Let's Schedule Your Strategy Session, {{name}}",
+      message_body: `Hi {{name}},\n\nI would love to invite you for a 30-minute virtual strategy session to discuss how we can streamline your supply chain and operational workflows for {{company}}.\n\nPick a convenient date and time on my calendar below:`,
+      cta_button_text: 'Book Your 1-on-1 Meeting Slot',
+      cta_button_url: 'https://calendly.com',
+      cta_button_color: '#4f46e5',
+      target_pipeline: 'sales',
+      target_stage: '02 - In Discussion',
+      created_at: new Date().toISOString()
+    },
+    {
       id: 'tpl_recruiter_interview',
       category: 'HR & Recruitment',
-      template_name: 'Candidate Interview Invitation',
+      template_name: 'Candidate Interview Call Letter',
+      template_type: 'marketing',
+      badge_text: '📌 Candidate Ref: {{candidate_id}}',
+      hero_headline: "You're Invited for an Interview Round",
+      hero_subheading: 'Next round for {{job_title}} with our Leadership Team',
       subject: 'Interview Invitation with SuPuja Creations - {{job_title}}',
-      message_body: `Dear {{candidate_name}},\n\nWe are pleased to invite you for an interview round for the position of {{job_title}} at SuPuja Creations.\n\nInterview Details:\n- Role: {{job_title}}\n- Candidate Ref: {{candidate_id}}\n- Recruiter: {{recruiter_name}}\n\nPlease reply to this email to confirm your availability.\n\nBest regards,\nHR Department\nSuPuja Creations`,
+      message_body: `Dear {{candidate_name}},\n\nWe were impressed by your profile and are delighted to invite you for an interview round for the position of {{job_title}}.\n\nRecruiter Contact: {{recruiter_name}}\nCandidate Reference: {{candidate_id}}\n\nPlease confirm your availability by clicking the confirmation button below:`,
+      cta_button_text: 'Confirm Interview Attendance',
+      cta_button_url: 'https://newswangroup.com/careers',
+      cta_button_color: '#ea580c',
       target_pipeline: 'recruiter',
       target_stage: 'S03',
       created_at: new Date().toISOString()
     },
     {
+      id: 'tpl_sales_followup_plain',
+      category: 'Sales Pipeline',
+      template_name: 'Executive Direct Follow-up',
+      template_type: 'plain',
+      subject: 'Following up on our discussion - {{company}}',
+      message_body: `Hi {{name}},\n\nJust following up on our recent conversation regarding your requirements for {{company}}.\n\nDo you have 5 minutes this week for a brief catch-up call?\n\nLooking forward to hearing from you.\n\nBest regards,\n{{rep_name}}`,
+      target_pipeline: 'sales',
+      target_stage: '02 - In Discussion',
+      created_at: new Date().toISOString()
+    },
+    {
       id: 'tpl_recruiter_loi',
       category: 'HR & Recruitment',
-      template_name: 'Letter of Intent (LOI) Release',
+      template_name: 'Letter of Intent (LOI) Formal Release',
+      template_type: 'plain',
       subject: 'Letter of Intent (LOI) - SuPuja Creations',
-      message_body: `Dear {{candidate_name}},\n\nCongratulations! We are delighted to extend our Letter of Intent (LOI) for the position of {{job_title}} with SuPuja Creations.\n\nWe look forward to having you onboard.\n\nSincerely,\nHR & Talent Acquisition Team\nSuPuja Creations`,
+      message_body: `Dear {{candidate_name}},\n\nCongratulations! We are delighted to extend our formal Letter of Intent (LOI) for the position of {{job_title}} with SuPuja Creations.\n\nPlease reply to this email confirming receipt and acceptance of the offer terms.\n\nWe look forward to having you onboard.\n\nSincerely,\nHR & Talent Acquisition Team\nSuPuja Creations`,
       target_pipeline: 'recruiter',
       target_stage: 'S08',
       created_at: new Date().toISOString()
@@ -457,10 +518,10 @@ export async function setDefaultSmtpAccount(accountId, companyOrTenantId = '') {
   }
 }
 
-// Save or Update an Email Template
-export async function saveEmailTemplate(template) {
+// Save or Update an Email Template (Tenant Isolated)
+export async function saveEmailTemplate(template, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     const templates = currentConfig.templates || [];
 
@@ -476,39 +537,39 @@ export async function saveEmailTemplate(template) {
     }
 
     currentConfig.templates = templates;
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('saveEmailTemplate error:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Delete an Email Template
-export async function deleteEmailTemplate(templateId) {
+// Delete an Email Template (Tenant Isolated)
+export async function deleteEmailTemplate(templateId, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     currentConfig.templates = (currentConfig.templates || []).filter(t => t.id !== templateId);
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('deleteEmailTemplate error:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Bulk Delete Email Templates
-export async function deleteBulkEmailTemplates(templateIds = []) {
+// Bulk Delete Email Templates (Tenant Isolated)
+export async function deleteBulkEmailTemplates(templateIds = [], companyOrTenantId = '') {
   try {
     if (!Array.isArray(templateIds) || templateIds.length === 0) {
       return { success: true, count: 0 };
     }
     const idSet = new Set(templateIds);
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     const initialLen = (currentConfig.templates || []).length;
     currentConfig.templates = (currentConfig.templates || []).filter(t => !idSet.has(t.id));
     const deletedCount = initialLen - currentConfig.templates.length;
-    const saveRes = await saveEmailConfig(currentConfig);
+    const saveRes = await saveEmailConfig(currentConfig, companyOrTenantId);
     if (!saveRes.success) return saveRes;
     return { success: true, count: deletedCount };
   } catch (error) {
@@ -518,9 +579,9 @@ export async function deleteBulkEmailTemplates(templateIds = []) {
 }
 
 // Save or Update an Email Automation Rule
-export async function saveEmailAutomation(automation) {
+export async function saveEmailAutomation(automation, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     const automations = currentConfig.automations || [];
 
@@ -536,7 +597,7 @@ export async function saveEmailAutomation(automation) {
     }
 
     currentConfig.automations = automations;
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('saveEmailAutomation error:', error);
     return { success: false, error: error.message };
@@ -544,33 +605,148 @@ export async function saveEmailAutomation(automation) {
 }
 
 // Delete an Email Automation Rule
-export async function deleteEmailAutomation(automationId) {
+export async function deleteEmailAutomation(automationId, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     currentConfig.automations = (currentConfig.automations || []).filter(a => a.id !== automationId);
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('deleteEmailAutomation error:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Send Real-Time Live Test Email
-export async function sendTestEmail(recipientEmail, customSmtp = null, smtpAccountId = null) {
+// =========================================================================
+// REALTIME TRACKING RECORDING HELPERS (OPEN & CLICK)
+// =========================================================================
+export async function recordEmailOpen(trackingId, meta = {}) {
+  try {
+    if (!trackingId) return { success: false };
+    const filesToSearch = [CONFIG_FILE_PATH];
+    try {
+      const configDir = path.dirname(CONFIG_FILE_PATH);
+      const allFiles = await fs.readdir(configDir);
+      allFiles.forEach(f => {
+        if (f.startsWith('email_campaign_settings') && f.endsWith('.json')) {
+          const fullPath = path.join(configDir, f);
+          if (!filesToSearch.includes(fullPath)) filesToSearch.push(fullPath);
+        }
+      });
+    } catch {}
+
+    const nowIST = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date());
+
+    let updated = false;
+
+    for (const filePath of filesToSearch) {
+      try {
+        const content = await fs.readFile(/*turbopackIgnore: true*/ filePath, 'utf-8');
+        const json = JSON.parse(content || '{}');
+        if (Array.isArray(json.logs)) {
+          const logEntry = json.logs.find(l => l.tracking_id === trackingId || l.id === trackingId);
+          if (logEntry) {
+            logEntry.opened = true;
+            logEntry.open_count = (logEntry.open_count || 0) + 1;
+            logEntry.opened_at = nowIST;
+            if (meta.userAgent) logEntry.last_user_agent = meta.userAgent;
+            if (meta.ip) logEntry.last_ip = meta.ip;
+            await fs.writeFile(/*turbopackIgnore: true*/ filePath, JSON.stringify(json, null, 2), 'utf-8');
+            updated = true;
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    return { success: updated };
+  } catch (err) {
+    console.error('recordEmailOpen error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function recordEmailClick(trackingId, destinationUrl, meta = {}) {
+  try {
+    if (!trackingId) return { success: false };
+    const filesToSearch = [CONFIG_FILE_PATH];
+    try {
+      const configDir = path.dirname(CONFIG_FILE_PATH);
+      const allFiles = await fs.readdir(configDir);
+      allFiles.forEach(f => {
+        if (f.startsWith('email_campaign_settings') && f.endsWith('.json')) {
+          const fullPath = path.join(configDir, f);
+          if (!filesToSearch.includes(fullPath)) filesToSearch.push(fullPath);
+        }
+      });
+    } catch {}
+
+    const nowIST = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date());
+
+    let updated = false;
+
+    for (const filePath of filesToSearch) {
+      try {
+        const content = await fs.readFile(/*turbopackIgnore: true*/ filePath, 'utf-8');
+        const json = JSON.parse(content || '{}');
+        if (Array.isArray(json.logs)) {
+          const logEntry = json.logs.find(l => l.tracking_id === trackingId || l.id === trackingId);
+          if (logEntry) {
+            logEntry.clicked = true;
+            logEntry.click_count = (logEntry.click_count || 0) + 1;
+            logEntry.clicked_at = nowIST;
+            logEntry.last_clicked_url = destinationUrl;
+            if (meta.userAgent) logEntry.last_user_agent = meta.userAgent;
+            if (meta.ip) logEntry.last_ip = meta.ip;
+            await fs.writeFile(/*turbopackIgnore: true*/ filePath, JSON.stringify(json, null, 2), 'utf-8');
+            updated = true;
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    return { success: updated };
+  } catch (err) {
+    console.error('recordEmailClick error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// =========================================================================
+// SEND REAL-TIME LIVE TEST EMAIL (WITH TEMPLATE PREVIEW & TRACKING)
+// =========================================================================
+export async function sendTestEmail(
+  recipientEmail,
+  customSmtp = null,
+  smtpAccountId = null,
+  templateId = null,
+  templateOverrides = null,
+  companyOrTenantId = ''
+) {
   try {
     if (!recipientEmail || !recipientEmail.includes('@')) {
       return { success: false, error: 'Please provide a valid recipient email address.' };
     }
 
+    const cfgRes = await getEmailConfig(companyOrTenantId);
+    const currentConfig = cfgRes.data;
+
     let smtp = customSmtp;
     if (!smtp) {
-      const res = await getEmailConfig();
-      if (smtpAccountId && Array.isArray(res.data?.smtp_accounts)) {
-        smtp = res.data.smtp_accounts.find(a => a.id === smtpAccountId);
+      if (smtpAccountId && Array.isArray(currentConfig?.smtp_accounts)) {
+        smtp = currentConfig.smtp_accounts.find(a => a.id === smtpAccountId);
       }
       if (!smtp) {
-        smtp = res.data?.smtp;
+        smtp = currentConfig?.smtp;
       }
     }
 
@@ -599,18 +775,51 @@ export async function sendTestEmail(recipientEmail, customSmtp = null, smtpAccou
     });
 
     const senderEmail = smtp.from_email || smtp.username;
-    const senderName = smtp.from_name || 'SuPuja Creations Messaging';
+    const senderName = smtp.from_name || `${companyOrTenantId || 'SuPuja Creations'} Messaging`;
+    const companyDisplayName = companyOrTenantId || 'SuPuja Creations';
 
-    const info = await transporter.sendMail({
-      from: `"${senderName}" <${senderEmail}>`,
-      to: recipientEmail,
-      replyTo: smtp.reply_to || senderEmail,
-      subject: `✅ SMTP Verification Test - SuPuja Creations`,
-      text: `Hello,\n\nThis is a test email sent from SuPuja Creations Email Configuration Gateway.\n\nSender: ${senderEmail}\nHost: ${smtp.host}:${port}\nSecurity: ${isSecure ? 'SSL (465)' : 'STARTTLS (587)'}\nTimestamp: ${new Date().toLocaleString()}\n\nYour SMTP email gateway is active and functioning properly!`,
-      html: `
+    // Find template if requested
+    let targetTemplate = null;
+    if (templateOverrides) {
+      targetTemplate = templateOverrides;
+    } else if (templateId && Array.isArray(currentConfig.templates)) {
+      targetTemplate = currentConfig.templates.find(t => t.id === templateId);
+    }
+
+    const trackingId = `trk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nowIST = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date());
+
+    let compiledEmail;
+    if (targetTemplate) {
+      compiledEmail = compileEmailTemplateHtml({
+        template: targetTemplate,
+        data: {
+          name: 'Valued Client',
+          company: companyDisplayName,
+          phone: '+91 98765 43210',
+          lead_ref_id: 'LEAD-9042',
+          rep_name: senderName,
+          candidate_name: 'Rohit Sharma',
+          job_title: 'Senior Executive'
+        },
+        trackingId,
+        companyName: companyDisplayName,
+        senderName,
+        signature: smtp.signature || targetTemplate.signature || ''
+      });
+    } else {
+      // Default verification test template
+      compiledEmail = {
+        subject: `✅ SMTP Verification Test - ${companyDisplayName}`,
+        text: `Hello,\n\nThis is a test email sent from ${companyDisplayName} Email Configuration Gateway.\n\nSender: ${senderEmail}\nHost: ${smtp.host}:${port}\nDispatched At: ${nowIST}\n\nYour SMTP gateway is functioning properly!`,
+        html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
           <div style="background: linear-gradient(135deg, #4338ca 0%, #3b82f6 100%); padding: 1.5rem; text-align: center; color: white;">
-            <h2 style="margin: 0; font-size: 1.35rem; font-weight: 700;">SuPuja Creations</h2>
+            <h2 style="margin: 0; font-size: 1.35rem; font-weight: 700;">${companyDisplayName}</h2>
             <p style="margin: 0.25rem 0 0 0; opacity: 0.9; font-size: 0.85rem;">Email Gateway Live Verification</p>
           </div>
           <div style="padding: 1.75rem;">
@@ -624,31 +833,48 @@ export async function sendTestEmail(recipientEmail, customSmtp = null, smtpAccou
               <div style="margin-bottom: 0.35rem;"><strong>From:</strong> ${senderName} &lt;${senderEmail}&gt;</div>
               <div style="margin-bottom: 0.35rem;"><strong>SMTP Host:</strong> ${smtp.host}:${port}</div>
               <div style="margin-bottom: 0.35rem;"><strong>Authentication:</strong> ${cleanUser}</div>
-              <div><strong>Dispatched At:</strong> ${new Date().toLocaleString()}</div>
+              <div><strong>Dispatched At (IST):</strong> ${nowIST}</div>
             </div>
           </div>
           <div style="background: #f8fafc; padding: 0.85rem; text-align: center; font-size: 0.75rem; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-            SuPuja Creations CRM • Messaging Hub
+            ${companyDisplayName} CRM • Messaging Hub
           </div>
         </div>
-      `
+        `
+      };
+    }
+
+    const info = await transporter.sendMail({
+      from: `"${senderName}" <${senderEmail}>`,
+      to: recipientEmail,
+      replyTo: smtp.reply_to || senderEmail,
+      subject: compiledEmail.subject,
+      text: compiledEmail.text,
+      html: compiledEmail.html
     });
 
-    // Save sent log
+    // Save sent log with real-time tracking metrics
     try {
-      const res = await getEmailConfig();
-      const currentConfig = res.data;
       const logs = currentConfig.logs || [];
       logs.unshift({
         id: `log_${Date.now()}`,
+        tracking_id: trackingId,
         recipient: recipientEmail,
-        subject: 'SMTP Verification Test',
+        subject: compiledEmail.subject,
+        template_name: targetTemplate ? targetTemplate.template_name : 'Direct / Verification Test',
+        template_type: targetTemplate ? (targetTemplate.template_type || 'plain') : 'plain',
         message_id: info.messageId,
         status: 'Delivered',
-        timestamp: new Date().toISOString()
+        opened: false,
+        open_count: 0,
+        opened_at: null,
+        clicked: false,
+        click_count: 0,
+        clicked_at: null,
+        timestamp: nowIST
       });
-      currentConfig.logs = logs.slice(0, 50);
-      await saveEmailConfig(currentConfig);
+      currentConfig.logs = logs.slice(0, 100);
+      await saveEmailConfig(currentConfig, companyOrTenantId);
     } catch (logErr) {
       console.warn('Failed to append log:', logErr);
     }

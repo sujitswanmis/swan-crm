@@ -7,7 +7,7 @@ import {
   RefreshCw, Shield, Key, Eye, EyeOff, Server, Play, Clock, 
   Sparkles, Briefcase, Database, Tag, Copy, Check, ChevronRight, X,
   LayoutGrid, List, ChevronLeft, ChevronsLeft, ChevronsRight, CheckSquare, Square,
-  Search, Star, Building2
+  Search, Star, Building2, Smartphone, Monitor, MousePointer, Activity
 } from 'lucide-react';
 import { 
   getEmailConfig, 
@@ -20,8 +20,9 @@ import {
   setDefaultSmtpAccount,
   saveEmailAutomation, 
   deleteEmailAutomation, 
-  sendTestEmail 
+  sendTestEmail
 } from '@/app/actions/emailConfig';
+import { compileEmailTemplateHtml } from '@/utils/emailTemplateCompiler';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
 
@@ -152,12 +153,22 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   const [templates, setTemplates] = useState([]);
   const [templateFilter, setTemplateFilter] = useState('all');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateModalTab, setTemplateModalTab] = useState('editor'); // 'editor' | 'preview'
+  const [previewDevice, setPreviewDevice] = useState('desktop'); // 'desktop' | 'mobile'
+  const [testSelectedTemplateId, setTestSelectedTemplateId] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState({
     id: '',
     category: 'Sales Pipeline',
+    template_type: 'marketing', // 'plain' | 'marketing'
     template_name: '',
     subject: '',
+    badge_text: '⭐ Exclusive Business Update',
+    hero_headline: '',
+    hero_subheading: '',
     message_body: '',
+    cta_button_text: 'Learn More & Get Started →',
+    cta_button_url: 'https://example.com/demo',
+    cta_button_color: '#2563eb',
     target_pipeline: 'sales',
     target_stage: '01 - New Stage'
   });
@@ -672,12 +683,42 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setSelectedTemplateIds([]);
   };
 
+  const getActiveComp = () => {
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    return targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+  };
+
+  const handleOpenAddTemplate = (pipelineOverride = null) => {
+    const pipe = pipelineOverride || (templateFilter === 'recruiter' ? 'recruiter' : 'sales');
+    setCurrentTemplate({
+      id: '',
+      category: pipe === 'recruiter' ? 'HR & Recruitment' : 'Sales Pipeline',
+      template_type: 'marketing',
+      template_name: '',
+      subject: '',
+      badge_text: pipe === 'recruiter' ? '💼 Career Opportunity' : '⭐ Business Growth Update',
+      hero_headline: pipe === 'recruiter' ? 'Exclusive Career Opportunity at SuPuja' : 'Transform Your Business Operations Today',
+      hero_subheading: pipe === 'recruiter' ? 'Your profile stood out to our talent acquisition team.' : 'Discover custom solutions tailored to drive maximum ROI and efficiency.',
+      message_body: pipe === 'recruiter'
+        ? 'Hi {{candidate_name}},\n\nWe were impressed by your background and would love to discuss exciting career opportunities with our team.\n\nPlease click below to review your role details and schedule your initial conversation.'
+        : 'Hi {{name}},\n\nThank you for exploring our business solutions. We are excited to collaborate and help streamline your operations.\n\nClick the button below to schedule your personalized live demo.',
+      cta_button_text: pipe === 'recruiter' ? 'View Job Details & Schedule →' : 'Schedule Strategy Session →',
+      cta_button_url: 'https://example.com/demo',
+      cta_button_color: pipe === 'recruiter' ? '#4f46e5' : '#2563eb',
+      target_pipeline: pipe,
+      target_stage: pipe === 'recruiter' ? 'S03' : '01 - New Stage'
+    });
+    setTemplateModalTab('editor');
+    setShowTemplateModal(true);
+  };
+
   const handleBulkDelete = async () => {
     if (selectedTemplateIds.length === 0) return;
     if (!confirm(`Are you sure you want to permanently delete ${selectedTemplateIds.length} selected email template(s)?`)) return;
     setDeletingBulkTemplates(true);
     try {
-      const res = await deleteBulkEmailTemplates(selectedTemplateIds);
+      const targetComp = getActiveComp();
+      const res = await deleteBulkEmailTemplates(selectedTemplateIds, targetComp);
       if (res.success) {
         setSaveSuccessMsg(`Deleted ${res.count || selectedTemplateIds.length} template(s) successfully.`);
         setSelectedTemplateIds([]);
@@ -702,7 +743,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setTestResult(null);
     try {
       const targetAccount = smtpAccounts.find(a => a.id === selectedTestSmtpId) || smtp;
-      const res = await sendTestEmail(testEmailRecipient, targetAccount);
+      const targetComp = getActiveComp();
+      const res = await sendTestEmail(testEmailRecipient, targetAccount, testSelectedTemplateId, targetComp);
       if (res.success) {
         setTestResult({ success: true, message: res.message });
         loadConfig();
@@ -721,7 +763,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       alert('Template Name, Subject, and Message Body are required.');
       return;
     }
-    const res = await saveEmailTemplate(currentTemplate);
+    const targetComp = getActiveComp();
+    const res = await saveEmailTemplate(currentTemplate, targetComp);
     if (res.success) {
       setShowTemplateModal(false);
       loadConfig();
@@ -732,7 +775,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
   const handleDeleteTemplate = async (templateId) => {
     if (!confirm('Are you sure you want to delete this email template?')) return;
-    const res = await deleteEmailTemplate(templateId);
+    const targetComp = getActiveComp();
+    const res = await deleteEmailTemplate(templateId, targetComp);
     if (res.success) {
       loadConfig();
     } else {
@@ -745,7 +789,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       alert('Automation Name and Selected Template are required.');
       return;
     }
-    const res = await saveEmailAutomation(currentAuto);
+    const targetComp = getActiveComp();
+    const res = await saveEmailAutomation(currentAuto, targetComp);
     if (res.success) {
       setShowAutoModal(false);
       loadConfig();
@@ -756,7 +801,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
   const handleDeleteAutomation = async (autoId) => {
     if (!confirm('Are you sure you want to delete this automation rule?')) return;
-    const res = await deleteEmailAutomation(autoId);
+    const targetComp = getActiveComp();
+    const res = await deleteEmailAutomation(autoId, targetComp);
     if (res.success) {
       loadConfig();
     } else {
@@ -1319,18 +1365,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               {/* Create Template Button */}
               <button
                 type="button"
-                onClick={() => {
-                  setCurrentTemplate({
-                    id: '',
-                    category: templateFilter === 'recruiter' ? 'HR & Recruitment' : 'Sales Pipeline',
-                    template_name: '',
-                    subject: '',
-                    message_body: '',
-                    target_pipeline: templateFilter === 'recruiter' ? 'recruiter' : 'sales',
-                    target_stage: templateFilter === 'recruiter' ? 'S03' : '01 - New Stage'
-                  });
-                  setShowTemplateModal(true);
-                }}
+                onClick={() => handleOpenAddTemplate()}
                 className="btn-primary"
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.48rem 1rem', fontSize: '0.85rem', borderRadius: '8px' }}
               >
@@ -1429,6 +1464,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
               {paginatedTemplates.map(tpl => {
                 const isSelected = selectedTemplateIds.includes(tpl.id);
+                const isMarketing = tpl.template_type === 'marketing' || !!tpl.cta_button_text;
 
                 return (
                   <div
@@ -1447,8 +1483,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <button
                             type="button"
                             onClick={() => handleToggleSelectTemplate(tpl.id)}
@@ -1469,6 +1505,18 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                           }}>
                             {tpl.target_pipeline === 'recruiter' ? 'HR & Recruiter' : 'Sales Pipeline'}
                           </span>
+
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            background: isMarketing ? '#f3e8ff' : '#f3f4f6',
+                            color: isMarketing ? '#7e22ce' : '#4b5563',
+                            border: isMarketing ? '1px solid #e9d5ff' : '1px solid #e5e7eb'
+                          }}>
+                            {isMarketing ? '🎨 Marketing Design' : '📄 Plain Business'}
+                          </span>
                         </div>
 
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -1476,9 +1524,21 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                         </span>
                       </div>
 
-                      <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
+                      <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
                         {tpl.template_name}
                       </h4>
+
+                      {tpl.badge_text && (
+                        <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#4f46e5', marginBottom: '0.25rem' }}>
+                          {tpl.badge_text}
+                        </div>
+                      )}
+
+                      {tpl.hero_headline && (
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem', lineHeight: 1.3 }}>
+                          {tpl.hero_headline}
+                        </div>
+                      )}
 
                       <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent-color)', marginBottom: '0.5rem' }}>
                         Subject: {tpl.subject}
@@ -1498,13 +1558,49 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                       }}>
                         {tpl.message_body}
                       </div>
+
+                      {/* CTA Action Button Preview */}
+                      {tpl.cta_button_text && (
+                        <div style={{ marginTop: '0.65rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '0.3rem 0.75rem',
+                            borderRadius: '6px',
+                            backgroundColor: tpl.cta_button_color || '#2563eb',
+                            color: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}>
+                            <MousePointer size={12} />
+                            <span>{tpl.cta_button_text}</span>
+                          </span>
+                          {tpl.cta_button_url && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tpl.cta_button_url}>
+                              🔗 {tpl.cta_button_url}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
                       <button
                         type="button"
                         onClick={() => {
-                          setCurrentTemplate(tpl);
+                          setCurrentTemplate({
+                            ...tpl,
+                            template_type: tpl.template_type || (tpl.cta_button_text ? 'marketing' : 'plain'),
+                            badge_text: tpl.badge_text || '',
+                            hero_headline: tpl.hero_headline || '',
+                            hero_subheading: tpl.hero_subheading || '',
+                            cta_button_text: tpl.cta_button_text || '',
+                            cta_button_url: tpl.cta_button_url || '',
+                            cta_button_color: tpl.cta_button_color || '#2563eb'
+                          });
+                          setTemplateModalTab('editor');
                           setShowTemplateModal(true);
                         }}
                         className="btn-action-secondary"
@@ -1634,6 +1730,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 <tbody>
                   {paginatedTemplates.map((tpl) => {
                     const isSelected = selectedTemplateIds.includes(tpl.id);
+                    const isMarketing = tpl.template_type === 'marketing' || !!tpl.cta_button_text;
 
                     return (
                       <tr
@@ -1657,7 +1754,19 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
                         {/* Name Cell */}
                         <td style={{ padding: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tpl.template_name}>
-                          {tpl.template_name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span>{tpl.template_name}</span>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              background: isMarketing ? '#f3e8ff' : '#f3f4f6',
+                              color: isMarketing ? '#7e22ce' : '#4b5563'
+                            }}>
+                              {isMarketing ? '🎨 Marketing' : '📄 Plain'}
+                            </span>
+                          </div>
                         </td>
 
                         {/* Pipeline Cell */}
@@ -1687,7 +1796,12 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
                         {/* Body Preview Cell */}
                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tpl.message_body}>
-                          {tpl.message_body ? tpl.message_body.replace(/\n/g, ' ').slice(0, 120) : '—'}
+                          {tpl.cta_button_text ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: tpl.cta_button_color || '#2563eb', fontWeight: 600, marginRight: '0.4rem' }}>
+                              [🔘 {tpl.cta_button_text}]
+                            </span>
+                          ) : null}
+                          {tpl.message_body ? tpl.message_body.replace(/\n/g, ' ').slice(0, 100) : '—'}
                         </td>
 
                         {/* Actions Cell */}
@@ -1696,7 +1810,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                             <button
                               type="button"
                               onClick={() => {
-                                setCurrentTemplate(tpl);
+                                setCurrentTemplate({
+                                  ...tpl,
+                                  template_type: tpl.template_type || (tpl.cta_button_text ? 'marketing' : 'plain'),
+                                  badge_text: tpl.badge_text || '',
+                                  hero_headline: tpl.hero_headline || '',
+                                  hero_subheading: tpl.hero_subheading || '',
+                                  cta_button_text: tpl.cta_button_text || '',
+                                  cta_button_url: tpl.cta_button_url || '',
+                                  cta_button_color: tpl.cta_button_color || '#2563eb'
+                                });
+                                setTemplateModalTab('editor');
                                 setShowTemplateModal(true);
                               }}
                               style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
@@ -2034,6 +2158,32 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             </div>
           )}
 
+          {templates.length > 0 && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Select Email Template to Test (Optional)
+              </label>
+              <select
+                value={testSelectedTemplateId}
+                onChange={(e) => setTestSelectedTemplateId(e.target.value)}
+                style={{ width: '100%', padding: '0.65rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.92rem', backgroundColor: 'var(--bg-surface)' }}
+              >
+                <option value="">⚙️ Default SMTP Verification Ping (Plain Server Check)</option>
+                {templates.map(t => {
+                  const isMkt = t.template_type === 'marketing' || !!t.cta_button_text;
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {isMkt ? '🎨' : '📄'} {t.template_name} ({t.target_pipeline}) — {t.subject}
+                    </option>
+                  );
+                })}
+              </select>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                {testSelectedTemplateId ? '💡 Testing with responsive HTML layout, custom CTA button, and open/click tracking tags!' : 'Sends a standard server connectivity ping message.'}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginBottom: '1.25rem' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
               Recipient Email Address *
@@ -2095,9 +2245,69 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       {/* ========================================================================= */}
       {activeTab === 'logs' && (
         <div className="card" style={{ padding: '1.5rem', borderRadius: '14px' }}>
-          <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 1rem 0' }}>
-            Recent Dispatched Emails History
-          </h3>
+          
+          {/* Top Realtime Tracking Analytics Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            {(() => {
+              const totalDispatched = logs.length;
+              const openedLogs = logs.filter(l => l.opened_at || (l.open_count && l.open_count > 0));
+              const clickedLogs = logs.filter(l => l.clicked_at || (l.click_count && l.click_count > 0));
+              const openRate = totalDispatched > 0 ? Math.round((openedLogs.length / totalDispatched) * 100) : 0;
+              const clickRate = totalDispatched > 0 ? Math.round((clickedLogs.length / totalDispatched) * 100) : 0;
+
+              return (
+                <>
+                  <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Send size={14} style={{ color: 'var(--accent-color)' }} />
+                      <span>Total Dispatched</span>
+                    </div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: '0.35rem', color: 'var(--text-primary)' }}>
+                      {totalDispatched}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                      Outbound emails sent
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '1rem', borderRadius: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#166534', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Eye size={14} style={{ color: '#16a34a' }} />
+                      <span>Opens Recorded</span>
+                    </div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: '0.35rem', color: '#15803d' }}>
+                      {openedLogs.length} <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.85 }}>({openRate}%)</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: '0.15rem' }}>
+                      1x1 tracking pixel triggered
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '1rem', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <MousePointer size={14} style={{ color: '#2563eb' }} />
+                      <span>Clicks Recorded</span>
+                    </div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: '0.35rem', color: '#1d4ed8' }}>
+                      {clickedLogs.length} <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.85 }}>({clickRate}%)</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '0.15rem' }}>
+                      CTA button redirects recorded
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>
+              Recent Dispatched Emails & Tracking Logs
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              Showing {logs.length} logged message(s)
+            </span>
+          </div>
 
           {logs.length === 0 ? (
             <div style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -2105,31 +2315,70 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               <div>No dispatched emails recorded yet.</div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
               <MobileTableView id="EmailConfig/EmailConfigModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem' }}>Recipient</th>
-                    <th style={{ padding: '0.75rem' }}>Subject</th>
+                    <th style={{ padding: '0.75rem' }}>Subject / Template</th>
                     <th style={{ padding: '0.75rem' }}>Status</th>
-                    <th style={{ padding: '0.75rem' }}>Timestamp</th>
+                    <th style={{ padding: '0.75rem' }}>Realtime Tracking</th>
+                    <th style={{ padding: '0.75rem' }}>Timestamp (IST)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map(log => (
-                    <tr key={log.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{log.recipient}</td>
-                      <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{log.subject}</td>
-                      <td style={{ padding: '0.75rem' }}>
-                        <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: '#dcfce7', color: '#166534', fontWeight: 700 }}>
-                          {log.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                        {new Date(log.timestamp).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
+                  {logs.map(log => {
+                    const hasClicked = !!log.clicked_at || (log.click_count && log.click_count > 0);
+                    const hasOpened = !!log.opened_at || (log.open_count && log.open_count > 0);
+
+                    return (
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <div>{log.recipient}</div>
+                          {log.company && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{log.company}</div>}
+                        </td>
+                        <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>
+                          <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{log.subject}</div>
+                          {log.template_name && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--accent-color)', marginTop: '0.15rem' }}>
+                              Template: {log.template_name}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: log.status === 'Sent' ? '#dcfce7' : '#fee2e2', color: log.status === 'Sent' ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                            {log.status || 'Sent'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {hasClicked ? (
+                              <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: '#dbeafe', color: '#1e40af', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.3rem', width: 'fit-content' }}>
+                                <MousePointer size={11} />
+                                <span>Clicked ({log.click_count || 1}x)</span>
+                              </span>
+                            ) : null}
+                            {hasOpened ? (
+                              <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: '#dcfce7', color: '#166534', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.3rem', width: 'fit-content' }}>
+                                <Eye size={11} />
+                                <span>Opened {log.opened_at ? `(${log.opened_at})` : ''}</span>
+                              </span>
+                            ) : (
+                              !hasClicked && (
+                                <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: '#f3f4f6', color: '#6b7280', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.3rem', width: 'fit-content' }}>
+                                  <Clock size={11} />
+                                  <span>Sent (Unopened)</span>
+                                </span>
+                              )
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table></MobileTableView>
             </div>
@@ -2138,15 +2387,23 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: CREATE / EDIT EMAIL TEMPLATE */}
+      {/* MODAL: CREATE / EDIT EMAIL TEMPLATE (DUAL: ADVANCE MARKETING & PLAIN)     */}
       {/* ========================================================================= */}
       {showTemplateModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div className="card" style={{ width: '100%', maxWidth: '720px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>
-                {currentTemplate.id ? 'Edit Email Template' : 'Create New Email Template'}
-              </h3>
+          <div className="card" style={{ width: '100%', maxWidth: '860px', maxHeight: '92vh', overflowY: 'auto', padding: '1.75rem', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+            
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>{currentTemplate.template_type === 'marketing' ? '🎨' : '📄'}</span>
+                  <span>{currentTemplate.id ? 'Edit Email Template' : 'Create Email Template'}</span>
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Design responsive marketing emails with CTA action buttons & tracking, or compose direct plain text business templates.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowTemplateModal(false)}
@@ -2156,106 +2413,497 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+            {/* Modal Navigation Tabs: Editor vs Live Realtime Preview */}
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setTemplateModalTab('editor')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 1rem',
+                  border: 'none',
+                  background: 'transparent',
+                  borderBottom: templateModalTab === 'editor' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
+                  color: templateModalTab === 'editor' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: templateModalTab === 'editor' ? 700 : 500,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <Edit3 size={15} />
+                <span>✏️ Template Editor</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTemplateModalTab('preview')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 1rem',
+                  border: 'none',
+                  background: 'transparent',
+                  borderBottom: templateModalTab === 'preview' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
+                  color: templateModalTab === 'preview' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: templateModalTab === 'preview' ? 700 : 500,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <Eye size={15} />
+                <span>👁️ Live Realtime Preview</span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT: 1. EDITOR */}
+            {templateModalTab === 'editor' && (
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Target Pipeline *</label>
-                <select
-                  value={currentTemplate.target_pipeline || 'sales'}
-                  onChange={(e) => setCurrentTemplate({
-                    ...currentTemplate,
-                    target_pipeline: e.target.value,
-                    target_stage: e.target.value === 'recruiter' ? 'S03' : '01 - New Stage'
-                  })}
-                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
-                >
-                  <option value="sales">📊 Sales Pipeline (Leads)</option>
-                  <option value="recruiter">💼 HR & Recruitment (Candidates)</option>
-                </select>
-              </div>
+                {/* Format Switcher Card */}
+                <div style={{
+                  padding: '1rem',
+                  borderRadius: '10px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-light)',
+                  marginBottom: '1.25rem'
+                }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                    Choose Email Template Format:
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                    
+                    {/* Marketing Format Option */}
+                    <div
+                      onClick={() => setCurrentTemplate({ ...currentTemplate, template_type: 'marketing' })}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: currentTemplate.template_type === 'marketing' ? '2px solid #6366f1' : '1px solid var(--border-light)',
+                        backgroundColor: currentTemplate.template_type === 'marketing' ? '#f5f3ff' : 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '1.1rem' }}>🎨</span>
+                        <strong style={{ fontSize: '0.88rem', color: currentTemplate.template_type === 'marketing' ? '#4f46e5' : 'var(--text-primary)' }}>
+                          Advance Marketing Design
+                        </strong>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Branded card layout, headline banner, custom CTA action button & real-time open/click tracking.
+                      </div>
+                    </div>
 
+                    {/* Plain Text Format Option */}
+                    <div
+                      onClick={() => setCurrentTemplate({ ...currentTemplate, template_type: 'plain' })}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: currentTemplate.template_type === 'plain' ? '2px solid #2563eb' : '1px solid var(--border-light)',
+                        backgroundColor: currentTemplate.template_type === 'plain' ? '#eff6ff' : 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '1.1rem' }}>📄</span>
+                        <strong style={{ fontSize: '0.88rem', color: currentTemplate.template_type === 'plain' ? '#1d4ed8' : 'var(--text-primary)' }}>
+                          Plain Business Email
+                        </strong>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Clean direct correspondence without heavy styling. Ideal for personal employee replies and follow-ups.
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Pipeline & Target Stage */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Target Pipeline *</label>
+                    <select
+                      value={currentTemplate.target_pipeline || 'sales'}
+                      onChange={(e) => setCurrentTemplate({
+                        ...currentTemplate,
+                        target_pipeline: e.target.value,
+                        category: e.target.value === 'recruiter' ? 'HR & Recruitment' : 'Sales Pipeline',
+                        target_stage: e.target.value === 'recruiter' ? 'S03' : '01 - New Stage'
+                      })}
+                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem', backgroundColor: 'var(--bg-surface)' }}
+                    >
+                      <option value="sales">📊 Sales Pipeline (Leads)</option>
+                      <option value="recruiter">💼 HR & Recruitment (Candidates)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Target Stage *</label>
+                    <select
+                      value={currentTemplate.target_stage || ''}
+                      onChange={(e) => setCurrentTemplate({ ...currentTemplate, target_stage: e.target.value })}
+                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem', backgroundColor: 'var(--bg-surface)' }}
+                    >
+                      {currentTemplate.target_pipeline === 'recruiter' ? (
+                        RECRUITER_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)
+                      ) : (
+                        SALES_STAGES.map(s => <option key={s} value={s}>{s}</option>)
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Template Name & Subject */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Template Name *</label>
+                    <input
+                      type="text"
+                      value={currentTemplate.template_name || ''}
+                      onChange={(e) => setCurrentTemplate({ ...currentTemplate, template_name: e.target.value })}
+                      placeholder="e.g. VIP Product Intro & Demo Offer"
+                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Email Subject Line *</label>
+                    <input
+                      type="text"
+                      value={currentTemplate.subject || ''}
+                      onChange={(e) => setCurrentTemplate({ ...currentTemplate, subject: e.target.value })}
+                      placeholder="e.g. Transform Your Revenue Growth, {{name}}!"
+                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Marketing Specific Hero & Badge Inputs */}
+                {currentTemplate.template_type === 'marketing' && (
+                  <div style={{
+                    padding: '1rem',
+                    borderRadius: '10px',
+                    border: '1px solid #c7d2fe',
+                    background: '#faf5ff',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#4338ca', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Sparkles size={16} />
+                      <span>Marketing Header & Hero Banner Customization</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Tagline / Highlight Badge (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={currentTemplate.badge_text || ''}
+                          onChange={(e) => setCurrentTemplate({ ...currentTemplate, badge_text: e.target.value })}
+                          placeholder="e.g. ⭐ Limited Opportunity"
+                          style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: '#fff' }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Hero Headline Banner (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={currentTemplate.hero_headline || ''}
+                          onChange={(e) => setCurrentTemplate({ ...currentTemplate, hero_headline: e.target.value })}
+                          placeholder="e.g. Accelerate Your Sales Velocity"
+                          style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                        Hero Subheading / Subtitle (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={currentTemplate.hero_subheading || ''}
+                        onChange={(e) => setCurrentTemplate({ ...currentTemplate, hero_subheading: e.target.value })}
+                        placeholder="e.g. Tailored enterprise solutions designed for fast-scaling teams."
+                        style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: '#fff' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Placeholders Helper Box */}
+                <div style={{ background: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                    💡 Click to Copy Dynamic Placeholders:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {(currentTemplate.target_pipeline === 'recruiter' ? [
+                      '{{candidate_name}}', '{{candidate_email}}', '{{candidate_phone}}', '{{job_title}}', '{{candidate_id}}', '{{recruiter_name}}'
+                    ] : [
+                      '{{name}}', '{{phone}}', '{{company}}', '{{lead_ref_id}}', '{{stage}}', '{{rep_name}}'
+                    ]).map(tag => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => copyToClipboard(tag)}
+                        style={{
+                          fontSize: '0.72rem',
+                          fontFamily: 'monospace',
+                          fontWeight: 600,
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '6px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-light)',
+                          color: copiedTag === tag ? '#16a34a' : 'var(--accent-color)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {tag} {copiedTag === tag ? '✓' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Message Body */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                    Message Body Content *
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={currentTemplate.message_body || ''}
+                    onChange={(e) => setCurrentTemplate({ ...currentTemplate, message_body: e.target.value })}
+                    placeholder="Dear {{name}},\n\nThank you for reaching out..."
+                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem', fontFamily: 'inherit', lineHeight: 1.5 }}
+                  />
+                </div>
+
+                {/* CTA Action Button Box for Marketing */}
+                {currentTemplate.template_type === 'marketing' && (
+                  <div style={{
+                    padding: '1rem',
+                    borderRadius: '10px',
+                    border: '1.5px solid #93c5fd',
+                    background: '#eff6ff',
+                    marginBottom: '1.25rem'
+                  }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e40af', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <MousePointer size={16} />
+                      <span>Call-to-Action (CTA) Button & Click Tracking Destination</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem', color: '#1e3a8a' }}>
+                          Button Label / Text *
+                        </label>
+                        <input
+                          type="text"
+                          value={currentTemplate.cta_button_text || ''}
+                          onChange={(e) => setCurrentTemplate({ ...currentTemplate, cta_button_text: e.target.value })}
+                          placeholder="e.g. Schedule Live Demo →"
+                          style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.85rem', backgroundColor: '#fff' }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem', color: '#1e3a8a' }}>
+                          Button Action URL / Landing Page *
+                        </label>
+                        <input
+                          type="text"
+                          value={currentTemplate.cta_button_url || ''}
+                          onChange={(e) => setCurrentTemplate({ ...currentTemplate, cta_button_url: e.target.value })}
+                          placeholder="https://yourcompany.com/book-call"
+                          style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.85rem', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Color Swatches */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: '#1e3a8a' }}>
+                        Button Accent Color Palette:
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {[
+                          { color: '#2563eb', label: 'Royal Blue' },
+                          { color: '#16a34a', label: 'Emerald' },
+                          { color: '#4f46e5', label: 'Indigo' },
+                          { color: '#ea580c', label: 'Orange' },
+                          { color: '#0f172a', label: 'Dark Slate' }
+                        ].map(preset => (
+                          <button
+                            key={preset.color}
+                            type="button"
+                            onClick={() => setCurrentTemplate({ ...currentTemplate, cta_button_color: preset.color })}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              border: currentTemplate.cta_button_color === preset.color ? '2px solid #000' : '1px solid #cbd5e1',
+                              backgroundColor: '#fff',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: preset.color, display: 'inline-block' }} />
+                            <span>{preset.label}</span>
+                          </button>
+                        ))}
+
+                        <input
+                          type="color"
+                          value={currentTemplate.cta_button_color || '#2563eb'}
+                          onChange={(e) => setCurrentTemplate({ ...currentTemplate, cta_button_color: e.target.value })}
+                          style={{ width: '28px', height: '28px', padding: 0, border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                          title="Custom Color"
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '0.5rem' }}>
+                      ⚡ <strong>Automatic Click Tracking:</strong> When recipients click this button, CRM records click timestamps, increments interaction count, and smoothly redirects them to the destination!
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTENT: 2. LIVE REALTIME PREVIEW */}
+            {templateModalTab === 'preview' && (
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Target Stage *</label>
-                <select
-                  value={currentTemplate.target_stage || ''}
-                  onChange={(e) => setCurrentTemplate({ ...currentTemplate, target_stage: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
-                >
-                  {currentTemplate.target_pipeline === 'recruiter' ? (
-                    RECRUITER_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)
-                  ) : (
-                    SALES_STAGES.map(s => <option key={s} value={s}>{s}</option>)
-                  )}
-                </select>
+                {/* Device Selector & Viewport Info */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Device Viewport:</span>
+                    <div style={{ display: 'flex', border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDevice('desktop')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.35rem 0.75rem',
+                          border: 'none',
+                          background: previewDevice === 'desktop' ? 'var(--nav-active-bg)' : 'var(--bg-primary)',
+                          color: previewDevice === 'desktop' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Monitor size={14} />
+                        <span>Desktop (600px)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDevice('mobile')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.35rem 0.75rem',
+                          border: 'none',
+                          borderLeft: '1px solid var(--border-light)',
+                          background: previewDevice === 'mobile' ? 'var(--nav-active-bg)' : 'var(--bg-primary)',
+                          color: previewDevice === 'mobile' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Smartphone size={14} />
+                        <span>Mobile (360px)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#166534', background: '#dcfce7', padding: '0.25rem 0.65rem', borderRadius: '6px', fontWeight: 600 }}>
+                    <Activity size={13} />
+                    <span>Live Tracking Pixel & CTA Redirect Active</span>
+                  </div>
+                </div>
+
+                {/* Email Subject Bar */}
+                <div style={{ background: '#f8fafc', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '1rem', fontSize: '0.82rem' }}>
+                  <div><strong>Subject:</strong> {currentTemplate.subject || '(No subject specified)'}</div>
+                  <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.15rem' }}>
+                    <strong>From:</strong> {smtp.from_name || `${getActiveComp()} Team`} &lt;{smtp.from_email || smtp.username || 'noreply@domain.com'}&gt;
+                  </div>
+                </div>
+
+                {/* Rendered HTML Container */}
+                {(() => {
+                  const sampleData = {
+                    name: 'Rahul Sharma',
+                    phone: '+91 98765 43210',
+                    company: 'Sharma Enterprises',
+                    lead_ref_id: 'LD-2026-904',
+                    stage: currentTemplate.target_stage || '01 - New Stage',
+                    rep_name: 'Aditi Verma',
+                    candidate_name: 'Rahul Sharma',
+                    candidate_email: 'rahul.sharma@example.com',
+                    candidate_phone: '+91 98765 43210',
+                    job_title: 'Senior Software Engineer',
+                    candidate_id: 'CAN-8842',
+                    recruiter_name: 'Pooja Singh'
+                  };
+
+                  const compiledPreview = compileEmailTemplateHtml({
+                    template: currentTemplate,
+                    data: sampleData,
+                    trackingId: 'preview-sample-tid',
+                    baseUrl: typeof window !== 'undefined' ? window.location.origin : 'https://crm.supujacreations.com',
+                    companyName: getActiveComp(),
+                    senderName: smtp.from_name || `${getActiveComp()} Team`,
+                    signature: smtp.signature || `Best regards,\n${getActiveComp()} Team`
+                  });
+
+                  return (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      backgroundColor: '#e2e8f0',
+                      padding: '1.25rem',
+                      borderRadius: '12px',
+                      overflowX: 'auto'
+                    }}>
+                      <iframe
+                        title="Live Email Preview"
+                        srcDoc={compiledPreview}
+                        style={{
+                          width: previewDevice === 'mobile' ? '360px' : '600px',
+                          height: '520px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: previewDevice === 'mobile' ? '20px' : '8px',
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                          backgroundColor: '#ffffff',
+                          transition: 'width 0.2s'
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
+            )}
 
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Template Name *</label>
-              <input
-                type="text"
-                value={currentTemplate.template_name || ''}
-                onChange={(e) => setCurrentTemplate({ ...currentTemplate, template_name: e.target.value })}
-                placeholder="e.g. Welcome Email or Interview Schedule"
-                style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Email Subject Line *</label>
-              <input
-                type="text"
-                value={currentTemplate.subject || ''}
-                onChange={(e) => setCurrentTemplate({ ...currentTemplate, subject: e.target.value })}
-                placeholder="e.g. Welcome to SuPuja Creations, {{name}}!"
-                style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-              />
-            </div>
-
-            {/* Placeholders Helper Box */}
-            <div style={{ background: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-                💡 Click to Copy Dynamic Placeholders:
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                {(currentTemplate.target_pipeline === 'recruiter' ? [
-                  '{{candidate_name}}', '{{candidate_email}}', '{{candidate_phone}}', '{{job_title}}', '{{candidate_id}}', '{{recruiter_name}}'
-                ] : [
-                  '{{name}}', '{{phone}}', '{{company}}', '{{lead_ref_id}}', '{{stage}}', '{{rep_name}}'
-                ]).map(tag => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => copyToClipboard(tag)}
-                    style={{
-                      fontSize: '0.72rem',
-                      fontFamily: 'monospace',
-                      fontWeight: 600,
-                      padding: '0.15rem 0.45rem',
-                      borderRadius: '6px',
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--border-light)',
-                      color: copiedTag === tag ? '#16a34a' : 'var(--accent-color)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {tag} {copiedTag === tag ? '✓' : ''}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Message Body (Text / HTML) *</label>
-              <textarea
-                rows={8}
-                value={currentTemplate.message_body || ''}
-                onChange={(e) => setCurrentTemplate({ ...currentTemplate, message_body: e.target.value })}
-                placeholder="Dear {{name}},\n\nThank you for reaching out..."
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem', fontFamily: 'inherit', lineHeight: 1.5 }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            {/* Modal Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)' }}>
               <button
                 type="button"
                 onClick={() => setShowTemplateModal(false)}
