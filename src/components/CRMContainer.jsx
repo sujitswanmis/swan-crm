@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -944,6 +944,7 @@ export default function CRMContainer({
     'Human Resource': false,
     'User Management': false,
     'Workflow Builder': false,
+    'Communication Center': false,
     'System': false,
     'Settings': false
   });
@@ -977,7 +978,8 @@ export default function CRMContainer({
     const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
     const purchaseTabs = ['mrp', 'mrp_against'];
     const hrTabs = ['recruiter', 'joining'];
-    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'offline_rule'];
+    const communicationTabs = ['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'];
+    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'admin_message_config', 'offline_rule'];
     const settingsTabs = ['settings'];
 
     if (salesTabs.includes(activeTab)) {
@@ -990,6 +992,8 @@ export default function CRMContainer({
       categoryToExpand = 'User Management';
     } else if (activeTab === 'workplace') {
       categoryToExpand = 'Workflow Builder';
+    } else if (communicationTabs.includes(activeTab)) {
+      categoryToExpand = 'Communication Center';
     } else if (systemTabs.includes(activeTab)) {
       categoryToExpand = 'System';
     } else if (settingsTabs.includes(activeTab)) {
@@ -1003,6 +1007,7 @@ export default function CRMContainer({
         'Human Resource': categoryToExpand === 'Human Resource',
         'User Management': categoryToExpand === 'User Management',
         'Workflow Builder': categoryToExpand === 'Workflow Builder',
+        'Communication Center': categoryToExpand === 'Communication Center',
         'System': categoryToExpand === 'System',
         'Settings': categoryToExpand === 'Settings'
       });
@@ -4877,15 +4882,98 @@ export default function CRMContainer({
             </div>
           )}
 
-          {/* SYSTEM CATEGORY ACCORDION */}
+          {/* COMMUNICATION CENTER CATEGORY ACCORDION (Between User Management/Workflow Builder and System) */}
           {((userRole === 'admin' || userRole === 'Admin') || 
-            moduleAccess['team']?.view || 
-            moduleAccess['public_users']?.view || 
             moduleAccess['whatsapp_official']?.view || 
             moduleAccess['whatsapp_unofficial']?.view || 
             moduleAccess['sms_config']?.view || 
             moduleAccess['rcs_config']?.view || 
-            moduleAccess['email_config']?.view ||
+            moduleAccess['email_config']?.view) && (
+              <div>
+                <button
+                  onClick={() => toggleCategory('Communication Center')}
+                  className="category-header"
+                  data-active={['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)}
+                >
+                  {expandedCategories['Communication Center'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span>Communication Center</span>
+                </button>
+
+                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Communication Center']) ? 'expanded' : ''}`}>
+                  <div className="category-modules-inner">
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('whatsapp_official')}
+                        className="nav-item" 
+                        data-active={activeTab === 'whatsapp_official'}
+                        title={isSidebarCollapsed ? "WhatsApp Official" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <MessageSquare size={20} style={{ flexShrink: 0 }} />
+                        <span>WhatsApp Official</span>
+                      </button>
+                    )}
+
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('whatsapp_unofficial')}
+                        className="nav-item" 
+                        data-active={activeTab === 'whatsapp_unofficial'}
+                        title={isSidebarCollapsed ? "WhatsApp UnOfficial" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <MessageCircle size={20} style={{ flexShrink: 0 }} />
+                        <span>WhatsApp UnOfficial</span>
+                      </button>
+                    )}
+
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('sms_config')}
+                        className="nav-item" 
+                        data-active={activeTab === 'sms_config'}
+                        title={isSidebarCollapsed ? "SMS" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Send size={20} style={{ flexShrink: 0 }} />
+                        <span>SMS</span>
+                      </button>
+                    )}
+
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('rcs_config')}
+                        className="nav-item" 
+                        data-active={activeTab === 'rcs_config'}
+                        title={isSidebarCollapsed ? "RCS" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Zap size={20} style={{ flexShrink: 0 }} />
+                        <span>RCS</span>
+                      </button>
+                    )}
+
+                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                      <button 
+                        onClick={() => handleTabChange('email_config')}
+                        className="nav-item" 
+                        data-active={activeTab === 'email_config'}
+                        title={isSidebarCollapsed ? "Email" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <Mail size={20} style={{ flexShrink: 0 }} />
+                        <span>Email</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {/* SYSTEM CATEGORY ACCORDION */}
+          {((userRole === 'admin' || userRole === 'Admin') || 
+            moduleAccess['team']?.view || 
+            moduleAccess['public_users']?.view || 
             moduleAccess['offline_rule']?.view) && (
               <div>
                 <button
@@ -4924,82 +5012,6 @@ export default function CRMContainer({
                         <Users size={20} style={{ flexShrink: 0 }} />
                         <span>Public User Management</span>
                       </button>
-                    )}
-
-                    {/* Message Config */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view || moduleAccess['whatsapp_unofficial']?.view || moduleAccess['sms_config']?.view || moduleAccess['rcs_config']?.view || moduleAccess['email_config']?.view) && (
-                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
-                        <button 
-                          onClick={() => {
-                            if (isSidebarCollapsed) {
-                              setIsSidebarCollapsed(false);
-                              setMessageMenuExpanded(true);
-                            } else {
-                              setMessageMenuExpanded(!messageMenuExpanded);
-                            }
-                          }}
-                          className="nav-item" 
-                          data-active={['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)}
-                          title={isSidebarCollapsed ? "Message Config" : undefined}
-                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                        >
-                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
-                            {messageMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </span>
-                          <MessageCircle size={20} style={{ flexShrink: 0 }} />
-                          <span>Message Config</span>
-                        </button>
-                        
-                        <div className={`submenu-list ${messageMenuExpanded ? 'expanded' : ''}`}>
-                          <div className="submenu-inner">
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('whatsapp_official')}
-                                className="submenu-item"
-                                data-active={activeTab === 'whatsapp_official'}
-                              >
-                                WhatsApp Official
-                              </button>
-                            )}
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('whatsapp_unofficial')}
-                                className="submenu-item"
-                                data-active={activeTab === 'whatsapp_unofficial'}
-                              >
-                                WhatsApp UnOfficial
-                              </button>
-                            )}
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('sms_config')}
-                                className="submenu-item"
-                                data-active={activeTab === 'sms_config'}
-                              >
-                                SMS
-                              </button>
-                            )}
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('rcs_config')}
-                                className="submenu-item"
-                                data-active={activeTab === 'rcs_config'}
-                              >
-                                RCS
-                              </button>
-                            )}
-                            {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
-                              <button
-                                onClick={() => handleTabChange('email_config')}
-                                className="submenu-item"
-                                data-active={activeTab === 'email_config'}
-                              >
-                                Email
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </SidebarSubmenu>
                     )}
 
                     {/* Offline Rule (System Page) */}
