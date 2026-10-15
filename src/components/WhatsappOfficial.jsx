@@ -6,7 +6,7 @@ import {
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
   Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink, Check, Search, Layers, Key,
-  RotateCcw
+  RotateCcw, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CheckSquare, Square
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { 
@@ -142,6 +142,22 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [currentTemplate, setCurrentTemplate] = useState({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Template Search, Selection List, & Pagination State
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState([]);
+  const [templatePerPage, setTemplatePerPage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_wa_templates_per_page');
+        if (saved) return parseInt(saved, 10) || 12;
+      } catch (_) {}
+    }
+    return 12;
+  });
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templateViewMode, setTemplateViewMode] = useState('grid'); // 'grid' | 'table'
+  const [deletingBulkTemplates, setDeletingBulkTemplates] = useState(false);
 
   // Branches & Office State
   const [branches, setBranches] = useState([]);
@@ -494,6 +510,56 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     const onMouseUp = () => {
       setResizingCol(null);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  // Resizable columns state for Template Table (Lead Data Pattern)
+  const defaultTemplateColWidths = {
+    select: 48,
+    name: 240,
+    provider: 150,
+    branch: 180,
+    campaign: 170,
+    preview: 280,
+    actions: 110
+  };
+  const [templateColWidths, setTemplateColWidths] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_wa_template_table_col_widths');
+        if (saved) return { ...defaultTemplateColWidths, ...JSON.parse(saved) };
+      } catch (e) {}
+    }
+    return defaultTemplateColWidths;
+  });
+  const [resizingTemplateCol, setResizingTemplateCol] = useState(null);
+
+  const handleTemplateColumnResizeMouseDown = (colKey, e) => {
+    e.preventDefault();
+    setResizingTemplateCol(colKey);
+    const startX = e.clientX;
+    const startWidth = templateColWidths[colKey] || defaultTemplateColWidths[colKey];
+
+    const onMouseMove = (moveEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const minW = colKey === 'select' ? 40 : 70;
+      const newWidth = Math.max(minW, startWidth + diff);
+      setTemplateColWidths(prev => {
+        const updated = { ...prev, [colKey]: newWidth };
+        try {
+          localStorage.setItem('crm_wa_template_table_col_widths', JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      setResizingTemplateCol(null);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -930,7 +996,105 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const handleDeleteTemplate = async (id) => {
     if (!window.confirm('Are you sure you want to delete this template? Automations linked to it will break.')) return;
     const res = await deleteWhatsappTemplate(id);
-    if (res.success) loadAllData();
+    if (res.success) {
+      setSelectedTemplateIds(prev => prev.filter(x => x !== id));
+      loadAllData();
+    }
+  };
+
+  // Filtered Templates based on Search, BSP, and Branch
+  const filteredTemplates = React.useMemo(() => {
+    let list = templates;
+
+    // 1. Search Query (template name, campaign name, message body, branch, bsp)
+    if (templateSearch.trim()) {
+      const q = templateSearch.toLowerCase().trim();
+      list = list.filter(tpl => {
+        const meta = parseTemplateMeta(tpl.company);
+        const nameMatch = (tpl.template_name || '').toLowerCase().includes(q);
+        const campMatch = (tpl.campaign_name || '').toLowerCase().includes(q);
+        const bodyMatch = (tpl.message_body || '').toLowerCase().includes(q);
+        const branchMatch = (meta.branch || '').toLowerCase().includes(q);
+        const bspMatch = (meta.bsp || '').toLowerCase().includes(q) || getBspDisplayName(meta.bsp).toLowerCase().includes(q);
+        return nameMatch || campMatch || bodyMatch || branchMatch || bspMatch;
+      });
+    }
+
+    // 2. Filter by BSP
+    if (filterBsp !== 'All') {
+      list = list.filter(tpl => {
+        const meta = parseTemplateMeta(tpl.company);
+        return meta.bsp === filterBsp.toLowerCase();
+      });
+    }
+
+    // 3. Filter by Branch
+    if (filterBranch !== 'All') {
+      list = list.filter(tpl => {
+        const meta = parseTemplateMeta(tpl.company);
+        return meta.branch.toLowerCase().includes(filterBranch.toLowerCase());
+      });
+    }
+
+    return list;
+  }, [templates, templateSearch, filterBsp, filterBranch]);
+
+  // Total pages
+  const totalTemplatePages = Math.max(1, Math.ceil(filteredTemplates.length / templatePerPage));
+
+  // Current page items
+  const paginatedTemplates = React.useMemo(() => {
+    const startIdx = (templatePage - 1) * templatePerPage;
+    return filteredTemplates.slice(startIdx, startIdx + templatePerPage);
+  }, [filteredTemplates, templatePage, templatePerPage]);
+
+  // Keep page within bounds when filters change
+  useEffect(() => {
+    if (templatePage > totalTemplatePages) {
+      setTemplatePage(totalTemplatePages);
+    }
+  }, [totalTemplatePages, templatePage]);
+
+  // Selection handlers
+  const handleToggleSelectTemplate = (id) => {
+    setSelectedTemplateIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllVisibleTemplates = () => {
+    const visibleIds = paginatedTemplates.map(t => t.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedTemplateIds.includes(id));
+    if (allSelected) {
+      setSelectedTemplateIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedTemplateIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleSelectAllFilteredTemplates = () => {
+    const allFilteredIds = filteredTemplates.map(t => t.id);
+    const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedTemplateIds.includes(id));
+    if (allSelected) {
+      setSelectedTemplateIds([]);
+    } else {
+      setSelectedTemplateIds(allFilteredIds);
+    }
+  };
+
+  const handleBulkDeleteTemplates = async () => {
+    if (selectedTemplateIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedTemplateIds.length} selected template(s)? Automations linked to them may break.`)) return;
+    setDeletingBulkTemplates(true);
+    let successCount = 0;
+    for (const id of selectedTemplateIds) {
+      const res = await deleteWhatsappTemplate(id);
+      if (res.success) successCount++;
+    }
+    setDeletingBulkTemplates(false);
+    setSelectedTemplateIds([]);
+    alert(`Successfully deleted ${successCount} template(s).`);
+    loadAllData();
   };
 
   // --- AUTOMATIONS LOGIC ---
@@ -2512,51 +2676,254 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             )}
           </div>
 
-          {/* FILTER BAR FOR TEMPLATES */}
+          {/* SEARCH, FILTERS, PER PAGE & VIEW MODE TOOLBAR */}
           <div style={{ 
             display: 'flex', 
             flexWrap: 'wrap', 
             gap: '0.75rem', 
             alignItems: 'center', 
-            marginBottom: '1.5rem', 
-            padding: '0.75rem 1rem', 
+            justifyContent: 'space-between',
+            marginBottom: '1.25rem', 
+            padding: '0.85rem 1rem', 
             backgroundColor: 'var(--bg-primary)', 
-            borderRadius: '8px', 
-            border: '1px solid var(--border-light)' 
+            borderRadius: '10px', 
+            border: '1px solid var(--border-light)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}>
-              <Filter size={15} /> Filter:
+            {/* LEFT: SEARCH INPUT */}
+            <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '380px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                value={templateSearch}
+                onChange={(e) => {
+                  setTemplateSearch(e.target.value);
+                  setTemplatePage(1);
+                }}
+                placeholder="Search templates by name, campaign, message, branch..."
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 2rem 0.55rem 2.2rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  fontSize: '0.85rem',
+                  color: 'var(--text-primary)'
+                }}
+              />
+              {templateSearch && (
+                <button
+                  type="button"
+                  onClick={() => { setTemplateSearch(''); setTemplatePage(1); }}
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
-            {/* Filter by BSP */}
-            <select
-              value={filterBsp}
-              onChange={(e) => setFilterBsp(e.target.value)}
-              style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
-            >
-              <option value="All">All BSP Gateways</option>
-              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).map(pId => (
-                <option key={pId} value={pId}>{getBspDisplayName(pId)}</option>
-              ))}
-            </select>
+            {/* MIDDLE: FILTERS */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              {/* Filter by BSP */}
+              <select
+                value={filterBsp}
+                onChange={(e) => {
+                  setFilterBsp(e.target.value);
+                  setTemplatePage(1);
+                }}
+                style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}
+              >
+                <option value="All">All BSP Gateways</option>
+                {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).map(pId => (
+                  <option key={pId} value={pId}>{getBspDisplayName(pId)}</option>
+                ))}
+              </select>
 
-            {/* Filter by Branch */}
-            <select
-              value={filterBranch}
-              onChange={(e) => setFilterBranch(e.target.value)}
-              style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
-            >
-              <option value="All">All Offices / Branches</option>
-              <option value="New Swan Group (Headquarters)">New Swan Group (Headquarters)</option>
-              <option value="NSMLR">🏢 NSMLR</option>
-              <option value="NSTLP">🏢 NSTLP</option>
-              {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
-                <option key={b.id || b.branch_name} value={b.branch_name}>
-                  🏢 {b.branch_name}
-                </option>
-              ))}
-            </select>
+              {/* Filter by Branch */}
+              <select
+                value={filterBranch}
+                onChange={(e) => {
+                  setFilterBranch(e.target.value);
+                  setTemplatePage(1);
+                }}
+                style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}
+              >
+                <option value="All">All Offices / Branches</option>
+                <option value="New Swan Group (Headquarters)">New Swan Group (Headquarters)</option>
+                <option value="NSMLR">🏢 NSMLR</option>
+                <option value="NSTLP">🏢 NSTLP</option>
+                {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
+                  <option key={b.id || b.branch_name} value={b.branch_name}>
+                    🏢 {b.branch_name}
+                  </option>
+                ))}
+              </select>
+
+              {/* PER PAGE SELECTOR */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Show:</span>
+                <select
+                  value={templatePerPage}
+                  onChange={(e) => {
+                    const newLimit = parseInt(e.target.value, 10);
+                    setTemplatePerPage(newLimit);
+                    setTemplatePage(1);
+                    try { localStorage.setItem('crm_wa_templates_per_page', String(newLimit)); } catch (_) {}
+                  }}
+                  style={{ padding: '0.5rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }}
+                >
+                  <option value={6}>6 / page</option>
+                  <option value={10}>10 / page</option>
+                  <option value={12}>12 / page</option>
+                  <option value={24}>24 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+
+              {/* VIEW MODE TOGGLE */}
+              <div style={{ display: 'flex', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setTemplateViewMode('grid')}
+                  style={{
+                    padding: '0.45rem 0.65rem',
+                    border: 'none',
+                    backgroundColor: templateViewMode === 'grid' ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
+                    color: templateViewMode === 'grid' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="Grid Cards View"
+                >
+                  <LayoutGrid size={15} /> Grid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTemplateViewMode('table')}
+                  style={{
+                    padding: '0.45rem 0.65rem',
+                    border: 'none',
+                    backgroundColor: templateViewMode === 'table' ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
+                    color: templateViewMode === 'table' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="Table Selection List View"
+                >
+                  <List size={15} /> List
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* SELECTION ACTIONS BAR */}
+          {selectedTemplateIds.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              padding: '0.75rem 1rem',
+              backgroundColor: 'rgba(37, 99, 235, 0.08)',
+              border: '1.5px solid rgba(37, 99, 235, 0.35)',
+              borderRadius: '8px',
+              marginBottom: '1.25rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--accent-color, #2563eb)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <CheckSquare size={16} />
+                  {selectedTemplateIds.length} template(s) selected
+                </span>
+
+                <button
+                  type="button"
+                  onClick={handleSelectAllVisibleTemplates}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(37, 99, 235, 0.3)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--accent-color, #2563eb)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {paginatedTemplates.length > 0 && paginatedTemplates.every(t => selectedTemplateIds.includes(t.id)) ? 'Deselect Page' : `Select Page (${paginatedTemplates.length})`}
+                </button>
+
+                {filteredTemplates.length > paginatedTemplates.length && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllFilteredTemplates}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(37, 99, 235, 0.3)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--accent-color, #2563eb)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Select All {filteredTemplates.length} Matching
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedTemplateIds([])}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+
+              {templatesPerms.delete && (
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteTemplates}
+                  disabled={deletingBulkTemplates}
+                  style={{
+                    padding: '0.45rem 0.85rem',
+                    backgroundColor: '#fee2e2',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: deletingBulkTemplates ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  <Trash2 size={14} />
+                  {deletingBulkTemplates ? 'Deleting...' : `Delete Selected (${selectedTemplateIds.length})`}
+                </button>
+              )}
+            </div>
+          )}
 
           {showTemplateForm && (
             <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1.75rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
@@ -2701,46 +3068,105 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
-          {/* TEMPLATES CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
-            {templates
-              .filter(tpl => {
+          {/* TEMPLATES DISPLAY (GRID VIEW OR TABLE LIST VIEW) */}
+          {paginatedTemplates.length === 0 ? (
+            <div style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>📄</div>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All'
+                  ? 'No templates match your filters or search.'
+                  : 'No templates created yet.'}
+              </div>
+              <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All'
+                  ? 'Try clearing the search text or resetting the gateway/branch filters.'
+                  : 'Click "Create New Template" above to start broadcasting.'}
+              </p>
+              {(templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All') && (
+                <button
+                  type="button"
+                  onClick={() => { setTemplateSearch(''); setFilterBsp('All'); setFilterBranch('All'); setTemplatePage(1); }}
+                  style={{ marginTop: '1rem', padding: '0.45rem 0.95rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Reset All Filters
+                </button>
+              )}
+            </div>
+          ) : templateViewMode === 'grid' ? (
+            /* ======================================================== */
+            /* VIEW MODE A: GRID CARDS VIEW                             */
+            /* ======================================================== */
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
+              {paginatedTemplates.map(tpl => {
                 const meta = parseTemplateMeta(tpl.company);
-                if (filterBsp !== 'All' && meta.bsp !== filterBsp.toLowerCase()) return false;
-                if (filterBranch !== 'All' && !meta.branch.toLowerCase().includes(filterBranch.toLowerCase())) return false;
-                return true;
-              })
-              .map(tpl => {
-                const meta = parseTemplateMeta(tpl.company);
+                const isSelected = selectedTemplateIds.includes(tpl.id);
                 return (
-                  <div key={tpl.id} style={{ border: '1px solid var(--border-light)', borderRadius: '10px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div 
+                    key={tpl.id} 
+                    style={{ 
+                      border: isSelected ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)', 
+                      borderRadius: '10px', 
+                      overflow: 'hidden', 
+                      backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.025)' : 'var(--bg-surface)', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
+                      transition: 'all 0.15s ease',
+                      position: 'relative'
+                    }}
+                  >
+                    {/* TOP BAR WITH CHECKBOX & BADGES */}
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'space-between', 
+                      padding: '0.65rem 0.85rem', 
+                      backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'var(--th-bg)', 
+                      borderBottom: '1px solid var(--border-light)' 
+                    }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer', userSelect: 'none', margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectTemplate(tpl.id)}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)' }}>
+                          {isSelected ? 'Selected' : 'Select'}
+                        </span>
+                      </label>
+
+                      <span style={{ 
+                        fontSize: '0.72rem', 
+                        fontWeight: 700, 
+                        padding: '0.15rem 0.45rem', 
+                        borderRadius: '4px', 
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                        color: '#2563eb',
+                        border: '1px solid rgba(37, 99, 235, 0.25)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        <Zap size={11} /> {getBspDisplayName(meta.bsp)}
+                      </span>
+                    </div>
+
                     {tpl.image_url && (
                       <div style={{ height: '120px', width: '100%', overflow: 'hidden', backgroundColor: 'var(--th-bg)' }}>
                         <img src={tpl.image_url} alt="Template" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                     )}
-                    <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '0.5rem' }}>
-                        <h4 style={{ margin: '0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{tpl.template_name}</h4>
+
+                    <div style={{ padding: '1.15rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.45rem', gap: '0.5rem' }}>
+                        <h4 style={{ margin: '0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                          {tpl.template_name}
+                        </h4>
                       </div>
 
-                      {/* DUAL BADGES: BSP NAME + CLIENT OFFICE / BRANCH */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                        <span style={{ 
-                          fontSize: '0.72rem', 
-                          fontWeight: 700, 
-                          padding: '0.18rem 0.5rem', 
-                          borderRadius: '4px', 
-                          backgroundColor: 'rgba(37, 99, 235, 0.1)', 
-                          color: '#2563eb',
-                          border: '1px solid rgba(37, 99, 235, 0.25)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem'
-                        }}>
-                          <Zap size={11} /> {getBspDisplayName(meta.bsp)}
-                        </span>
-
+                      {/* BRANCH BADGE */}
+                      <div style={{ marginBottom: '0.65rem' }}>
                         <span style={{ 
                           fontSize: '0.72rem', 
                           fontWeight: 600, 
@@ -2757,8 +3183,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         </span>
                       </div>
 
-                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                        API ID: <strong>{tpl.campaign_name}</strong>
+                      <p style={{ margin: '0 0 0.65rem 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                        API Campaign: <strong>{tpl.campaign_name}</strong>
                       </p>
                       
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', flex: 1, whiteSpace: 'pre-wrap', maxHeight: '95px', overflowY: 'auto' }}>
@@ -2778,6 +3204,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           <button 
                             onClick={() => handleDeleteTemplate(tpl.id)} 
                             style={{ padding: '0.45rem 0.75rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Delete Template"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -2787,12 +3214,357 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
                 );
               })}
-            {templates.length === 0 && !showTemplateForm && (
-              <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '8px' }}>
-                No templates created yet. Click "Create New Template" above.
+            </div>
+          ) : (
+            /* ======================================================== */
+            /* VIEW MODE B: INTERACTIVE TABLE / SELECTION LIST VIEW      */
+            /* ======================================================== */
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px', backgroundColor: 'var(--bg-surface)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1.5px solid var(--border-light)' }}>
+                    {/* SELECT ALL COLUMN */}
+                    <th style={{ width: templateColWidths.select, minWidth: '40px', padding: '0.75rem', textAlign: 'center', position: 'relative', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={paginatedTemplates.length > 0 && paginatedTemplates.every(t => selectedTemplateIds.includes(t.id))}
+                        onChange={handleSelectAllVisibleTemplates}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                        title="Select/Deselect visible templates"
+                      />
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('select', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, select: defaultTemplateColWidths.select }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'select' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* TEMPLATE NAME */}
+                    <th style={{ width: templateColWidths.name, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>Template Name</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('name', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, name: defaultTemplateColWidths.name }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'name' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* BSP GATEWAY */}
+                    <th style={{ width: templateColWidths.provider, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>BSP Gateway</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('provider', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, provider: defaultTemplateColWidths.provider }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'provider' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* OFFICE / BRANCH */}
+                    <th style={{ width: templateColWidths.branch, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>Branch / Office</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('branch', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, branch: defaultTemplateColWidths.branch }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'branch' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* CAMPAIGN / API ID */}
+                    <th style={{ width: templateColWidths.campaign, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>API Campaign ID</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('campaign', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, campaign: defaultTemplateColWidths.campaign }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'campaign' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* MESSAGE PREVIEW */}
+                    <th style={{ width: templateColWidths.preview, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>Message Preview</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('preview', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, preview: defaultTemplateColWidths.preview }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'preview' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
+                    {/* ACTIONS */}
+                    <th style={{ width: templateColWidths.actions, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                      <span>Actions</span>
+                      <div
+                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('actions', e)}
+                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, actions: defaultTemplateColWidths.actions }))}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'actions' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedTemplates.map(tpl => {
+                    const meta = parseTemplateMeta(tpl.company);
+                    const isSelected = selectedTemplateIds.includes(tpl.id);
+                    return (
+                      <tr 
+                        key={tpl.id} 
+                        style={{ 
+                          borderBottom: '1px solid var(--border-light)',
+                          backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.05)' : 'transparent',
+                          transition: 'background-color 0.15s ease'
+                        }}
+                      >
+                        {/* SELECT CHECKBOX */}
+                        <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectTemplate(tpl.id)}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                        </td>
+
+                        {/* NAME */}
+                        <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {tpl.image_url && (
+                              <img src={tpl.image_url} alt="img" style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-light)' }} />
+                            )}
+                            <span>{tpl.template_name}</span>
+                          </div>
+                        </td>
+
+                        {/* BSP */}
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{ 
+                            fontSize: '0.72rem', 
+                            fontWeight: 700, 
+                            padding: '0.15rem 0.45rem', 
+                            borderRadius: '4px', 
+                            backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                            color: '#2563eb',
+                            border: '1px solid rgba(37, 99, 235, 0.25)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <Zap size={11} /> {getBspDisplayName(meta.bsp)}
+                          </span>
+                        </td>
+
+                        {/* BRANCH */}
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{ 
+                            fontSize: '0.72rem', 
+                            fontWeight: 600, 
+                            padding: '0.15rem 0.45rem', 
+                            borderRadius: '4px', 
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                            color: '#065f46',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <Building2 size={11} /> {meta.branch}
+                          </span>
+                        </td>
+
+                        {/* CAMPAIGN */}
+                        <td style={{ padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          {tpl.campaign_name}
+                        </td>
+
+                        {/* PREVIEW */}
+                        <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '300px' }}>
+                          <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={tpl.message_body}>
+                            {tpl.message_body}
+                          </div>
+                        </td>
+
+                        {/* ACTIONS */}
+                        <td style={{ padding: '0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            {templatesPerms.edit && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditTemplate(tpl)}
+                                style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {templatesPerms.delete && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTemplate(tpl.id)}
+                                style={{ padding: '0.28rem 0.45rem', borderRadius: '4px', border: 'none', backgroundColor: '#fee2e2', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                title="Delete Template"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* PAGINATION NAVIGATION BAR */}
+          {filteredTemplates.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              marginTop: '1.5rem',
+              padding: '0.85rem 1.15rem',
+              backgroundColor: 'var(--bg-primary)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)'
+            }}>
+              <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                Showing <strong>{(templatePage - 1) * templatePerPage + 1}</strong> to <strong>{Math.min(templatePage * templatePerPage, filteredTemplates.length)}</strong> of <strong>{filteredTemplates.length}</strong> template(s)
+                {templateSearch && <span> (filtered from {templates.length} total)</span>}
               </div>
-            )}
-          </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage(1)}
+                  disabled={templatePage === 1}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: templatePage === 1 ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
+                    cursor: templatePage === 1 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="First Page"
+                >
+                  <ChevronsLeft size={14} /> First
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage(prev => Math.max(1, prev - 1))}
+                  disabled={templatePage === 1}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: templatePage === 1 ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
+                    cursor: templatePage === 1 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+
+                {/* NUMBERED PAGE PILLS */}
+                {Array.from({ length: totalTemplatePages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalTemplatePages || Math.abs(p - templatePage) <= 1)
+                  .reduce((acc, p, idx, arr) => {
+                    if (idx > 0 && p - arr[idx - 1] > 1) {
+                      acc.push('ellipsis-' + p);
+                    }
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map(item => {
+                    if (typeof item === 'string' && item.startsWith('ellipsis')) {
+                      return <span key={item} style={{ padding: '0 0.35rem', color: 'var(--text-secondary)' }}>...</span>;
+                    }
+                    const isCurrent = item === templatePage;
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setTemplatePage(item)}
+                        style={{
+                          minWidth: '32px',
+                          height: '32px',
+                          borderRadius: '4px',
+                          border: isCurrent ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                          backgroundColor: isCurrent ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
+                          color: isCurrent ? '#fff' : 'var(--text-primary)',
+                          fontWeight: isCurrent ? 700 : 500,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage(prev => Math.min(totalTemplatePages, prev + 1))}
+                  disabled={templatePage === totalTemplatePages}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: templatePage === totalTemplatePages ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
+                    cursor: templatePage === totalTemplatePages ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="Next Page"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage(totalTemplatePages)}
+                  disabled={templatePage === totalTemplatePages}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: templatePage === totalTemplatePages ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
+                    cursor: templatePage === totalTemplatePages ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.78rem',
+                    fontWeight: 600
+                  }}
+                  title="Last Page"
+                >
+                  Last <ChevronsRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
