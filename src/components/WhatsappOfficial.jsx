@@ -141,7 +141,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // Branches & Office State
   const [branches, setBranches] = useState([]);
   const [selectedTemplateBsp, setSelectedTemplateBsp] = useState('aisensy');
-  const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('Headquarters (Main Office)');
+  const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('Swan Agro');
   const [filterBsp, setFilterBsp] = useState('All');
   const [filterBranch, setFilterBranch] = useState('All');
 
@@ -254,9 +254,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // --- CLIENT ALLOCATION HELPERS (TIER 2) ---
   const allClients = React.useMemo(() => {
     const list = [
-      { id: 'Swan Agro', name: 'Swan Agro (Headquarters)', code: 'Swan Agro' },
-      { id: 'NSMLR', name: 'NSMLR (Main Unit)', code: 'NSMLR' },
-      { id: 'NSTLP', name: 'NSTLP (Plant 2)', code: 'NSTLP' }
+      { id: 'Swan Agro', name: 'Swan Agro', code: 'Swan Agro' },
+      { id: 'NSMLR', name: 'NSMLR', code: 'NSMLR' },
+      { id: 'NSTLP', name: 'NSTLP', code: 'NSTLP' },
+      { id: 'NSTL', name: 'NSTL', code: 'NSTL' }
     ];
     (tenantsList || []).forEach(t => {
       const code = t.tenant_code || t.name;
@@ -555,26 +556,29 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const parseTemplateMeta = (compStr) => {
     const raw = String(compStr || '').trim();
     let bsp = defaultProvider || 'aisensy';
-    let branch = 'Headquarters (Main Office)';
+    let branch = 'Swan Agro';
 
     const match = raw.match(/\[(.*?)\]/);
     if (match && match[1]) {
       bsp = match[1];
-      branch = raw.replace(/\[.*?\]/, '').trim() || 'Headquarters (Main Office)';
+      branch = raw.replace(/\[.*?\]/, '').trim() || 'Swan Agro';
     } else if (raw.toLowerCase() === 'nstlp') {
       bsp = 'nextel';
-      branch = 'NSTLP (Plant 2)';
+      branch = 'NSTLP';
     } else if (raw.toLowerCase() === 'nsmlr') {
       bsp = 'aisensy';
-      branch = 'NSMLR (Main Unit)';
+      branch = 'NSMLR';
+    } else if (raw.toLowerCase() === 'swan agro') {
+      bsp = 'aisensy';
+      branch = 'Swan Agro';
     } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(raw.toLowerCase())) {
       bsp = raw.toLowerCase();
-      branch = 'Headquarters (Main Office)';
+      branch = 'Swan Agro';
     } else {
       const customMatch = customBsps.find(b => b.id.toLowerCase() === raw.toLowerCase() || (b.name && b.name.toLowerCase() === raw.toLowerCase()));
       if (customMatch) {
         bsp = customMatch.id;
-        branch = 'Headquarters (Main Office)';
+        branch = 'Swan Agro';
       } else if (raw && raw !== 'All') {
         branch = raw;
       }
@@ -584,7 +588,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   const handleOpenCreateTemplate = () => {
     setSelectedTemplateBsp(defaultProvider || 'aisensy');
-    const firstBranch = branches[0]?.branch_name || 'Headquarters (Main Office)';
+    const firstBranch = branches[0]?.branch_name || 'Swan Agro';
     setSelectedTemplateBranch(firstBranch);
     setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
     setShowTemplateForm(true);
@@ -607,7 +611,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       return;
     }
     setLoading(true);
-    const branchLabel = selectedTemplateBranch || 'Headquarters (Main Office)';
+    const branchLabel = selectedTemplateBranch || 'Swan Agro';
     const bspLabel = selectedTemplateBsp || defaultProvider || 'aisensy';
     const combinedCompany = `${branchLabel} [${bspLabel}]`;
 
@@ -1857,15 +1861,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               onChange={(e) => setFilterBranch(e.target.value)}
               style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
             >
-              <option value="All">All Offices / Branches</option>
-              <option value="Headquarters (Main Office)">Headquarters (Main Office)</option>
+              <option value="All">All Companies / Branches</option>
+              <option value="Swan Agro">Swan Agro</option>
+              <option value="NSMLR">NSMLR</option>
+              <option value="NSTLP">NSTLP</option>
+              <option value="NSTL">NSTL</option>
               {branches.map(b => (
                 <option key={b.id || b.branch_name} value={b.branch_name}>
                   {b.branch_name}
                 </option>
               ))}
-              <option value="NSMLR (Main Unit)">NSMLR (Main Unit)</option>
-              <option value="NSTLP (Plant 2)">NSTLP (Plant 2)</option>
             </select>
           </div>
 
@@ -1912,25 +1917,26 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 {/* 2. Client Main Office & Branch List */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <Building2 size={15} color="#10b981" /> Client Office / Branch List
+                    <Building2 size={15} color="#10b981" /> Client Company / Branch
                   </label>
                   <select 
                     value={selectedTemplateBranch} 
                     onChange={e => setSelectedTemplateBranch(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                   >
-                    <option value="Headquarters (Main Office)">🏢 Headquarters (Main Office)</option>
-                    {branches.filter(b => b.branch_name !== 'Headquarters (Main Office)').map(b => (
+                    <option value="Swan Agro">🏢 Swan Agro</option>
+                    <option value="NSMLR">🏢 NSMLR</option>
+                    <option value="NSTLP">🏢 NSTLP</option>
+                    <option value="NSTL">🏢 NSTL</option>
+                    <option value="All Companies (Universal)">🏢 All Companies (Universal)</option>
+                    {branches.map(b => (
                       <option key={b.id || b.branch_name} value={b.branch_name}>
-                        🏢 {b.branch_name} ({b.location_type || 'Branch'})
+                        🏢 {b.branch_name}
                       </option>
                     ))}
-                    <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
-                    <option value="NSMLR (Main Unit)">🏢 NSMLR (Main Unit)</option>
-                    <option value="NSTLP (Plant 2)">🏢 NSTLP (Plant 2)</option>
                   </select>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Headquarters (Main Office) is selected by default.
+                    Select company or branch mapped to this template.
                   </span>
                 </div>
 
