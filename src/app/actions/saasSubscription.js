@@ -1678,28 +1678,50 @@ export async function getTenantActiveUsers(tenantId) {
 
     const { data: tenant } = await admin
       .from('tenants')
-      .select('id, name, tenant_code')
+      .select('id, name, tenant_code, primary_contact_email')
       .eq('id', tenantId)
       .maybeSingle();
 
     const { data: users, error } = await admin
       .from('user_roles')
-      .select('user_id, emp_id, emp_name, emp_official_mail_id, email, role, is_approved, tenant_id, company, created_at')
+      .select('user_id, emp_id, emp_name, emp_official_mail_id, email, role, is_approved, company, created_at')
       .order('emp_name', { ascending: true });
 
     if (error) throw error;
 
     const tCode = (tenant?.tenant_code || '').toLowerCase().trim();
     const tName = (tenant?.name || '').toLowerCase().trim();
+    const adminEmail = (tenant?.primary_contact_email || '').toLowerCase().trim();
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
 
     const tenantUsers = (users || []).filter(u => {
-      if (u.tenant_id && u.tenant_id === tenantId) return true;
+      if (u.role === 'customer') return false;
       const comp = (u.company || '').toLowerCase().trim();
-      if (!comp) return false;
-      if (tenantId === DEFAULT_TENANT_ID) {
-        return comp.includes('swan') || comp.includes('testing');
+      const uEmail = (u.email || '').toLowerCase().trim();
+      const uOfficialEmail = (u.emp_official_mail_id || '').toLowerCase().trim();
+
+      // Check admin email match
+      if (adminEmail && (uEmail === adminEmail || uOfficialEmail === adminEmail)) {
+        return true;
       }
+
+      if (tenantId === DEFAULT_TENANT_ID || tCode === 'new_swan_group') {
+        return SWAN_COMPANIES.includes(comp) || (!comp && (uEmail.endsWith('@newswangroup.com') || !uEmail.includes('@')));
+      }
+
       return comp === tName || comp === tCode;
+    });
+
+    tenantUsers.sort((a, b) => {
+      const aEmail = (a.email || a.emp_official_mail_id || '').toLowerCase();
+      const bEmail = (b.email || b.emp_official_mail_id || '').toLowerCase();
+      if (adminEmail && aEmail === adminEmail) return -1;
+      if (adminEmail && bEmail === adminEmail) return 1;
+      const aIsAdmin = a.role === 'admin' || a.role === 'Admin';
+      const bIsAdmin = b.role === 'admin' || b.role === 'Admin';
+      if (aIsAdmin && !bIsAdmin) return -1;
+      if (!aIsAdmin && bIsAdmin) return 1;
+      return (a.emp_name || '').localeCompare(b.emp_name || '');
     });
 
     const activeUsers = tenantUsers.filter(u => u.is_approved !== false);
