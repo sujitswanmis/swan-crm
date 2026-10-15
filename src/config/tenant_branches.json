@@ -70,5 +70,24 @@
       "is_active": true,
       "created_at": "2026-10-12T18:47:15.870Z"
     }
+  ],
+  "Testing New Swan Group": [
+    {
+      "id": "br_hq_1792079996274",
+      "company": "Testing New Swan Group",
+      "branch_code": "HQ-MAIN-01",
+      "branch_name": "Headquarters (Main Office)",
+      "location_type": "Headquarters",
+      "address": "Main Office Complex",
+      "city": "Headquarters City",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "",
+      "incharge_name": "Director / Branch Head",
+      "is_active": true,
+      "created_at": "2026-10-15T15:59:56.274Z"
+    }
   ]
 }

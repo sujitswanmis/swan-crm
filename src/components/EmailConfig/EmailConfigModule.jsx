@@ -7,7 +7,7 @@ import {
   RefreshCw, Shield, Key, Eye, EyeOff, Server, Play, Clock, 
   Sparkles, Briefcase, Database, Tag, Copy, Check, ChevronRight, X,
   LayoutGrid, List, ChevronLeft, ChevronsLeft, ChevronsRight, CheckSquare, Square,
-  Search, Star, Building2, Smartphone, Monitor, MousePointer, Activity
+  Search, Star, Building2, Smartphone, Monitor, MousePointer, Activity, MapPin
 } from 'lucide-react';
 import { 
   getEmailConfig, 
@@ -22,7 +22,7 @@ import {
   deleteEmailAutomation, 
   sendTestEmail
 } from '@/app/actions/emailConfig';
-import { compileEmailTemplateHtml } from '@/utils/emailTemplateCompiler';
+import { compileEmailTemplateHtml, DESIGN_PRESETS } from '@/utils/emailTemplateCompiler';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
 
@@ -152,6 +152,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   // Templates State
   const [templates, setTemplates] = useState([]);
   const [templateFilter, setTemplateFilter] = useState('all');
+  const [templateBranchFilter, setTemplateBranchFilter] = useState('all');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateModalTab, setTemplateModalTab] = useState('editor'); // 'editor' | 'preview'
   const [previewDevice, setPreviewDevice] = useState('desktop'); // 'desktop' | 'mobile'
@@ -159,18 +160,24 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   const [currentTemplate, setCurrentTemplate] = useState({
     id: '',
     category: 'Sales Pipeline',
-    template_type: 'marketing', // 'plain' | 'marketing'
+    template_type: 'marketing', // 'plain' | 'marketing' | 'custom_html'
+    design_preset: 'marketing',
     template_name: '',
     subject: '',
     badge_text: '⭐ Exclusive Business Update',
     hero_headline: '',
     hero_subheading: '',
     message_body: '',
+    html_content: '',
     cta_button_text: 'Learn More & Get Started →',
     cta_button_url: 'https://example.com/demo',
     cta_button_color: '#2563eb',
+    coupon_code: 'VIP-SAVE30',
     target_pipeline: 'sales',
-    target_stage: '01 - New Stage'
+    target_stage: '01 - New Stage',
+    target_tenant_id: '',
+    client_name: '',
+    branch: 'All Branches'
   });
 
   // Template Search, Selection, Pagination & Resizing States
@@ -203,10 +210,11 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     return {
       select: 50,
       name: 180,
-      category: 130,
-      stage: 130,
-      subject: 220,
-      preview: 280,
+      branch: 140,
+      category: 120,
+      stage: 120,
+      subject: 200,
+      preview: 250,
       actions: 120
     };
   });
@@ -602,10 +610,11 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     const defaults = {
       select: 50,
       name: 180,
-      category: 130,
-      stage: 130,
-      subject: 220,
-      preview: 280,
+      branch: 140,
+      category: 120,
+      stage: 120,
+      subject: 200,
+      preview: 250,
       actions: 120
     };
     setEmailColWidths(prev => {
@@ -621,6 +630,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   const filteredTemplates = templates.filter(t => {
     if (templateFilter === 'sales' && !(t.target_pipeline === 'sales' || t.category === 'Sales Pipeline')) return false;
     if (templateFilter === 'recruiter' && !(t.target_pipeline === 'recruiter' || t.category === 'HR & Recruitment')) return false;
+    if (templateBranchFilter !== 'all' && (t.branch || 'All Branches') !== templateBranchFilter) return false;
 
     if (!templateSearch.trim()) return true;
     const q = templateSearch.toLowerCase().trim();
@@ -629,7 +639,9 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       (t.subject || '').toLowerCase().includes(q) ||
       (t.message_body || '').toLowerCase().includes(q) ||
       (t.target_stage || '').toLowerCase().includes(q) ||
-      (t.category || '').toLowerCase().includes(q)
+      (t.category || '').toLowerCase().includes(q) ||
+      (t.branch || '').toLowerCase().includes(q) ||
+      (t.client_name || '').toLowerCase().includes(q)
     );
   });
 
@@ -641,7 +653,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
   useEffect(() => {
     setTemplatePage(1);
-  }, [templateFilter, templateSearch, templatePerPage]);
+  }, [templateFilter, templateBranchFilter, templateSearch, templatePerPage]);
 
   const handlePerPageChange = (size) => {
     setTemplatePerPage(size);
@@ -688,25 +700,83 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     return targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
   };
 
-  const handleOpenAddTemplate = (pipelineOverride = null) => {
+  const handleOpenAddTemplate = async (pipelineOverride = null) => {
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    const comp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
     const pipe = pipelineOverride || (templateFilter === 'recruiter' ? 'recruiter' : 'sales');
+    const defaultPreset = pipe === 'recruiter' ? 'interview_call' : 'marketing';
+    const presetMeta = DESIGN_PRESETS.find(p => p.id === defaultPreset) || DESIGN_PRESETS[0];
+
+    try {
+      const bRes = await getTenantBranches(targetTenant ? (targetTenant.name || targetTenant.id) : comp);
+      if (bRes.success && Array.isArray(bRes.branches)) {
+        setModalBranches(bRes.branches);
+      } else {
+        setModalBranches(branches);
+      }
+    } catch {
+      setModalBranches(branches);
+    }
+
     setCurrentTemplate({
       id: '',
       category: pipe === 'recruiter' ? 'HR & Recruitment' : 'Sales Pipeline',
-      template_type: 'marketing',
+      template_type: defaultPreset === 'plain' ? 'plain' : (defaultPreset === 'custom_html' ? 'custom_html' : 'marketing'),
+      design_preset: defaultPreset,
       template_name: '',
-      subject: '',
-      badge_text: pipe === 'recruiter' ? '💼 Career Opportunity' : '⭐ Business Growth Update',
-      hero_headline: pipe === 'recruiter' ? 'Exclusive Career Opportunity at SuPuja' : 'Transform Your Business Operations Today',
-      hero_subheading: pipe === 'recruiter' ? 'Your profile stood out to our talent acquisition team.' : 'Discover custom solutions tailored to drive maximum ROI and efficiency.',
-      message_body: pipe === 'recruiter'
-        ? 'Hi {{candidate_name}},\n\nWe were impressed by your background and would love to discuss exciting career opportunities with our team.\n\nPlease click below to review your role details and schedule your initial conversation.'
-        : 'Hi {{name}},\n\nThank you for exploring our business solutions. We are excited to collaborate and help streamline your operations.\n\nClick the button below to schedule your personalized live demo.',
-      cta_button_text: pipe === 'recruiter' ? 'View Job Details & Schedule →' : 'Schedule Strategy Session →',
-      cta_button_url: 'https://example.com/demo',
-      cta_button_color: pipe === 'recruiter' ? '#4f46e5' : '#2563eb',
+      subject: pipe === 'recruiter' ? `Interview Invitation: {{job_title}} at ${comp}` : `Special Business Update for {{name}}`,
+      badge_text: presetMeta.defaultBadge || '',
+      hero_headline: presetMeta.defaultHeadline || '',
+      hero_subheading: presetMeta.defaultSubheading || '',
+      message_body: presetMeta.defaultBody || '',
+      html_content: defaultPreset === 'custom_html' ? presetMeta.defaultBody : '',
+      cta_button_text: presetMeta.defaultCtaText || '',
+      cta_button_url: presetMeta.defaultCtaUrl || '',
+      cta_button_color: presetMeta.defaultColor || '#2563eb',
+      coupon_code: presetMeta.couponCode || 'VIP-SAVE30',
       target_pipeline: pipe,
-      target_stage: pipe === 'recruiter' ? 'S03' : '01 - New Stage'
+      target_stage: pipe === 'recruiter' ? 'S03' : '01 - New Stage',
+      target_tenant_id: selectedTenantId || '',
+      client_name: comp,
+      branch: 'All Branches'
+    });
+    setTemplateModalTab('editor');
+    setShowTemplateModal(true);
+  };
+
+  const handleOpenEditTemplate = async (tpl) => {
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    const comp = tpl.client_name || (targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations'));
+
+    try {
+      const bRes = await getTenantBranches(tpl.target_tenant_id || comp);
+      if (bRes.success && Array.isArray(bRes.branches)) {
+        setModalBranches(bRes.branches);
+      } else {
+        setModalBranches(branches);
+      }
+    } catch {
+      setModalBranches(branches);
+    }
+
+    const preset = tpl.design_preset || (tpl.template_type === 'custom_html' ? 'custom_html' : (tpl.template_type === 'plain' ? 'plain' : 'marketing'));
+
+    setCurrentTemplate({
+      ...tpl,
+      template_type: tpl.template_type || (preset === 'plain' ? 'plain' : (preset === 'custom_html' ? 'custom_html' : 'marketing')),
+      design_preset: preset,
+      badge_text: tpl.badge_text || '',
+      hero_headline: tpl.hero_headline || '',
+      hero_subheading: tpl.hero_subheading || '',
+      message_body: tpl.message_body || '',
+      html_content: tpl.html_content || (tpl.template_type === 'custom_html' ? tpl.message_body : ''),
+      cta_button_text: tpl.cta_button_text || '',
+      cta_button_url: tpl.cta_button_url || '',
+      cta_button_color: tpl.cta_button_color || '#2563eb',
+      coupon_code: tpl.coupon_code || 'VIP-SAVE30',
+      target_tenant_id: tpl.target_tenant_id || selectedTenantId || '',
+      client_name: comp,
+      branch: tpl.branch || 'All Branches'
     });
     setTemplateModalTab('editor');
     setShowTemplateModal(true);
@@ -759,11 +829,12 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   };
 
   const handleSaveTemplate = async () => {
-    if (!currentTemplate.template_name || !currentTemplate.subject || !currentTemplate.message_body) {
-      alert('Template Name, Subject, and Message Body are required.');
+    const hasBody = !!(currentTemplate.message_body?.trim() || currentTemplate.html_content?.trim());
+    if (!currentTemplate.template_name?.trim() || !currentTemplate.subject?.trim() || !hasBody) {
+      alert('Template Name, Subject, and Message Body/HTML are required.');
       return;
     }
-    const targetComp = getActiveComp();
+    const targetComp = currentTemplate.client_name || getActiveComp();
     const res = await saveEmailTemplate(currentTemplate, targetComp);
     if (res.success) {
       setShowTemplateModal(false);
@@ -1240,31 +1311,60 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             borderRadius: '12px',
             border: '1px solid var(--border-light)'
           }}>
-            {/* Category Filter Pills */}
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-              {[
-                { id: 'all', label: `All (${templates.length})` },
-                { id: 'sales', label: `📊 Sales (${templates.filter(t => t.target_pipeline === 'sales' || t.category === 'Sales Pipeline').length})` },
-                { id: 'recruiter', label: `💼 HR & Recruiter (${templates.filter(t => t.target_pipeline === 'recruiter' || t.category === 'HR & Recruitment').length})` }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setTemplateFilter(f.id)}
+            {/* Category Filter Pills & Branch Scope Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'all', label: `All (${templates.length})` },
+                  { id: 'sales', label: `📊 Sales (${templates.filter(t => t.target_pipeline === 'sales' || t.category === 'Sales Pipeline').length})` },
+                  { id: 'recruiter', label: `💼 HR & Recruiter (${templates.filter(t => t.target_pipeline === 'recruiter' || t.category === 'HR & Recruitment').length})` }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setTemplateFilter(f.id)}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      fontSize: '0.82rem',
+                      fontWeight: templateFilter === f.id ? 700 : 500,
+                      border: templateFilter === f.id ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                      background: templateFilter === f.id ? 'var(--nav-active-bg)' : 'var(--bg-primary)',
+                      color: templateFilter === f.id ? 'var(--accent-color)' : 'var(--text-secondary)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Branch Scope Filter Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)' }}>
+                <MapPin size={14} style={{ color: 'var(--text-secondary)' }} />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Branch:</span>
+                <select
+                  value={templateBranchFilter}
+                  onChange={(e) => setTemplateBranchFilter(e.target.value)}
                   style={{
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '8px',
-                    fontSize: '0.82rem',
-                    fontWeight: templateFilter === f.id ? 700 : 500,
-                    border: templateFilter === f.id ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
-                    background: templateFilter === f.id ? 'var(--nav-active-bg)' : 'var(--bg-primary)',
-                    color: templateFilter === f.id ? 'var(--accent-color)' : 'var(--text-secondary)',
-                    cursor: 'pointer'
+                    border: 'none',
+                    background: 'transparent',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-primary)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    outline: 'none'
                   }}
                 >
-                  {f.label}
-                </button>
-              ))}
+                  <option value="all">🌐 All Scopes ({templates.length})</option>
+                  <option value="All Branches">🌐 All Branches (Global)</option>
+                  {branches.map(b => (
+                    <option key={b.id || b.name} value={b.name}>
+                      🏢 {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Search Box, Per-Page Selector & View Mode Switcher */}
@@ -1484,7 +1584,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   >
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                           <button
                             type="button"
                             onClick={() => handleToggleSelectTemplate(tpl.id)}
@@ -1493,6 +1593,37 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                           >
                             {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
                           </button>
+
+                          {/* Branch Scope Pill */}
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            background: tpl.branch && tpl.branch !== 'All Branches' ? '#fef3c7' : '#f1f5f9',
+                            color: tpl.branch && tpl.branch !== 'All Branches' ? '#92400e' : '#475569',
+                            border: tpl.branch && tpl.branch !== 'All Branches' ? '1px solid #fde68a' : '1px solid #cbd5e1',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}>
+                            {tpl.branch && tpl.branch !== 'All Branches' ? `🏢 ${tpl.branch}` : '🌐 All Branches'}
+                          </span>
+
+                          {/* Client Pill (if master admin or present) */}
+                          {(isMasterAdmin || tpl.client_name) && (
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '6px',
+                              background: '#ede9fe',
+                              color: '#6d28d9',
+                              border: '1px solid #ddd6fe'
+                            }}>
+                              👑 {tpl.client_name || getActiveComp()}
+                            </span>
+                          )}
 
                           <span style={{
                             fontSize: '0.72rem',
@@ -1506,17 +1637,24 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                             {tpl.target_pipeline === 'recruiter' ? 'HR & Recruiter' : 'Sales Pipeline'}
                           </span>
 
-                          <span style={{
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '6px',
-                            background: isMarketing ? '#f3e8ff' : '#f3f4f6',
-                            color: isMarketing ? '#7e22ce' : '#4b5563',
-                            border: isMarketing ? '1px solid #e9d5ff' : '1px solid #e5e7eb'
-                          }}>
-                            {isMarketing ? '🎨 Marketing Design' : '📄 Plain Business'}
-                          </span>
+                          {/* Design Preset Badge */}
+                          {(() => {
+                            const pId = tpl.design_preset || (isMarketing ? 'marketing' : 'plain');
+                            const matchedPreset = DESIGN_PRESETS.find(p => p.id === pId);
+                            return (
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                padding: '0.15rem 0.5rem',
+                                borderRadius: '6px',
+                                background: isMarketing ? '#f3e8ff' : '#f3f4f6',
+                                color: isMarketing ? '#7e22ce' : '#4b5563',
+                                border: isMarketing ? '1px solid #e9d5ff' : '1px solid #e5e7eb'
+                              }}>
+                                {matchedPreset ? `${matchedPreset.icon} ${matchedPreset.name}` : (isMarketing ? '🎨 Marketing Design' : '📄 Plain Business')}
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -1527,6 +1665,14 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                       <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
                         {tpl.template_name}
                       </h4>
+
+                      {/* Promo Deal Voucher Code Pill */}
+                      {tpl.coupon_code && (
+                        <div style={{ marginTop: '0.2rem', marginBottom: '0.45rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.6rem', borderRadius: '6px', background: '#fffbeb', border: '1px dashed #d97706', color: '#b45309', fontSize: '0.74rem', fontWeight: 700 }}>
+                          <span>🎟️ Promo Voucher:</span>
+                          <span style={{ letterSpacing: '1px', fontFamily: 'monospace' }}>{tpl.coupon_code}</span>
+                        </div>
+                      )}
 
                       {tpl.badge_text && (
                         <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#4f46e5', marginBottom: '0.25rem' }}>
@@ -1556,7 +1702,11 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                         lineHeight: 1.45,
                         border: '1px solid var(--border-light)'
                       }}>
-                        {tpl.message_body}
+                        {tpl.design_preset === 'custom_html' && tpl.html_content ? (
+                          <div style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: '#6366f1' }}>
+                            [💻 Raw Custom HTML Code: {tpl.html_content.slice(0, 150)}...]
+                          </div>
+                        ) : tpl.message_body}
                       </div>
 
                       {/* CTA Action Button Preview */}
@@ -1589,20 +1739,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
                       <button
                         type="button"
-                        onClick={() => {
-                          setCurrentTemplate({
-                            ...tpl,
-                            template_type: tpl.template_type || (tpl.cta_button_text ? 'marketing' : 'plain'),
-                            badge_text: tpl.badge_text || '',
-                            hero_headline: tpl.hero_headline || '',
-                            hero_subheading: tpl.hero_subheading || '',
-                            cta_button_text: tpl.cta_button_text || '',
-                            cta_button_url: tpl.cta_button_url || '',
-                            cta_button_color: tpl.cta_button_color || '#2563eb'
-                          });
-                          setTemplateModalTab('editor');
-                          setShowTemplateModal(true);
-                        }}
+                        onClick={() => handleOpenEditTemplate(tpl)}
                         className="btn-action-secondary"
                         style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                       >
@@ -1681,6 +1818,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                       />
                     </th>
 
+                    {/* Branch Scope Header (Mandatory Lead Data Pattern) */}
+                    <th style={{ width: `${emailColWidths.branch}px`, padding: '0.75rem', position: 'relative', fontWeight: 600 }}>
+                      Branch Scope
+                      <div
+                        onMouseDown={(e) => handleColumnResizeMouseDown(e, 'branch')}
+                        onDoubleClick={() => handleResetColumnWidth('branch')}
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '5px', cursor: 'col-resize', userSelect: 'none', touchAction: 'none', backgroundColor: resizingCol === 'branch' ? 'var(--accent-color, #2563eb)' : 'transparent' }}
+                        title="Drag to resize, double-click to reset"
+                      />
+                    </th>
+
                     {/* Target Stage Header */}
                     <th style={{ width: `${emailColWidths.stage}px`, padding: '0.75rem', position: 'relative', fontWeight: 600 }}>
                       Target Stage
@@ -1731,6 +1879,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   {paginatedTemplates.map((tpl) => {
                     const isSelected = selectedTemplateIds.includes(tpl.id);
                     const isMarketing = tpl.template_type === 'marketing' || !!tpl.cta_button_text;
+                    const pId = tpl.design_preset || (isMarketing ? 'marketing' : 'plain');
+                    const matchedPreset = DESIGN_PRESETS.find(p => p.id === pId);
 
                     return (
                       <tr
@@ -1754,17 +1904,18 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
                         {/* Name Cell */}
                         <td style={{ padding: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tpl.template_name}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span>{tpl.template_name}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.template_name}</span>
                             <span style={{
                               fontSize: '0.68rem',
                               fontWeight: 700,
                               padding: '0.1rem 0.35rem',
                               borderRadius: '4px',
                               background: isMarketing ? '#f3e8ff' : '#f3f4f6',
-                              color: isMarketing ? '#7e22ce' : '#4b5563'
+                              color: isMarketing ? '#7e22ce' : '#4b5563',
+                              flexShrink: 0
                             }}>
-                              {isMarketing ? '🎨 Marketing' : '📄 Plain'}
+                              {matchedPreset ? `${matchedPreset.icon} ${matchedPreset.name.split(' ')[0]}` : (isMarketing ? '🎨 Mkt' : '📄 Plain')}
                             </span>
                           </div>
                         </td>
@@ -1784,6 +1935,21 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                           </span>
                         </td>
 
+                        {/* Branch Scope Cell */}
+                        <td style={{ padding: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            background: tpl.branch && tpl.branch !== 'All Branches' ? '#fef3c7' : '#f1f5f9',
+                            color: tpl.branch && tpl.branch !== 'All Branches' ? '#92400e' : '#475569',
+                            border: tpl.branch && tpl.branch !== 'All Branches' ? '1px solid #fde68a' : '1px solid #cbd5e1'
+                          }}>
+                            {tpl.branch && tpl.branch !== 'All Branches' ? `🏢 ${tpl.branch}` : '🌐 All Branches'}
+                          </span>
+                        </td>
+
                         {/* Target Stage Cell */}
                         <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                           <strong>{tpl.target_stage}</strong>
@@ -1796,12 +1962,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
                         {/* Body Preview Cell */}
                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tpl.message_body}>
+                          {tpl.coupon_code ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', color: '#b45309', fontWeight: 700, marginRight: '0.4rem', background: '#fffbeb', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px dashed #d97706', fontSize: '0.72rem' }}>
+                              🎟️ {tpl.coupon_code}
+                            </span>
+                          ) : null}
                           {tpl.cta_button_text ? (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: tpl.cta_button_color || '#2563eb', fontWeight: 600, marginRight: '0.4rem' }}>
                               [🔘 {tpl.cta_button_text}]
                             </span>
                           ) : null}
-                          {tpl.message_body ? tpl.message_body.replace(/\n/g, ' ').slice(0, 100) : '—'}
+                          {tpl.design_preset === 'custom_html' && tpl.html_content ? `[HTML: ${tpl.html_content.slice(0, 60)}...]` : (tpl.message_body ? tpl.message_body.replace(/\n/g, ' ').slice(0, 100) : '—')}
                         </td>
 
                         {/* Actions Cell */}
@@ -1809,20 +1980,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
                             <button
                               type="button"
-                              onClick={() => {
-                                setCurrentTemplate({
-                                  ...tpl,
-                                  template_type: tpl.template_type || (tpl.cta_button_text ? 'marketing' : 'plain'),
-                                  badge_text: tpl.badge_text || '',
-                                  hero_headline: tpl.hero_headline || '',
-                                  hero_subheading: tpl.hero_subheading || '',
-                                  cta_button_text: tpl.cta_button_text || '',
-                                  cta_button_url: tpl.cta_button_url || '',
-                                  cta_button_color: tpl.cta_button_color || '#2563eb'
-                                });
-                                setTemplateModalTab('editor');
-                                setShowTemplateModal(true);
-                              }}
+                              onClick={() => handleOpenEditTemplate(tpl)}
                               style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                             >
                               Edit
@@ -2461,7 +2619,84 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             {/* TAB CONTENT: 1. EDITOR */}
             {templateModalTab === 'editor' && (
               <div>
-                {/* Format Switcher Card */}
+                {/* 1. Target Client & Branch Scope Assignment Card */}
+                <div style={{
+                  padding: '1rem',
+                  borderRadius: '10px',
+                  background: 'var(--bg-primary)',
+                  border: '1.5px solid #cbd5e1',
+                  marginBottom: '1.25rem'
+                }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Building2 size={16} color="#4f46e5" />
+                    <span>Target Client Company & Branch Scope Assignment</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                    {/* Target Client Tenant */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>
+                        Target Client / Tenant *
+                      </label>
+                      {isMasterAdmin ? (
+                        <select
+                          value={modalTenantId || ''}
+                          onChange={async (e) => {
+                            const tid = e.target.value;
+                            setModalTenantId(tid);
+                            const tObj = tenantsList.find(x => x.id === tid);
+                            const compName = tObj ? (tObj.name || tObj.tenant_code) : (userCompany || 'SuPuja Creations');
+                            setCurrentTemplate(prev => ({ ...prev, target_tenant_id: tid, client_name: compName, branch: 'All Branches' }));
+                            if (tid) {
+                              const bRes = await getTenantBranches(tid).catch(() => ({ branches: [] }));
+                              setModalBranches(bRes.branches || []);
+                            } else {
+                              setModalBranches(branches || []);
+                            }
+                          }}
+                          style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: 'var(--bg-surface)', fontWeight: 600, color: 'var(--text-primary)' }}
+                        >
+                          <option value="">👑 SuPuja Creations (Master HQ)</option>
+                          {tenantsList
+                            .filter(t => t.id !== 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4' && t.name !== 'SuPuja Creations')
+                            .map(t => (
+                              <option key={t.id} value={t.id}>
+                                🏢 {t.name} ({t.tenant_code})
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <div style={{ padding: '0.55rem 0.75rem', borderRadius: '6px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          🏢 {currentTemplate.client_name || getActiveComp()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Assigned Branch Scope */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>
+                        Assigned Branch / Location Scope *
+                      </label>
+                      <select
+                        value={currentTemplate.branch || 'All Branches'}
+                        onChange={(e) => setCurrentTemplate(prev => ({ ...prev, branch: e.target.value }))}
+                        style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', backgroundColor: 'var(--bg-surface)', fontWeight: 600, color: 'var(--text-primary)' }}
+                      >
+                        <option value="All Branches">🌐 All Branches (Global for this Client)</option>
+                        {(modalBranches.length > 0 ? modalBranches : branches).map(b => (
+                          <option key={b.id || b.name} value={b.name}>
+                            🏢 {b.name} {b.location ? `(${b.location})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                        This template will only be accessible and triggered for candidates/leads in this branch scope.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Select HTML Design Theme / Preset Grid */}
                 <div style={{
                   padding: '1rem',
                   borderRadius: '10px',
@@ -2469,61 +2704,58 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   border: '1px solid var(--border-light)',
                   marginBottom: '1.25rem'
                 }}>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-                    Choose Email Template Format:
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
-                    
-                    {/* Marketing Format Option */}
-                    <div
-                      onClick={() => setCurrentTemplate({ ...currentTemplate, template_type: 'marketing' })}
-                      style={{
-                        padding: '0.85rem',
-                        borderRadius: '8px',
-                        border: currentTemplate.template_type === 'marketing' ? '2px solid #6366f1' : '1px solid var(--border-light)',
-                        backgroundColor: currentTemplate.template_type === 'marketing' ? '#f5f3ff' : 'var(--bg-surface)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{ fontSize: '1.1rem' }}>🎨</span>
-                        <strong style={{ fontSize: '0.88rem', color: currentTemplate.template_type === 'marketing' ? '#4f46e5' : 'var(--text-primary)' }}>
-                          Advance Marketing Design
-                        </strong>
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        Branded card layout, headline banner, custom CTA action button & real-time open/click tracking.
-                      </div>
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Sparkles size={16} color="#6366f1" />
+                      <span>Choose Email Design Theme / Preset ({DESIGN_PRESETS.length} Layouts):</span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: '#6366f1', fontWeight: 600 }}>
+                      ⚡ Instant Responsive HTML & Realtime Keystroke Preview
+                    </span>
+                  </div>
 
-                    {/* Plain Text Format Option */}
-                    <div
-                      onClick={() => setCurrentTemplate({ ...currentTemplate, template_type: 'plain' })}
-                      style={{
-                        padding: '0.85rem',
-                        borderRadius: '8px',
-                        border: currentTemplate.template_type === 'plain' ? '2px solid #2563eb' : '1px solid var(--border-light)',
-                        backgroundColor: currentTemplate.template_type === 'plain' ? '#eff6ff' : 'var(--bg-surface)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{ fontSize: '1.1rem' }}>📄</span>
-                        <strong style={{ fontSize: '0.88rem', color: currentTemplate.template_type === 'plain' ? '#1d4ed8' : 'var(--text-primary)' }}>
-                          Plain Business Email
-                        </strong>
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        Clean direct correspondence without heavy styling. Ideal for personal employee replies and follow-ups.
-                      </div>
-                    </div>
-
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.65rem' }}>
+                    {DESIGN_PRESETS.map(preset => {
+                      const isSelected = (currentTemplate.design_preset || (currentTemplate.template_type === 'plain' ? 'plain' : 'marketing')) === preset.id;
+                      return (
+                        <div
+                          key={preset.id}
+                          onClick={() => {
+                            setCurrentTemplate(prev => ({
+                              ...prev,
+                              design_preset: preset.id,
+                              template_type: preset.id === 'plain' ? 'plain' : 'marketing',
+                              hero_headline: prev.hero_headline || preset.defaultSubject || '',
+                              cta_button_text: prev.cta_button_text || (preset.id === 'promo_deal' ? 'Claim Offer Now →' : preset.id === 'interview_call' ? 'Confirm & Join Interview →' : preset.id === 'job_offer' ? 'Accept Offer Letter →' : 'Learn More →'),
+                              cta_button_url: prev.cta_button_url || 'https://supujacreations.com'
+                            }));
+                          }}
+                          style={{
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            border: isSelected ? '2px solid #6366f1' : '1px solid var(--border-light)',
+                            backgroundColor: isSelected ? '#f5f3ff' : 'var(--bg-surface)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s',
+                            boxShadow: isSelected ? '0 2px 8px rgba(99,102,241,0.15)' : 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
+                            <span style={{ fontSize: '1.1rem' }}>{preset.icon}</span>
+                            <strong style={{ fontSize: '0.82rem', color: isSelected ? '#4f46e5' : 'var(--text-primary)' }}>
+                              {preset.name}
+                            </strong>
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                            {preset.description}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Pipeline & Target Stage */}
+                {/* 3. Pipeline & Target Stage */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Target Pipeline *</label>
@@ -2558,7 +2790,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   </div>
                 </div>
 
-                {/* Template Name & Subject */}
+                {/* 4. Template Name & Subject */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Template Name *</label>
@@ -2583,8 +2815,60 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   </div>
                 </div>
 
-                {/* Marketing Specific Hero & Badge Inputs */}
-                {currentTemplate.template_type === 'marketing' && (
+                {/* 5. Preset-Specific Option: Voucher / Coupon Code for Promo Deal */}
+                {currentTemplate.design_preset === 'promo_deal' && (
+                  <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '8px', background: '#fffbeb', border: '1.5px dashed #d97706' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.3rem' }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#92400e', margin: 0 }}>
+                        🎟️ Promotional Voucher / Discount Code *
+                      </label>
+                      <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: 600 }}>
+                        Displayed inside stylized dashed coupon box with copy instruction
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={currentTemplate.coupon_code || ''}
+                      onChange={(e) => setCurrentTemplate({ ...currentTemplate, coupon_code: e.target.value.toUpperCase() })}
+                      placeholder="e.g. WELCOME25, FESTIVE50, VIPDEAL"
+                      style={{ width: '100%', maxWidth: '300px', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #d97706', fontSize: '0.92rem', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', backgroundColor: '#fff', color: '#92400e' }}
+                    />
+                  </div>
+                )}
+
+                {/* 6. Preset-Specific Option: Custom Raw HTML Code Editor */}
+                {currentTemplate.design_preset === 'custom_html' && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                        💻 Custom HTML Source Code *
+                      </label>
+                      <span style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: 600 }}>
+                        Supports custom CSS, full tables, and tags like &#123;&#123;name&#125;&#125;
+                      </span>
+                    </div>
+                    <textarea
+                      rows={12}
+                      value={currentTemplate.html_content || ''}
+                      onChange={(e) => setCurrentTemplate({ ...currentTemplate, html_content: e.target.value })}
+                      placeholder={'<!DOCTYPE html>\n<html>\n<body style="font-family: Arial, sans-serif; margin: 0; padding: 20px;">\n  <h2>Hello {{name}},</h2>\n  <p>Your custom content here...</p>\n</body>\n</html>'}
+                      style={{
+                        width: '100%',
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: '1.5px solid #6366f1',
+                        fontSize: '0.82rem',
+                        fontFamily: 'monospace',
+                        lineHeight: 1.45,
+                        backgroundColor: '#0f172a',
+                        color: '#38bdf8'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* 7. Marketing Specific Hero & Badge Inputs (Except plain & custom_html) */}
+                {currentTemplate.template_type === 'marketing' && currentTemplate.design_preset !== 'custom_html' && (
                   <div style={{
                     padding: '1rem',
                     borderRadius: '10px',
@@ -2594,7 +2878,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   }}>
                     <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#4338ca', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <Sparkles size={16} />
-                      <span>Marketing Header & Hero Banner Customization</span>
+                      <span>Headline Banner & Hero Customization</span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
@@ -2640,7 +2924,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   </div>
                 )}
 
-                {/* Placeholders Helper Box */}
+                {/* 8. Placeholders Helper Box */}
                 <div style={{ background: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '1rem' }}>
                   <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                     💡 Click to Copy Dynamic Placeholders:
@@ -2673,10 +2957,10 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   </div>
                 </div>
 
-                {/* Message Body */}
+                {/* 9. Message Body */}
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-                    Message Body Content *
+                    Message Body Content {currentTemplate.design_preset === 'custom_html' ? '(Optional Fallback Plain Text)' : '*'}
                   </label>
                   <textarea
                     rows={6}
@@ -2687,8 +2971,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   />
                 </div>
 
-                {/* CTA Action Button Box for Marketing */}
-                {currentTemplate.template_type === 'marketing' && (
+                {/* 10. CTA Action Button Box for Marketing */}
+                {currentTemplate.template_type === 'marketing' && currentTemplate.design_preset !== 'custom_html' && (
                   <div style={{
                     padding: '1rem',
                     borderRadius: '10px',
@@ -2864,14 +3148,15 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                     recruiter_name: 'Pooja Singh'
                   };
 
+                  const activeTargetComp = currentTemplate.client_name || getActiveComp();
                   const compiledPreview = compileEmailTemplateHtml({
                     template: currentTemplate,
                     data: sampleData,
                     trackingId: 'preview-sample-tid',
                     baseUrl: typeof window !== 'undefined' ? window.location.origin : 'https://crm.supujacreations.com',
-                    companyName: getActiveComp(),
-                    senderName: smtp.from_name || `${getActiveComp()} Team`,
-                    signature: smtp.signature || `Best regards,\n${getActiveComp()} Team`
+                    companyName: activeTargetComp,
+                    senderName: smtp.from_name || `${activeTargetComp} Team`,
+                    signature: smtp.signature || `Best regards,\n${activeTargetComp} Team`
                   });
 
                   return (

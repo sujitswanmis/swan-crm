@@ -5,36 +5,36 @@
     "host": "smtp.gmail.com",
     "port": 587,
     "secure": false,
-    "username": "sujitswanmis@gmail.com",
-    "password": "8881119276@#$ujit",
+    "username": "sales@supujacreations.com",
+    "password": "cvwv hvca ogth bfxf",
     "from_name": "SuPuja Creations Team",
     "from_email": "",
-    "reply_to": "",
+    "reply_to": "sales@supujacreations.com",
     "signature": "Best regards,\nSuPuja Creations Team",
     "id": "smtp_primary",
-    "account_name": "Custom SMTP (Primary)",
+    "account_name": "SuPuja Creations",
     "is_default": true,
-    "branch": "NSMLR",
-    "updated_at": "2026-10-15T15:35:33.768Z"
+    "branch": "SuPuja Creations (Headquarters)",
+    "updated_at": "2026-10-15T16:11:33.802Z"
   },
   "smtp_accounts": [
     {
       "id": "smtp_primary",
-      "account_name": "Custom SMTP (Primary)",
+      "account_name": "SuPuja Creations",
       "is_default": true,
       "enabled": true,
       "provider": "Gmail / Google Workspace",
       "host": "smtp.gmail.com",
       "port": 587,
       "secure": false,
-      "username": "sujitswanmis@gmail.com",
-      "password": "8881119276@#$ujit",
+      "username": "sales@supujacreations.com",
+      "password": "cvwv hvca ogth bfxf",
       "from_name": "SuPuja Creations Team",
       "from_email": "",
-      "reply_to": "",
+      "reply_to": "sales@supujacreations.com",
       "signature": "Best regards,\nSuPuja Creations Team",
-      "branch": "NSMLR",
-      "updated_at": "2026-10-15T15:35:33.768Z"
+      "branch": "SuPuja Creations (Headquarters)",
+      "updated_at": "2026-10-15T16:11:33.802Z"
     }
   ],
   "templates": [
@@ -93,6 +93,15 @@
       "created_at": "2026-08-14T23:32:28.216Z"
     }
   ],
-  "logs": [],
-  "updated_at": "2026-10-15T15:35:33.769Z"
+  "logs": [
+    {
+      "id": "log_1792080712125",
+      "recipient": "sujitswanmis@gmail.com",
+      "subject": "SMTP Verification Test",
+      "message_id": "<e419dc07-341e-3383-84a1-224e7a00beab@supujacreations.com>",
+      "status": "Delivered",
+      "timestamp": "2026-10-15T16:11:52.125Z"
+    }
+  ],
+  "updated_at": "2026-10-15T16:11:52.126Z"
 }
