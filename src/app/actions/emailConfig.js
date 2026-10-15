@@ -6,6 +6,7 @@ import path from 'path';
 import nodemailer from 'nodemailer';
 import { getTenantSmtpLimitsMap } from '@/app/actions/saasSubscription';
 import { compileEmailTemplateHtml } from '@/utils/emailTemplateCompiler';
+import { PREBUILT_EMAIL_TEMPLATES } from '@/config/crmPreBuiltTemplates';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'email_campaign_settings.json');
 
@@ -50,98 +51,7 @@ const DEFAULT_CONFIG = {
       branch: 'All Branches'
     }
   ],
-  templates: [
-    {
-      id: 'tpl_lead_welcome',
-      category: 'Sales Pipeline',
-      template_name: 'Lead Welcome & Product Showcase',
-      template_type: 'marketing',
-      badge_text: '⭐ Featured Partnership',
-      hero_headline: 'Welcome to Enterprise Excellence, {{name}}',
-      hero_subheading: 'Tailored solutions & priority engineering support for {{company}}',
-      subject: 'Welcome to {{company}}, {{name}}!',
-      message_body: `Dear {{name}},\n\nThank you for reaching out to us. We have received your inquiry for {{company}}.\n\nOur team is reviewing your requirements and your dedicated account representative {{rep_name}} will be in touch shortly.\n\nHere is what you can expect:\n• Rapid 24-hour assessment of your technical needs\n• Transparent pricing & milestone-based delivery\n• Dedicated engineering & account support\n\nYour Reference ID: {{lead_ref_id}}`,
-      cta_button_text: 'Explore Full Product Catalog',
-      cta_button_url: 'https://newswangroup.com',
-      cta_button_color: '#2563eb',
-      target_pipeline: 'sales',
-      target_stage: '01 - New Stage',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'tpl_sales_quote',
-      category: 'Sales Pipeline',
-      template_name: 'Quotation & Exclusive Privilege Offer',
-      template_type: 'marketing',
-      badge_text: '⚡ Special 20% Privilege Discount',
-      hero_headline: 'Custom Proposal Ready for {{company}}',
-      hero_subheading: 'Optimized commercial terms prepared exclusively for {{name}}',
-      subject: 'Quotation & Commercial Proposal - {{company}}',
-      message_body: `Dear {{name}},\n\nWe have prepared a comprehensive commercial proposal for {{company}}.\n\nHighlights of this proposal:\n• Tailored scope matching your precision requirements\n• Volume pricing discount valid for 15 days\n• Dedicated priority production & delivery slot\n\nPlease review the details by clicking the button below.`,
-      cta_button_text: 'Review Proposal & Claim Discount',
-      cta_button_url: 'https://newswangroup.com/quotations',
-      cta_button_color: '#16a34a',
-      target_pipeline: 'sales',
-      target_stage: '03 - Proposal Sent',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'tpl_sales_demo',
-      category: 'Sales Pipeline',
-      template_name: 'Discovery Call & Strategy Session',
-      template_type: 'marketing',
-      badge_text: '📅 Free 30-Min Consultation',
-      hero_headline: 'Accelerate Your Operations Today',
-      hero_subheading: 'One-on-one discovery session with our senior technical consultants',
-      subject: "Let's Schedule Your Strategy Session, {{name}}",
-      message_body: `Hi {{name}},\n\nI would love to invite you for a 30-minute virtual strategy session to discuss how we can streamline your supply chain and operational workflows for {{company}}.\n\nPick a convenient date and time on my calendar below:`,
-      cta_button_text: 'Book Your 1-on-1 Meeting Slot',
-      cta_button_url: 'https://calendly.com',
-      cta_button_color: '#4f46e5',
-      target_pipeline: 'sales',
-      target_stage: '02 - In Discussion',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'tpl_recruiter_interview',
-      category: 'HR & Recruitment',
-      template_name: 'Candidate Interview Call Letter',
-      template_type: 'marketing',
-      badge_text: '📌 Candidate Ref: {{candidate_id}}',
-      hero_headline: "You're Invited for an Interview Round",
-      hero_subheading: 'Next round for {{job_title}} with our Leadership Team',
-      subject: 'Interview Invitation with SuPuja Creations - {{job_title}}',
-      message_body: `Dear {{candidate_name}},\n\nWe were impressed by your profile and are delighted to invite you for an interview round for the position of {{job_title}}.\n\nRecruiter Contact: {{recruiter_name}}\nCandidate Reference: {{candidate_id}}\n\nPlease confirm your availability by clicking the confirmation button below:`,
-      cta_button_text: 'Confirm Interview Attendance',
-      cta_button_url: 'https://newswangroup.com/careers',
-      cta_button_color: '#ea580c',
-      target_pipeline: 'recruiter',
-      target_stage: 'S03',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'tpl_sales_followup_plain',
-      category: 'Sales Pipeline',
-      template_name: 'Executive Direct Follow-up',
-      template_type: 'plain',
-      subject: 'Following up on our discussion - {{company}}',
-      message_body: `Hi {{name}},\n\nJust following up on our recent conversation regarding your requirements for {{company}}.\n\nDo you have 5 minutes this week for a brief catch-up call?\n\nLooking forward to hearing from you.\n\nBest regards,\n{{rep_name}}`,
-      target_pipeline: 'sales',
-      target_stage: '02 - In Discussion',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'tpl_recruiter_loi',
-      category: 'HR & Recruitment',
-      template_name: 'Letter of Intent (LOI) Formal Release',
-      template_type: 'plain',
-      subject: 'Letter of Intent (LOI) - SuPuja Creations',
-      message_body: `Dear {{candidate_name}},\n\nCongratulations! We are delighted to extend our formal Letter of Intent (LOI) for the position of {{job_title}} with SuPuja Creations.\n\nPlease reply to this email confirming receipt and acceptance of the offer terms.\n\nWe look forward to having you onboard.\n\nSincerely,\nHR & Talent Acquisition Team\nSuPuja Creations`,
-      target_pipeline: 'recruiter',
-      target_stage: 'S08',
-      created_at: new Date().toISOString()
-    }
-  ],
+  templates: PREBUILT_EMAIL_TEMPLATES,
   automations: [
     {
       id: 'auto_welcome_01',
@@ -574,6 +484,80 @@ export async function deleteBulkEmailTemplates(templateIds = [], companyOrTenant
     return { success: true, count: deletedCount };
   } catch (error) {
     console.error('deleteBulkEmailTemplates error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Duplicate / Copy an Email Template
+export async function duplicateEmailTemplate(templateId, companyOrTenantId = '') {
+  try {
+    const res = await getEmailConfig(companyOrTenantId);
+    const currentConfig = res.data;
+    const templates = currentConfig.templates || [];
+    const source = templates.find(t => t.id === templateId);
+    if (!source) {
+      return { success: false, error: 'Source template not found.' };
+    }
+
+    const cloned = {
+      ...source,
+      id: `tpl_dup_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      template_name: `${source.template_name} (Copy)`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (Array.isArray(source.blocks)) {
+      cloned.blocks = source.blocks.map(b => ({
+        ...b,
+        id: `blk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      }));
+    }
+
+    templates.unshift(cloned);
+    currentConfig.templates = templates;
+    const saveRes = await saveEmailConfig(currentConfig, companyOrTenantId);
+    if (saveRes.success) {
+      return { success: true, template: cloned, count: templates.length };
+    }
+    return saveRes;
+  } catch (error) {
+    console.error('duplicateEmailTemplate error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Seed / Merge Pre-Built Templates (20 Rich Designs for Marketing & HR)
+export async function seedPreBuiltTemplates(companyOrTenantId = '') {
+  try {
+    const res = await getEmailConfig(companyOrTenantId);
+    const currentConfig = res.data;
+    const existingTemplates = currentConfig.templates || [];
+
+    let addedCount = 0;
+    const updatedTemplates = [...existingTemplates];
+
+    for (const pre of PREBUILT_EMAIL_TEMPLATES) {
+      const exists = updatedTemplates.some(t => t.id === pre.id || t.template_name === pre.template_name);
+      if (!exists) {
+        updatedTemplates.push({
+          ...pre,
+          client_name: companyOrTenantId || 'New Swan Group',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        addedCount++;
+      }
+    }
+
+    currentConfig.templates = updatedTemplates;
+    const saveRes = await saveEmailConfig(currentConfig, companyOrTenantId);
+    if (saveRes.success) {
+      return { success: true, count: addedCount, total: updatedTemplates.length };
+    }
+    return saveRes;
+  } catch (error) {
+    console.error('seedPreBuiltTemplates error:', error);
     return { success: false, error: error.message };
   }
 }

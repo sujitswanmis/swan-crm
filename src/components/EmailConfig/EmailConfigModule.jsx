@@ -15,6 +15,8 @@ import {
   saveEmailTemplate, 
   deleteEmailTemplate,
   deleteBulkEmailTemplates,
+  duplicateEmailTemplate,
+  seedPreBuiltTemplates,
   saveSmtpAccount,
   deleteSmtpAccount,
   setDefaultSmtpAccount,
@@ -200,6 +202,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     return 'grid';
   });
   const [deletingBulkTemplates, setDeletingBulkTemplates] = useState(false);
+  const [seedingTemplates, setSeedingTemplates] = useState(false);
+  const [duplicatingTemplateId, setDuplicatingTemplateId] = useState(null);
 
   // Column Resizing for Template Table View (Mandatory Lead Data Table Rule)
   const [emailColWidths, setEmailColWidths] = useState(() => {
@@ -217,7 +221,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       stage: 120,
       subject: 200,
       preview: 250,
-      actions: 120
+      actions: 160
     };
   });
   const [resizingCol, setResizingCol] = useState(null);
@@ -871,6 +875,45 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     }
   };
 
+  const handleCopyTemplate = async (tpl) => {
+    setDuplicatingTemplateId(tpl.id);
+    try {
+      const targetComp = tpl.client_name || getActiveComp();
+      const res = await duplicateEmailTemplate(tpl.id, targetComp);
+      if (res.success) {
+        setSaveSuccessMsg(`Template "${res.template?.template_name || tpl.template_name + ' (Copy)'}" created successfully!`);
+        await loadConfig();
+        setTimeout(() => setSaveSuccessMsg(null), 3500);
+      } else {
+        alert('Failed to duplicate template: ' + (res.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error copying template: ' + err.message);
+    } finally {
+      setDuplicatingTemplateId(null);
+    }
+  };
+
+  const handleSeedPreBuiltTemplates = async () => {
+    if (!confirm('Import 20 pre-built professional Marketing & HR templates? Any existing templates will remain safe and intact.')) return;
+    setSeedingTemplates(true);
+    try {
+      const targetComp = getActiveComp();
+      const res = await seedPreBuiltTemplates(targetComp);
+      if (res.success) {
+        setSaveSuccessMsg(`Successfully imported ${res.count} new pre-built templates! Total templates: ${res.total}`);
+        await loadConfig();
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      } else {
+        alert('Failed to import templates: ' + (res.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error importing pre-built templates: ' + err.message);
+    } finally {
+      setSeedingTemplates(false);
+    }
+  };
+
   const handleSaveAutomation = async () => {
     if (!currentAuto.name || !currentAuto.template_id) {
       alert('Automation Name and Selected Template are required.');
@@ -1484,6 +1527,31 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 </button>
               </div>
 
+              {/* Load Pre-Built Templates Button */}
+              <button
+                type="button"
+                onClick={handleSeedPreBuiltTemplates}
+                disabled={seedingTemplates}
+                className="btn-action-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.48rem 0.9rem',
+                  fontSize: '0.85rem',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)',
+                  border: '1px solid #bfdbfe',
+                  color: '#1d4ed8',
+                  fontWeight: 600,
+                  cursor: seedingTemplates ? 'not-allowed' : 'pointer'
+                }}
+                title="Import or restore 20 rich Marketing & HR recruiter templates"
+              >
+                <Sparkles size={14} style={{ color: '#2563eb' }} />
+                <span>{seedingTemplates ? 'Importing 20 Templates...' : '✨ Load Pre-Built (20)'}</span>
+              </button>
+
               {/* Create Template Button */}
               <button
                 type="button"
@@ -1770,6 +1838,17 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleCopyTemplate(tpl)}
+                        disabled={duplicatingTemplateId === tpl.id}
+                        className="btn-action-secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', cursor: duplicatingTemplateId === tpl.id ? 'not-allowed' : 'pointer' }}
+                        title="Duplicate / Copy this template"
+                      >
+                        <Copy size={13} />
+                        <span>{duplicatingTemplateId === tpl.id ? 'Copying...' : 'Copy'}</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDeleteTemplate(tpl.id)}
                         style={{
                           display: 'flex',
@@ -2006,6 +2085,16 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                               style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                             >
                               Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTemplate(tpl)}
+                              disabled={duplicatingTemplateId === tpl.id}
+                              style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: duplicatingTemplateId === tpl.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                              title="Duplicate / Copy this template"
+                            >
+                              <Copy size={12} />
+                              <span>{duplicatingTemplateId === tpl.id ? '...' : 'Copy'}</span>
                             </button>
                             <button
                               type="button"
@@ -3368,7 +3457,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             )}
 
             {/* Modal Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setShowTemplateModal(false)}
@@ -3377,6 +3466,28 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               >
                 Cancel
               </button>
+
+              {currentTemplate.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentTemplate(prev => ({
+                      ...prev,
+                      id: '',
+                      template_name: `${prev.template_name} (Copy)`
+                    }));
+                    setSaveSuccessMsg('Template cloned in editor as a new copy. Click "Save Template" to store.');
+                    setTimeout(() => setSaveSuccessMsg(null), 3500);
+                  }}
+                  className="btn-action-secondary"
+                  style={{ padding: '0.6rem 1.1rem', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#2563eb', fontWeight: 600 }}
+                  title="Clone this template into a new copy"
+                >
+                  <Copy size={14} />
+                  <span>Clone as New Copy</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleSaveTemplate}
