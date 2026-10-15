@@ -6917,7 +6917,13 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('ai', moduleAccess, userRole) && visitedTabs.has('ai')}
               >
                 <ErrorBoundary>
-                  <AiAssistantModule userRole={userRole} userId={userId} lastScreenCapture={lastScreenCapture} />
+                  <AiAssistantModule 
+                    userRole={userRole} 
+                    userId={userId} 
+                    lastScreenCapture={lastScreenCapture}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
@@ -6927,7 +6933,13 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('aiadmin', moduleAccess, userRole) && visitedTabs.has('aiadmin')}
               >
                 <ErrorBoundary>
-                  <AiAdminModule />
+                  <AiAdminModule 
+                    userRole={userRole}
+                    userId={userId}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
@@ -6937,7 +6949,13 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('aiknowledgebase', moduleAccess, userRole) && visitedTabs.has('aiknowledgebase')}
               >
                 <ErrorBoundary>
-                  <AIKnowledgeBaseModule />
+                  <AIKnowledgeBaseModule 
+                    userRole={userRole}
+                    userId={userId}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 

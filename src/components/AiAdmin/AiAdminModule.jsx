@@ -1,8 +1,9 @@
 import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check } from 'lucide-react';
+import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check, Key, Eye, EyeOff, ShieldCheck, RefreshCw } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import { getTenantAiConfig, saveTenantAiConfig, testAiProviderKey } from '@/app/actions/aiConfig';
 
 const DEFAULT_AI_USERS_COL_WIDTHS = {
   employee: 240,
@@ -24,13 +25,28 @@ const MIN_AI_USERS_COL_WIDTHS = {
   actions: 90
 };
 
-export default function AiAdminModule() {
+export default function AiAdminModule({ userRole, userId, userCompany, tenantId, isMasterAdmin }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingLimit, setEditingLimit] = useState(null);
   const [newLimitValue, setNewLimitValue] = useState("");
   const [newPremiumLimitValue, setNewPremiumLimitValue] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Multi-Provider AI API Keys & Settings State
+  const effectiveWorkspace = userCompany || tenantId || 'Default Workspace';
+  const [aiConfig, setAiConfig] = useState({
+    active_provider: 'openai',
+    openai: { api_key: '', default_model: 'gpt-4o-mini', is_configured: false, masked_key: '' },
+    gemini: { api_key: '', default_model: 'gemini-2.0-flash', is_configured: false, masked_key: '' },
+    claude: { api_key: '', default_model: 'claude-3-5-sonnet', is_configured: false, masked_key: '' }
+  });
+  const [showKeys, setShowKeys] = useState({ openai: false, gemini: false, claude: false });
+  const [testingProvider, setTestingProvider] = useState(null);
+  const [testStatus, setTestStatus] = useState({});
+  const [savingAiConfig, setSavingAiConfig] = useState(false);
+  const [configSaveSuccess, setConfigSaveSuccess] = useState(false);
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
 
   // Dynamic AI Models State
   const [availableModels, setAvailableModels] = useState([]);
@@ -64,6 +80,7 @@ export default function AiAdminModule() {
     fetchUsers();
     fetchDocuments();
     fetchModels();
+    loadAiConfig();
 
     // Close dropdown on click outside
     const handleClickOutside = (event) => {
@@ -73,7 +90,67 @@ export default function AiAdminModule() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [userCompany, tenantId]);
+
+  const loadAiConfig = async () => {
+    try {
+      const res = await getTenantAiConfig(tenantId || userCompany);
+      if (res.success && res.config) {
+        setAiConfig(prev => ({
+          ...prev,
+          ...res.config,
+          openai: { ...prev.openai, ...res.config.openai, api_key: res.config.openai.masked_key || '' },
+          gemini: { ...prev.gemini, ...res.config.gemini, api_key: res.config.gemini.masked_key || '' },
+          claude: { ...prev.claude, ...res.config.claude, api_key: res.config.claude.masked_key || '' }
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to load AI config:', err);
+    }
+  };
+
+  const handleSaveAiConfig = async () => {
+    setSavingAiConfig(true);
+    setConfigSaveSuccess(false);
+    try {
+      const res = await saveTenantAiConfig(tenantId || userCompany, aiConfig);
+      if (res.success) {
+        setConfigSaveSuccess(true);
+        setTimeout(() => setConfigSaveSuccess(false), 3500);
+        await loadAiConfig();
+      } else {
+        alert(res.error || 'Failed to save AI configuration');
+      }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingAiConfig(false);
+    }
+  };
+
+  const handleTestProvider = async (provider) => {
+    setTestingProvider(provider);
+    setTestStatus(prev => ({ ...prev, [provider]: null }));
+    try {
+      const key = aiConfig[provider]?.api_key;
+      const model = aiConfig[provider]?.default_model;
+      const res = await testAiProviderKey(provider, key, model, tenantId || userCompany);
+      setTestStatus(prev => ({
+        ...prev,
+        [provider]: {
+          success: res.success,
+          message: res.success ? (res.message || 'Key verified & connected!') : (res.error || 'Connection failed')
+        }
+      }));
+    } catch (err) {
+      setTestStatus(prev => ({
+        ...prev,
+        [provider]: { success: false, message: err.message }
+      }));
+    } finally {
+      setTestingProvider(null);
+    }
+  };
 
   const fetchModels = async () => {
     try {
@@ -90,7 +167,10 @@ export default function AiAdminModule() {
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch('/api/ai/knowledge');
+      const q = new URLSearchParams();
+      if (tenantId) q.set('tenantId', tenantId);
+      if (userCompany) q.set('company', userCompany);
+      const res = await fetch(`/api/ai/knowledge${q.toString() ? `?${q.toString()}` : ''}`);
       if (res.ok) {
         const data = await res.json();
         setDocuments(data.documents || []);
@@ -107,7 +187,12 @@ export default function AiAdminModule() {
       const res = await fetch('/api/ai/knowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: docTitle, content: docContent })
+        body: JSON.stringify({ 
+          title: docTitle, 
+          content: docContent,
+          tenantId: tenantId || null,
+          company: userCompany || null
+        })
       });
       if (res.ok) {
         setDocTitle("");
@@ -138,7 +223,10 @@ export default function AiAdminModule() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/ai/admin', { cache: 'no-store' });
+      const q = new URLSearchParams();
+      if (userCompany) q.set('company', userCompany);
+      if (tenantId) q.set('tenantId', tenantId);
+      const res = await fetch(`/api/ai/admin${q.toString() ? `?${q.toString()}` : ''}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -236,7 +324,25 @@ export default function AiAdminModule() {
           </div>
           <div>
             <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>AI Admin Dashboard</h2>
-            <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>Monitor and manage AI token usage & model access across your team</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>Monitor and manage AI token usage, model access & API keys</p>
+              {effectiveWorkspace && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '12px',
+                  background: 'rgba(37, 99, 235, 0.08)',
+                  color: 'var(--accent-color)',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  border: '1px solid rgba(37, 99, 235, 0.2)'
+                }}>
+                  🏢 Workspace: {effectiveWorkspace}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -256,6 +362,572 @@ export default function AiAdminModule() {
           <Sparkles size={14} />
           {liveSynced ? `Auto-Synced with OpenAI (${availableModels.length} models)` : `Loaded Models (${availableModels.length})`}
         </div>
+      </div>
+
+      {/* Multi-Provider AI API Keys & Workspace Setup Card */}
+      <div style={{
+        background: 'var(--bg-primary)',
+        borderRadius: '14px',
+        border: '1px solid var(--border-light)',
+        padding: '1.25rem',
+        marginBottom: '1.75rem',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+      }}>
+        {/* Card Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: isConfigExpanded ? '1.25rem' : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Key size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                AI Model API Keys (ChatGPT, Gemini, Claude)
+                <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  Workspace Scoped
+                </span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                Enter custom API keys for <strong>{effectiveWorkspace}</strong>. Leave empty to use system default fallback.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <button
+              onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '8px',
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.82rem',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              {isConfigExpanded ? 'Collapse' : 'Expand Setup'}
+              <ChevronDown size={14} style={{ transform: isConfigExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
+
+            <button
+              onClick={handleSaveAiConfig}
+              disabled={savingAiConfig}
+              style={{
+                background: 'var(--accent-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.5rem 1rem',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: savingAiConfig ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+              }}
+            >
+              {savingAiConfig ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {savingAiConfig ? 'Saving...' : 'Save AI Settings'}
+            </button>
+          </div>
+        </div>
+
+        {configSaveSuccess && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1rem',
+            borderRadius: '8px',
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            color: '#065f46',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            marginBottom: '1rem'
+          }}>
+            <CheckCircle2 size={16} color="#10b981" />
+            Workspace AI Configuration saved successfully for {effectiveWorkspace}!
+          </div>
+        )}
+
+        {isConfigExpanded && (
+          <div>
+            {/* Primary Provider Selector */}
+            <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                Primary Active AI Engine:
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT-4o, GPT-4.1, o3-mini' },
+                  { id: 'gemini', label: 'Google Gemini', desc: 'Gemini 2.5 Flash, 2.0 Flash' },
+                  { id: 'claude', label: 'Anthropic Claude', desc: 'Claude 3.7 Sonnet, 3.5 Sonnet' }
+                ].map(p => {
+                  const isSelected = aiConfig.active_provider === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setAiConfig(prev => ({ ...prev, active_provider: p.id }))}
+                      style={{
+                        flex: '1',
+                        minWidth: '200px',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '8px',
+                        border: isSelected ? '2px solid var(--accent-color)' : '1px solid var(--border-light)',
+                        background: isSelected ? 'rgba(37, 99, 235, 0.05)' : 'var(--bg-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem', color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)' }}>
+                          {p.label}
+                        </span>
+                        {isSelected && <Check size={16} color="var(--accent-color)" />}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                        {p.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Provider Grid Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+              
+              {/* 1. OpenAI (ChatGPT) Card */}
+              <div style={{
+                borderRadius: '10px',
+                border: '1px solid var(--border-light)',
+                background: 'var(--bg-surface)',
+                padding: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#10b981', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700 }}>
+                      GPT
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>ChatGPT (OpenAI)</div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>api.openai.com</div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '10px',
+                    background: aiConfig.openai.is_configured ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.openai.is_configured ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.openai.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                  }}>
+                    {aiConfig.openai.is_configured ? 'Key Configured' : 'Not Set (Fallback)'}
+                  </span>
+                </div>
+
+                {/* API Key Input */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    OpenAI API Key
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showKeys.openai ? 'text' : 'password'}
+                      placeholder="sk-proj-..."
+                      value={aiConfig.openai.api_key || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAiConfig(prev => ({
+                          ...prev,
+                          openai: { ...prev.openai, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                        }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 2.2rem 0.45rem 0.65rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeys(prev => ({ ...prev, openai: !prev.openai }))}
+                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                    >
+                      {showKeys.openai ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Default Model */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    Default Model
+                  </label>
+                  <select
+                    value={aiConfig.openai.default_model || 'gpt-4o-mini'}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, openai: { ...prev.openai, default_model: e.target.value } }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="gpt-4o-mini">gpt-4o-mini (Fast & Cost-Effective)</option>
+                    <option value="gpt-4o">gpt-4o (High Intelligence)</option>
+                    <option value="gpt-4.1-mini">gpt-4.1-mini (Next-Gen Mini)</option>
+                    <option value="gpt-4.1">gpt-4.1 (Next-Gen Flagship)</option>
+                    <option value="o3-mini">o3-mini (Reasoning & Math)</option>
+                    <option value="o1">o1 (Deep Reasoning)</option>
+                  </select>
+                </div>
+
+                {/* Test Connection Button & Status */}
+                <div style={{ marginTop: 'auto', paddingTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleTestProvider('openai')}
+                    disabled={testingProvider === 'openai'}
+                    style={{
+                      width: '100%',
+                      padding: '0.4rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid #10b981',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      color: '#065f46',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: testingProvider === 'openai' ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    {testingProvider === 'openai' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {testingProvider === 'openai' ? 'Testing...' : 'Test OpenAI Connection'}
+                  </button>
+
+                  {testStatus.openai && (
+                    <div style={{
+                      marginTop: '0.4rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      color: testStatus.openai.success ? '#047857' : '#b91c1c',
+                      background: testStatus.openai.success ? '#ecfdf5' : '#fef2f2',
+                      padding: '0.3rem 0.5rem',
+                      borderRadius: '4px',
+                      border: `1px solid ${testStatus.openai.success ? '#a7f3d0' : '#fecaca'}`
+                    }}>
+                      {testStatus.openai.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. Google Gemini Card */}
+              <div style={{
+                borderRadius: '10px',
+                border: '1px solid var(--border-light)',
+                background: 'var(--bg-surface)',
+                padding: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#3b82f6', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700 }}>
+                      GEM
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Google Gemini</div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>generativelanguage.googleapis.com</div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '10px',
+                    background: aiConfig.gemini.is_configured ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.gemini.is_configured ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.gemini.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                  }}>
+                    {aiConfig.gemini.is_configured ? 'Key Configured' : 'Not Set'}
+                  </span>
+                </div>
+
+                {/* API Key Input */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    Google AI / Gemini API Key
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showKeys.gemini ? 'text' : 'password'}
+                      placeholder="AIzaSy..."
+                      value={aiConfig.gemini.api_key || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAiConfig(prev => ({
+                          ...prev,
+                          gemini: { ...prev.gemini, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                        }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 2.2rem 0.45rem 0.65rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeys(prev => ({ ...prev, gemini: !prev.gemini }))}
+                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                    >
+                      {showKeys.gemini ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Default Model */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    Default Model
+                  </label>
+                  <select
+                    value={aiConfig.gemini.default_model || 'gemini-2.0-flash'}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, gemini: { ...prev.gemini, default_model: e.target.value } }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended, Superfast)</option>
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (Adaptive Reasoning)</option>
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Lightweight)</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (Large 1M Context)</option>
+                  </select>
+                </div>
+
+                {/* Test Connection Button & Status */}
+                <div style={{ marginTop: 'auto', paddingTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleTestProvider('gemini')}
+                    disabled={testingProvider === 'gemini'}
+                    style={{
+                      width: '100%',
+                      padding: '0.4rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid #3b82f6',
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      color: '#1d4ed8',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: testingProvider === 'gemini' ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    {testingProvider === 'gemini' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {testingProvider === 'gemini' ? 'Testing...' : 'Test Gemini Connection'}
+                  </button>
+
+                  {testStatus.gemini && (
+                    <div style={{
+                      marginTop: '0.4rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      color: testStatus.gemini.success ? '#047857' : '#b91c1c',
+                      background: testStatus.gemini.success ? '#ecfdf5' : '#fef2f2',
+                      padding: '0.3rem 0.5rem',
+                      borderRadius: '4px',
+                      border: `1px solid ${testStatus.gemini.success ? '#a7f3d0' : '#fecaca'}`
+                    }}>
+                      {testStatus.gemini.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. Anthropic Claude Card */}
+              <div style={{
+                borderRadius: '10px',
+                border: '1px solid var(--border-light)',
+                background: 'var(--bg-surface)',
+                padding: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#8b5cf6', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700 }}>
+                      ANT
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Anthropic Claude</div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>api.anthropic.com</div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '10px',
+                    background: aiConfig.claude.is_configured ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.claude.is_configured ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.claude.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                  }}>
+                    {aiConfig.claude.is_configured ? 'Key Configured' : 'Not Set'}
+                  </span>
+                </div>
+
+                {/* API Key Input */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    Anthropic API Key
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showKeys.claude ? 'text' : 'password'}
+                      placeholder="sk-ant-api03-..."
+                      value={aiConfig.claude.api_key || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAiConfig(prev => ({
+                          ...prev,
+                          claude: { ...prev.claude, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                        }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 2.2rem 0.45rem 0.65rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeys(prev => ({ ...prev, claude: !prev.claude }))}
+                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                    >
+                      {showKeys.claude ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Default Model */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                    Default Model
+                  </label>
+                  <select
+                    value={aiConfig.claude.default_model || 'claude-3-5-sonnet'}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, claude: { ...prev.claude, default_model: e.target.value } }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="claude-3-7-sonnet">Claude 3.7 Sonnet (Hybrid Reasoning)</option>
+                    <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (State of the Art)</option>
+                    <option value="claude-3-5-haiku">Claude 3.5 Haiku (Ultra Fast)</option>
+                  </select>
+                </div>
+
+                {/* Test Connection Button & Status */}
+                <div style={{ marginTop: 'auto', paddingTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleTestProvider('claude')}
+                    disabled={testingProvider === 'claude'}
+                    style={{
+                      width: '100%',
+                      padding: '0.4rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid #8b5cf6',
+                      background: 'rgba(139, 92, 246, 0.08)',
+                      color: '#6d28d9',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: testingProvider === 'claude' ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    {testingProvider === 'claude' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {testingProvider === 'claude' ? 'Testing...' : 'Test Claude Connection'}
+                  </button>
+
+                  {testStatus.claude && (
+                    <div style={{
+                      marginTop: '0.4rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      color: testStatus.claude.success ? '#047857' : '#b91c1c',
+                      background: testStatus.claude.success ? '#ecfdf5' : '#fef2f2',
+                      padding: '0.3rem 0.5rem',
+                      borderRadius: '4px',
+                      border: `1px solid ${testStatus.claude.success ? '#a7f3d0' : '#fecaca'}`
+                    }}>
+                      {testStatus.claude.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
       </div>
 
       {/* User Search Bar Container */}

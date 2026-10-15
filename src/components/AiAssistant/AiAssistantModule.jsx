@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 let globalAiSessionsCache = null;
 let globalAiCurrentSessionId = null;
 
-export default function AiAssistantModule({ userRole, userId, lastScreenCapture }) {
+export default function AiAssistantModule({ userRole, userId, lastScreenCapture, userCompany, tenantId }) {
   // Session State with instant memory cache
   const [sessions, setSessions] = useState(() => globalAiSessionsCache || [
     { id: '1', title: 'Welcome Chat', messages: [{ role: 'ai', content: 'Hello! I am AI Chatbot. How can I assist you with your tasks today?' }] }
@@ -138,13 +138,34 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
   const fetchMyModels = async () => {
     try {
       const res = await fetch('/api/ai/my-models', { cache: 'no-store' });
+      let models = ['gpt-4o-mini'];
       if (res.ok) {
         const data = await res.json();
         if (data.ai_models && data.ai_models.length > 0) {
-          setAssignedModels(data.ai_models);
-          setSelectedAiModel(data.ai_models[0]);
+          models = data.ai_models;
         }
       }
+
+      // Also enrich with workspace AI config models
+      try {
+        const { getTenantAiConfig } = await import('@/app/actions/aiConfig');
+        const cfg = await getTenantAiConfig(tenantId || userCompany);
+        if (cfg.success && cfg.config) {
+          const extraModels = [];
+          if (cfg.config.gemini?.is_configured) {
+            extraModels.push(cfg.config.gemini.default_model || 'gemini-2.0-flash');
+          }
+          if (cfg.config.claude?.is_configured) {
+            extraModels.push(cfg.config.claude.default_model || 'claude-3-5-sonnet');
+          }
+          if (extraModels.length > 0) {
+            models = Array.from(new Set([...models, ...extraModels]));
+          }
+        }
+      } catch (_) {}
+
+      setAssignedModels(models);
+      setSelectedAiModel(models[0] || 'gpt-4o-mini');
     } catch (e) {
       console.error('Error fetching my models:', e);
     }
@@ -644,7 +665,13 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, userId: userId || 'guest', selectedAiModel })
+        body: JSON.stringify({ 
+          messages: apiMessages, 
+          userId: userId || 'guest', 
+          selectedAiModel,
+          company: userCompany || null,
+          tenantId: tenantId || null
+        })
       });
 
       let responseData = null;
@@ -859,6 +886,22 @@ export default function AiAssistantModule({ userRole, userId, lastScreenCapture 
             <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Bot size={22} color="var(--accent-color)" /> AI Chatbot
             </h2>
+            {userCompany && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                padding: '0.15rem 0.55rem',
+                borderRadius: '12px',
+                background: 'rgba(37, 99, 235, 0.08)',
+                color: 'var(--accent-color)',
+                fontSize: '0.74rem',
+                fontWeight: 600,
+                border: '1px solid rgba(37, 99, 235, 0.2)'
+              }}>
+                🏢 {userCompany}
+              </span>
+            )}
           </div>
           
           {/* Voice Settings & Toggle */}

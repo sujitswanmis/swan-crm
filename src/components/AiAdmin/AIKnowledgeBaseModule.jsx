@@ -33,7 +33,7 @@ const extractTextFromPdf = async (file) => {
   return text.trim();
 };
 
-export default function AIKnowledgeBaseModule() {
+export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterAdmin, userRole, userId }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -52,12 +52,16 @@ export default function AIKnowledgeBaseModule() {
 
   useEffect(() => {
     fetchDocuments();
-  }, []);
+  }, [tenantId, userCompany]);
 
   const fetchDocuments = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/ai/knowledge');
+      const q = new URLSearchParams();
+      if (tenantId) q.set('tenantId', tenantId);
+      if (userCompany) q.set('company', userCompany);
+      const url = `/api/ai/knowledge${q.toString() ? `?${q.toString()}` : ''}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setDocuments(data.documents || []);
@@ -100,6 +104,8 @@ export default function AIKnowledgeBaseModule() {
       formData.append('title', docTitle);
       formData.append('type', docType);
       formData.append('visibility', docVisibility);
+      if (tenantId) formData.append('tenantId', tenantId);
+      if (userCompany) formData.append('company', userCompany);
       
       if (docType === 'text') {
         formData.append('content', docContent);
@@ -443,6 +449,11 @@ export default function AIKnowledgeBaseModule() {
           <p style={{ margin: '0.4rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
             Upload documents, rules, and data that the Swan AI assistant should learn from.
           </p>
+          {(userCompany || tenantId) && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.65rem', borderRadius: '16px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--accent-color)', fontSize: '0.8rem', fontWeight: 600, marginTop: '0.4rem' }}>
+              <span>🏢 Workspace: {userCompany || 'Default Workspace'}</span>
+            </div>
+          )}
         </div>
         
         <button 

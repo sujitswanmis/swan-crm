@@ -8,10 +8,31 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export async function GET() {
+export async function GET(req) {
   try {
-    const { data: users, error: userError } = await supabase.from('user_roles').select('user_id, emp_name, email, role, module_access');
+    const { searchParams } = new URL(req.url);
+    const company = searchParams.get('company') || '';
+    const tenantId = searchParams.get('tenantId') || '';
+
+    const { data: users, error: userError } = await supabase
+      .from('user_roles')
+      .select('user_id, emp_name, email, role, module_access, company');
     if (userError) throw userError;
+
+    // Filter by workspace company if specified
+    let filteredUsers = users || [];
+    if (company && company.toLowerCase() !== 'all') {
+      const cLower = company.toLowerCase().trim();
+      const isSwanGroup = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
+      
+      filteredUsers = filteredUsers.filter(u => {
+        const uComp = (u.company || '').toLowerCase().trim();
+        if (isSwanGroup) {
+          return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
+        }
+        return uComp === cLower;
+      });
+    }
 
     const { data: usages, error: usageError } = await supabase.from('ai_token_usage').select('*');
     if (usageError) throw usageError;
@@ -21,7 +42,7 @@ export async function GET() {
       usages.forEach(u => usageMap[u.user_id] = u);
     }
 
-    const merged = users.map(u => {
+    const merged = filteredUsers.map(u => {
       const ma = u.module_access || {};
       return {
         ...u,

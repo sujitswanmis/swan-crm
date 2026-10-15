@@ -1498,7 +1498,7 @@ async function executeTool(toolCall, userId, isAdmin, currentUser = {}) {
 
 export async function POST(req) {
   try {
-    const { messages, userId, selectedAiModel } = await req.json();
+    const { messages, userId, selectedAiModel, company, tenantId } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
@@ -1510,8 +1510,13 @@ export async function POST(req) {
 
     const selectedAiModelInput = selectedAiModel || 'gpt-4o-mini';
 
-    // New check: Is user an Admin or Customer?
-    const { data: userRoleData } = await supabase.from('user_roles').select('emp_name, email, emp_id, role, module_access').eq('user_id', userId).single();
+    // Fetch user details including company
+    const { data: userRoleData } = await supabase
+      .from('user_roles')
+      .select('emp_name, email, emp_id, role, module_access, company')
+      .eq('user_id', userId)
+      .single();
+
     const isAdmin = userRoleData?.role === 'admin';
     const isCustomer = userRoleData?.role === 'customer';
     const currentUser = {
@@ -1520,13 +1525,47 @@ export async function POST(req) {
       email: (userRoleData?.email || '').toLowerCase(),
       emp_id: userRoleData?.emp_id || '',
       role: userRoleData?.role || 'user',
+      company: userRoleData?.company || '',
       isAdmin
     };
+
+    // Load Workspace / Tenant AI Provider Config
+    const effectiveWorkspace = company || tenantId || userRoleData?.company || '';
+    let tenantAiConfig = null;
+    if (effectiveWorkspace) {
+      try {
+        const { getRawTenantAiConfig } = require('@/app/actions/aiConfig');
+        tenantAiConfig = await getRawTenantAiConfig(effectiveWorkspace);
+      } catch (_) {}
+    }
+
+    // Determine target provider: 'openai' | 'gemini' | 'claude'
+    let provider = 'openai';
+    if (selectedAiModelInput.startsWith('gemini') || selectedAiModelInput.includes('gemini')) {
+      provider = 'gemini';
+    } else if (selectedAiModelInput.startsWith('claude') || selectedAiModelInput.includes('claude')) {
+      provider = 'claude';
+    } else if (tenantAiConfig?.active_provider === 'gemini' && !selectedAiModelInput.startsWith('gpt')) {
+      provider = 'gemini';
+    } else if (tenantAiConfig?.active_provider === 'claude' && !selectedAiModelInput.startsWith('gpt')) {
+      provider = 'claude';
+    }
+
+    // Resolve API key for active provider (Workspace key -> Fallback to server env)
+    let apiKey = '';
+    if (provider === 'gemini') {
+      apiKey = tenantAiConfig?.gemini?.api_key || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
+    } else if (provider === 'claude') {
+      apiKey = tenantAiConfig?.claude?.api_key || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '';
+    } else {
+      apiKey = tenantAiConfig?.openai?.api_key || process.env.OPENAI_API_KEY || '';
+    }
+
     const assignedAiModels = (userRoleData?.module_access || {}).ai_models || ['gpt-4o-mini'];
     const premiumLimit = (userRoleData?.module_access || {}).premium_limit || 10000;
 
     let assignedAiModel = 'gpt-4o-mini';
-    if (assignedAiModels.includes(selectedAiModelInput)) {
+    if (assignedAiModels.includes(selectedAiModelInput) || provider !== 'openai') {
       assignedAiModel = selectedAiModelInput;
     } else if (assignedAiModels.length > 0) {
       assignedAiModel = assignedAiModels[0];
@@ -1543,9 +1582,9 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Token limit exceeded. Please contact your admin.' }, { status: 403 });
     }
 
-    // Premium Limit Fallback Logic
+    // Premium Limit Fallback Logic (for OpenAI models)
     let isPremiumFallback = false;
-    if (assignedAiModel !== 'gpt-4o-mini' && assignedAiModel !== 'gpt-3.5-turbo') {
+    if (provider === 'openai' && assignedAiModel !== 'gpt-4o-mini' && assignedAiModel !== 'gpt-3.5-turbo') {
       if (usageData && usageData.total_tokens >= premiumLimit) {
         assignedAiModel = 'gpt-4o-mini'; // Fallback to basic model
         isPremiumFallback = true;
@@ -1571,9 +1610,9 @@ export async function POST(req) {
       }
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenAI API key is missing on the server' }, { status: 500 });
+      const providerName = provider === 'gemini' ? 'Google Gemini' : provider === 'claude' ? 'Anthropic Claude' : 'OpenAI';
+      return NextResponse.json({ error: `${providerName} API key is missing. Please add your API key in AI Admin.` }, { status: 400 });
     }
 
     // --- RAG Knowledge Base Retrieval ---
@@ -1715,6 +1754,131 @@ IMPORTANT BEHAVIORAL RULES:
       },
       ...messages
     ];
+
+    // --- Google Gemini Provider Execution ---
+    if (provider === 'gemini') {
+      try {
+        const geminiContents = [];
+        const systemInstruction = currentMessages.find(m => m.role === 'system')?.content || '';
+        
+        for (const msg of currentMessages) {
+          if (msg.role === 'system') continue;
+          const gRole = msg.role === 'assistant' || msg.role === 'ai' ? 'model' : 'user';
+          let textContent = '';
+          if (typeof msg.content === 'string') {
+            textContent = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            textContent = msg.content.map(c => c.text || '').join(' ');
+          }
+          if (textContent.trim()) {
+            geminiContents.push({
+              role: gRole,
+              parts: [{ text: textContent }]
+            });
+          }
+        }
+
+        const geminiPayload = { contents: geminiContents };
+        if (systemInstruction) {
+          geminiPayload.systemInstruction = {
+            parts: [{ text: systemInstruction }]
+          };
+        }
+
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(geminiPayload)
+        });
+
+        if (!geminiRes.ok) {
+          const errData = await geminiRes.json().catch(() => ({}));
+          console.error('Gemini API Error:', errData);
+          return NextResponse.json({ error: errData.error?.message || `Google Gemini API returned status ${geminiRes.status}` }, { status: geminiRes.status });
+        }
+
+        const geminiData = await geminiRes.json();
+        const textOutput = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated by Gemini.';
+        const tokenUsage = geminiData.usageMetadata?.totalTokenCount || 250;
+
+        if (usageData) {
+          await supabase.from('ai_token_usage').update({ 
+            total_tokens: (Number(usageData.total_tokens) || 0) + tokenUsage 
+          }).eq('user_id', userId);
+        }
+
+        return NextResponse.json({ content: textOutput });
+      } catch (geminiErr) {
+        console.error('Gemini Execution Error:', geminiErr);
+        return NextResponse.json({ error: `Gemini Error: ${geminiErr.message}` }, { status: 500 });
+      }
+    }
+
+    // --- Anthropic Claude Provider Execution ---
+    if (provider === 'claude') {
+      try {
+        const systemInstruction = currentMessages.find(m => m.role === 'system')?.content || '';
+        const claudeMessages = [];
+        
+        for (const msg of currentMessages) {
+          if (msg.role === 'system') continue;
+          const cRole = msg.role === 'assistant' || msg.role === 'ai' ? 'assistant' : 'user';
+          let textContent = '';
+          if (typeof msg.content === 'string') {
+            textContent = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            textContent = msg.content.map(c => c.text || '').join(' ');
+          }
+          if (textContent.trim()) {
+            claudeMessages.push({
+              role: cRole,
+              content: textContent
+            });
+          }
+        }
+
+        const claudeModel = resolvedModel.includes('2024') || resolvedModel.includes('2025') ? resolvedModel : `${resolvedModel}-20241022`;
+        const claudePayload = {
+          model: claudeModel,
+          max_tokens: 1500,
+          messages: claudeMessages
+        };
+        if (systemInstruction) {
+          claudePayload.system = systemInstruction;
+        }
+
+        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(claudePayload)
+        });
+
+        if (!claudeRes.ok) {
+          const errData = await claudeRes.json().catch(() => ({}));
+          console.error('Claude API Error:', errData);
+          return NextResponse.json({ error: errData.error?.message || `Anthropic Claude API returned status ${claudeRes.status}` }, { status: claudeRes.status });
+        }
+
+        const claudeData = await claudeRes.json();
+        const textOutput = claudeData.content?.[0]?.text || 'No response generated by Claude.';
+        const tokenUsage = (claudeData.usage?.input_tokens || 0) + (claudeData.usage?.output_tokens || 0);
+
+        if (usageData) {
+          await supabase.from('ai_token_usage').update({ 
+            total_tokens: (Number(usageData.total_tokens) || 0) + tokenUsage 
+          }).eq('user_id', userId);
+        }
+
+        return NextResponse.json({ content: textOutput });
+      } catch (claudeErr) {
+        console.error('Claude Execution Error:', claudeErr);
+        return NextResponse.json({ error: `Claude Error: ${claudeErr.message}` }, { status: 500 });
+      }
+    }
 
     let totalTokensUsed = 0;
     let finalContent = '';

@@ -67,12 +67,24 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'OpenAI API key missing' }, { status: 500 });
-    }
+    const tenantId = formData.get('tenantId') || formData.get('company') || '';
 
     // 1. Generate Embeddings using OpenAI
+    let apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey && tenantId) {
+      try {
+        const { getRawTenantAiConfig } = require('@/app/actions/aiConfig');
+        const rawConfig = await getRawTenantAiConfig(tenantId);
+        if (rawConfig?.openai?.api_key) {
+          apiKey = rawConfig.openai.api_key;
+        }
+      } catch (_) {}
+    }
+
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OpenAI API key missing for knowledge embedding. Please configure OpenAI API Key in AI Admin.' }, { status: 500 });
+    }
+
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -93,8 +105,9 @@ export async function POST(req) {
     const embeddingData = await embeddingResponse.json();
     const embedding = embeddingData.data[0].embedding;
 
-    // 2. Save to Supabase
-    const dbTitle = `[${visibility}][${type}]${title}`;
+    // 2. Save to Supabase with optional tenant tag
+    const tenantPrefix = tenantId ? `[tenant:${tenantId}]` : '';
+    const dbTitle = `${tenantPrefix}[${visibility}][${type}]${title}`;
     const { data, error } = await supabase
       .from('company_documents')
       .insert({
@@ -117,6 +130,7 @@ export async function POST(req) {
         title: title,
         type: type,
         visibility: visibility,
+        tenantId: tenantId || null,
         created_at: data.created_at
       } 
     });
@@ -127,8 +141,11 @@ export async function POST(req) {
   }
 }
 
-export async function GET() {
+export async function GET(req) {
   try {
+    const { searchParams } = new URL(req.url);
+    const tenantId = searchParams.get('tenantId') || searchParams.get('company') || '';
+
     const { data, error } = await supabase
       .from('company_documents')
       .select('id, title, created_at')
@@ -136,26 +153,38 @@ export async function GET() {
 
     if (error) throw error;
     
-    // Parse the [visibility] and [type] prefix from titles
+    // Parse the [tenant:xyz], [visibility], and [type] prefix from titles
     const parsedDocuments = (data || []).map(doc => {
-      const fullMatch = doc.title.match(/^\[(public|internal)\]\[(text|url|pdf)\](.*)$/);
+      let rawTitle = doc.title || '';
+      let docTenant = null;
+
+      // Check for [tenant:xxx] prefix
+      const tenantMatch = rawTitle.match(/^\[tenant:([^\]]+)\](.*)$/);
+      if (tenantMatch) {
+        docTenant = tenantMatch[1];
+        rawTitle = tenantMatch[2];
+      }
+
+      const fullMatch = rawTitle.match(/^\[(public|internal)\]\[(text|url|pdf)\](.*)$/);
       if (fullMatch) {
         return {
           id: doc.id,
           title: fullMatch[3],
           type: fullMatch[2],
           visibility: fullMatch[1],
+          tenantId: docTenant,
           created_at: doc.created_at
         };
       }
 
-      const typeMatch = doc.title.match(/^\[(text|url|pdf)\](.*)$/);
+      const typeMatch = rawTitle.match(/^\[(text|url|pdf)\](.*)$/);
       if (typeMatch) {
         return {
           id: doc.id,
           title: typeMatch[2],
           type: typeMatch[1],
           visibility: 'internal',
+          tenantId: docTenant,
           created_at: doc.created_at
         };
       }
@@ -163,14 +192,29 @@ export async function GET() {
       // Default fallback for old docs
       return {
         id: doc.id,
-        title: doc.title,
+        title: rawTitle,
         type: 'text',
         visibility: 'internal',
+        tenantId: docTenant,
         created_at: doc.created_at
       };
     });
 
-    return NextResponse.json({ documents: parsedDocuments });
+    // Filter by tenant if provided
+    let finalDocuments = parsedDocuments;
+    if (tenantId && tenantId.toLowerCase() !== 'all') {
+      const tLower = tenantId.toLowerCase().trim();
+      const isSwan = tLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(tLower);
+      finalDocuments = parsedDocuments.filter(d => {
+        if (!d.tenantId) {
+          // Untagged documents belong to primary/swan workspace
+          return isSwan;
+        }
+        return d.tenantId.toLowerCase().trim() === tLower;
+      });
+    }
+
+    return NextResponse.json({ documents: finalDocuments });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
