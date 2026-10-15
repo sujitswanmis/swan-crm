@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
-  Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink, Check, Search, Layers, Key
+  Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink, Check, Search, Layers, Key,
+  RotateCcw
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { 
@@ -88,7 +89,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [defaultProvider, setDefaultProvider] = useState('aisensy');
   const [accountLimit, setAccountLimit] = useState(1);
   const [metaConfig, setMetaConfig] = useState({ phone_number_id: '', waba_id: '', access_token: '', api_version: 'v21.0' });
-  const [aisensyConfig, setAisensyConfig] = useState({ api_key: '', user_name: 'New Swan MultiTech Limited-Swan Agro' });
+  const [aisensyConfig, setAisensyConfig] = useState({ api_key: '', user_name: 'New Swan Group' });
   const [interaktConfig, setInteraktConfig] = useState({ api_key: '' });
   const [watiConfig, setWatiConfig] = useState({ endpoint_url: '', access_token: '' });
   const [nextelConfig, setNextelConfig] = useState({ endpoint_url: '' });
@@ -98,7 +99,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [catalogSearch, setCatalogSearch] = useState('');
   const [clientAllocations, setClientAllocations] = useState({});
   const [tenantsList, setTenantsList] = useState([]);
-  const [selectedClientForAllocation, setSelectedClientForAllocation] = useState('Swan Agro');
+  const [selectedClientForAllocation, setSelectedClientForAllocation] = useState('NEW_SWAN_GROUP');
   const [activeAdminSubTab, setActiveAdminSubTab] = useState('catalog'); // 'catalog' | 'allocations' | 'credentials'
   const [isClientScoped, setIsClientScoped] = useState(false);
   const [assignedBsps, setAssignedBsps] = useState([]);
@@ -141,7 +142,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // Branches & Office State
   const [branches, setBranches] = useState([]);
   const [selectedTemplateBsp, setSelectedTemplateBsp] = useState('aisensy');
-  const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('Swan Agro');
+  const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('New Swan Group (Headquarters)');
   const [filterBsp, setFilterBsp] = useState('All');
   const [filterBranch, setFilterBranch] = useState('All');
 
@@ -171,7 +172,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   const loadAllData = async () => {
     setLoading(true);
-    const effectiveComp = userCompany || 'Swan Agro';
+    const effectiveComp = userCompany || 'New Swan Group';
     const [setRes, tplRes, autoRes, branchRes, catRes, allocRes] = await Promise.all([
       getWhatsappSettings(effectiveComp),
       getWhatsappTemplates(),
@@ -219,7 +220,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       setAccountLimit(d.account_limit || initialEnabled.length);
 
       if (d.meta) setMetaConfig({ phone_number_id: d.meta.phone_number_id || '', waba_id: d.meta.waba_id || '', access_token: d.meta.access_token || '', api_version: d.meta.api_version || 'v21.0' });
-      if (d.aisensy) setAisensyConfig({ api_key: d.aisensy.api_key || d.api_key_nsmlr || '', user_name: d.aisensy.user_name || 'New Swan MultiTech Limited-Swan Agro' });
+      if (d.aisensy) setAisensyConfig({ api_key: d.aisensy.api_key || d.api_key_nsmlr || '', user_name: d.aisensy.user_name || 'New Swan Group' });
       if (d.interakt) setInteraktConfig({ api_key: d.interakt.api_key || '' });
       if (d.wati) setWatiConfig({ endpoint_url: d.wati.endpoint_url || '', access_token: d.wati.access_token || '' });
       if (d.nextel) setNextelConfig({ endpoint_url: d.nextel.endpoint_url || d.api_key_nstlp || '' });
@@ -254,10 +255,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // --- CLIENT ALLOCATION HELPERS (TIER 2) ---
   const allClients = React.useMemo(() => {
     const list = [
-      { id: 'Swan Agro', name: 'Swan Agro', code: 'Swan Agro' },
-      { id: 'NSMLR', name: 'NSMLR', code: 'NSMLR' },
-      { id: 'NSTLP', name: 'NSTLP', code: 'NSTLP' },
-      { id: 'NSTL', name: 'NSTL', code: 'NSTL' }
+      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP' },
+      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR' },
+      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP' }
     ];
     (tenantsList || []).forEach(t => {
       const code = t.tenant_code || t.name;
@@ -428,19 +428,34 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     setShowCustomBspModal(true);
   };
 
-  const handleOpenEditCustomBsp = (bsp, e) => {
+  const handleOpenEditBsp = (bsp, e) => {
     if (e) e.stopPropagation();
+    const existingOverride = customBsps.find(cb => cb.id === bsp.id);
+    const effective = existingOverride || bsp;
+
     setCustomBspForm({
       id: bsp.id,
-      name: bsp.name || '',
-      endpoint_url: bsp.endpoint_url || '',
-      method: bsp.method || 'POST',
-      auth_type: bsp.auth_type || 'Bearer',
-      auth_header_name: bsp.auth_header_name || 'apikey',
-      auth_token: bsp.auth_token || '',
-      payload_format: bsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
+      name: effective.name || bsp.name || '',
+      endpoint_url: effective.endpoint_url || bsp.default_endpoint || bsp.endpoint_url || '',
+      method: effective.method || bsp.method || 'POST',
+      auth_type: effective.auth_type || bsp.auth_type || 'Bearer',
+      auth_header_name: effective.auth_header_name || bsp.auth_header_name || 'apikey',
+      auth_token: effective.auth_token || '',
+      payload_format: effective.payload_format || bsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
     });
     setShowCustomBspModal(true);
+  };
+  const handleOpenEditCustomBsp = handleOpenEditBsp;
+
+  const handleResetBspOverride = async (bspId, bspName, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Reset "${bspName}" back to original official catalog defaults?`)) {
+      return;
+    }
+    const updatedCustomBsps = customBsps.filter(b => b.id !== bspId);
+    setCustomBsps(updatedCustomBsps);
+    await handleSaveSettings(updatedCustomBsps);
+    alert(`"${bspName}" reset to official catalog defaults.`);
   };
 
   const handleSaveCustomBsp = async () => {
@@ -475,8 +490,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     };
 
     let updatedCustomBsps;
-    if (customBspForm.id) {
-      updatedCustomBsps = customBsps.map(b => b.id === customBspForm.id ? newBsp : b);
+    if (customBsps.some(b => b.id === bspId)) {
+      updatedCustomBsps = customBsps.map(b => b.id === bspId ? newBsp : b);
     } else {
       updatedCustomBsps = [...customBsps, newBsp];
     }
@@ -515,13 +530,44 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     alert(`Custom BSP "${bspName}" removed.`);
   };
 
+  const combinedCatalog = React.useMemo(() => {
+    const customMap = new Map((customBsps || []).map(c => [c.id, c]));
+    const merged = (catalog || []).map(catItem => {
+      if (customMap.has(catItem.id)) {
+        const override = customMap.get(catItem.id);
+        return {
+          ...catItem,
+          ...override,
+          hasOverride: true,
+          isCustom: false
+        };
+      }
+      return {
+        ...catItem,
+        hasOverride: false,
+        isCustom: false
+      };
+    });
+
+    const catalogIds = new Set((catalog || []).map(c => c.id));
+    (customBsps || []).forEach(cb => {
+      if (!catalogIds.has(cb.id)) {
+        merged.push({
+          ...cb,
+          hasOverride: false,
+          isCustom: true
+        });
+      }
+    });
+
+    return merged;
+  }, [catalog, customBsps]);
+
   const getBspDisplayName = (bspId) => {
     if (!bspId) return 'AiSensy';
     const lower = String(bspId).toLowerCase();
-    const catalogItem = catalog.find(b => b.id.toLowerCase() === lower);
-    if (catalogItem) return catalogItem.name;
-    const custom = customBsps.find(b => b.id.toLowerCase() === lower || (b.name && b.name.toLowerCase() === lower));
-    if (custom) return custom.name;
+    const item = combinedCatalog.find(b => b.id?.toLowerCase() === lower || (b.name && b.name.toLowerCase() === lower));
+    if (item) return item.name;
     if (lower === 'meta') return 'Meta Cloud API';
     if (lower === 'aisensy') return 'AiSensy';
     if (lower === 'interakt') return 'Interakt';
@@ -556,29 +602,26 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const parseTemplateMeta = (compStr) => {
     const raw = String(compStr || '').trim();
     let bsp = defaultProvider || 'aisensy';
-    let branch = 'Swan Agro';
+    let branch = 'New Swan Group (Headquarters)';
 
     const match = raw.match(/\[(.*?)\]/);
     if (match && match[1]) {
       bsp = match[1];
-      branch = raw.replace(/\[.*?\]/, '').trim() || 'Swan Agro';
+      branch = raw.replace(/\[.*?\]/, '').trim() || 'New Swan Group (Headquarters)';
     } else if (raw.toLowerCase() === 'nstlp') {
       bsp = 'nextel';
       branch = 'NSTLP';
     } else if (raw.toLowerCase() === 'nsmlr') {
       bsp = 'aisensy';
       branch = 'NSMLR';
-    } else if (raw.toLowerCase() === 'swan agro') {
-      bsp = 'aisensy';
-      branch = 'Swan Agro';
     } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(raw.toLowerCase())) {
       bsp = raw.toLowerCase();
-      branch = 'Swan Agro';
+      branch = 'New Swan Group (Headquarters)';
     } else {
       const customMatch = customBsps.find(b => b.id.toLowerCase() === raw.toLowerCase() || (b.name && b.name.toLowerCase() === raw.toLowerCase()));
       if (customMatch) {
         bsp = customMatch.id;
-        branch = 'Swan Agro';
+        branch = 'New Swan Group (Headquarters)';
       } else if (raw && raw !== 'All') {
         branch = raw;
       }
@@ -588,7 +631,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   const handleOpenCreateTemplate = () => {
     setSelectedTemplateBsp(defaultProvider || 'aisensy');
-    const firstBranch = branches[0]?.branch_name || 'Swan Agro';
+    const firstBranch = 'New Swan Group (Headquarters)';
     setSelectedTemplateBranch(firstBranch);
     setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
     setShowTemplateForm(true);
@@ -611,7 +654,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       return;
     }
     setLoading(true);
-    const branchLabel = selectedTemplateBranch || 'Swan Agro';
+    const branchLabel = selectedTemplateBranch || 'New Swan Group (Headquarters)';
     const bspLabel = selectedTemplateBsp || defaultProvider || 'aisensy';
     const combinedCompany = `${branchLabel} [${bspLabel}]`;
 
@@ -717,7 +760,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 fontSize: '0.8rem',
                 border: '1px solid rgba(37, 99, 235, 0.25)' 
               }}>
-                🏢 Workspace: {userCompany || 'Swan Agro'}
+                🏢 Workspace: {userCompany || 'New Swan Group'}
               </span>
             )}
           </div>
@@ -826,7 +869,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                    {enabledProviders.length} of {(catalog.length || 20) + customBsps.length} Active
+                    {enabledProviders.length} of {combinedCatalog.length} Active
                   </span>
                   {settingsPerms.edit && (
                     <button
@@ -854,7 +897,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
               {/* GLOBAL BSP GRID */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                {[...catalog, ...customBsps]
+                {combinedCatalog
                   .filter(b => {
                     if (!catalogSearch.trim()) return true;
                     const q = catalogSearch.toLowerCase();
@@ -867,15 +910,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   })
                   .map(b => {
                     const isEnabled = enabledProviders.includes(b.id);
-                    const isCustom = b.id?.startsWith('custom_') || customBsps.some(cb => cb.id === b.id);
                     return (
                       <div
                         key={b.id}
                         style={{
                           padding: '1.15rem',
                           borderRadius: '10px',
-                          border: isEnabled ? (isCustom ? '2px solid #8b5cf6' : '2px solid var(--accent-color, #2563eb)') : '1px solid var(--border-light)',
-                          backgroundColor: isEnabled ? (isCustom ? 'rgba(139, 92, 246, 0.04)' : 'rgba(37, 99, 235, 0.04)') : 'var(--bg-primary)',
+                          border: isEnabled ? (b.isCustom ? '2px solid #8b5cf6' : '2px solid var(--accent-color, #2563eb)') : '1px solid var(--border-light)',
+                          backgroundColor: isEnabled ? (b.isCustom ? 'rgba(139, 92, 246, 0.04)' : 'rgba(37, 99, 235, 0.04)') : 'var(--bg-primary)',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '0.75rem',
@@ -891,17 +933,32 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               {b.vendor || 'Independent Provider'}
                             </div>
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            fontWeight: 700,
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '4px',
-                            backgroundColor: isCustom ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
-                            color: isCustom ? '#7c3aed' : 'var(--text-secondary)',
-                            border: '1px solid var(--border-light)'
-                          }}>
-                            {b.category || (isCustom ? 'Custom BSP' : 'Meta BSP')}
-                          </span>
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                            {b.hasOverride && (
+                              <span style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                padding: '0.2rem 0.45rem',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(234, 88, 12, 0.15)',
+                                color: '#ea580c',
+                                border: '1px solid rgba(234, 88, 12, 0.3)'
+                              }}>
+                                ⚡ Upgraded
+                              </span>
+                            )}
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '4px',
+                              backgroundColor: b.isCustom ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
+                              color: b.isCustom ? '#7c3aed' : 'var(--text-secondary)',
+                              border: '1px solid var(--border-light)'
+                            }}>
+                              {b.category || (b.isCustom ? 'Custom BSP' : 'Meta BSP')}
+                            </span>
+                          </div>
                         </div>
 
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.35', minHeight: '38px' }}>
@@ -913,7 +970,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {b.website && (
                               <a
                                 href={b.website}
@@ -924,20 +981,32 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                                 Docs <ExternalLink size={12} />
                               </a>
                             )}
-                            {isCustom && settingsPerms.edit && (
+                            {settingsPerms.edit && (
                               <button
                                 type="button"
-                                onClick={(e) => handleOpenEditCustomBsp(b, e)}
-                                style={{ background: 'none', border: 'none', color: '#7c3aed', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                onClick={(e) => handleOpenEditBsp(b, e)}
+                                style={{ background: 'none', border: 'none', color: b.hasOverride ? '#ea580c' : (b.isCustom ? '#7c3aed' : 'var(--accent-color, #2563eb)'), fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                title="Edit / Upgrade API endpoint, method, headers, or payload template"
                               >
-                                <Edit3 size={12} /> Edit
+                                <Edit3 size={12} /> {b.hasOverride ? 'Edit Upgrade' : 'Edit / Upgrade'}
                               </button>
                             )}
-                            {isCustom && settingsPerms.edit && (
+                            {b.hasOverride && settingsPerms.edit && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleResetBspOverride(b.id, b.name, e)}
+                                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                title="Reset back to official catalog defaults"
+                              >
+                                <RotateCcw size={12} /> Reset
+                              </button>
+                            )}
+                            {b.isCustom && settingsPerms.edit && (
                               <button
                                 type="button"
                                 onClick={(e) => handleDeleteCustomBsp(b.id, b.name, e)}
                                 style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.74rem', cursor: 'pointer' }}
+                                title="Delete custom BSP"
                               >
                                 <Trash2 size={12} />
                               </button>
@@ -1252,7 +1321,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* SCOPED CLIENT NOTICE */}
               {isClientScoped && (
                 <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1.15rem', backgroundColor: 'rgba(37, 99, 235, 0.07)', border: '1px solid rgba(37, 99, 235, 0.25)', borderRadius: '8px', fontSize: '0.83rem', color: '#1e40af' }}>
-                  🔒 <strong>Workspace Gateway Access:</strong> Your company (<strong>{userCompany || 'Swan Agro'}</strong>) is configured with dedicated access to {assignedBsps.length} WhatsApp BSP gateway(s). Only your assigned gateways are shown below.
+                  🔒 <strong>Workspace Gateway Access:</strong> Your company (<strong>{userCompany || 'New Swan Group'}</strong>) is configured with dedicated access to {assignedBsps.length} WhatsApp BSP gateway(s). Only your assigned gateways are shown below.
                 </div>
               )}
 
@@ -1400,7 +1469,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       value={aisensyConfig.user_name}
                       onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
                       disabled={!settingsPerms.edit}
-                      placeholder="e.g. New Swan MultiTech Limited-Swan Agro"
+                      placeholder="e.g. New Swan Group"
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
                     />
                   </div>
@@ -1861,14 +1930,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               onChange={(e) => setFilterBranch(e.target.value)}
               style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
             >
-              <option value="All">All Companies / Branches</option>
-              <option value="Swan Agro">Swan Agro</option>
-              <option value="NSMLR">NSMLR</option>
-              <option value="NSTLP">NSTLP</option>
-              <option value="NSTL">NSTL</option>
-              {branches.map(b => (
+              <option value="All">All Offices / Branches</option>
+              <option value="New Swan Group (Headquarters)">New Swan Group (Headquarters)</option>
+              <option value="NSMLR">🏢 NSMLR</option>
+              <option value="NSTLP">🏢 NSTLP</option>
+              {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
                 <option key={b.id || b.branch_name} value={b.branch_name}>
-                  {b.branch_name}
+                  🏢 {b.branch_name}
                 </option>
               ))}
             </select>
@@ -1917,26 +1985,25 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 {/* 2. Client Main Office & Branch List */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <Building2 size={15} color="#10b981" /> Client Company / Branch
+                    <Building2 size={15} color="#10b981" /> Client Office / Branch List
                   </label>
                   <select 
                     value={selectedTemplateBranch} 
                     onChange={e => setSelectedTemplateBranch(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                   >
-                    <option value="Swan Agro">🏢 Swan Agro</option>
-                    <option value="NSMLR">🏢 NSMLR</option>
-                    <option value="NSTLP">🏢 NSTLP</option>
-                    <option value="NSTL">🏢 NSTL</option>
-                    <option value="All Companies (Universal)">🏢 All Companies (Universal)</option>
-                    {branches.map(b => (
+                    <option value="New Swan Group (Headquarters)">🏢 New Swan Group (Headquarters)</option>
+                    <option value="NSMLR">🏢 NSMLR (Branch)</option>
+                    <option value="NSTLP">🏢 NSTLP (Branch)</option>
+                    <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
+                    {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
                       <option key={b.id || b.branch_name} value={b.branch_name}>
-                        🏢 {b.branch_name}
+                        🏢 {b.branch_name} ({b.location_type || 'Branch'})
                       </option>
                     ))}
                   </select>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Select company or branch mapped to this template.
+                    New Swan Group (Headquarters) is selected by default.
                   </span>
                 </div>
 
@@ -2318,10 +2385,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {customBspForm.id ? `Edit Custom BSP: ${customBspForm.name}` : 'Add New Custom WhatsApp BSP Gateway'}
+                    {customBspForm.id ? `Edit & Upgrade BSP Gateway: ${customBspForm.name}` : 'Add New Custom WhatsApp BSP Gateway'}
                   </h3>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Self-serve webhook/API integration for Gupshup, Twilio, DoubleTick, Gallabox, etc.
+                    {customBspForm.id 
+                      ? 'Modify endpoint URL, HTTP method, authentication headers, or JSON payload format when provider updates.' 
+                      : 'Self-serve webhook/API integration for Gupshup, Twilio, DoubleTick, Gallabox, etc.'}
                   </span>
                 </div>
               </div>

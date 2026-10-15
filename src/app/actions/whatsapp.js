@@ -128,7 +128,7 @@ export async function getWhatsappSettings(clientCompany = '') {
     },
     aisensy: {
       api_key: parsedConfig?.aisensy?.api_key || data.api_key_nsmlr || (typeof data.api_key === 'string' && !data.api_key.trim().startsWith('{') ? data.api_key : ''),
-      user_name: parsedConfig?.aisensy?.user_name || 'New Swan MultiTech Limited-Swan Agro'
+      user_name: parsedConfig?.aisensy?.user_name || 'New Swan Group'
     },
     interakt: {
       api_key: parsedConfig?.interakt?.api_key || ''
@@ -186,7 +186,7 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
       default_provider: nstlpKey ? 'nextel' : 'aisensy',
       provider: nstlpKey ? 'nextel' : 'aisensy',
       account_limit: initialEnabled.length,
-      aisensy: { api_key: nsmlrKey, user_name: 'New Swan MultiTech Limited-Swan Agro' },
+      aisensy: { api_key: nsmlrKey, user_name: 'New Swan Group' },
       nextel: { endpoint_url: nstlpKey }
     };
   }
@@ -747,7 +747,7 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
             apiKey: apiKey,
             campaignName: template.campaign_name,
             destination: phoneStr,
-            userName: parsedProviderConfig?.aisensy?.user_name || "New Swan MultiTech Limited-Swan Agro",
+            userName: parsedProviderConfig?.aisensy?.user_name || "New Swan Group",
             templateParams: [
               lead.name || lead.company || lead.business_type || "Customer"
             ],
