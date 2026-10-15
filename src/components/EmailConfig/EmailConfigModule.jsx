@@ -28,6 +28,7 @@ import { compileEmailTemplateHtml, DESIGN_PRESETS } from '@/utils/emailTemplateC
 import EmailDragDropBuilder, { DEFAULT_DRAG_DROP_BLOCKS } from '@/components/EmailConfig/EmailDragDropBuilder';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
+import { PREBUILT_EMAIL_TEMPLATES } from '@/config/crmPreBuiltTemplates';
 
 const SMTP_PRESETS = [
   {
@@ -1559,7 +1560,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 title="Import or restore 20 rich Marketing & HR recruiter templates"
               >
                 <Sparkles size={14} style={{ color: '#2563eb' }} />
-                <span>{seedingTemplates ? 'Importing 20 Templates...' : '✨ Load Pre-Built (20)'}</span>
+                <span>{seedingTemplates ? `Importing ${PREBUILT_EMAIL_TEMPLATES.length} Templates...` : `✨ Load Pre-Built (${PREBUILT_EMAIL_TEMPLATES.length})`}</span>
               </button>
 
               {/* Create Template Button */}

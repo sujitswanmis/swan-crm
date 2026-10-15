@@ -1902,5 +1902,907 @@ export const PREBUILT_EMAIL_TEMPLATES = [
         unsubscribeText: 'Official employment documentation.'
       }
     ]
+  },
+
+  // =========================================================================
+  // 4. OPERATIONS, LOGISTICS & QUALITY (5 VISUAL DRAG & DROP TEMPLATES)
+  // =========================================================================
+  {
+    id: 'tpl_ops_01_dispatch_tracking',
+    category: 'Sales Pipeline',
+    template_name: 'OPS-01: Production Order Dispatch & Consignment Tracking',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🚚 Order Dispatched: Consignment on the way to {{company}}',
+    badge_text: '🚚 LIVE SHIPMENT DISPATCHED',
+    hero_headline: 'Your Order is Out for Delivery, {{name}}',
+    hero_subheading: 'Real-time logistics tracking and dispatch details for {{company}}',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Your manufacturing batch has been cleared, packaged, and dispatched from our logistics dock.',
+    blocks: [
+      {
+        id: 'blk_ops01_hdr',
+        type: 'header',
+        title: 'New Swan Group • Logistics Hub',
+        subtitle: 'Global Supply Chain & Freight Dispatch',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#0f172a',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ops01_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=80',
+        width: 100,
+        maxWidth: 560,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Commercial Logistics Fleet',
+        linkUrl: 'https://newswangroup.com/track',
+        caption: 'Consignment container sealed and departed from Plant Dock, {{branch}}'
+      },
+      {
+        id: 'blk_ops01_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Consignment Dispatched for {{company}}',
+        body: 'Dear {{name}},\n\nWe are pleased to inform you that your production consignment has passed final pre-dispatch audit and is officially en route.\n\nAll cartons have been weatherproofed, anti-rust coated, and palletized in compliance with international freight transport standards.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ops01_coupon',
+        type: 'coupon',
+        code: 'AWB-SWAN-89021-EXP',
+        title: 'Airway Bill (AWB) / Docket Number',
+        description: 'Provide this docket number to freight security at your receiving dock.',
+        expiry: 'Estimated Delivery: Within 48 Hours'
+      },
+      {
+        id: 'blk_ops01_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Dispatch Milestone',
+        col1Desc: 'Origin: Plant Unit, {{branch}}\nCarrier: Express Logistics Partner',
+        col2Img: '',
+        col2Title: 'Receiving Instructions',
+        col2Desc: 'Verify unbroken tamper-evident seal before dock sign-off.'
+      },
+      {
+        id: 'blk_ops01_btn',
+        type: 'button',
+        text: 'Track Live Consignment Location →',
+        url: 'https://newswangroup.com/track?docket=AWB-SWAN-89021',
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ops01_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ops01_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Central Logistics Terminal, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Transactional dispatch and logistics notification.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_ops_02_pdi_clearance',
+    category: 'Sales Pipeline',
+    template_name: 'OPS-02: Pre-Dispatch Quality Inspection (PDI) Clearance Certificate',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🛡️ Quality QA Passed: Pre-Dispatch Inspection Certificate for {{company}}',
+    badge_text: '🛡️ QUALITY ASSURANCE PASSED',
+    hero_headline: 'Batch Quality Clearance Approved: {{company}}',
+    hero_subheading: '100% CMM Laser Inspection & Metallurgical Test Certificate Signed',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Your manufactured component batch has achieved 100% compliance across all critical dimensional tolerances.',
+    blocks: [
+      {
+        id: 'blk_ops02_hdr',
+        type: 'header',
+        title: 'New Swan Group • Quality Assurance Cell',
+        subtitle: 'IATF 16949 & ISO 9001 Certified Metrology Labs',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#064e3b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ops02_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=800&auto=format&fit=crop&q=80',
+        width: 90,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Metrology Lab Laser Scanner',
+        linkUrl: 'https://newswangroup.com/quality',
+        caption: 'High-precision coordinate measuring machine (CMM) test bench'
+      },
+      {
+        id: 'blk_ops02_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Zero-Defect Quality Sign-Off',
+        body: 'Dear {{name}},\n\nOur Chief Metrologist has completed full Pre-Dispatch Inspection (PDI) on batch Lot #NS-9042 destined for {{company}}.\n\nAll critical geometrical tolerances, surface roughness (Ra), and core hardness (HRC) values strictly meet your engineering drawings.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ops02_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Dimensional Tolerances',
+        col1Desc: '±0.005mm verified on 5-axis Zeiss Coordinate Measuring Machine.',
+        col2Img: '',
+        col2Title: 'Material Chemistry',
+        col2Desc: 'Spectrometer verified chemical composition with mill test report.'
+      },
+      {
+        id: 'blk_ops02_btn',
+        type: 'button',
+        text: 'Download Signed PDI Certificate (PDF) →',
+        url: 'https://newswangroup.com/certificates/pdi-ns9042.pdf',
+        bgColor: '#059669',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ops02_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ops02_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Central QA Laboratory, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official engineering quality compliance notice.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_ops_03_amc_renewal',
+    category: 'Sales Pipeline',
+    template_name: 'OPS-03: Annual Maintenance Contract (AMC) & Preventive Service Alert',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '⚙️ Preventive Maintenance Schedule & AMC Renewal: {{company}}',
+    badge_text: '⚙️ SCHEDULED MAINTENANCE',
+    hero_headline: 'Preventive Equipment Service Due: {{company}}',
+    hero_subheading: 'Ensure uninterrupted plant uptime with scheduled OEM technical audit',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Scheduled preventive maintenance keeps your automated manufacturing machinery running at peak efficiency.',
+    blocks: [
+      {
+        id: 'blk_ops03_hdr',
+        type: 'header',
+        title: 'New Swan Customer Engineering Support',
+        subtitle: 'Plant Reliability & Preventive Care Services',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#1e293b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ops03_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80',
+        width: 85,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Industrial Preventive Maintenance',
+        linkUrl: 'https://newswangroup.com/service',
+        caption: 'On-site technical calibration and spindle alignment inspection'
+      },
+      {
+        id: 'blk_ops03_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Preventive Service Audit for {{company}}',
+        body: 'Dear {{name}},\n\nYour annual tooling and assembly calibration window is approaching. Regular scheduled maintenance prevents unplanned machine downtime, eliminates micro-vibrations, and maximizes tool life.\n\nOur field service engineer has been assigned for your on-site audit:',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ops03_card',
+        type: 'interview_card',
+        title: 'On-Site Machine Calibration & Spindle Audit',
+        date: 'Upcoming Tuesday',
+        time: '10:00 AM IST',
+        venue: 'Your Manufacturing Facility, {{company}}',
+        panel: 'Senior Field Service Engineer & Lubrication Specialist',
+        meetUrl: 'https://newswangroup.com/service-booking'
+      },
+      {
+        id: 'blk_ops03_btn',
+        type: 'button',
+        text: 'Confirm Preventive Service Slot →',
+        url: 'https://newswangroup.com/confirm-amc',
+        bgColor: '#ea580c',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ops03_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ops03_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Customer Engineering Support Bureau, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Preventive plant maintenance reminder.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_ops_04_nps_survey',
+    category: 'Sales Pipeline',
+    template_name: 'OPS-04: Client Satisfaction & Net Promoter Score (NPS) Survey',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🌟 How was your experience with New Swan Group, {{name}}?',
+    badge_text: '🌟 CLIENT FEEDBACK',
+    hero_headline: 'Your Feedback Powers Our Precision, {{name}}',
+    hero_subheading: 'Help us serve {{company}} even better with a quick 2-minute review',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'We value your opinion on our product quality, delivery speed, and technical support.',
+    blocks: [
+      {
+        id: 'blk_ops04_hdr',
+        type: 'header',
+        title: 'New Swan Group • Executive Relations',
+        subtitle: 'Customer Experience & Quality Excellence',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#312e81',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ops04_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&auto=format&fit=crop&q=80',
+        width: 80,
+        maxWidth: 520,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Client Partnership',
+        linkUrl: 'https://newswangroup.com/feedback',
+        caption: 'Building enduring customer partnerships founded on trust'
+      },
+      {
+        id: 'blk_ops04_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Share Your Insights with Our Leadership',
+        body: 'Dear {{name}},\n\nAs our valued partner at {{company}}, your experience across our engineering, quotation, and on-time delivery cycles matters immensely to our Managing Director and executive board.\n\nCould you take 2 minutes to rate your satisfaction and tell us where we can innovate further?',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ops04_coupon',
+        type: 'coupon',
+        code: 'NPS-FEEDBACK-2026',
+        title: 'Executive Feedback Priority Code',
+        description: 'Complete the survey to receive priority dispatch privileges on your next quarter order.',
+        expiry: 'Survey takes less than 2 minutes'
+      },
+      {
+        id: 'blk_ops04_btn',
+        type: 'button',
+        text: 'Complete 2-Minute Feedback Survey →',
+        url: 'https://newswangroup.com/nps-survey?ref={{lead_ref_id}}',
+        bgColor: '#4f46e5',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ops04_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ops04_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Executive Client Relations Division, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Customer satisfaction survey sent to authorized account representatives.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_ops_05_ecn_signoff',
+    category: 'Sales Pipeline',
+    template_name: 'OPS-05: Engineering Change Notice (ECN) & Revision Sign-Off',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '📐 Engineering Change Notice (ECN) for Review: {{company}}',
+    badge_text: '📐 TECHNICAL REVISION',
+    hero_headline: 'Engineering Change Notice (ECN) v2.4 Ready',
+    hero_subheading: 'Drawing modifications and tooling revisions submitted for approval',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Our tool design team has completed CAD modifications based on your latest revision request.',
+    blocks: [
+      {
+        id: 'blk_ops05_hdr',
+        type: 'header',
+        title: 'New Swan Tool Design & R&D Cell',
+        subtitle: 'Precision Metallurgy & CAD/CAM Engineering',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#0f172a',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ops05_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?w=800&auto=format&fit=crop&q=80',
+        width: 95,
+        maxWidth: 550,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'CAD Design Blueprint',
+        linkUrl: 'https://newswangroup.com/ecn',
+        caption: '3D modeling simulation and stress analysis completed at {{branch}}'
+      },
+      {
+        id: 'blk_ops05_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Component Revision Ready for Customer Sign-Off',
+        body: 'Dear {{name}},\n\nOur design engineering division has finalized Engineering Change Notice (ECN-2026-881) for the component batch assigned to {{company}}.\n\nAll FEA stress simulations confirm that the updated wall thickness enhances fatigue resistance by 18% with zero weight penalty.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ops05_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Revision Scope',
+        col1Desc: 'Chamfer radius expanded to 2.5mm for automated robot pick-and-place.',
+        col2Img: '',
+        col2Title: 'Tooling Lead Time',
+        col2Desc: 'Hardened die modification completed within 72 hours of customer sign-off.'
+      },
+      {
+        id: 'blk_ops05_btn',
+        type: 'button',
+        text: 'Review & Sign-Off ECN Revision Online →',
+        url: 'https://newswangroup.com/ecn-approval?ref={{lead_ref_id}}',
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ops05_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ops05_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'R&D and Tool Design Bureau, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Engineering change notification sent to designated design contacts.'
+      }
+    ]
+  },
+
+  // =========================================================================
+  // 5. COMMERCIAL SALES, QUOTATIONS & VENDOR ONBOARDING (3 TEMPLATES)
+  // =========================================================================
+  {
+    id: 'tpl_sal_01_commercial_quote',
+    category: 'Sales Pipeline',
+    template_name: 'SAL-01: Formal Commercial Quotation & Proforma Cost Estimate',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '💼 Official Commercial Quotation: Precision Components for {{company}}',
+    badge_text: '💼 COMMERCIAL ESTIMATE',
+    hero_headline: 'Official Component Quotation for {{company}}',
+    hero_subheading: 'Competitive high-volume pricing valid for 30 calendar days',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'We are pleased to submit our formal commercial proposal and pricing schedule for your review.',
+    blocks: [
+      {
+        id: 'blk_sal01_hdr',
+        type: 'header',
+        title: 'New Swan Group • Commercial Division',
+        subtitle: 'Enterprise Sales & Volume Pricing Estimates',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#0f172a',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_sal01_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?w=800&auto=format&fit=crop&q=80',
+        width: 100,
+        maxWidth: 560,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Precision Forged Components',
+        linkUrl: 'https://newswangroup.com/quotations',
+        caption: 'High-volume production batch estimate prepared for {{company}}'
+      },
+      {
+        id: 'blk_sal01_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Commercial Terms for {{company}}',
+        body: 'Dear {{name}},\n\nFollowing detailed manufacturing feasibility analysis of your engineering drawings, we are pleased to submit our official commercial quotation for {{company}}.\n\nOur direct-from-mill raw material procurement and automated stamping lines allow us to provide tier-1 pricing with zero quality compromise.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_sal01_coupon',
+        type: 'coupon',
+        code: 'QUOTE-NSG-2026-904',
+        title: 'Official Quotation Reference',
+        description: 'Reference this quote code during purchase order (PO) generation.',
+        expiry: 'Quote Lock Validity: 30 Calendar Days'
+      },
+      {
+        id: 'blk_sal01_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Commercial Terms',
+        col1Desc: 'Payment: Net 30 Days\nIncoterms: FOB Plant, {{branch}}',
+        col2Img: '',
+        col2Title: 'Production Capacity',
+        col2Desc: 'Lead Time: 3 Weeks\nCapacity: Up to 250,000 units/month'
+      },
+      {
+        id: 'blk_sal01_btn',
+        type: 'button',
+        text: 'Review & Approve Official Quotation →',
+        url: 'https://newswangroup.com/approve-quote?ref=QUOTE-NSG-2026-904',
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_sal01_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_sal01_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Commercial Contracting Bureau, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official commercial proposal sent to authorized procurement representatives.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_sal_02_payment_receipt',
+    category: 'Sales Pipeline',
+    template_name: 'SAL-02: Payment Receipt & Commercial Invoice Acknowledgement',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '💳 Payment Received Confirmation & Tax Invoice: {{company}}',
+    badge_text: '💳 PAYMENT CONFIRMED',
+    hero_headline: 'Payment Reconciled Successfully: {{company}}',
+    hero_subheading: 'Thank you for your prompt remittance. Your account is fully up to date.',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'We have received and credited your payment remittance against your corporate account.',
+    blocks: [
+      {
+        id: 'blk_sal02_hdr',
+        type: 'header',
+        title: 'New Swan Group • Accounts & Finance',
+        subtitle: 'Corporate Remittance & Commercial Settlement',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#064e3b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_sal02_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800&auto=format&fit=crop&q=80',
+        width: 75,
+        maxWidth: 500,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Financial Settlement Receipt',
+        linkUrl: 'https://newswangroup.com/billing',
+        caption: 'Electronic commercial invoice reconciled at Central Finance Cell'
+      },
+      {
+        id: 'blk_sal02_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Payment Acknowledged: {{company}}',
+        body: 'Dear {{name}},\n\nWe acknowledge with thanks the receipt of your payment remittance credited to New Swan Group.\n\nYour commercial statement has been updated. The official tax invoice with full GST/HSN breakdown is available for instant download below.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_sal02_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Transaction Details',
+        col1Desc: 'Mode: RTGS / NEFT Transfer\nStatus: 100% Cleared & Reconciled',
+        col2Img: '',
+        col2Title: 'Billing Entity',
+        col2Desc: 'Client: {{company}}\nPlant Billing Unit: {{branch}}'
+      },
+      {
+        id: 'blk_sal02_btn',
+        type: 'button',
+        text: 'Download Official Tax Invoice (GST / PDF) →',
+        url: 'https://newswangroup.com/invoices/latest.pdf',
+        bgColor: '#059669',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_sal02_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_sal02_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Accounts & Finance Division, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Transactional finance acknowledgement.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_sal_03_vendor_onboarding',
+    category: 'Sales Pipeline',
+    template_name: 'SAL-03: Strategic Supplier & Vendor Onboarding Questionnaire',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🤝 Vendor Registration & Compliance Portal: New Swan Group',
+    badge_text: '🤝 VENDOR REGISTRATION',
+    hero_headline: 'Welcome to Approved Vendor Network',
+    hero_subheading: 'Complete your tier-1 supplier compliance & banking credentials',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'We invite strategic suppliers to complete supplier registration to receive RFQs and purchase orders.',
+    blocks: [
+      {
+        id: 'blk_sal03_hdr',
+        type: 'header',
+        title: 'New Swan Supply Chain & Procurement',
+        subtitle: 'Vendor Governance & Partner Compliance',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#1e293b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_sal03_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800&auto=format&fit=crop&q=80',
+        width: 90,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Industrial Supply Chain Warehousing',
+        linkUrl: 'https://newswangroup.com/vendors',
+        caption: 'Strategic supplier partnerships spanning 20+ countries'
+      },
+      {
+        id: 'blk_sal03_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Supplier Onboarding for {{company}}',
+        body: 'Dear {{name}},\n\nNew Swan Group continuously expands its high-grade raw material, forging tooling, and precision fastener supply base.\n\nTo onboard your enterprise as an Approved Tier-1 Vendor and begin receiving formal RFQs, please complete our streamlined digital verification portal:',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_sal03_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Required Documentation',
+        col1Desc: '• GST Certificate & MSME Proof\n• IATF / ISO 9001 Certifications',
+        col2Img: '',
+        col2Title: 'Banking & Verification',
+        col2Desc: '• Cancelled Cheque / Bank Letter\n• ESG & Safety Compliance Signoff'
+      },
+      {
+        id: 'blk_sal03_btn',
+        type: 'button',
+        text: 'Access Vendor Registration Portal →',
+        url: 'https://newswangroup.com/vendor-portal',
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_sal03_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_sal03_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Procurement & Vendor Governance Division, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official vendor onboarding invitation.'
+      }
+    ]
+  },
+
+  // =========================================================================
+  // 6. HR EMPLOYEE ENGAGEMENT & RECOGNITION (2 TEMPLATES)
+  // =========================================================================
+  {
+    id: 'tpl_hr_01_star_performer',
+    category: 'HR & Recruitment',
+    template_name: 'HR-01: Employee of the Month & Performance Excellence Award',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🏆 Employee of the Month Recognition: Celebrating {{candidate_name}}!',
+    badge_text: '🏆 RECOGNITION & EXCELLENCE',
+    hero_headline: 'Congratulations on Employee of the Month, {{candidate_name}}!',
+    hero_subheading: 'Celebrating outstanding contribution to manufacturing excellence at {{branch}}',
+    target_pipeline: 'recruiter',
+    target_stage: 'S03',
+    branch: 'All Branches',
+    message_body: 'New Swan Group proudly recognizes team members who demonstrate exemplary dedication and quality.',
+    blocks: [
+      {
+        id: 'blk_hr01_hdr',
+        type: 'header',
+        title: 'New Swan Group • People & Culture',
+        subtitle: 'Employee Recognition & Excellence Awards',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#4338ca',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_hr01_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&auto=format&fit=crop&q=80',
+        width: 85,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Celebrating Employee Achievement',
+        linkUrl: 'https://newswangroup.com/hall-of-fame',
+        caption: 'Honoring excellence and commitment on the plant floor'
+      },
+      {
+        id: 'blk_hr01_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Kudos to {{candidate_name}}!',
+        body: 'Dear {{candidate_name}},\n\nThe Executive Management and your Plant Leadership at {{branch}} take immense pride in presenting you with the **Employee of the Month Award**.\n\nYour extraordinary commitment to zero-defect machining and proactive safety mentorship exemplifies the core values of New Swan Group.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_hr01_coupon',
+        type: 'coupon',
+        code: 'EXCELLENCE-STAR-5000',
+        title: 'Executive Recognition Reward Token',
+        description: 'Redeemable for special reward points and company benefits voucher.',
+        expiry: 'Awarded by Managing Director'
+      },
+      {
+        id: 'blk_hr01_btn',
+        type: 'button',
+        text: 'View Hall of Fame & Cheer Your Peer →',
+        url: 'https://newswangroup.com/hall-of-fame',
+        bgColor: '#4f46e5',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_hr01_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_hr01_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'People & Culture Division, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Internal company recognition and culture announcement.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_hr_02_festive_holiday',
+    category: 'HR & Recruitment',
+    template_name: 'HR-02: Annual Festive Bonus & Corporate Holiday Calendar Announcement',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: '🎁 Festive Greetings & Annual Bonus Disbursement: {{candidate_name}}',
+    badge_text: '🎁 FESTIVE GREETINGS',
+    hero_headline: 'Festive Wishes & Warmest Greetings to You & Family',
+    hero_subheading: 'Wishing you health, prosperity and joy from the New Swan Leadership Team',
+    target_pipeline: 'recruiter',
+    target_stage: 'S03',
+    branch: 'All Branches',
+    message_body: 'As the festive season approaches, New Swan Group wishes all employees, partners, and families joyous celebrations.',
+    blocks: [
+      {
+        id: 'blk_hr02_hdr',
+        type: 'header',
+        title: 'New Swan Group • Executive Leadership',
+        subtitle: 'Annual Festive Greetings & Employee Welfare',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#b45309',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_hr02_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=800&auto=format&fit=crop&q=80',
+        width: 90,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Festive Celebrations Lights',
+        linkUrl: 'https://newswangroup.com/holidays',
+        caption: 'Warm festive celebrations across all New Swan facilities'
+      },
+      {
+        id: 'blk_hr02_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Festive Season Greetings, {{candidate_name}}!',
+        body: 'Dear {{candidate_name}},\n\nOn behalf of the Board of Directors and Executive Leadership, we extend our warmest festive greetings to you and your family.\n\nYour hard work and craftsmanship throughout the year have driven New Swan to new industrial milestones. The annual performance bonus has been credited alongside your festive gift token.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_hr02_coupon',
+        type: 'coupon',
+        code: 'DIWALI-GIFT-SWAN26',
+        title: 'Corporate Festive Voucher Token',
+        description: 'Redeem your exclusive festive gift basket at Plant HR Desk, {{branch}}.',
+        expiry: 'Valid through festive season'
+      },
+      {
+        id: 'blk_hr02_btn',
+        type: 'button',
+        text: 'Download 2026 Official Holiday Calendar (PDF) →',
+        url: 'https://newswangroup.com/calendar-2026.pdf',
+        bgColor: '#d97706',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_hr02_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_hr02_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Human Resources & Employee Welfare Division, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official holiday and welfare announcement.'
+      }
+    ]
   }
 ];
