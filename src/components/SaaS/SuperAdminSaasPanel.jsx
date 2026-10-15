@@ -41,7 +41,10 @@ import {
   UserX,
   Activity,
   Workflow,
-  Compass
+  Compass,
+  LogIn,
+  Key,
+  User
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -193,6 +196,49 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const [newModRate, setNewModRate] = useState(99);
   const [addingModule, setAddingModule] = useState(false);
   const [addModuleError, setAddModuleError] = useState(null);
+
+  // Impersonate Workspace User Modal State (Master Admin)
+  const [impersonateTenant, setImpersonateTenant] = useState(null);
+  const [impersonateUsers, setImpersonateUsers] = useState([]);
+  const [loadingImpersonateUsers, setLoadingImpersonateUsers] = useState(false);
+  const [impersonateSearch, setImpersonateSearch] = useState('');
+  const [launchingUserId, setLaunchingUserId] = useState(null);
+
+  const handleOpenImpersonateWorkspace = async (tenant) => {
+    setImpersonateTenant(tenant);
+    setImpersonateUsers([]);
+    setImpersonateSearch('');
+    setLoadingImpersonateUsers(true);
+    try {
+      const res = await getTenantActiveUsers(tenant.id);
+      if (res.success) {
+        const all = [...(res.activeUsers || []), ...(res.heldUsers || [])];
+        setImpersonateUsers(all);
+      } else {
+        showNotification(res.error || 'Failed to load users for this workspace.', true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setLoadingImpersonateUsers(false);
+    }
+  };
+
+  const handleLaunchImpersonation = (targetUser) => {
+    if (!targetUser?.user_id) {
+      showNotification('Target user ID is missing.', true);
+      return;
+    }
+    setLaunchingUserId(targetUser.user_id);
+    const impersonateUrl = `/?view_as=${encodeURIComponent(targetUser.user_id)}`;
+    const newTab = window.open(impersonateUrl, '_blank');
+    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+      window.location.href = impersonateUrl;
+    }
+    setTimeout(() => {
+      setLaunchingUserId(null);
+    }, 1200);
+  };
 
   const loadMasterInvoices = async () => {
     setLoadingMasterInvoices(true);
@@ -1298,7 +1344,7 @@ Thank you for choosing New Swan CRM!`;
                   <th style={{ padding: '0.75rem 1rem' }}>Seats (Active / Limit)</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Active Modules</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Expiry Date (IST)</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '280px' }}>
+                  <th style={{ padding: '0.75rem 1rem', width: '380px' }}>
                     {workspaceSubTab === 'deleted' ? 'Archive Management' : 'Quick Actions'}
                   </th>
                 </tr>
@@ -1526,6 +1572,29 @@ Thank you for choosing New Swan CRM!`;
                             </>
                           ) : (
                             <>
+                              {/* Login as User / Impersonate Workspace */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenImpersonateWorkspace(t)}
+                                style={{
+                                  padding: '0.3rem 0.65rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #10b981',
+                                  background: '#ecfdf5',
+                                  color: '#047857',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  boxShadow: '0 1px 2px rgba(16, 185, 129, 0.1)'
+                                }}
+                                title={`Login directly as Admin or User of ${t.name}`}
+                              >
+                                <LogIn size={12} /> Login as User
+                              </button>
+
                               {/* Invoice Button */}
                               <button
                                 onClick={() => handleOpenInvoice(t, sub?.status === 'ACTIVE' ? 'tax_invoice' : 'proforma')}
@@ -4121,6 +4190,295 @@ Thank you for choosing New Swan CRM!`;
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonate Workspace User Modal */}
+      {impersonateTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{
+            padding: '1.75rem',
+            width: '100%',
+            maxWidth: '720px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            border: '1px solid var(--border-light)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 10px rgba(16, 185, 129, 0.3)'
+                }}>
+                  <LogIn size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    Login as Workspace User
+                  </h3>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    Switch into <strong>{impersonateTenant.name}</strong> or any employee account in a tab-isolated view.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImpersonateTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.25rem' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Workspace Banner */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--bg-muted, #f8fafc)',
+              borderRadius: '10px',
+              border: '1px solid var(--border-light)',
+              marginBottom: '1rem',
+              fontSize: '0.82rem'
+            }}>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Workspace: </span>
+                <strong style={{ color: 'var(--text-primary)' }}>{impersonateTenant.name}</strong>
+                <span style={{ marginLeft: '0.4rem', fontFamily: 'monospace', fontSize: '0.75rem', padding: '1px 6px', background: '#e2e8f0', borderRadius: '4px' }}>
+                  {impersonateTenant.tenant_code}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Admin: </span>
+                <strong style={{ color: '#4f46e5' }}>{impersonateTenant.primary_contact_email || 'Not specified'}</strong>
+              </div>
+              <div>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: '#dcfce7',
+                  color: '#166534',
+                  fontWeight: 700,
+                  fontSize: '0.72rem'
+                }}>
+                  {impersonateUsers.length} Employee(s)
+                </span>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div style={{ position: 'relative', marginBottom: '1rem' }}>
+              <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                placeholder="Search user by name, email, employee ID, or role..."
+                value={impersonateSearch}
+                onChange={e => setImpersonateSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 0.75rem 0.55rem 2.25rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  fontSize: '0.85rem',
+                  backgroundColor: 'var(--bg-surface)'
+                }}
+              />
+            </div>
+
+            {/* Users List Container */}
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '420px', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
+              {loadingImpersonateUsers ? (
+                <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem auto', color: '#10b981' }} />
+                  <p style={{ margin: 0, fontSize: '0.85rem' }}>Loading workspace users & credentials...</p>
+                </div>
+              ) : (() => {
+                const q = impersonateSearch.toLowerCase().trim();
+                const filtered = impersonateUsers.filter(u => {
+                  if (!q) return true;
+                  const name = (u.emp_name || '').toLowerCase();
+                  const email = (u.email || u.emp_official_mail_id || '').toLowerCase();
+                  const empId = (u.emp_id || '').toLowerCase();
+                  const role = (u.role || '').toLowerCase();
+                  return name.includes(q) || email.includes(q) || empId.includes(q) || role.includes(q);
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <Users size={32} style={{ opacity: 0.3, margin: '0 auto 0.5rem auto' }} />
+                      <p style={{ fontWeight: 600, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
+                        {impersonateUsers.length === 0 ? 'No registered users found in this workspace' : 'No matching users found'}
+                      </p>
+                      <p style={{ fontSize: '0.8rem', margin: 0 }}>
+                        {impersonateUsers.length === 0 
+                          ? 'This client workspace may be newly created and the administrator has not completed their first login yet.'
+                          : 'Try adjusting your search query.'}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                    <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)', position: 'sticky', top: 0, zIndex: 1 }}>
+                      <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <th style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Employee / User</th>
+                        <th style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Role</th>
+                        <th style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
+                        <th style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(user => {
+                        const email = user.email || user.emp_official_mail_id || 'No email';
+                        const isPrimaryAdmin = impersonateTenant.primary_contact_email && 
+                          email.toLowerCase() === impersonateTenant.primary_contact_email.toLowerCase();
+                        const isLaunching = launchingUserId === user.user_id;
+
+                        return (
+                          <tr key={user.user_id} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: isPrimaryAdmin ? '#f0fdf4' : 'transparent' }}>
+                            <td style={{ padding: '0.75rem 0.85rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <div style={{
+                                  width: '32px',
+                                  height: '32px',
+                                  borderRadius: '50%',
+                                  backgroundColor: isPrimaryAdmin ? '#dcfce7' : '#e0e7ff',
+                                  color: isPrimaryAdmin ? '#15803d' : '#4338ca',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 700,
+                                  fontSize: '0.8rem',
+                                  flexShrink: 0
+                                }}>
+                                  {(user.emp_name || email || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    <strong style={{ color: 'var(--text-primary)' }}>{user.emp_name || 'Unnamed Employee'}</strong>
+                                    {isPrimaryAdmin && (
+                                      <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#dcfce7', color: '#166534', borderRadius: '4px', fontWeight: 700 }}>
+                                        👑 Workspace Admin
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
+                                    {email} {user.emp_id ? `• ID: ${user.emp_id}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.75rem 0.85rem' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                backgroundColor: user.role === 'admin' || user.role === 'Admin' ? '#fef3c7' : '#f1f5f9',
+                                color: user.role === 'admin' || user.role === 'Admin' ? '#92400e' : '#334155'
+                              }}>
+                                {user.role || 'agent'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.75rem 0.85rem' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                backgroundColor: user.is_approved !== false ? '#dcfce7' : '#fee2e2',
+                                color: user.is_approved !== false ? '#15803d' : '#b91c1c'
+                              }}>
+                                {user.is_approved !== false ? 'Active' : 'On Hold'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleLaunchImpersonation(user)}
+                                disabled={isLaunching}
+                                style={{
+                                  padding: '0.4rem 0.85rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  backgroundColor: isPrimaryAdmin ? '#059669' : '#2563eb',
+                                  color: '#fff',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 600,
+                                  cursor: isLaunching ? 'not-allowed' : 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                }}
+                                title="Open this user's personalized workspace in a new tab"
+                              >
+                                {isLaunching ? <RefreshCw size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+                                <span>{isLaunching ? 'Opening...' : 'Login in New Tab'}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <ShieldCheck size={14} style={{ color: '#10b981' }} />
+                <span>Zero Cookie Mutation • Tab-isolated session keeps your Master Admin tab 100% active.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImpersonateTenant(null)}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  background: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
