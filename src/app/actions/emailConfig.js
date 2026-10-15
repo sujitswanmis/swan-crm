@@ -29,6 +29,25 @@ const DEFAULT_CONFIG = {
     reply_to: '',
     signature: 'Best regards,\nSuPuja Creations Team\nhttps://swanagro.in'
   },
+  smtp_accounts: [
+    {
+      id: 'smtp_primary',
+      account_name: 'Primary Company Mail',
+      is_default: true,
+      enabled: true,
+      provider: 'Custom SMTP',
+      host: '',
+      port: 587,
+      secure: false,
+      username: '',
+      password: '',
+      from_name: 'SuPuja Creations Team',
+      from_email: '',
+      reply_to: '',
+      signature: 'Best regards,\nSuPuja Creations Team\nhttps://swanagro.in',
+      branch: 'All Branches'
+    }
+  ],
   templates: [
     {
       id: 'tpl_lead_welcome',
@@ -103,6 +122,50 @@ async function ensureConfigFile() {
   }
 }
 
+// Helper: Normalize multiple SMTP accounts with backward compatibility
+function normalizeSmtpAccounts(rawObj = {}) {
+  const legacySmtp = rawObj.smtp || DEFAULT_CONFIG.smtp;
+  let accounts = Array.isArray(rawObj.smtp_accounts) && rawObj.smtp_accounts.length > 0
+    ? [...rawObj.smtp_accounts]
+    : [];
+
+  if (accounts.length === 0) {
+    accounts = [
+      {
+        id: 'smtp_primary',
+        account_name: legacySmtp.provider ? `${legacySmtp.provider} (Primary)` : 'Primary Company Mail',
+        is_default: true,
+        enabled: legacySmtp.enabled ?? true,
+        provider: legacySmtp.provider || 'Custom SMTP',
+        host: legacySmtp.host || '',
+        port: Number(legacySmtp.port) || 587,
+        secure: legacySmtp.secure || false,
+        username: legacySmtp.username || '',
+        password: legacySmtp.password || '',
+        from_name: legacySmtp.from_name || 'SuPuja Creations Team',
+        from_email: legacySmtp.from_email || '',
+        reply_to: legacySmtp.reply_to || '',
+        signature: legacySmtp.signature || '',
+        branch: 'All Branches'
+      }
+    ];
+  }
+
+  // Ensure exactly one is default
+  const defaultIdx = accounts.findIndex(a => a.is_default);
+  if (defaultIdx === -1 && accounts.length > 0) {
+    accounts[0].is_default = true;
+  }
+
+  const defaultAccount = accounts.find(a => a.is_default) || accounts[0];
+  const primarySmtp = {
+    ...legacySmtp,
+    ...defaultAccount
+  };
+
+  return { accounts, defaultAccount, primarySmtp };
+}
+
 // Get Email Campaign & SMTP Configuration
 export async function getEmailConfig() {
   try {
@@ -117,10 +180,12 @@ export async function getEmailConfig() {
       .maybeSingle();
 
     if (!error && dbData && dbData.value) {
+      const { accounts, primarySmtp } = normalizeSmtpAccounts(dbData.value);
       return {
         success: true,
         data: {
-          smtp: { ...DEFAULT_CONFIG.smtp, ...(dbData.value.smtp || {}) },
+          smtp: primarySmtp,
+          smtp_accounts: accounts,
           templates: dbData.value.templates || DEFAULT_CONFIG.templates,
           automations: dbData.value.automations || DEFAULT_CONFIG.automations,
           logs: (dbData.value.logs || []).slice(0, 50)
@@ -131,10 +196,12 @@ export async function getEmailConfig() {
     // Fallback to JSON file
     const fileContent = await fs.readFile(CONFIG_FILE_PATH, 'utf8');
     const parsed = JSON.parse(fileContent);
+    const { accounts, primarySmtp } = normalizeSmtpAccounts(parsed);
     return {
       success: true,
       data: {
-        smtp: { ...DEFAULT_CONFIG.smtp, ...(parsed.smtp || {}) },
+        smtp: primarySmtp,
+        smtp_accounts: accounts,
         templates: parsed.templates || DEFAULT_CONFIG.templates,
         automations: parsed.automations || DEFAULT_CONFIG.automations,
         logs: (parsed.logs || []).slice(0, 50)
@@ -142,7 +209,15 @@ export async function getEmailConfig() {
     };
   } catch (error) {
     console.error('getEmailConfig error:', error);
-    return { success: true, data: DEFAULT_CONFIG };
+    const { accounts, primarySmtp } = normalizeSmtpAccounts(DEFAULT_CONFIG);
+    return { 
+      success: true, 
+      data: {
+        ...DEFAULT_CONFIG,
+        smtp: primarySmtp,
+        smtp_accounts: accounts
+      }
+    };
   }
 }
 
@@ -152,8 +227,11 @@ export async function saveEmailConfig(newConfig) {
     await ensureConfigFile();
     const supabase = getAdminClient();
 
+    const { accounts, primarySmtp } = normalizeSmtpAccounts(newConfig);
+
     const configToSave = {
-      smtp: { ...DEFAULT_CONFIG.smtp, ...(newConfig.smtp || {}) },
+      smtp: primarySmtp,
+      smtp_accounts: accounts,
       templates: newConfig.templates || DEFAULT_CONFIG.templates,
       automations: newConfig.automations || DEFAULT_CONFIG.automations,
       logs: (newConfig.logs || []).slice(0, 50),
@@ -179,6 +257,95 @@ export async function saveEmailConfig(newConfig) {
     return { success: true, message: 'Email configuration saved successfully!' };
   } catch (error) {
     console.error('saveEmailConfig error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Save or Update an SMTP Server Account
+export async function saveSmtpAccount(account) {
+  try {
+    const res = await getEmailConfig();
+    const currentConfig = res.data;
+    let accounts = currentConfig.smtp_accounts || [];
+
+    const existingIndex = accounts.findIndex(a => a.id === account.id);
+    const isNew = existingIndex < 0;
+    const isDefault = account.is_default || accounts.length === 0;
+
+    if (isDefault) {
+      accounts = accounts.map(a => ({ ...a, is_default: false }));
+    }
+
+    if (!isNew) {
+      accounts[existingIndex] = {
+        ...accounts[existingIndex],
+        ...account,
+        is_default: isDefault,
+        updated_at: new Date().toISOString()
+      };
+    } else {
+      accounts.push({
+        ...account,
+        id: account.id || `smtp_${Date.now()}`,
+        is_default: isDefault,
+        created_at: new Date().toISOString()
+      });
+    }
+
+    if (!accounts.some(a => a.is_default) && accounts.length > 0) {
+      accounts[0].is_default = true;
+    }
+
+    currentConfig.smtp_accounts = accounts;
+    return await saveEmailConfig(currentConfig);
+  } catch (error) {
+    console.error('saveSmtpAccount error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Delete an SMTP Server Account
+export async function deleteSmtpAccount(accountId) {
+  try {
+    const res = await getEmailConfig();
+    const currentConfig = res.data;
+    let accounts = currentConfig.smtp_accounts || [];
+
+    if (accounts.length <= 1) {
+      return { success: false, error: 'Cannot delete the only configured SMTP server. Add another server first.' };
+    }
+
+    const wasDefault = accounts.find(a => a.id === accountId)?.is_default;
+    accounts = accounts.filter(a => a.id !== accountId);
+
+    if (wasDefault && accounts.length > 0) {
+      accounts[0].is_default = true;
+    }
+
+    currentConfig.smtp_accounts = accounts;
+    return await saveEmailConfig(currentConfig);
+  } catch (error) {
+    console.error('deleteSmtpAccount error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Set Default Primary SMTP Server
+export async function setDefaultSmtpAccount(accountId) {
+  try {
+    const res = await getEmailConfig();
+    const currentConfig = res.data;
+    let accounts = currentConfig.smtp_accounts || [];
+
+    accounts = accounts.map(a => ({
+      ...a,
+      is_default: a.id === accountId
+    }));
+
+    currentConfig.smtp_accounts = accounts;
+    return await saveEmailConfig(currentConfig);
+  } catch (error) {
+    console.error('setDefaultSmtpAccount error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -218,6 +385,27 @@ export async function deleteEmailTemplate(templateId) {
     return await saveEmailConfig(currentConfig);
   } catch (error) {
     console.error('deleteEmailTemplate error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Bulk Delete Email Templates
+export async function deleteBulkEmailTemplates(templateIds = []) {
+  try {
+    if (!Array.isArray(templateIds) || templateIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+    const idSet = new Set(templateIds);
+    const res = await getEmailConfig();
+    const currentConfig = res.data;
+    const initialLen = (currentConfig.templates || []).length;
+    currentConfig.templates = (currentConfig.templates || []).filter(t => !idSet.has(t.id));
+    const deletedCount = initialLen - currentConfig.templates.length;
+    const saveRes = await saveEmailConfig(currentConfig);
+    if (!saveRes.success) return saveRes;
+    return { success: true, count: deletedCount };
+  } catch (error) {
+    console.error('deleteBulkEmailTemplates error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -262,7 +450,7 @@ export async function deleteEmailAutomation(automationId) {
 }
 
 // Send Real-Time Live Test Email
-export async function sendTestEmail(recipientEmail, customSmtp = null) {
+export async function sendTestEmail(recipientEmail, customSmtp = null, smtpAccountId = null) {
   try {
     if (!recipientEmail || !recipientEmail.includes('@')) {
       return { success: false, error: 'Please provide a valid recipient email address.' };
@@ -271,7 +459,12 @@ export async function sendTestEmail(recipientEmail, customSmtp = null) {
     let smtp = customSmtp;
     if (!smtp) {
       const res = await getEmailConfig();
-      smtp = res.data?.smtp;
+      if (smtpAccountId && Array.isArray(res.data?.smtp_accounts)) {
+        smtp = res.data.smtp_accounts.find(a => a.id === smtpAccountId);
+      }
+      if (!smtp) {
+        smtp = res.data?.smtp;
+      }
     }
 
     if (!smtp || !smtp.host || !smtp.username || !smtp.password) {
