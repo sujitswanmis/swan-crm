@@ -39,55 +39,25 @@
   ],
   "templates": [
     {
-      "id": "tpl_lead_welcome",
+      "id": "tpl_mkt_01_enterprise_showcase",
       "category": "Sales Pipeline",
-      "template_name": "Lead Welcome & Introduction",
-      "subject": "Welcome to SuPuja Creations, {{name}}!",
-      "message_body": "Dear {{name}},\n\nThank you for reaching out to SuPuja Creations. We have received your inquiry for {{company}}.\n\nOur team is reviewing your requirements and your dedicated account representative {{rep_name}} will be in touch shortly.\n\nYour Reference ID: {{lead_ref_id}}\n\nWarm regards,\nSuPuja Creations Team",
-      "target_pipeline": "sales",
-      "target_stage": "01 - New Stage",
-      "created_at": "2026-08-14T23:32:28.216Z"
-    },
-    {
-      "id": "tpl_recruiter_interview",
-      "category": "HR & Recruitment",
-      "template_name": "Candidate Interview Invitation",
-      "subject": "Interview Invitation with SuPuja Creations - {{job_title}}",
-      "message_body": "Dear {{candidate_name}},\n\nWe are pleased to invite you for an interview round for the position of {{job_title}} at SuPuja Creations.\n\nInterview Details:\n- Role: {{job_title}}\n- Candidate Ref: {{candidate_id}}\n- Recruiter: {{recruiter_name}}\n\nPlease reply to this email to confirm your availability.\n\nBest regards,\nHR Department\nSuPuja Creations",
-      "target_pipeline": "recruiter",
-      "target_stage": "S03",
-      "created_at": "2026-08-14T23:32:28.216Z"
-    },
-    {
-      "id": "tpl_recruiter_loi",
-      "category": "HR & Recruitment",
-      "template_name": "Letter of Intent (LOI) Release",
-      "subject": "Letter of Intent (LOI) - SuPuja Creations",
-      "message_body": "Dear {{candidate_name}},\n\nCongratulations! We are delighted to extend our Letter of Intent (LOI) for the position of {{job_title}} with SuPuja Creations.\n\nWe look forward to having you onboard.\n\nSincerely,\nHR & Talent Acquisition Team\nSuPuja Creations",
-      "target_pipeline": "recruiter",
-      "target_stage": "S08",
-      "created_at": "2026-08-14T23:32:28.216Z"
-    },
-    {
-      "id": "tpl_mkt_enterprise_welcome",
-      "category": "Sales Pipeline",
-      "template_name": "MKT-01: Enterprise Product Showcase & Welcome",
+      "template_name": "MKT-01: Enterprise Precision Showcase & Brand Intro",
       "template_type": "marketing",
       "design_preset": "drag_drop",
       "subject": "Welcome to Precision Engineering Excellence, {{name}}!",
-      "badge_text": "⭐ Featured Partnership",
+      "badge_text": "⭐ Tier-1 Industrial Partner",
       "hero_headline": "Welcome to Enterprise Excellence, {{name}}",
       "hero_subheading": "Tailored solutions & priority engineering support for {{company}}",
       "target_pipeline": "sales",
       "target_stage": "01 - New Stage",
       "branch": "All Branches",
-      "message_body": "Welcome to our enterprise network. We look forward to delivering world-class manufacturing solutions.",
+      "message_body": "Explore our precision manufacturing capabilities and specialized facilities.",
       "blocks": [
         {
-          "id": "blk_mkt01_header",
+          "id": "blk_mkt01_hdr",
           "type": "header",
           "title": "New Swan Group",
-          "subtitle": "Industrial Excellence & Engineering Solutions",
+          "subtitle": "Industrial Excellence & Precision Engineering Solutions",
           "logoUrl": "",
           "logoWidth": 140,
           "bgColor": "#0f172a",
@@ -102,16 +72,16 @@
           "maxWidth": 560,
           "borderRadius": 8,
           "align": "center",
-          "alt": "Industrial Manufacturing Technology",
+          "alt": "Robotic CNC Machining and Precision Forging",
           "linkUrl": "https://newswangroup.com",
-          "caption": "Automotive and agricultural precision engineering facility at {{branch}}"
+          "caption": "Automated fabrication and cold forging facilities at {{branch}}"
         },
         {
-          "id": "blk_mkt01_text",
+          "id": "blk_mkt01_txt",
           "type": "text",
           "headingLevel": "h2",
-          "heading": "Welcome to {{company}}, {{name}}!",
-          "body": "Thank you for connecting with New Swan Group.\n\nOur engineering team has reviewed your initial requirements for {{company}}. We are dedicated to providing tier-1 precision components with strict ISO/IATF quality benchmarks.\n\nYour assigned relationship manager {{rep_name}} is preparing your custom overview.",
+          "heading": "Accelerate Production for {{company}}, {{name}}",
+          "body": "Dear {{name}},\n\nThank you for connecting with New Swan Group. We specialize in high-precision automotive, agricultural, and industrial assemblies engineered to meet zero-defect tolerances.\n\nOur team has received your project briefing for {{company}}. Your dedicated relationship director {{rep_name}} is reviewing your component drawings and volume requirements.",
           "fontSize": 15,
           "color": "#334155",
           "align": "left"
@@ -121,16 +91,16 @@
           "type": "columns",
           "col1Img": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80",
           "col1Title": "High-Volume Production",
-          "col1Desc": "State-of-the-art CNC machining, cold forging, and automated stamping lines.",
+          "col1Desc": "Multi-axis CNC turning, automated stamping presses, and cold-forged gear blanks.",
           "col2Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
-          "col2Title": "Zero-Defect Quality",
-          "col2Desc": "CMM inspection, laser surface scanning, and 100% batch traceability."
+          "col2Title": "Zero-Defect Quality QA",
+          "col2Desc": "CMM inspection, laser surface scanning, and 100% metallurgical batch traceability."
         },
         {
           "id": "blk_mkt01_btn",
           "type": "button",
           "text": "Explore Interactive Digital Catalogue →",
-          "url": "https://newswangroup.com",
+          "url": "https://newswangroup.com/catalogue",
           "bgColor": "#2563eb",
           "textColor": "#ffffff",
           "borderRadius": 8,
@@ -138,7 +108,7 @@
           "fullWidth": false
         },
         {
-          "id": "blk_mkt01_divider",
+          "id": "blk_mkt01_div",
           "type": "divider",
           "style": "solid",
           "color": "#e2e8f0",
@@ -146,36 +116,44 @@
           "gap": 20
         },
         {
-          "id": "blk_mkt01_footer",
+          "id": "blk_mkt01_soc",
+          "type": "social",
+          "website": "https://newswangroup.com",
+          "linkedin": "https://linkedin.com/company/newswangroup",
+          "twitter": "",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt01_ftr",
           "type": "footer",
           "company": "New Swan Group",
           "branch": "{{branch}}",
-          "address": "Ludhiana, Punjab, India",
+          "address": "Industrial Area, Ludhiana, Punjab, India",
           "copyright": "© 2026 New Swan Group. All rights reserved.",
-          "unsubscribeText": "You received this email because you expressed interest in New Swan engineering solutions."
+          "unsubscribeText": "You received this email regarding your commercial inquiry with New Swan Group."
         }
       ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_b2b_discount",
+      "id": "tpl_mkt_02_seasonal_discount_voucher",
       "category": "Sales Pipeline",
-      "template_name": "MKT-02: Exclusive B2B Seasonal Discount Voucher",
+      "template_name": "MKT-02: High-Impact Seasonal Volume Discount (VIP Voucher)",
       "template_type": "marketing",
       "design_preset": "drag_drop",
       "subject": "Special 30% Privilege Discount for {{company}}",
-      "badge_text": "🔥 LIMITED TIME PRIVILEGE OFFER",
+      "badge_text": "🔥 LIMITED TIME PRIVILEGE ALLOCATION",
       "hero_headline": "Exclusive Corporate Partner Pricing for {{company}}",
-      "hero_subheading": "Activate your commercial discount voucher before allocation ends",
+      "hero_subheading": "Activate your commercial discount voucher before capacity allocation closes",
       "target_pipeline": "sales",
       "target_stage": "02 - In Discussion",
       "branch": "All Branches",
       "message_body": "Claim exclusive corporate pricing for high-volume seasonal manufacturing.",
       "blocks": [
         {
-          "id": "blk_mkt02_header",
+          "id": "blk_mkt02_hdr",
           "type": "header",
           "title": "New Swan Group — Corporate Procurement",
           "subtitle": "Special Corporate Partner Advantage Program",
@@ -189,30 +167,30 @@
           "id": "blk_mkt02_img",
           "type": "image",
           "url": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=800&auto=format&fit=crop&q=80",
-          "width": 80,
+          "width": 85,
           "maxWidth": 520,
           "borderRadius": 10,
           "align": "center",
           "alt": "Seasonal Production Discount",
           "linkUrl": "https://newswangroup.com/privilege",
-          "caption": "Volume discount valid across all scheduled Q4 production runs"
+          "caption": "Volume discount valid across all scheduled quarterly production runs"
         },
         {
-          "id": "blk_mkt02_text",
+          "id": "blk_mkt02_txt",
           "type": "text",
           "headingLevel": "h2",
           "heading": "Unlock Maximum Value on Bulk Orders, {{name}}",
-          "body": "Dear {{name}},\n\nAs a priority partner for {{company}}, we have reserved a tier-1 seasonal discount voucher for your procurement calendar.\n\nApply the voucher code below during contract confirmation or quote finalization to lock in reduced unit rates and guaranteed dock delivery dates.",
+          "body": "Dear {{name}},\n\nAs a priority partner for {{company}}, we have reserved a tier-1 seasonal discount voucher for your procurement calendar.\n\nApply the voucher code below during contract confirmation or quote finalization to lock in reduced unit rates and guaranteed dock delivery dates at our {{branch}} plant.",
           "fontSize": 15,
           "color": "#334155",
           "align": "left"
         },
         {
-          "id": "blk_mkt02_coupon",
+          "id": "blk_mkt02_cpn",
           "type": "coupon",
           "code": "SWAN-B2B-VIP30",
           "title": "EXCLUSIVE 30% TOOLING & BATCH REBATE",
-          "description": "Applies to custom forgings, assemblies, and precision agricultural components.",
+          "description": "Applies to custom forgings, stamping assemblies, and precision agricultural components.",
           "expiry": "Valid for next 15 business days"
         },
         {
@@ -227,7 +205,7 @@
           "fullWidth": true
         },
         {
-          "id": "blk_mkt02_footer",
+          "id": "blk_mkt02_ftr",
           "type": "footer",
           "company": "New Swan Group",
           "branch": "{{branch}}",
@@ -237,55 +215,262 @@
         }
       ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_strategy_call",
+      "id": "tpl_mkt_03_product_launch",
       "category": "Sales Pipeline",
-      "template_name": "MKT-03: Executive 30-Min Strategy Consultation",
+      "template_name": "MKT-03: New Product Line Launch / Engineering Innovation",
       "template_type": "marketing",
-      "design_preset": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Introducing Next-Gen EV & High-Tolerance Components for {{company}}",
+      "badge_text": "🚀 PRODUCT INNOVATION RELEASE",
+      "hero_headline": "Engineering the Future of Automotive Components",
+      "hero_subheading": "Next-generation lightweight alloys and high-speed cold-forged parts",
+      "target_pipeline": "sales",
+      "target_stage": "01 - New Stage",
+      "branch": "All Branches",
+      "message_body": "Discover our newest line of high-strength components engineered for next-gen platforms.",
+      "blocks": [
+        {
+          "id": "blk_mkt03_hdr",
+          "type": "header",
+          "title": "New Swan Group — Innovation Labs",
+          "subtitle": "Advanced Materials & Precision Component Technology",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e1b4b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt03_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 100,
+          "maxWidth": 580,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "EV Component Architecture",
+          "linkUrl": "https://newswangroup.com/ev-solutions",
+          "caption": "Precision engineered lightweight alloys engineered for EV and hybrid drivetrains"
+        },
+        {
+          "id": "blk_mkt03_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Designed for Higher Efficiency and Durability",
+          "body": "Hi {{name}},\n\nWe are proud to unveil our latest lineup of precision components engineered specifically for high-torque and thermal-intensive environments.\n\nKey Engineering Enhancements:\n• 24% lighter weight with high-strength structural alloys\n• 35% higher fatigue resistance under dynamic mechanical loads\n• Sub-micron surface finishes reducing frictional drag and thermal wear",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt03_cols",
+          "type": "columns",
+          "col1Img": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80",
+          "col1Title": "Thermal Stability",
+          "col1Desc": "Tolerates operating temperatures up to 650°C without dimensional deformation.",
+          "col2Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
+          "col2Title": "Micro-Machined Tolerances",
+          "col2Desc": "Precision tolerances held within ±0.005mm on 5-axis CNC machining centers."
+        },
+        {
+          "id": "blk_mkt03_btn",
+          "type": "button",
+          "text": "Download Technical Specification Sheet (PDF) →",
+          "url": "https://newswangroup.com/spec-sheet",
+          "bgColor": "#4338ca",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_mkt03_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Technical briefing sent to enterprise engineering contacts."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_mkt_04_strategy_consultation",
+      "category": "Sales Pipeline",
+      "template_name": "MKT-04: Executive 30-Min Strategy & Feasibility Session",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
       "subject": "Let's Schedule Your Operational Strategy Session, {{name}}",
-      "badge_text": "📅 Free 30-Min Strategy Session",
+      "badge_text": "📅 FREE 30-MIN STRATEGY SESSION",
       "hero_headline": "Accelerate Operations & Supply Chain for {{company}}",
       "hero_subheading": "Consult directly with our Principal Manufacturing Engineers",
-      "message_body": "Hi {{name}},\n\nI would love to invite you for a 30-minute virtual strategy session to explore how we can optimize your precision component lead times, improve mechanical tolerances, and reduce total cost of acquisition for {{company}}.\n\nWhat we will cover in this session:\n• Review of your technical drawings and specification targets\n• Capacity allocation and rapid sample prototyping timelines\n• Supply chain mitigation and Indian manufacturing cost benchmarks\n\nPick a convenient slot directly on my calendar below:",
-      "cta_button_text": "Book Your 30-Min Strategy Slot →",
-      "cta_button_url": "https://calendly.com",
-      "cta_button_color": "#4f46e5",
       "target_pipeline": "sales",
       "target_stage": "02 - In Discussion",
       "branch": "All Branches",
+      "message_body": "Book a one-on-one virtual strategy session to optimize your manufacturing pipeline.",
+      "blocks": [
+        {
+          "id": "blk_mkt04_hdr",
+          "type": "header",
+          "title": "New Swan Group — Strategic Advisory",
+          "subtitle": "Manufacturing Feasibility & Component Optimization",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e293b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt04_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 75,
+          "maxWidth": 480,
+          "borderRadius": 12,
+          "align": "center",
+          "alt": "Strategic Consultation Meeting",
+          "linkUrl": "https://calendly.com",
+          "caption": "Direct 1-on-1 session with our senior metallurgical and tooling specialists"
+        },
+        {
+          "id": "blk_mkt04_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Optimize Your Production Sourcing for {{company}}",
+          "body": "Hi {{name}},\n\nI would love to invite you for a 30-minute virtual strategy session to explore how we can optimize your component lead times, improve mechanical tolerances, and reduce total cost of acquisition for {{company}}.\n\nWhat we will cover in this session:\n• Review of your technical drawings and specification targets\n• Capacity allocation and rapid sample prototyping timelines at {{branch}}\n• Cost benchmark analysis against your existing vendor structure",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt04_card",
+          "type": "interview_card",
+          "title": "Executive Engineering Consultation",
+          "date": "Flexible dates available upon booking",
+          "time": "30 Minutes • Video Call (Google Meet)",
+          "venue": "Online Video Conference",
+          "panel": "{{rep_name}} & Principal Manufacturing Engineer",
+          "meetUrl": "https://calendly.com"
+        },
+        {
+          "id": "blk_mkt04_btn",
+          "type": "button",
+          "text": "Reserve Your 30-Min Strategy Slot →",
+          "url": "https://calendly.com",
+          "bgColor": "#6366f1",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_mkt04_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Strategic advisory invitation sent to key procurement leadership."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_formal_proposal",
+      "id": "tpl_mkt_05_case_study_roi",
       "category": "Sales Pipeline",
-      "template_name": "MKT-04: Formal Commercial Proposal & Quotation",
+      "template_name": "MKT-05: Automotive OEM Customer Success Story (42% ROI)",
       "template_type": "marketing",
-      "design_preset": "marketing",
-      "subject": "Commercial Quotation & Proposal: Ref {{lead_ref_id}} for {{company}}",
-      "badge_text": "⚡ Formal Commercial Quotation",
-      "hero_headline": "Custom Proposal Ready for {{company}}",
-      "hero_subheading": "Competitive unit rates, payment terms, and delivery schedules inside",
-      "message_body": "Dear {{name}},\n\nFollowing our technical discussions, we have finalized the official commercial quotation for {{company}} under Reference ID {{lead_ref_id}}.\n\nProposal Summary Highlights:\n• Complete bill of materials and precision tolerance specifications\n• Scaled tiered volume pricing with 15-day price protection lock\n• Priority manufacturing allocation at our {{branch}} facility\n• ISO/IATF compliance and full batch material test certificates\n\nPlease click below to review the full commercial document and initiate next steps.",
-      "cta_button_text": "Review Quotation & Terms Online →",
-      "cta_button_url": "https://newswangroup.com/quotations",
-      "cta_button_color": "#16a34a",
+      "design_preset": "drag_drop",
+      "subject": "Case Study: How Enterprise OEM Reduced Lead Time by 42%",
+      "badge_text": "📈 PROVEN ROI & ENGINEERING BENCHMARKS",
+      "hero_headline": "Real-World Results in High-Volume Production",
+      "hero_subheading": "Learn how automated stamping and predictive QA drove 42% operational efficiency",
       "target_pipeline": "sales",
-      "target_stage": "03 - Proposal Sent",
+      "target_stage": "02 - In Discussion",
       "branch": "All Branches",
+      "message_body": "Discover the technical blueprints that delivered 42% faster cycle times and ₹1.8 Cr savings.",
+      "blocks": [
+        {
+          "id": "blk_mkt05_hdr",
+          "type": "header",
+          "title": "New Swan Group — Customer Success",
+          "subtitle": "Proven Benchmarks in Precision Manufacturing",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#0f172a",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt05_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80",
+          "width": 95,
+          "maxWidth": 540,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Automated Inspection Line",
+          "linkUrl": "https://newswangroup.com/case-studies",
+          "caption": "High-speed automated optical inspection line at our {{branch}} facility"
+        },
+        {
+          "id": "blk_mkt05_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Scaling Batch Efficiency with Predictive QA",
+          "body": "Dear {{name}},\n\nWhen scaling production, precision and lead-time predictability make all the difference.\n\nIn our latest case study, we document how New Swan engineered a consolidated assembly process for a premier automotive OEM that delivered:\n• 42% reduction in cycle delivery time across 250,000 unit batches\n• 99.98% first-pass yield with automated optical inspection\n• ₹1.8 Cr annual freight and tooling savings",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt05_cols",
+          "type": "columns",
+          "col1Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
+          "col1Title": "42% Faster Turnaround",
+          "col1Desc": "Automated stamping tooling cut production cycle time from 18 days to 10 days.",
+          "col2Img": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=400&auto=format&fit=crop&q=80",
+          "col2Title": "Zero Line-Rejections",
+          "col2Desc": "Achieved zero PPM defect rate across 12 consecutive shipment quarters."
+        },
+        {
+          "id": "blk_mkt05_btn",
+          "type": "button",
+          "text": "Download Full Engineering Case Study (PDF) →",
+          "url": "https://newswangroup.com/case-study-download",
+          "bgColor": "#0284c7",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_mkt05_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Industrial benchmarking report sent to valued partners."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_plant_tour_rsvp",
+      "id": "tpl_mkt_06_plant_tour_rsvp",
       "category": "Sales Pipeline",
-      "template_name": "MKT-05: Manufacturing Facility / Plant Tour RSVP",
+      "template_name": "MKT-06: Manufacturing Plant Tour & Executive Delegation RSVP",
       "template_type": "marketing",
       "design_preset": "drag_drop",
       "subject": "Exclusive Invitation: Facility & R&D Plant Tour at {{branch}}",
@@ -298,7 +483,7 @@
       "message_body": "Experience our world-class manufacturing lines and meet our engineering leadership.",
       "blocks": [
         {
-          "id": "blk_mkt05_header",
+          "id": "blk_mkt06_hdr",
           "type": "header",
           "title": "New Swan Group — Plant Tour Program",
           "subtitle": "Experience Advanced Manufacturing Firsthand",
@@ -309,7 +494,7 @@
           "align": "center"
         },
         {
-          "id": "blk_mkt05_img",
+          "id": "blk_mkt06_img",
           "type": "image",
           "url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80",
           "width": 100,
@@ -321,7 +506,7 @@
           "caption": "Automated fabrication and surface treatment line at {{branch}}"
         },
         {
-          "id": "blk_mkt05_text",
+          "id": "blk_mkt06_txt",
           "type": "text",
           "headingLevel": "h2",
           "heading": "See How We Build Quality for {{company}}, {{name}}",
@@ -331,7 +516,7 @@
           "align": "left"
         },
         {
-          "id": "blk_mkt05_card",
+          "id": "blk_mkt06_card",
           "type": "interview_card",
           "title": "VIP Plant Tour & Engineering Roundtable",
           "date": "Flexible dates available upon confirmation",
@@ -341,7 +526,7 @@
           "meetUrl": "https://newswangroup.com/rsvp-tour"
         },
         {
-          "id": "blk_mkt05_btn",
+          "id": "blk_mkt06_btn",
           "type": "button",
           "text": "Confirm Plant Tour & Reserve Delegation Slot →",
           "url": "https://newswangroup.com/rsvp-tour",
@@ -352,7 +537,7 @@
           "fullWidth": false
         },
         {
-          "id": "blk_mkt05_footer",
+          "id": "blk_mkt06_ftr",
           "type": "footer",
           "company": "New Swan Group",
           "branch": "{{branch}}",
@@ -362,111 +547,349 @@
         }
       ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_case_study",
+      "id": "tpl_mkt_07_newsletter_digest",
       "category": "Sales Pipeline",
-      "template_name": "MKT-06: Customer Success Story & ROI Case Study",
+      "template_name": "MKT-07: Monthly Industrial Tech Briefing & Digest",
       "template_type": "marketing",
-      "design_preset": "marketing",
-      "subject": "Case Study: How Enterprise OEM Reduced Lead Time by 42%",
-      "badge_text": "📈 Proven ROI & Engineering Benchmarks",
-      "hero_headline": "Real-World Results in High-Volume Production",
-      "hero_subheading": "Learn how automated stamping and predictive QA drove 42% operational efficiency",
-      "message_body": "Hi {{name}},\n\nWhen scaling production, precision and lead-time predictability make all the difference.\n\nIn our latest case study, we document how New Swan engineered a consolidated assembly process for a premier automotive OEM that delivered:\n• 42% reduction in cycle delivery time across 250,000 unit batches\n• 99.98% first-pass yield with automated optical inspection\n• ₹1.8 Cr annual freight and tooling savings\n\nSee the technical blueprints and process optimizations that made this possible:",
-      "cta_button_text": "Download Full Engineering Case Study (PDF) →",
-      "cta_button_url": "https://newswangroup.com/case-studies",
-      "cta_button_color": "#0284c7",
-      "target_pipeline": "sales",
-      "target_stage": "02 - In Discussion",
-      "branch": "All Branches",
-      "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
-    },
-    {
-      "id": "tpl_mkt_newsletter_digest",
-      "category": "Sales Pipeline",
-      "template_name": "MKT-07: Monthly Industrial Technology & Innovation Newsletter",
-      "template_type": "marketing",
-      "design_preset": "newsletter",
+      "design_preset": "drag_drop",
       "subject": "New Swan Tech Briefing: Trends in Automotive & Agri-Tech",
       "badge_text": "📰 MONTHLY INDUSTRY DIGEST",
       "hero_headline": "Industrial Manufacturing Trends & Innovations",
       "hero_subheading": "Catch up on lightweight alloy forging, EV component demand, and smart tooling",
-      "message_body": "Dear {{name}},\n\nWelcome to this month's New Swan Engineering Digest.\n\nTop headlines this edition:\n1. Transitioning to High-Strength Lightweight Alloys for EV Components\n2. AI-Driven Predictive Maintenance on 1200T Mechanical Presses\n3. New Sustainable Cold-Forging Methodologies reducing scrap by 28%\n\nRead the full technical analysis and whitepapers on our engineering hub:",
-      "cta_button_text": "Read Full Newsletter Digest Online →",
-      "cta_button_url": "https://newswangroup.com/newsletter",
-      "cta_button_color": "#0f172a",
       "target_pipeline": "sales",
       "target_stage": "01 - New Stage",
       "branch": "All Branches",
+      "message_body": "Read our monthly technical digest covering smart tooling, EV trends, and metallurgical breakthroughs.",
+      "blocks": [
+        {
+          "id": "blk_mkt07_hdr",
+          "type": "header",
+          "title": "New Swan Engineering Digest",
+          "subtitle": "Monthly Technical Benchmarks & Material Innovations",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#111827",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt07_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 90,
+          "maxWidth": 520,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Engineering Symposium",
+          "linkUrl": "https://newswangroup.com/newsletter",
+          "caption": "Latest developments in precision forging and micro-machining"
+        },
+        {
+          "id": "blk_mkt07_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Top Industry Highlights This Month",
+          "body": "Dear {{name}},\n\nWelcome to this month's New Swan Engineering Digest. Our R&D team continuously tracks and implements high-impact breakthroughs in manufacturing science.\n\nHere are the top three trends shaping component sourcing this quarter:",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt07_cols",
+          "type": "columns",
+          "col1Img": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80",
+          "col1Title": "High-Strength EV Alloys",
+          "col1Desc": "Transitioning to lightweight forged aluminum components for battery chassis brackets.",
+          "col2Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
+          "col2Title": "AI-Driven Press Monitoring",
+          "col2Desc": "Vibration and acoustic sensors predict die wear 120 hours before micro-defects occur."
+        },
+        {
+          "id": "blk_mkt07_btn",
+          "type": "button",
+          "text": "Browse Full Technical Whitepapers Online →",
+          "url": "https://newswangroup.com/whitepapers",
+          "bgColor": "#1e293b",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_mkt07_soc",
+          "type": "social",
+          "website": "https://newswangroup.com",
+          "linkedin": "https://linkedin.com/company/newswangroup",
+          "twitter": "",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt07_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "You received this digest as an industry engineering subscriber."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_cold_outreach_plain",
+      "id": "tpl_mkt_08_capacity_alert",
       "category": "Sales Pipeline",
-      "template_name": "MKT-08: Executive Direct Cold Outreach (1-on-1)",
-      "template_type": "plain",
-      "design_preset": "plain",
-      "subject": "Precision component supply for {{company}}",
-      "message_body": "Hi {{name}},\n\nI hope this email finds you well.\n\nI lead client partnerships at New Swan Group. I noticed {{company}} has been expanding procurement requirements in precision metal and sheet assemblies.\n\nWe manufacture high-precision components for leading Tier-1 OEMs out of our specialized facilities at {{branch}}, delivering strict tolerances and dependable delivery schedules.\n\nDo you have 5 minutes this Thursday or Friday for a quick phone call to see if our capabilities align with your vendor sourcing strategy?\n\nBest regards,\n{{rep_name}}\nNew Swan Group",
-      "cta_button_text": "",
-      "cta_button_url": "",
-      "target_pipeline": "sales",
-      "target_stage": "01 - New Stage",
-      "branch": "All Branches",
-      "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
-    },
-    {
-      "id": "tpl_mkt_winback_offer",
-      "category": "Sales Pipeline",
-      "template_name": "MKT-09: Warm Lead Re-Engagement & Winback Offer",
+      "template_name": "MKT-08: Q1 Production Capacity Allocation & Urgent Slot Lock",
       "template_type": "marketing",
-      "design_preset": "promo_deal",
+      "design_preset": "drag_drop",
+      "subject": "Urgent: Q1 Production Capacity Allocation Closing Soon for {{company}}",
+      "badge_text": "⚠️ CAPACITY ALLOCATION ALERT",
+      "hero_headline": "Secure Your Q1 Manufacturing Batch Slot",
+      "hero_subheading": "High seasonal order volume is filling press and CNC machine schedules",
+      "target_pipeline": "sales",
+      "target_stage": "02 - In Discussion",
+      "branch": "All Branches",
+      "message_body": "Lock in your production run before Q1 machine scheduling reaches maximum capacity.",
+      "blocks": [
+        {
+          "id": "blk_mkt08_hdr",
+          "type": "header",
+          "title": "New Swan Group — Operations Planning",
+          "subtitle": "Production Capacity Allocation Notice",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#991b1b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt08_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=800&auto=format&fit=crop&q=80",
+          "width": 80,
+          "maxWidth": 500,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "High-Speed Stamping Press Capacity",
+          "linkUrl": "https://newswangroup.com/capacity",
+          "caption": "Automated stamping and cold-forging line capacity currently at 88%"
+        },
+        {
+          "id": "blk_mkt08_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Avoid Production Delays for {{company}}, {{name}}",
+          "body": "Dear {{name}},\n\nDue to heavy seasonal OEM commitments, our scheduled production allocation at {{branch}} is reaching maximum capacity for the upcoming quarter.\n\nTo ensure your delivery milestones remain completely uninterrupted, our planning cell has reserved a tentative slot for {{company}} until the end of this week.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt08_cpn",
+          "type": "coupon",
+          "code": "PRIORITY-SLOT-Q1",
+          "title": "PRIORITY PRODUCTION RESERVATION TOKEN",
+          "description": "Guarantees dock delivery date with waived rush tooling surcharges.",
+          "expiry": "Expires in 7 calendar days"
+        },
+        {
+          "id": "blk_mkt08_btn",
+          "type": "button",
+          "text": "Lock Your Production Run & Confirm Slot →",
+          "url": "https://newswangroup.com/lock-slot",
+          "bgColor": "#dc2626",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_mkt08_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Operational capacity notice sent to active client accounts."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_mkt_09_winback_reactivation",
+      "category": "Sales Pipeline",
+      "template_name": "MKT-09: Warm Lead Re-Engagement & Winback Privilege",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
       "subject": "We missed you, {{name}} — Special Re-engagement Benefit for {{company}}",
       "badge_text": "⭐ WELCOME BACK PRIVILEGE",
       "hero_headline": "Priority Production Slot & Re-activation Discount",
       "hero_subheading": "Re-open discussions with dedicated engineer support and waived sample setup fees",
-      "coupon_code": "RENEW-SWAN-20",
-      "message_body": "Dear {{name}},\n\nIt has been a few weeks since our last conversation regarding your projects for {{company}}.\n\nWe know operational priorities evolve quickly. To assist in re-evaluating your component pipeline, we are pleased to offer a 20% credit on initial sample runs plus a guaranteed 10-day prototype delivery window.\n\nUse voucher code RENEW-SWAN-20 or click below to reconnect with our technical team:",
-      "cta_button_text": "Claim Re-Engagement Benefit & Reconnect →",
-      "cta_button_url": "https://newswangroup.com/reconnect",
-      "cta_button_color": "#ea580c",
       "target_pipeline": "sales",
       "target_stage": "02 - In Discussion",
       "branch": "All Branches",
+      "message_body": "Reconnect with our team and claim an exclusive 20% credit on initial sample runs.",
+      "blocks": [
+        {
+          "id": "blk_mkt09_hdr",
+          "type": "header",
+          "title": "New Swan Group — Client Partnerships",
+          "subtitle": "Enterprise Relationship Re-Engagement",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#065f46",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt09_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 80,
+          "maxWidth": 500,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Client Partnership Discussion",
+          "linkUrl": "https://newswangroup.com/reconnect",
+          "caption": "Dedicated engineering support for your upcoming component programs"
+        },
+        {
+          "id": "blk_mkt09_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Re-Evaluating Your Component Sourcing, {{name}}?",
+          "body": "Dear {{name}},\n\nIt has been a few weeks since our last conversation regarding your projects for {{company}}.\n\nWe know operational priorities evolve quickly. To assist in re-evaluating your component pipeline, we are pleased to offer a 20% credit on initial sample runs plus a guaranteed 10-day prototype delivery window at our {{branch}} plant.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt09_cpn",
+          "type": "coupon",
+          "code": "RENEW-SWAN-20",
+          "title": "20% RE-ACTIVATION SETUP CREDIT",
+          "description": "Applies to prototype dies, testing fixtures, and initial qualification batches.",
+          "expiry": "Valid for next 20 business days"
+        },
+        {
+          "id": "blk_mkt09_btn",
+          "type": "button",
+          "text": "Claim Re-Engagement Benefit & Reconnect →",
+          "url": "https://newswangroup.com/reconnect",
+          "bgColor": "#059669",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_mkt09_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Re-engagement communication sent to past inquiry contacts."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_mkt_post_meeting_followup",
+      "id": "tpl_mkt_10_metallurgy_comparison",
       "category": "Sales Pipeline",
-      "template_name": "MKT-10: Post-Meeting Summary & Deliverables Follow-up",
-      "template_type": "plain",
-      "design_preset": "plain",
-      "subject": "Action Items & Next Steps from our discussion - {{company}}",
-      "message_body": "Hi {{name}},\n\nThank you for taking the time to speak with our engineering team today regarding {{company}}.\n\nHere is a quick recap of the key action items we agreed upon:\n1. New Swan team to review drawing revisions and batch quantity requirements.\n2. Quotation for initial sample batch (Ref: {{lead_ref_id}}) to be submitted by Friday.\n3. Tentative plant inspection visit proposed for upcoming month.\n\nPlease let me know if I missed any points. Looking forward to our next milestone.\n\nWarm regards,\n{{rep_name}}\nNew Swan Group",
-      "cta_button_text": "",
-      "cta_button_url": "",
+      "template_name": "MKT-10: Precision Metallurgy & Component Comparison Guide",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Technical Comparison: Forged Steel vs Spheroidal Cast Iron for {{company}}",
+      "badge_text": "🔬 METALLURGICAL BENCHMARK",
+      "hero_headline": "Choosing the Right Material for Your Mechanical Assemblies",
+      "hero_subheading": "Detailed fatigue, weight, and cost comparison prepared by New Swan Metallurgists",
       "target_pipeline": "sales",
       "target_stage": "02 - In Discussion",
       "branch": "All Branches",
+      "message_body": "Compare material performance and request a customized sample test pack.",
+      "blocks": [
+        {
+          "id": "blk_mkt10_hdr",
+          "type": "header",
+          "title": "New Swan Group — Materials Engineering",
+          "subtitle": "Metallurgical Science & Process Optimization",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e3a8a",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_mkt10_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 100,
+          "maxWidth": 580,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Metallurgical Testing",
+          "linkUrl": "https://newswangroup.com/metallurgy",
+          "caption": "Microstructural grain alignment testing under electron microscope"
+        },
+        {
+          "id": "blk_mkt10_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Optimize Cost vs Mechanical Strength for {{company}}",
+          "body": "Hi {{name}},\n\nSelecting between precision hot-forged steel and spheroidal graphite (SG) iron can reduce component unit cost by up to 18% while maintaining safety critical yield strength.\n\nOur metallurgical laboratory at {{branch}} has published a comprehensive side-by-side comparison matrix for design engineers:",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_mkt10_cols",
+          "type": "columns",
+          "col1Img": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80",
+          "col1Title": "Precision Forged Steel",
+          "col1Desc": "Superior tensile strength (850 MPa), continuous grain flow, zero internal porosity.",
+          "col2Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
+          "col2Title": "Ductile / SG Iron",
+          "col2Desc": "Exceptional vibration damping, cost-effective for complex geometry housings."
+        },
+        {
+          "id": "blk_mkt10_btn",
+          "type": "button",
+          "text": "Request Free Physical Sample Test Pack →",
+          "url": "https://newswangroup.com/sample-pack",
+          "bgColor": "#1d4ed8",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_mkt10_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Technical metallurgical advisory sent to verified design engineers."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_round1_interview",
+      "id": "tpl_rec_01_round1_interview",
       "category": "HR & Recruitment",
-      "template_name": "REC-01: Shortlist & Round 1 Interview Invitation",
+      "template_name": "REC-01: Round 1: Technical & Profile Assessment Call Letter",
       "template_type": "marketing",
       "design_preset": "drag_drop",
       "subject": "Interview Shortlist: {{job_title}} at New Swan Group (Ref: {{candidate_id}})",
@@ -479,7 +902,7 @@
       "message_body": "Your profile has been shortlisted. Please confirm your interview attendance.",
       "blocks": [
         {
-          "id": "blk_rec01_header",
+          "id": "blk_rec01_hdr",
           "type": "header",
           "title": "New Swan Group — Talent Acquisition",
           "subtitle": "Engineering Careers & Leadership Opportunities",
@@ -490,7 +913,19 @@
           "align": "center"
         },
         {
-          "id": "blk_rec01_text",
+          "id": "blk_rec01_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 80,
+          "maxWidth": 500,
+          "borderRadius": 10,
+          "align": "center",
+          "alt": "Professional Interview",
+          "linkUrl": "https://newswangroup.com/careers",
+          "caption": "Join our award-winning manufacturing and engineering talent team"
+        },
+        {
+          "id": "blk_rec01_txt",
           "type": "text",
           "headingLevel": "h2",
           "heading": "Shortlist Announcement for {{candidate_name}}",
@@ -521,7 +956,7 @@
           "fullWidth": true
         },
         {
-          "id": "blk_rec01_divider",
+          "id": "blk_rec01_div",
           "type": "divider",
           "style": "solid",
           "color": "#e2e8f0",
@@ -529,82 +964,270 @@
           "gap": 20
         },
         {
-          "id": "blk_rec01_footer",
+          "id": "blk_rec01_ftr",
           "type": "footer",
           "company": "New Swan Group",
           "branch": "{{branch}}",
           "address": "HR Department, Ludhiana, Punjab, India",
           "copyright": "© 2026 New Swan Group. All rights reserved.",
-          "unsubscribeText": "Official communication sent to shortlisted candidates."
+          "unsubscribeText": "Official recruitment communication sent to shortlisted candidates."
         }
       ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.558Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_coding_assessment",
+      "id": "tpl_rec_02_coding_assessment",
       "category": "HR & Recruitment",
-      "template_name": "REC-02: Technical Coding & Assessment Assignment",
+      "template_name": "REC-02: Hands-On Coding & Technical Assessment Challenge",
       "template_type": "marketing",
-      "design_preset": "marketing",
+      "design_preset": "drag_drop",
       "subject": "Technical Assessment Link: {{job_title}} (48-Hour Window)",
       "badge_text": "💻 TECHNICAL ASSESSMENT ROUND",
       "hero_headline": "Hands-on Technical Assessment: {{job_title}}",
       "hero_subheading": "Demonstrate your problem-solving and domain engineering expertise",
-      "message_body": "Dear {{candidate_name}},\n\nFollowing your initial screening for the position of {{job_title}}, we are pleased to advance your application to the technical assessment phase.\n\nAssessment Instructions:\n• Time allocation: 90 minutes once test is launched\n• Platform window: Must be completed within 48 hours of receiving this email\n• Allowed resources: You may use standard IDEs and documentation\n• Candidate Reference ID: {{candidate_id}}\n\nPlease ensure a stable internet connection and quiet environment before starting.",
-      "cta_button_text": "Launch Technical Assessment Portal →",
-      "cta_button_url": "https://newswangroup.com/assessment",
-      "cta_button_color": "#2563eb",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "Complete your technical assessment challenge within the 48-hour testing window.",
+      "blocks": [
+        {
+          "id": "blk_rec02_hdr",
+          "type": "header",
+          "title": "New Swan Group — Technical Evaluation",
+          "subtitle": "Engineering Excellence Assessment Portal",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e40af",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec02_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 85,
+          "maxWidth": 520,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Technical Coding and System Design",
+          "linkUrl": "https://newswangroup.com/assessment",
+          "caption": "Practical engineering and analytical problem-solving challenge"
+        },
+        {
+          "id": "blk_rec02_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Assessment Instructions for {{candidate_name}}",
+          "body": "Dear {{candidate_name}},\n\nFollowing your initial screening for the position of {{job_title}}, we are pleased to advance your application to the technical assessment phase.\n\nKey Guidelines:\n• Time allocation: 90 minutes once test is launched\n• Platform window: Must be completed within 48 hours of receiving this email\n• Allowed resources: You may use standard IDEs and documentation\n• Candidate Reference ID: {{candidate_id}}",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec02_cpn",
+          "type": "coupon",
+          "code": "TEST-TOKEN-CAN1042",
+          "title": "SECURE ASSESSMENT ACCESS TOKEN",
+          "description": "Single-use authentication key. Link valid for one continuous attempt.",
+          "expiry": "Valid for next 48 hours"
+        },
+        {
+          "id": "blk_rec02_btn",
+          "type": "button",
+          "text": "Launch Technical Assessment Portal Now →",
+          "url": "https://newswangroup.com/assessment-portal",
+          "bgColor": "#2563eb",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec02_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Technical evaluation notification sent to registered candidates."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.558Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_leadership_interview",
+      "id": "tpl_rec_03_leadership_interview",
       "category": "HR & Recruitment",
-      "template_name": "REC-03: Senior Leadership & Culture Fit Interview",
+      "template_name": "REC-03: Senior Leadership & Executive Culture Fit Interview",
       "template_type": "marketing",
-      "design_preset": "interview_call",
+      "design_preset": "drag_drop",
       "subject": "Final Round Interview Invitation: Leadership Panel - {{job_title}}",
       "badge_text": "🏆 FINAL LEADERSHIP ROUND",
       "hero_headline": "Executive Leadership Discussion for {{job_title}}",
       "hero_subheading": "You have progressed to the final conversation with our Executive Directors",
-      "message_body": "Dear {{candidate_name}},\n\nCongratulations on successfully clearing the technical evaluations for the position of {{job_title}}.\n\nWe would like to invite you for your final round of interaction with our Executive Leadership Team.\n\nThis conversation will focus on long-term engineering vision, operational leadership, and cultural alignment.\n\nInterview Details:\n• Date: {{interview_date}}\n• Time: {{interview_time}}\n• Mode: Video Conference (Google Meet)\n• Panel: Director of Operations & VP Human Resources",
-      "cta_button_text": "Confirm Leadership Round Slot →",
-      "cta_button_url": "https://meet.google.com/swan-exec-round",
-      "cta_button_color": "#4338ca",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "Congratulations on reaching the final round of interaction with our Executive Leadership Team.",
+      "blocks": [
+        {
+          "id": "blk_rec03_hdr",
+          "type": "header",
+          "title": "New Swan Group — Executive Talent Cell",
+          "subtitle": "Final Round Leadership Discussion",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#4c1d95",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec03_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 80,
+          "maxWidth": 500,
+          "borderRadius": 10,
+          "align": "center",
+          "alt": "Leadership Panel Interview",
+          "linkUrl": "https://meet.google.com/swan-exec-round",
+          "caption": "Strategic alignment and executive leadership roundtable"
+        },
+        {
+          "id": "blk_rec03_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Final Milestone for {{candidate_name}}",
+          "body": "Dear {{candidate_name}},\n\nCongratulations on successfully clearing the technical evaluations for the position of {{job_title}}.\n\nWe would like to invite you for your final round of interaction with our Executive Leadership Team. This conversation will focus on long-term engineering vision, operational leadership, and cultural alignment at our {{branch}} facility.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec03_card",
+          "type": "interview_card",
+          "title": "Executive Leadership & Vision Round",
+          "date": "{{interview_date}}",
+          "time": "{{interview_time}}",
+          "venue": "Video Conference (Google Meet)",
+          "panel": "Director of Operations & VP Human Resources",
+          "meetUrl": "https://meet.google.com/swan-exec-round"
+        },
+        {
+          "id": "blk_rec03_btn",
+          "type": "button",
+          "text": "Confirm Leadership Discussion Slot →",
+          "url": "https://meet.google.com/swan-exec-round",
+          "bgColor": "#7c3aed",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec03_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "HR Department, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Executive hiring invitation sent to shortlisted candidates."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_doc_verification",
+      "id": "tpl_rec_04_document_verification",
       "category": "HR & Recruitment",
-      "template_name": "REC-04: Pre-Offer Document Verification Checklist",
-      "template_type": "plain",
-      "design_preset": "plain",
+      "template_name": "REC-04: Pre-Offer Document Verification & Credential Portal",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
       "subject": "Document Verification Request: {{candidate_name}} - {{job_title}}",
-      "message_body": "Dear {{candidate_name}},\n\nFollowing your successful interview evaluations for the position of {{job_title}} at New Swan Group, our HR compliance cell is initiating background and credential verification.\n\nPlease reply to this email with self-attested copies of the following documents:\n1. Highest Degree / Educational Certificates & Final Marksheet\n2. Experience & Relieving Letters from past employers\n3. Last 3 Months Salary Slips & Bank Statement showing salary credit\n4. Government ID Proofs (Aadhaar Card and PAN Card)\n5. Updated Passport Size Photograph\n\nPrompt submission will help us issue your formal employment offer without delay.\n\nBest regards,\n{{recruiter_name}}\nTalent Acquisition & Compliance\nNew Swan Group",
-      "cta_button_text": "",
-      "cta_button_url": "",
+      "badge_text": "📋 HR COMPLIANCE VERIFICATION",
+      "hero_headline": "Pre-Offer Document Submission for {{job_title}}",
+      "hero_subheading": "Please upload verified academic and professional credentials to proceed",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "Submit your verified documents via our secure HR portal to expedite your formal offer letter.",
+      "blocks": [
+        {
+          "id": "blk_rec04_hdr",
+          "type": "header",
+          "title": "New Swan Group — HR Compliance",
+          "subtitle": "Pre-Employment Credential Verification",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e293b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec04_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 70,
+          "maxWidth": 440,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Document Verification",
+          "linkUrl": "https://newswangroup.com/verification",
+          "caption": "Secure encrypted document upload portal"
+        },
+        {
+          "id": "blk_rec04_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Credential Submission for {{candidate_name}}",
+          "body": "Dear {{candidate_name}},\n\nFollowing your successful interview evaluations for the position of {{job_title}} at New Swan Group, our HR compliance cell is initiating background and credential verification.\n\nPlease upload self-attested digital copies of the following documents to expedite your formal employment offer:",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec04_cols",
+          "type": "columns",
+          "col1Img": "",
+          "col1Title": "1. Academic & Identification",
+          "col1Desc": "Degree/Diploma certificates, final marksheets, Aadhaar card, and PAN card.",
+          "col2Img": "",
+          "col2Title": "2. Professional Experience",
+          "col2Desc": "Relieving letters from past employers, last 3 months payslips, and bank statement."
+        },
+        {
+          "id": "blk_rec04_btn",
+          "type": "button",
+          "text": "Access Secure Document Upload Portal →",
+          "url": "https://newswangroup.com/doc-upload",
+          "bgColor": "#0f766e",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec04_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition & Compliance, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official pre-employment compliance request."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_formal_loi",
+      "id": "tpl_rec_05_formal_loi_offer",
       "category": "HR & Recruitment",
-      "template_name": "REC-05: Formal Letter of Intent (LOI) & Offer Terms",
+      "template_name": "REC-05: Formal Letter of Intent (LOI) & Offer Package",
       "template_type": "marketing",
       "design_preset": "drag_drop",
       "subject": "Congratulations! Official Letter of Intent (LOI): {{job_title}} at New Swan",
@@ -617,7 +1240,7 @@
       "message_body": "Congratulations! Here are your official LOI terms and digital acceptance instructions.",
       "blocks": [
         {
-          "id": "blk_rec05_header",
+          "id": "blk_rec05_hdr",
           "type": "header",
           "title": "New Swan Group — Letter of Intent",
           "subtitle": "Formal Offer of Employment",
@@ -640,7 +1263,7 @@
           "caption": "Building engineering careers with excellence, integrity, and innovation"
         },
         {
-          "id": "blk_rec05_text",
+          "id": "blk_rec05_txt",
           "type": "text",
           "headingLevel": "h2",
           "heading": "Welcome Onboard, {{candidate_name}}!",
@@ -671,7 +1294,7 @@
           "fullWidth": true
         },
         {
-          "id": "blk_rec05_footer",
+          "id": "blk_rec05_ftr",
           "type": "footer",
           "company": "New Swan Group",
           "branch": "{{branch}}",
@@ -681,106 +1304,694 @@
         }
       ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_day1_onboarding",
+      "id": "tpl_rec_06_day1_onboarding",
       "category": "HR & Recruitment",
-      "template_name": "REC-06: Appointment Letter & Day 1 Onboarding Guide",
+      "template_name": "REC-06: Day 1 Onboarding & First Week Orientation Guide",
       "template_type": "marketing",
-      "design_preset": "job_offer",
+      "design_preset": "drag_drop",
       "subject": "Day 1 Onboarding Instructions & Orientation Guide: {{candidate_name}}",
       "badge_text": "🚀 WELCOME ONBOARD",
       "hero_headline": "Your Day 1 Journey at New Swan Group",
       "hero_subheading": "Everything you need to know for your first day with our engineering team",
-      "message_body": "Dear {{candidate_name}},\n\nYour joining date is right around the corner! We are eager to welcome you on your Day 1.\n\nFirst Day Logistics & Orientation:\n• Reporting Time: 09:30 AM IST sharp\n• Location: Reception Desk, Plant Office, {{branch}}\n• Dress Code: Business Casual / Safety shoes for plant tour\n• HR Coordinator: {{recruiter_name}}\n\nWhat to expect on Day 1:\n1. Documentation completion and biometric attendance setup\n2. IT workstation and corporate email credential handover\n3. Welcome lunch with your team lead and engineering peers\n4. Plant safety orientation and EHS compliance overview\n\nPlease check the link below for the full digital orientation kit.",
-      "cta_button_text": "Access Your Day 1 Orientation Kit →",
-      "cta_button_url": "https://newswangroup.com/onboarding",
-      "cta_button_color": "#16a34a",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "Your Day 1 is right around the corner! Review your orientation roadmap and arrival details.",
+      "blocks": [
+        {
+          "id": "blk_rec06_hdr",
+          "type": "header",
+          "title": "New Swan Group — Employee Onboarding",
+          "subtitle": "First Day Logistics & Orientation Guide",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#0f766e",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec06_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 100,
+          "maxWidth": 560,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Day 1 Workstation Setup",
+          "linkUrl": "https://newswangroup.com/onboarding",
+          "caption": "Modern IT workstation and engineering facilities ready for your arrival at {{branch}}"
+        },
+        {
+          "id": "blk_rec06_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Excited to Welcome You, {{candidate_name}}!",
+          "body": "Dear {{candidate_name}},\n\nYour joining date is right around the corner! We are eager to welcome you on your Day 1.\n\nFirst Day Logistics & Orientation:\n• Reporting Time: 09:30 AM IST sharp\n• Location: Reception Desk, Plant Office, {{branch}}\n• Dress Code: Business Casual / Safety shoes for plant walkthrough\n• HR Coordinator: {{recruiter_name}}",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec06_card",
+          "type": "interview_card",
+          "title": "Day 1 Orientation Schedule",
+          "date": "Joining Day Morning",
+          "time": "09:30 AM – 05:30 PM IST",
+          "venue": "HR Orientation Conference Hall, {{branch}}",
+          "panel": "HR Coordinator: {{recruiter_name}}",
+          "meetUrl": "https://newswangroup.com/onboarding-kit"
+        },
+        {
+          "id": "blk_rec06_btn",
+          "type": "button",
+          "text": "Download Day 1 Orientation Kit (PDF) →",
+          "url": "https://newswangroup.com/onboarding-kit",
+          "bgColor": "#0d9488",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec06_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "People & Culture, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Internal employee onboarding communication."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_prejoining_checkin",
+      "id": "tpl_rec_07_get_trainee_offer",
       "category": "HR & Recruitment",
-      "template_name": "REC-07: Pre-Joining Check-in & Buddy Introduction",
-      "template_type": "plain",
-      "design_preset": "plain",
-      "subject": "Excited to see you soon! Pre-joining check-in - {{candidate_name}}",
-      "message_body": "Hi {{candidate_name}},\n\nWith just a few days left until your joining date as {{job_title}}, I wanted to reach out and check how your transition is going.\n\nWe have assigned an onboarding buddy from your team who will help guide you through company systems, projects, and daily workflows during your initial weeks.\n\nIf you have any questions regarding documentation, directions, or timing for your first morning at {{branch}}, please feel free to call or reply here directly.\n\nSee you soon!\n\nBest regards,\n{{recruiter_name}}\nPeople & Culture Team\nNew Swan Group",
-      "cta_button_text": "",
-      "cta_button_url": "",
-      "target_pipeline": "recruiter",
-      "target_stage": "S03",
-      "branch": "All Branches",
-      "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
-    },
-    {
-      "id": "tpl_rec_talent_pool_nurture",
-      "category": "HR & Recruitment",
-      "template_name": "REC-08: Talent Pool Nurture & Silver Medalist Note",
+      "template_name": "REC-07: Graduate Engineer Trainee (GET) Batch 2026 Offer",
       "template_type": "marketing",
-      "design_preset": "marketing",
-      "subject": "Thank You from New Swan Talent Team - Keeping in Touch",
-      "badge_text": "🌟 VALUED TALENT POOL",
-      "hero_headline": "Thank You for Interviewing With Us, {{candidate_name}}",
-      "hero_subheading": "We were highly impressed by your credentials and want to keep connected",
-      "message_body": "Dear {{candidate_name}},\n\nThank you for investing your time and effort in interviewing for the {{job_title}} role at New Swan Group.\n\nWhile we moved forward with another candidate whose background was marginally closer to our immediate specialization, our leadership team was sincerely impressed by your technical depth and professionalism.\n\nWe have added your profile to our Priority Talent Network. As our operations expand at {{branch}}, we will reach out directly when matching senior openings emerge.\n\nWe wish you continued professional success and look forward to future possibilities together.",
-      "cta_button_text": "Connect With Our Talent Network on LinkedIn →",
-      "cta_button_url": "https://linkedin.com/company/newswangroup",
-      "cta_button_color": "#0a66c2",
-      "target_pipeline": "recruiter",
-      "target_stage": "S03",
-      "branch": "All Branches",
-      "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
-    },
-    {
-      "id": "tpl_rec_graduate_intern_offer",
-      "category": "HR & Recruitment",
-      "template_name": "REC-09: Graduate Engineer Trainee (GET) / Intern Offer",
-      "template_type": "marketing",
-      "design_preset": "promo_deal",
+      "design_preset": "drag_drop",
       "subject": "Official Offer: Graduate Engineer Trainee (GET) Program - New Swan",
       "badge_text": "🎓 GRADUATE TRAINEE PROGRAM",
       "hero_headline": "Launch Your Engineering Career with New Swan",
       "hero_subheading": "Structured 12-month cross-functional manufacturing and R&D training",
-      "coupon_code": "GET-2026-BATCH",
-      "message_body": "Dear {{candidate_name}},\n\nFollowing your campus and technical assessments, we are pleased to offer you a position in the New Swan Graduate Engineer Trainee (GET) Class of 2026.\n\nProgram Pillars:\n• Hands-on rotations across Tool Design, Robotic Press Lines, Metallurgy & Quality QA\n• 1-on-1 mentorship under Senior Plant Managers\n• Competitive monthly stipend with performance-based full-time absorption\n\nPlease review your training terms and register your confirmation below:",
-      "cta_button_text": "Accept GET Offer & Confirm Joining →",
-      "cta_button_url": "https://newswangroup.com/graduate-trainee",
-      "cta_button_color": "#059669",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "Congratulations on qualifying for our prestigious Graduate Engineer Trainee program.",
+      "blocks": [
+        {
+          "id": "blk_rec07_hdr",
+          "type": "header",
+          "title": "New Swan Group — Early Careers Academy",
+          "subtitle": "Graduate Engineer Trainee (GET) Class of 2026",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#0e7490",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec07_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 85,
+          "maxWidth": 520,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Young Engineering Trainees",
+          "linkUrl": "https://newswangroup.com/trainee",
+          "caption": "Hands-on rotations across robotic stamping, CNC tool design, and QA testing"
+        },
+        {
+          "id": "blk_rec07_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Congratulations, {{candidate_name}}!",
+          "body": "Dear {{candidate_name}},\n\nFollowing your campus selection and technical assessment, we are delighted to offer you a position in the New Swan Graduate Engineer Trainee (GET) Class of 2026.\n\nProgram Pillars:\n• Hands-on rotations across Tool Design, Robotic Press Lines, Metallurgy & Quality QA\n• 1-on-1 mentorship under Senior Plant Managers\n• Competitive monthly stipend with performance-based full-time absorption at {{branch}}",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec07_cpn",
+          "type": "coupon",
+          "code": "GET-2026-BATCH",
+          "title": "GET PROGRAM REGISTRATION TOKEN",
+          "description": "Includes company hostel accommodation assistance and technical laptop allocation.",
+          "expiry": "Confirm joining within 10 days"
+        },
+        {
+          "id": "blk_rec07_btn",
+          "type": "button",
+          "text": "Accept GET Trainee Offer & Register Online →",
+          "url": "https://newswangroup.com/accept-get",
+          "bgColor": "#0891b2",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec07_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official graduate trainee communication."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     },
     {
-      "id": "tpl_rec_polite_regret",
+      "id": "tpl_rec_08_silver_medalist_network",
       "category": "HR & Recruitment",
-      "template_name": "REC-10: Polite Application Status & Regret Notice",
-      "template_type": "plain",
-      "design_preset": "plain",
-      "subject": "Update on your job application for {{job_title}} - New Swan Group",
-      "message_body": "Dear {{candidate_name}},\n\nThank you for taking the time to apply for the {{job_title}} position at New Swan Group and for your interest in joining our team.\n\nWe received a significant number of strong applications for this role. After thorough consideration, we regret to inform you that we have decided to proceed with other applicants whose specific technical background more closely matches our current requirements.\n\nPlease know that this decision does not diminish the value of your skills and accomplishments. We will retain your resume in our talent records for 6 months should a relevant position open up.\n\nWe appreciate your interest in New Swan Group and wish you the very best in your job search and career endeavors.\n\nSincerely,\nTalent Acquisition Team\nNew Swan Group",
-      "cta_button_text": "",
-      "cta_button_url": "",
+      "template_name": "REC-08: Silver Medalist Talent Network & Future Connect",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Thank You from New Swan Talent Team - Keeping in Touch",
+      "badge_text": "🌟 VALUED TALENT POOL",
+      "hero_headline": "Thank You for Interviewing With Us, {{candidate_name}}",
+      "hero_subheading": "We were highly impressed by your credentials and want to keep connected",
       "target_pipeline": "recruiter",
       "target_stage": "S03",
       "branch": "All Branches",
+      "message_body": "We value your time and technical depth. Stay connected with our priority talent network.",
+      "blocks": [
+        {
+          "id": "blk_rec08_hdr",
+          "type": "header",
+          "title": "New Swan Group — Talent Community",
+          "subtitle": "Priority Engineering Talent Network",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#334155",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec08_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 75,
+          "maxWidth": 480,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Talent Network Connection",
+          "linkUrl": "https://linkedin.com/company/newswangroup",
+          "caption": "Connecting exceptional engineers with future opportunities"
+        },
+        {
+          "id": "blk_rec08_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Keeping in Touch, {{candidate_name}}",
+          "body": "Dear {{candidate_name}},\n\nThank you for investing your time and effort in interviewing for the {{job_title}} role at New Swan Group.\n\nWhile we moved forward with another candidate whose background was marginally closer to our immediate specialization, our leadership team was sincerely impressed by your technical depth and professionalism.\n\nWe have added your profile to our Priority Talent Network. As our operations expand at {{branch}}, we will reach out directly when matching senior openings emerge.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec08_cols",
+          "type": "columns",
+          "col1Img": "",
+          "col1Title": "Priority Consideration",
+          "col1Desc": "You bypass initial screening rounds for future leadership openings.",
+          "col2Img": "",
+          "col2Title": "Direct Recruiter Access",
+          "col2Desc": "Connect 1-on-1 with our Lead Talent Acquisition Partner on LinkedIn."
+        },
+        {
+          "id": "blk_rec08_btn",
+          "type": "button",
+          "text": "Join New Swan Talent Network on LinkedIn →",
+          "url": "https://linkedin.com/company/newswangroup",
+          "bgColor": "#0a66c2",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_rec08_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Talent community update sent to past shortlisted candidates."
+        }
+      ],
       "client_name": "SuPuja Creations",
-      "created_at": "2026-10-15T18:10:22.559Z",
-      "updated_at": "2026-10-15T18:10:22.559Z"
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_rec_09_buddy_mentorship_intro",
+      "category": "HR & Recruitment",
+      "template_name": "REC-09: Pre-Joining Check-In & Buddy Mentorship Welcome",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Excited to see you soon! Meet Your Team Buddy - {{candidate_name}}",
+      "badge_text": "🤝 TEAM WELCOME & BUDDY INTRO",
+      "hero_headline": "Your Onboarding Buddy is Ready to Help",
+      "hero_subheading": "Personal guidance and support for your upcoming first week at New Swan",
+      "target_pipeline": "recruiter",
+      "target_stage": "S03",
+      "branch": "All Branches",
+      "message_body": "Friendly pre-joining check-in and introduction to your designated onboarding buddy.",
+      "blocks": [
+        {
+          "id": "blk_rec09_hdr",
+          "type": "header",
+          "title": "New Swan Group — People & Culture",
+          "subtitle": "Buddy Mentorship & Transition Support",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e3a8a",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec09_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&auto=format&fit=crop&q=80",
+          "width": 80,
+          "maxWidth": 500,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Mentorship and Welcome",
+          "linkUrl": "https://newswangroup.com/culture",
+          "caption": "Peer-to-peer mentorship for seamless onboarding at {{branch}}"
+        },
+        {
+          "id": "blk_rec09_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Just a Few Days Left, {{candidate_name}}!",
+          "body": "Hi {{candidate_name}},\n\nWith just a few days left until your joining date as {{job_title}}, I wanted to reach out and check how your transition is going.\n\nWe have assigned an onboarding buddy from your engineering team who will help guide you through company systems, tooling software, and daily workflows during your initial weeks.\n\nFeel free to connect or ask any questions regarding directions or first morning schedules!",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec09_card",
+          "type": "interview_card",
+          "title": "Buddy Connection & First Morning Sync",
+          "date": "Joining Morning at 10:00 AM IST",
+          "time": "Coffee & Introduction Session",
+          "venue": "Engineering Lounge, Plant Office, {{branch}}",
+          "panel": "Assigned Buddy: Senior Production Engineer",
+          "meetUrl": "https://newswangroup.com/say-hello"
+        },
+        {
+          "id": "blk_rec09_btn",
+          "type": "button",
+          "text": "Say Hello to Your Team Mentor →",
+          "url": "https://newswangroup.com/say-hello",
+          "bgColor": "#2563eb",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec09_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "People & Culture, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Pre-joining employee welcome communication."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_rec_10_fellowship_internship",
+      "category": "HR & Recruitment",
+      "template_name": "REC-10: Summer Engineering Internship & Research Fellowship",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Official Offer: Summer R&D Engineering Fellowship at New Swan",
+      "badge_text": "🔬 RESEARCH FELLOWSHIP OFFER",
+      "hero_headline": "6-Month Industrial Research Fellowship Award",
+      "hero_subheading": "Hands-on metallurgical research and advanced die-casting project placement",
+      "target_pipeline": "recruiter",
+      "target_stage": "S03",
+      "branch": "All Branches",
+      "message_body": "Congratulations! Official fellowship enrollment and project guidance details.",
+      "blocks": [
+        {
+          "id": "blk_rec10_hdr",
+          "type": "header",
+          "title": "New Swan Group — R&D Innovation Fellowship",
+          "subtitle": "Advanced Applied Engineering Research Placement",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#5b21b6",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_rec10_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 85,
+          "maxWidth": 520,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Advanced R&D Testing",
+          "linkUrl": "https://newswangroup.com/fellowship",
+          "caption": "Applied research in sustainable cold forging and lightweight materials"
+        },
+        {
+          "id": "blk_rec10_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Welcome to New Swan R&D Labs, {{candidate_name}}",
+          "body": "Dear {{candidate_name}},\n\nFollowing your evaluation by our Chief Metallurgist, we are pleased to offer you a 6-month Industrial Research Fellowship at our advanced materials lab in {{branch}}.\n\nFellowship Scope:\n• Direct involvement in cutting-edge automotive die-wear reduction projects\n• Publication co-authorship and patent filing exposure\n• Competitive monthly research stipend and full laboratory access",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_rec10_cols",
+          "type": "columns",
+          "col1Img": "",
+          "col1Title": "Project Allocation",
+          "col1Desc": "Automated die-casting optimization using predictive thermal modeling.",
+          "col2Img": "",
+          "col2Title": "Senior Mentorship",
+          "col2Desc": "Direct project guidance under Chief of Metallurgy and Simulation."
+        },
+        {
+          "id": "blk_rec10_btn",
+          "type": "button",
+          "text": "Confirm Fellowship Enrollment & Accept Terms →",
+          "url": "https://newswangroup.com/accept-fellowship",
+          "bgColor": "#7c3aed",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_rec10_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "R&D Division, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official academic and research fellowship documentation."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_lead_welcome",
+      "category": "Sales Pipeline",
+      "template_name": "Lead Welcome & Introduction",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Welcome to New Swan Group, {{name}}!",
+      "badge_text": "⭐ Enterprise Welcome",
+      "hero_headline": "Welcome to New Swan Group, {{name}}",
+      "hero_subheading": "We have received your requirements for {{company}}",
+      "target_pipeline": "sales",
+      "target_stage": "01 - New Stage",
+      "branch": "All Branches",
+      "message_body": "Thank you for reaching out to New Swan Group. Our enterprise team is reviewing your project requirements.",
+      "blocks": [
+        {
+          "id": "blk_lw_hdr",
+          "type": "header",
+          "title": "New Swan Group",
+          "subtitle": "Industrial Excellence & Precision Engineering",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#0f172a",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_lw_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80",
+          "width": 100,
+          "maxWidth": 560,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Precision Manufacturing",
+          "linkUrl": "https://newswangroup.com",
+          "caption": "High-precision engineering facilities at {{branch}}"
+        },
+        {
+          "id": "blk_lw_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Welcome to New Swan Group, {{name}}!",
+          "body": "Dear {{name}},\n\nThank you for reaching out to New Swan Group. We have received your inquiry regarding manufacturing and supply solutions for {{company}}.\n\nOur engineering and commercial team is reviewing your requirements. Your dedicated relationship manager {{rep_name}} will be in touch shortly to assist with component specifications and sample trials.\n\nYour Reference ID: {{lead_ref_id}}",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_lw_cols",
+          "type": "columns",
+          "col1Img": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80",
+          "col1Title": "High-Precision Machining",
+          "col1Desc": "Multi-axis CNC, cold forging, and stamping capabilities.",
+          "col2Img": "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80",
+          "col2Title": "Global Quality Standards",
+          "col2Desc": "IATF 16949 certified manufacturing and metallurgical testing."
+        },
+        {
+          "id": "blk_lw_btn",
+          "type": "button",
+          "text": "Explore Our Manufacturing Capabilities →",
+          "url": "https://newswangroup.com",
+          "bgColor": "#2563eb",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": false
+        },
+        {
+          "id": "blk_lw_div",
+          "type": "divider",
+          "style": "solid",
+          "color": "#e2e8f0",
+          "thickness": 1,
+          "gap": 20
+        },
+        {
+          "id": "blk_lw_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official customer communication from New Swan Group."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_recruiter_interview",
+      "category": "HR & Recruitment",
+      "template_name": "Candidate Interview Invitation",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Interview Invitation with New Swan Group - {{job_title}}",
+      "badge_text": "💼 INTERVIEW SCHEDULE",
+      "hero_headline": "Interview Invitation: {{job_title}}",
+      "hero_subheading": "We look forward to speaking with you, {{candidate_name}}",
+      "target_pipeline": "recruiter",
+      "target_stage": "S03",
+      "branch": "All Branches",
+      "message_body": "You are invited to an interview for {{job_title}} at New Swan Group.",
+      "blocks": [
+        {
+          "id": "blk_ri_hdr",
+          "type": "header",
+          "title": "New Swan Talent Acquisition",
+          "subtitle": "Engineering Careers & Leadership",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#1e293b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_ri_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&auto=format&fit=crop&q=80",
+          "width": 85,
+          "maxWidth": 540,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Professional Interview",
+          "linkUrl": "https://newswangroup.com/careers",
+          "caption": "Interview Discussion for {{job_title}}"
+        },
+        {
+          "id": "blk_ri_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Interview Call: {{job_title}}",
+          "body": "Dear {{candidate_name}},\n\nWe are pleased to invite you for an interview round for the position of {{job_title}} at New Swan Group.\n\nYour profile has been shortlisted by our hiring panel. We look forward to discussing your technical experience, engineering accomplishments, and career aspirations.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_ri_card",
+          "type": "interview_card",
+          "title": "Technical & Profile Assessment: {{job_title}}",
+          "date": "Upcoming Monday",
+          "time": "11:30 AM IST",
+          "venue": "Google Meet (Online Video Conference)",
+          "panel": "Senior Technical Lead & HR Manager",
+          "meetUrl": "https://meet.google.com"
+        },
+        {
+          "id": "blk_ri_btn",
+          "type": "button",
+          "text": "Confirm Interview Availability & Join →",
+          "url": "https://meet.google.com",
+          "bgColor": "#4f46e5",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_ri_div",
+          "type": "divider",
+          "style": "solid",
+          "color": "#e2e8f0",
+          "thickness": 1,
+          "gap": 20
+        },
+        {
+          "id": "blk_ri_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official recruitment communication."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
+    },
+    {
+      "id": "tpl_recruiter_loi",
+      "category": "HR & Recruitment",
+      "template_name": "Letter of Intent (LOI) Release",
+      "template_type": "marketing",
+      "design_preset": "drag_drop",
+      "subject": "Letter of Intent (LOI) - New Swan Group",
+      "badge_text": "🎉 CONGRATULATIONS",
+      "hero_headline": "Letter of Intent (LOI): {{job_title}}",
+      "hero_subheading": "Welcome to the New Swan family, {{candidate_name}}",
+      "target_pipeline": "recruiter",
+      "target_stage": "S08",
+      "branch": "All Branches",
+      "message_body": "Congratulations! We are delighted to extend our Letter of Intent (LOI) for {{job_title}} with New Swan Group.",
+      "blocks": [
+        {
+          "id": "blk_loi_hdr",
+          "type": "header",
+          "title": "New Swan Group",
+          "subtitle": "People & Culture • Talent Offer",
+          "logoUrl": "",
+          "logoWidth": 140,
+          "bgColor": "#064e3b",
+          "textColor": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "blk_loi_img",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&auto=format&fit=crop&q=80",
+          "width": 90,
+          "maxWidth": 540,
+          "borderRadius": 8,
+          "align": "center",
+          "alt": "Welcome to Team",
+          "linkUrl": "https://newswangroup.com/careers",
+          "caption": "Formal Letter of Intent for {{candidate_name}}"
+        },
+        {
+          "id": "blk_loi_txt",
+          "type": "text",
+          "headingLevel": "h2",
+          "heading": "Congratulations {{candidate_name}}!",
+          "body": "Dear {{candidate_name}},\n\nFollowing your successful interviews and technical evaluations, the Executive Committee is delighted to issue this official Letter of Intent (LOI) offering you the role of {{job_title}} at New Swan Group.\n\nWe were deeply impressed by your capabilities and are confident your contributions will propel our manufacturing innovations forward.",
+          "fontSize": 15,
+          "color": "#334155",
+          "align": "left"
+        },
+        {
+          "id": "blk_loi_cols",
+          "type": "columns",
+          "col1Img": "",
+          "col1Title": "Designation & Unit",
+          "col1Desc": "Role: {{job_title}}\nPlant: {{branch}}",
+          "col2Img": "",
+          "col2Title": "Next Milestone",
+          "col2Desc": "Document verification and formal appointment letter issuance."
+        },
+        {
+          "id": "blk_loi_btn",
+          "type": "button",
+          "text": "Accept Letter of Intent & Confirm Joining →",
+          "url": "https://newswangroup.com/careers/offer-accept",
+          "bgColor": "#059669",
+          "textColor": "#ffffff",
+          "borderRadius": 8,
+          "align": "center",
+          "fullWidth": true
+        },
+        {
+          "id": "blk_loi_div",
+          "type": "divider",
+          "style": "solid",
+          "color": "#e2e8f0",
+          "thickness": 1,
+          "gap": 20
+        },
+        {
+          "id": "blk_loi_ftr",
+          "type": "footer",
+          "company": "New Swan Group",
+          "branch": "{{branch}}",
+          "address": "Talent Acquisition, Ludhiana, Punjab, India",
+          "copyright": "© 2026 New Swan Group. All rights reserved.",
+          "unsubscribeText": "Official employment documentation."
+        }
+      ],
+      "client_name": "SuPuja Creations",
+      "created_at": "2026-10-15T18:37:14.479Z",
+      "updated_at": "2026-10-15T18:37:14.479Z"
     }
   ],
   "automations": [
@@ -817,5 +2028,5 @@
       "timestamp": "2026-10-15T16:11:52.125Z"
     }
   ],
-  "updated_at": "2026-10-15T18:10:22.560Z"
+  "updated_at": "2026-10-15T18:37:14.479Z"
 }

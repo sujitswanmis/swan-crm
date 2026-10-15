@@ -104,11 +104,52 @@ async function ensureConfigFile(targetPath = CONFIG_FILE_PATH) {
     try {
       await fs.access(targetPath);
     } catch {
-      await fs.writeFile(targetPath, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf8');
+      await fs.writeFile(targetPath, JSON.stringify({ ...DEFAULT_CONFIG, templates: PREBUILT_EMAIL_TEMPLATES }, null, 2), 'utf8');
     }
   } catch (e) {
     console.error('ensureConfigFile error:', e);
   }
+}
+
+// Helper: Guarantee all 20+ rich Drag & Drop templates exist and upgrade legacy plain ones
+function ensureRichTemplates(rawTemplates = [], companyOrTenantId = '') {
+  let list = Array.isArray(rawTemplates) ? [...rawTemplates] : [];
+  const comp = companyOrTenantId || 'New Swan Group';
+
+  // Upgrade or replace any legacy plain templates with rich Drag & Drop blocks
+  list = list.map(t => {
+    const match = PREBUILT_EMAIL_TEMPLATES.find(p => p.id === t.id || p.template_name === t.template_name);
+    if (match) {
+      if (!Array.isArray(t.blocks) || t.blocks.length === 0 || t.design_preset === 'plain') {
+        return {
+          ...match,
+          ...t,
+          design_preset: 'drag_drop',
+          template_type: 'marketing',
+          blocks: match.blocks,
+          client_name: t.client_name || comp
+        };
+      }
+    }
+    return t;
+  });
+
+  const existingIds = new Set(list.map(t => t.id));
+  const existingNames = new Set(list.map(t => t.template_name));
+
+  for (const pre of PREBUILT_EMAIL_TEMPLATES) {
+    if (!existingIds.has(pre.id) && !existingNames.has(pre.template_name)) {
+      list.push({
+        ...pre,
+        client_name: comp,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      existingIds.add(pre.id);
+    }
+  }
+
+  return list;
 }
 
 // Helper: Normalize multiple SMTP accounts with backward compatibility
@@ -243,6 +284,14 @@ export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = fal
       const fileContent = await fs.readFile(targetFilePath, 'utf8');
       const parsed = JSON.parse(fileContent);
       const { accounts, primarySmtp } = normalizeSmtpAccounts(parsed);
+      const enrichedTemplates = ensureRichTemplates(parsed.templates, companyOrTenantId);
+
+      // Auto-sync file if missing any prebuilt templates or had plain templates
+      if (enrichedTemplates.length !== (parsed.templates || []).length || (parsed.templates || []).some(t => !t.blocks || t.design_preset === 'plain')) {
+        parsed.templates = enrichedTemplates;
+        fs.writeFile(targetFilePath, JSON.stringify(parsed, null, 2), 'utf8').catch(err => console.error('Auto-sync templates write error:', err));
+      }
+
       return {
         success: true,
         data: {
@@ -250,13 +299,14 @@ export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = fal
           smtp_accounts: accounts,
           smtp_limit: quota.limit,
           is_unlimited: quota.is_unlimited,
-          templates: parsed.templates || DEFAULT_CONFIG.templates,
+          templates: enrichedTemplates,
           automations: parsed.automations || DEFAULT_CONFIG.automations,
           logs: (parsed.logs || []).slice(0, 50)
         }
       };
     } catch {
       const { accounts, primarySmtp } = normalizeSmtpAccounts(DEFAULT_CONFIG);
+      const enrichedTemplates = ensureRichTemplates(DEFAULT_CONFIG.templates, companyOrTenantId);
       return {
         success: true,
         data: {
@@ -264,7 +314,8 @@ export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = fal
           smtp: primarySmtp,
           smtp_accounts: accounts,
           smtp_limit: quota.limit,
-          is_unlimited: quota.is_unlimited
+          is_unlimited: quota.is_unlimited,
+          templates: enrichedTemplates
         }
       };
     }

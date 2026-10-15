@@ -1634,5 +1634,273 @@ export const PREBUILT_EMAIL_TEMPLATES = [
         unsubscribeText: 'Official academic and research fellowship documentation.'
       }
     ]
+  },
+
+  // =========================================================================
+  // 3. CORE LEGACY UPGRADES (CONVERTED TO 100% DRAG & DROP DESIGNS)
+  // =========================================================================
+  {
+    id: 'tpl_lead_welcome',
+    category: 'Sales Pipeline',
+    template_name: 'Lead Welcome & Introduction',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: 'Welcome to New Swan Group, {{name}}!',
+    badge_text: '⭐ Enterprise Welcome',
+    hero_headline: 'Welcome to New Swan Group, {{name}}',
+    hero_subheading: 'We have received your requirements for {{company}}',
+    target_pipeline: 'sales',
+    target_stage: '01 - New Stage',
+    branch: 'All Branches',
+    message_body: 'Thank you for reaching out to New Swan Group. Our enterprise team is reviewing your project requirements.',
+    blocks: [
+      {
+        id: 'blk_lw_hdr',
+        type: 'header',
+        title: 'New Swan Group',
+        subtitle: 'Industrial Excellence & Precision Engineering',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#0f172a',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_lw_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop&q=80',
+        width: 100,
+        maxWidth: 560,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Precision Manufacturing',
+        linkUrl: 'https://newswangroup.com',
+        caption: 'High-precision engineering facilities at {{branch}}'
+      },
+      {
+        id: 'blk_lw_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Welcome to New Swan Group, {{name}}!',
+        body: 'Dear {{name}},\n\nThank you for reaching out to New Swan Group. We have received your inquiry regarding manufacturing and supply solutions for {{company}}.\n\nOur engineering and commercial team is reviewing your requirements. Your dedicated relationship manager {{rep_name}} will be in touch shortly to assist with component specifications and sample trials.\n\nYour Reference ID: {{lead_ref_id}}',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_lw_cols',
+        type: 'columns',
+        col1Img: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80',
+        col1Title: 'High-Precision Machining',
+        col1Desc: 'Multi-axis CNC, cold forging, and stamping capabilities.',
+        col2Img: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=400&auto=format&fit=crop&q=80',
+        col2Title: 'Global Quality Standards',
+        col2Desc: 'IATF 16949 certified manufacturing and metallurgical testing.'
+      },
+      {
+        id: 'blk_lw_btn',
+        type: 'button',
+        text: 'Explore Our Manufacturing Capabilities →',
+        url: 'https://newswangroup.com',
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: false
+      },
+      {
+        id: 'blk_lw_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_lw_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official customer communication from New Swan Group.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_recruiter_interview',
+    category: 'HR & Recruitment',
+    template_name: 'Candidate Interview Invitation',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: 'Interview Invitation with New Swan Group - {{job_title}}',
+    badge_text: '💼 INTERVIEW SCHEDULE',
+    hero_headline: 'Interview Invitation: {{job_title}}',
+    hero_subheading: 'We look forward to speaking with you, {{candidate_name}}',
+    target_pipeline: 'recruiter',
+    target_stage: 'S03',
+    branch: 'All Branches',
+    message_body: 'You are invited to an interview for {{job_title}} at New Swan Group.',
+    blocks: [
+      {
+        id: 'blk_ri_hdr',
+        type: 'header',
+        title: 'New Swan Talent Acquisition',
+        subtitle: 'Engineering Careers & Leadership',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#1e293b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_ri_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&auto=format&fit=crop&q=80',
+        width: 85,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Professional Interview',
+        linkUrl: 'https://newswangroup.com/careers',
+        caption: 'Interview Discussion for {{job_title}}'
+      },
+      {
+        id: 'blk_ri_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Interview Call: {{job_title}}',
+        body: 'Dear {{candidate_name}},\n\nWe are pleased to invite you for an interview round for the position of {{job_title}} at New Swan Group.\n\nYour profile has been shortlisted by our hiring panel. We look forward to discussing your technical experience, engineering accomplishments, and career aspirations.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_ri_card',
+        type: 'interview_card',
+        title: 'Technical & Profile Assessment: {{job_title}}',
+        date: 'Upcoming Monday',
+        time: '11:30 AM IST',
+        venue: 'Google Meet (Online Video Conference)',
+        panel: 'Senior Technical Lead & HR Manager',
+        meetUrl: 'https://meet.google.com'
+      },
+      {
+        id: 'blk_ri_btn',
+        type: 'button',
+        text: 'Confirm Interview Availability & Join →',
+        url: 'https://meet.google.com',
+        bgColor: '#4f46e5',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_ri_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_ri_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Talent Acquisition, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official recruitment communication.'
+      }
+    ]
+  },
+  {
+    id: 'tpl_recruiter_loi',
+    category: 'HR & Recruitment',
+    template_name: 'Letter of Intent (LOI) Release',
+    template_type: 'marketing',
+    design_preset: 'drag_drop',
+    subject: 'Letter of Intent (LOI) - New Swan Group',
+    badge_text: '🎉 CONGRATULATIONS',
+    hero_headline: 'Letter of Intent (LOI): {{job_title}}',
+    hero_subheading: 'Welcome to the New Swan family, {{candidate_name}}',
+    target_pipeline: 'recruiter',
+    target_stage: 'S08',
+    branch: 'All Branches',
+    message_body: 'Congratulations! We are delighted to extend our Letter of Intent (LOI) for {{job_title}} with New Swan Group.',
+    blocks: [
+      {
+        id: 'blk_loi_hdr',
+        type: 'header',
+        title: 'New Swan Group',
+        subtitle: 'People & Culture • Talent Offer',
+        logoUrl: '',
+        logoWidth: 140,
+        bgColor: '#064e3b',
+        textColor: '#ffffff',
+        align: 'center'
+      },
+      {
+        id: 'blk_loi_img',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&auto=format&fit=crop&q=80',
+        width: 90,
+        maxWidth: 540,
+        borderRadius: 8,
+        align: 'center',
+        alt: 'Welcome to Team',
+        linkUrl: 'https://newswangroup.com/careers',
+        caption: 'Formal Letter of Intent for {{candidate_name}}'
+      },
+      {
+        id: 'blk_loi_txt',
+        type: 'text',
+        headingLevel: 'h2',
+        heading: 'Congratulations {{candidate_name}}!',
+        body: 'Dear {{candidate_name}},\n\nFollowing your successful interviews and technical evaluations, the Executive Committee is delighted to issue this official Letter of Intent (LOI) offering you the role of {{job_title}} at New Swan Group.\n\nWe were deeply impressed by your capabilities and are confident your contributions will propel our manufacturing innovations forward.',
+        fontSize: 15,
+        color: '#334155',
+        align: 'left'
+      },
+      {
+        id: 'blk_loi_cols',
+        type: 'columns',
+        col1Img: '',
+        col1Title: 'Designation & Unit',
+        col1Desc: 'Role: {{job_title}}\nPlant: {{branch}}',
+        col2Img: '',
+        col2Title: 'Next Milestone',
+        col2Desc: 'Document verification and formal appointment letter issuance.'
+      },
+      {
+        id: 'blk_loi_btn',
+        type: 'button',
+        text: 'Accept Letter of Intent & Confirm Joining →',
+        url: 'https://newswangroup.com/careers/offer-accept',
+        bgColor: '#059669',
+        textColor: '#ffffff',
+        borderRadius: 8,
+        align: 'center',
+        fullWidth: true
+      },
+      {
+        id: 'blk_loi_div',
+        type: 'divider',
+        style: 'solid',
+        color: '#e2e8f0',
+        thickness: 1,
+        gap: 20
+      },
+      {
+        id: 'blk_loi_ftr',
+        type: 'footer',
+        company: 'New Swan Group',
+        branch: '{{branch}}',
+        address: 'Talent Acquisition, Ludhiana, Punjab, India',
+        copyright: '© 2026 New Swan Group. All rights reserved.',
+        unsubscribeText: 'Official employment documentation.'
+      }
+    ]
   }
 ];

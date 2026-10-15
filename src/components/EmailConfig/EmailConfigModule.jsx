@@ -294,6 +294,12 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
           setSelectedTestSmtpId(def.id);
         }
         setTemplates(res.data.templates || []);
+        if (Array.isArray(res.data.templates) && res.data.templates.length > 0) {
+          const firstDragDrop = res.data.templates.find(t => t.id === 'tpl_mkt_01_enterprise_showcase' || t.design_preset === 'drag_drop') || res.data.templates[0];
+          if (firstDragDrop) {
+            setTestSelectedTemplateId(prev => prev || firstDragDrop.id);
+          }
+        }
         setAutomations(res.data.automations || []);
         setLogs(res.data.logs || []);
       }
@@ -708,11 +714,9 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
   const handleOpenAddTemplate = async (pipelineOverride = null) => {
     const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
-    const comp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+    const comp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'New Swan Group');
     setModalTenantId(selectedTenantId || '');
     const pipe = pipelineOverride || (templateFilter === 'recruiter' ? 'recruiter' : 'sales');
-    const defaultPreset = pipe === 'recruiter' ? 'interview_call' : 'marketing';
-    const presetMeta = DESIGN_PRESETS.find(p => p.id === defaultPreset) || DESIGN_PRESETS[0];
 
     try {
       const bRes = await getTenantBranches(targetTenant ? (targetTenant.name || targetTenant.id) : comp);
@@ -728,33 +732,33 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setCurrentTemplate({
       id: '',
       category: pipe === 'recruiter' ? 'HR & Recruitment' : 'Sales Pipeline',
-      template_type: defaultPreset === 'plain' ? 'plain' : (defaultPreset === 'custom_html' ? 'custom_html' : 'marketing'),
-      design_preset: defaultPreset,
+      template_type: 'marketing',
+      design_preset: 'drag_drop',
       template_name: '',
-      subject: pipe === 'recruiter' ? `Interview Invitation: {{job_title}} at ${comp}` : `Special Business Update for {{name}}`,
-      badge_text: presetMeta.defaultBadge || '',
-      hero_headline: presetMeta.defaultHeadline || '',
-      hero_subheading: presetMeta.defaultSubheading || '',
-      message_body: presetMeta.defaultBody || '',
-      html_content: defaultPreset === 'custom_html' ? presetMeta.defaultBody : '',
-      blocks: defaultPreset === 'drag_drop' ? DEFAULT_DRAG_DROP_BLOCKS : [],
-      cta_button_text: presetMeta.defaultCtaText || '',
-      cta_button_url: presetMeta.defaultCtaUrl || '',
-      cta_button_color: presetMeta.defaultColor || '#2563eb',
-      coupon_code: presetMeta.couponCode || 'VIP-SAVE30',
+      subject: pipe === 'recruiter' ? `Interview Discussion & Schedule: {{job_title}} at ${comp}` : `Enterprise Precision Solutions for {{name}}`,
+      badge_text: '⭐ Featured Partnership',
+      hero_headline: 'Welcome to Enterprise Excellence, {{name}}',
+      hero_subheading: `Tailored manufacturing solutions for {{company}}`,
+      message_body: 'Explore our precision engineering capabilities and high-volume production facilities.',
+      html_content: '',
+      blocks: DEFAULT_DRAG_DROP_BLOCKS,
+      cta_button_text: 'Explore Catalogue & Connect →',
+      cta_button_url: 'https://newswangroup.com',
+      cta_button_color: '#2563eb',
+      coupon_code: 'VIP-SAVE30',
       target_pipeline: pipe,
       target_stage: pipe === 'recruiter' ? 'S03' : '01 - New Stage',
       target_tenant_id: selectedTenantId || '',
       client_name: comp,
       branch: 'All Branches'
     });
-    setTemplateModalTab('editor');
+    setTemplateModalTab('builder'); // Directly opens in Visual Drag & Drop Builder!
     setShowTemplateModal(true);
   };
 
   const handleOpenEditTemplate = async (tpl) => {
     const targetTenant = tenantsList.find(t => t.id === (tpl.target_tenant_id || selectedTenantId)) || null;
-    const comp = tpl.client_name || (targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations'));
+    const comp = tpl.client_name || (targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'New Swan Group'));
     setModalTenantId(tpl.target_tenant_id || selectedTenantId || '');
 
     try {
@@ -768,36 +772,39 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       setModalBranches(branches);
     }
 
-    const preset = tpl.design_preset || (tpl.template_type === 'custom_html' ? 'custom_html' : (tpl.template_type === 'plain' ? 'plain' : ((Array.isArray(tpl.blocks) && tpl.blocks.length > 0) ? 'drag_drop' : 'marketing')));
-
     let initialBlocks = [];
     if (Array.isArray(tpl.blocks) && tpl.blocks.length > 0) {
       initialBlocks = tpl.blocks;
     } else if (typeof tpl.blocks_json === 'string') {
       try { initialBlocks = JSON.parse(tpl.blocks_json); } catch (e) { initialBlocks = []; }
-    } else if (preset === 'drag_drop') {
+    }
+    
+    // Always provide rich visual blocks if empty
+    if (initialBlocks.length === 0) {
       initialBlocks = DEFAULT_DRAG_DROP_BLOCKS;
     }
 
+    const isCustomHtml = tpl.design_preset === 'custom_html' || tpl.template_type === 'custom_html';
+
     setCurrentTemplate({
       ...tpl,
-      template_type: tpl.template_type || (preset === 'plain' ? 'plain' : (preset === 'custom_html' ? 'custom_html' : 'marketing')),
-      design_preset: preset,
+      template_type: isCustomHtml ? 'custom_html' : 'marketing',
+      design_preset: isCustomHtml ? 'custom_html' : 'drag_drop',
       badge_text: tpl.badge_text || '',
       hero_headline: tpl.hero_headline || '',
       hero_subheading: tpl.hero_subheading || '',
       message_body: tpl.message_body || '',
-      html_content: tpl.html_content || (tpl.template_type === 'custom_html' ? tpl.message_body : ''),
+      html_content: tpl.html_content || (isCustomHtml ? tpl.message_body : ''),
       blocks: initialBlocks,
-      cta_button_text: tpl.cta_button_text || '',
-      cta_button_url: tpl.cta_button_url || '',
+      cta_button_text: tpl.cta_button_text || 'Learn More →',
+      cta_button_url: tpl.cta_button_url || 'https://newswangroup.com',
       cta_button_color: tpl.cta_button_color || '#2563eb',
       coupon_code: tpl.coupon_code || 'VIP-SAVE30',
       target_tenant_id: tpl.target_tenant_id || selectedTenantId || '',
       client_name: comp,
       branch: tpl.branch || 'All Branches'
     });
-    setTemplateModalTab(preset === 'drag_drop' ? 'builder' : 'editor');
+    setTemplateModalTab(isCustomHtml ? 'editor' : 'builder'); // Opens directly in Visual Drag & Drop Builder!
     setShowTemplateModal(true);
   };
 
@@ -2685,30 +2692,8 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               </button>
             </div>
 
-            {/* Modal Navigation Tabs: Editor vs Drag & Drop Visual Builder vs Live Realtime Preview */}
+            {/* Modal Navigation Tabs: Drag & Drop Visual Builder vs Live Realtime Preview vs Template Settings */}
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.25rem', overflowX: 'auto' }}>
-              <button
-                type="button"
-                onClick={() => setTemplateModalTab('editor')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.55rem 1rem',
-                  border: 'none',
-                  background: 'transparent',
-                  borderBottom: templateModalTab === 'editor' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
-                  color: templateModalTab === 'editor' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                  fontWeight: templateModalTab === 'editor' ? 700 : 500,
-                  fontSize: '0.88rem',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <Edit3 size={15} />
-                <span>✏️ Template Settings</span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -2765,6 +2750,28 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               >
                 <Eye size={15} />
                 <span>👁️ Live Realtime Preview</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTemplateModalTab('editor')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 1rem',
+                  border: 'none',
+                  background: 'transparent',
+                  borderBottom: templateModalTab === 'editor' ? '2.5px solid var(--accent-color)' : '2.5px solid transparent',
+                  color: templateModalTab === 'editor' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: templateModalTab === 'editor' ? 700 : 500,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Edit3 size={15} />
+                <span>⚙️ Template Settings &amp; Branch Scope</span>
               </button>
             </div>
 
