@@ -1,8 +1,16 @@
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import globalCatalogData from '@/config/whatsappBspCatalog.json';
+
+const getAdminSupabase = () => {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+};
 
 // ==========================================
 // TIER 1: GLOBAL BSP CATALOG & DEFINITION
@@ -25,12 +33,18 @@ export async function getClientBspAllocations() {
     } catch (_) {}
   }
   
-  // Also fetch active tenants/companies from Supabase
+  // Fetch all active tenants/companies from Supabase using Admin client to bypass RLS
   let tenants = [];
   try {
-    const { data: tList } = await supabase.from('tenants').select('id, name, tenant_code');
+    const admin = getAdminSupabase();
+    const { data: tList } = await admin.from('tenants').select('id, name, tenant_code').order('created_at', { ascending: true });
     tenants = tList || [];
-  } catch (_) {}
+  } catch (_) {
+    try {
+      const { data: tList } = await supabase.from('tenants').select('id, name, tenant_code');
+      tenants = tList || [];
+    } catch (_e) {}
+  }
 
   return { success: true, allocations: clientAllocations, tenants };
 }

@@ -260,13 +260,21 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP', type: 'branch', group: 'New Swan Group' }
     ];
 
-    // Additional Tenants as Headquarters
+    // 1. Automatically import all Registered Tenants as Headquarters
     (tenantsList || []).forEach(t => {
-      const code = t.tenant_code || t.name;
-      if (!list.some(x => x.code?.toLowerCase() === code?.toLowerCase())) {
+      const code = (t.tenant_code || t.name || '').trim();
+      const lowerCode = code.toLowerCase();
+      const lowerName = (t.name || '').toLowerCase();
+      
+      const alreadyExists = list.some(x => 
+        x.code?.toLowerCase() === lowerCode || 
+        x.name?.toLowerCase().includes(lowerName)
+      );
+
+      if (!alreadyExists && code) {
         list.push({ 
-          id: t.id, 
-          name: `${t.name} (Headquarters)`, 
+          id: t.id || code, 
+          name: t.name.toLowerCase().includes('headquarter') ? t.name : `${t.name} (Headquarters)`, 
           code: code, 
           type: 'headquarters', 
           group: t.name 
@@ -274,15 +282,38 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       }
     });
 
-    // Additional Branches from branches list
+    // 2. Automatically import all dynamic Branches (both DB & Local config)
     (branches || []).forEach(b => {
       const bCode = (b.branch_code || b.branch_name || '').trim();
-      if (bCode && !list.some(x => x.code?.toLowerCase() === bCode.toLowerCase())) {
+      const lowerCode = bCode.toLowerCase();
+      const lowerName = (b.branch_name || '').toLowerCase();
+      const locType = (b.location_type || '').toLowerCase();
+      const isHQ = locType === 'headquarters' || lowerName.includes('headquarter');
+
+      const alreadyExists = list.some(x => 
+        x.code?.toLowerCase() === lowerCode || 
+        x.name?.toLowerCase() === lowerName ||
+        (isHQ && b.company && x.name?.toLowerCase().includes(b.company.toLowerCase()) && x.type === 'headquarters')
+      );
+
+      if (!alreadyExists && bCode) {
+        let displayName = b.branch_name;
+        if (isHQ) {
+          displayName = b.company 
+            ? `${b.company} (Headquarters)` 
+            : (displayName.includes('(') ? displayName : `${displayName} (Headquarters)`);
+        } else {
+          const suffix = b.location_type && !b.location_type.toLowerCase().includes('branch')
+            ? ` (${b.location_type})`
+            : ' (Branch)';
+          displayName = displayName.startsWith('🏢') ? displayName : `🏢 ${displayName}${displayName.includes('(') ? '' : suffix}`;
+        }
+
         list.push({
           id: b.id || bCode,
-          name: `🏢 ${b.branch_name} (${b.location_type || 'Branch'})`,
+          name: displayName,
           code: bCode,
-          type: 'branch',
+          type: isHQ ? 'headquarters' : 'branch',
           group: b.company || 'Branch Office'
         });
       }
