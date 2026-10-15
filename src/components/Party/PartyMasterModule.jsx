@@ -203,8 +203,20 @@ export default function PartyMasterModule({
   activeSubTab = null,
   onSubTabChange = null,
   userRole = '',
-  moduleAccess = {}
+  moduleAccess = {},
+  userCompany = '',
+  tenantId = null
 }) {
+  const effectiveTenantId = useMemo(() => {
+    if (tenantId && tenantId !== 'default' && tenantId !== '00000000-0000-0000-0000-000000000001') {
+      return tenantId;
+    }
+    const comp = (userCompany || '').toLowerCase().trim();
+    if (comp.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    return tenantId || '00000000-0000-0000-0000-000000000001';
+  }, [tenantId, userCompany]);
+
   const [activeTab, setActiveTab] = useState(activeSubTab || initialSubTab || 'dashboard');
   // Stage Configuration Modal State (S01 to S08 popup on table action)
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
@@ -542,16 +554,18 @@ export default function PartyMasterModule({
 
   const refreshTransferredLeads = useCallback(async () => {
     try {
-      const transRes = await getTransferredLeads();
+      const transRes = await getTransferredLeads(effectiveTenantId);
       setTransferredLeads(transRes || []);
     } catch (err) {
       console.warn('Could not refresh transferred leads:', err);
     }
-  }, []);
+  }, [effectiveTenantId]);
 
   useEffect(() => {
+    setParties([]);
+    setTransferredLeads([]);
     loadInitialData();
-  }, []);
+  }, [effectiveTenantId, userCompany]);
 
   // When activeTab changes to s00, immediately refresh transferred leads
   useEffect(() => {
@@ -606,10 +620,10 @@ export default function PartyMasterModule({
     setLoading(true);
     try {
       const [partyRes, empRes, dbStates, transRes] = await Promise.all([
-        getPartyList(),
-        getEmployeesMaster(),
+        getPartyList(effectiveTenantId),
+        getEmployeesMaster(effectiveTenantId, userCompany),
         getStatesCentral().catch(() => []),
-        getTransferredLeads().catch(() => [])
+        getTransferredLeads(effectiveTenantId).catch(() => [])
       ]);
       setParties(partyRes || []);
       setEmployees(empRes || []);
@@ -683,16 +697,16 @@ export default function PartyMasterModule({
 
   const loadOperationsData = async (tab) => {
     if (tab === 'order_followup') {
-      const data = await getOrderFollowups();
+      const data = await getOrderFollowups(effectiveTenantId);
       setOrderFollowups(data);
     } else if (tab === 'order_feedback') {
-      const data = await getOrderFeedbackList();
+      const data = await getOrderFeedbackList(effectiveTenantId);
       setOrderFeedbacks(data);
     } else if (tab === 'monthly_feedback') {
-      const data = await getMonthlyFeedbackList();
+      const data = await getMonthlyFeedbackList(effectiveTenantId);
       setMonthlyFeedbacks(data);
     } else if (tab === 'complaints') {
-      const data = await getComplaintsList();
+      const data = await getComplaintsList(effectiveTenantId);
       setComplaints(data);
     }
   };
@@ -1630,7 +1644,7 @@ export default function PartyMasterModule({
     if (!party?.id) return;
     setIsDeletingParty(true);
     try {
-      const res = await deletePartyMaster(party.id);
+      const res = await deletePartyMaster(party.id, effectiveTenantId);
       if (!res.success) {
         setCenterAlert({
           isOpen: true,
@@ -1699,9 +1713,9 @@ export default function PartyMasterModule({
       let partyObj = null;
 
       if (partyId) {
-        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload);
+        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload, effectiveTenantId);
       } else {
-        partyObj = await createPartyMaster(payload);
+        partyObj = await createPartyMaster(payload, effectiveTenantId);
         partyId = partyObj.id;
         setActivePartyId(partyId);
       }
@@ -1743,7 +1757,7 @@ export default function PartyMasterModule({
         headquarter_districts: distChips,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
-      });
+      }, effectiveTenantId);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1780,7 +1794,7 @@ export default function PartyMasterModule({
         showroom_area_sqft: s02DealerForm.showroom_area_sqft,
         workflow_status: 'S03_Completed',
         next_step: 'S04_Commercial'
-      });
+      }, effectiveTenantId);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1819,7 +1833,7 @@ export default function PartyMasterModule({
         parent_distributor_id: derivedDistId,
         workflow_status: 'S04_Completed',
         next_step: 'S04_Commercial'
-      });
+      }, effectiveTenantId);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1846,7 +1860,7 @@ export default function PartyMasterModule({
         commercial_status: 'Completed',
         workflow_status: 'S05_Completed',
         next_step: 'S05_Product_Authorization'
-      });
+      }, effectiveTenantId);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1885,7 +1899,7 @@ export default function PartyMasterModule({
         order_category: s06ProductCategory === 'Spare Part' ? 'Spare Parts' : p,
         opening_stock_required: 1
       }));
-      await saveProductAuthorizations(activePartyId, items);
+      await saveProductAuthorizations(activePartyId, items, effectiveTenantId);
 
       // 2. Save territory
       await saveTerritoryAllocation(activePartyId, {
@@ -1895,7 +1909,7 @@ export default function PartyMasterModule({
         tehsil_area: s05TerritoryForm.tehsil_area,
         market_coverage_area: s05TerritoryForm.market_coverage_chips,
         territory_type: s05TerritoryForm.territory_type
-      });
+      }, effectiveTenantId);
 
       await updatePartyStep(activePartyId, 'S05_Product_Authorization_Territory', {
         state_name: s05TerritoryForm.state,
@@ -1903,7 +1917,7 @@ export default function PartyMasterModule({
         product_category: s06ProductCategory,
         workflow_status: 'S06_Completed',
         next_step: 'S06_Team_Assignment'
-      });
+      }, effectiveTenantId);
 
       await loadInitialData();
       setStageConfirmedMap(prev => ({
@@ -1939,11 +1953,11 @@ export default function PartyMasterModule({
         });
       });
 
-      await saveTeamAssignments(activePartyId, flatAssignments);
+      await saveTeamAssignments(activePartyId, flatAssignments, effectiveTenantId);
       await updatePartyStep(activePartyId, 'S06_Team_Assignment', {
         workflow_status: 'S07_Completed',
         next_step: 'S07_Activation'
-      });
+      }, effectiveTenantId);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1965,7 +1979,7 @@ export default function PartyMasterModule({
   const handleS07Activation = async () => {
     setActivationErrors([]);
     try {
-      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks);
+      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId);
       if (!res.success) {
         setActivationErrors(res.errors || []);
         setCenterAlert({
@@ -2046,8 +2060,8 @@ export default function PartyMasterModule({
           onConfirm: null
         });
         const [freshParties, freshTrans] = await Promise.all([
-          getPartyList(),
-          getTransferredLeads()
+          getPartyList(effectiveTenantId),
+          getTransferredLeads(effectiveTenantId)
         ]);
         setParties(freshParties);
         setTransferredLeads(freshTrans);
@@ -3424,6 +3438,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s01"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3437,6 +3452,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s02"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3450,6 +3466,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s03"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3463,6 +3480,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s04"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3476,6 +3494,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s05"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3489,6 +3508,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s06"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3502,6 +3522,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s07"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -3515,6 +3536,7 @@ export default function PartyMasterModule({
         <StageDataTable
           stageId="s08"
           parties={parties}
+          tenantId={effectiveTenantId}
           activePartyId={activePartyId}
           onSelectParty={handleSelectStageParty}
           getStageApprovalStatus={getStageApprovalStatus}
@@ -6712,7 +6734,7 @@ export default function PartyMasterModule({
                 next_followup_date: orderForm.next_followup_date || null,
                 no_order_reason: orderForm.no_order_reason || null,
                 notes: notesSummary
-              });
+              }, effectiveTenantId);
 
               setShowOrderModal(false);
               loadOperationsData('order_followup');
@@ -6911,7 +6933,7 @@ export default function PartyMasterModule({
               await saveOrderFeedback({
                 ...feedbackForm,
                 party_id: selectedPartyForFeedback.id
-              });
+              }, effectiveTenantId);
               setShowFeedbackModal(false);
               loadOperationsData('order_feedback');
 
@@ -7000,7 +7022,7 @@ export default function PartyMasterModule({
                 const saved = await saveMonthlyFeedback({
                   ...monthlyForm,
                   party_id: selectedPartyForMonthly.id
-                });
+                }, effectiveTenantId);
                 setShowMonthlyModal(false);
 
                 // Optimistically update table data immediately
@@ -7341,7 +7363,7 @@ export default function PartyMasterModule({
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              await createComplaintTicket(complaintForm);
+              await createComplaintTicket(complaintForm, effectiveTenantId);
               setShowComplaintModal(false);
               loadOperationsData('complaints');
               setCenterAlert({

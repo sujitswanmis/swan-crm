@@ -14,7 +14,8 @@ export default function PartyImportModal({
   isOpen,
   onClose,
   onImportSuccess,
-  existingParties = []
+  existingParties = [],
+  tenantId = null
 }) {
   const [importMode, setImportMode] = useState('FULL'); // 'FULL' (S01 to S08) | 'S01_ONLY'
   const [file, setFile] = useState(null);
@@ -629,7 +630,7 @@ export default function PartyImportModal({
     try {
       setImportProgress(prev => ({ ...prev, percentage: 40, logs: [...prev.logs, 'Contacting Supabase backend...'] }));
 
-      const res = await bulkImportPartyMaster(validToImport, importMode);
+      const res = await bulkImportPartyMaster(validToImport, importMode, tenantId);
 
       if (!res.success) {
         setImportProgress(prev => ({

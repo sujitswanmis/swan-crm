@@ -110,7 +110,8 @@ export default function StageDataTable({
   getStageApprovalStatus,
   onNewParty,
   onDeleteParty,
-  refreshData
+  refreshData,
+  tenantId = null
 }) {
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1273,6 +1274,7 @@ export default function StageDataTable({
             if (typeof refreshData === 'function') refreshData();
           }}
           existingParties={parties}
+          tenantId={tenantId}
         />
       )}
     </div>

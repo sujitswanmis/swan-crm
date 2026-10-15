@@ -15,6 +15,8 @@ function parsePartyMeta(businessNature) {
   return {};
 }
 
+const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,7 +24,7 @@ const getAdminClient = () => {
   );
 };
 
-export async function sendLeadToParty(leadId, userId) {
+export async function sendLeadToParty(leadId, userId, tenantId = null) {
   const adminClient = getAdminClient();
 
   // 1. Fetch Lead
@@ -33,6 +35,8 @@ export async function sendLeadToParty(leadId, userId) {
     .single();
 
   if (leadErr || !lead) throw new Error('Lead not found');
+
+  const effectiveTenantId = tenantId || lead.tenant_id || DEFAULT_TENANT_ID;
 
   // Verify Stage 07 / S08 / Final Stage or status containing transfer / party master
   const st = lead.status || '';
@@ -48,12 +52,13 @@ export async function sendLeadToParty(leadId, userId) {
     throw new Error('"Transfer to Party Master" is only allowed for leads in Final Stage or with status "Transfer to Party Master"');
   }
 
-  // 2. Check duplicate party by mobile or GSTIN
+  // 2. Check duplicate party by mobile or GSTIN within workspace
   let existingParties = null;
   if (lead.phone) {
     const { data: byPhone } = await adminClient
       .from('party_master')
       .select('*')
+      .eq('tenant_id', effectiveTenantId)
       .eq('primary_mobile', lead.phone)
       .limit(1);
     if (byPhone && byPhone.length > 0) existingParties = byPhone;
@@ -63,6 +68,7 @@ export async function sendLeadToParty(leadId, userId) {
     const { data: byGst } = await adminClient
       .from('party_master')
       .select('*')
+      .eq('tenant_id', effectiveTenantId)
       .eq('gstin', gst)
       .limit(1);
     if (byGst && byGst.length > 0) existingParties = byGst;
@@ -170,7 +176,7 @@ export async function sendLeadToParty(leadId, userId) {
     }
   } else {
     // 3. Create New Party Draft with all lead fields
-    party = await createPartyMaster(partyMasterPayload);
+    party = await createPartyMaster(partyMasterPayload, effectiveTenantId);
   }
 
   // 4. Record Lead Party Handoff Log (prevent duplicates)
@@ -196,6 +202,7 @@ export async function sendLeadToParty(leadId, userId) {
     const { data: handoff, error: handoffErr } = await adminClient
       .from('lead_party_handoffs')
       .insert([{
+        tenant_id: effectiveTenantId,
         lead_id: lead.id,
         target_party_id: party.id,
         transfer_type: transferType,
@@ -249,18 +256,22 @@ export async function sendLeadToParty(leadId, userId) {
 }
 
 /**
- * Fetch all leads transferred to Party Master (S00)
+ * Fetch all leads transferred to Party Master (S00) scoped to workspace tenant
  */
-export async function getTransferredLeads() {
+export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   try {
     // 0. Auto-Heal: Ensure any leads marked "Transfer to Party Master" in leads table are recorded in handoffs
     try {
-      const { data: markedLeads } = await adminClient
+      let markedQuery = adminClient
         .from('leads')
         .select('id')
-        .ilike('status', '%transfer to party master%')
-        .limit(50);
+        .ilike('status', '%transfer to party master%');
+
+      if (tenantId) {
+        markedQuery = markedQuery.eq('tenant_id', tenantId);
+      }
+      const { data: markedLeads } = await markedQuery.limit(50);
 
       if (markedLeads && markedLeads.length > 0) {
         const { data: existingHandoffs } = await adminClient
@@ -273,7 +284,7 @@ export async function getTransferredLeads() {
 
         for (const m of missingLeads) {
           try {
-            await sendLeadToParty(m.id, null);
+            await sendLeadToParty(m.id, null, tenantId);
           } catch (autoErr) {
             console.warn('Auto-heal sendLeadToParty notice:', autoErr.message);
           }
@@ -283,10 +294,16 @@ export async function getTransferredLeads() {
       console.warn('Auto-heal check warning:', healErr.message);
     }
 
-    const { data: handoffs, error: hErr } = await adminClient
+    let hQuery = adminClient
       .from('lead_party_handoffs')
       .select('*')
       .order('transferred_at', { ascending: false });
+
+    if (tenantId) {
+      hQuery = hQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: handoffs, error: hErr } = await hQuery;
 
     if (hErr) {
       console.warn('Could not query lead_party_handoffs:', hErr.message);
@@ -298,12 +315,17 @@ export async function getTransferredLeads() {
       const leadIds = [...new Set(handoffList.map(h => h.lead_id).filter(Boolean))];
       const partyIds = [...new Set(handoffList.map(h => h.target_party_id).filter(Boolean))];
 
+      let partyQuery = adminClient.from('party_master').select('*').in('id', partyIds);
+      if (tenantId) {
+        partyQuery = partyQuery.eq('tenant_id', tenantId);
+      }
+
       const [{ data: leads }, { data: parties }] = await Promise.all([
         leadIds.length > 0
           ? adminClient.from('leads').select('*').in('id', leadIds)
           : { data: [] },
         partyIds.length > 0
-          ? adminClient.from('party_master').select('*').in('id', partyIds)
+          ? partyQuery
           : { data: [] }
       ]);
 
@@ -355,11 +377,17 @@ export async function getTransferredLeads() {
     }
 
     // Fallback: Query party_master directly where source_lead_id is present
-    const { data: partiesFallback } = await adminClient
+    let fbQuery = adminClient
       .from('party_master')
       .select('*')
       .not('source_lead_id', 'is', null)
       .order('created_at', { ascending: false });
+
+    if (tenantId) {
+      fbQuery = fbQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: partiesFallback } = await fbQuery;
 
     if (!partiesFallback || partiesFallback.length === 0) return [];
 

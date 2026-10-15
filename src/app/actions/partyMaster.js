@@ -1391,31 +1391,41 @@ export async function verifyAndCloseComplaint(complaintId, otp, satisfactionRati
 /**
  * Permanently delete a channel partner from Party Master and its related stage records
  */
-export async function deletePartyMaster(partyId) {
+export async function deletePartyMaster(partyId, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   try {
     if (!partyId) throw new Error('Party ID is required for deletion');
 
-    // 1. Fetch party to ensure it exists
-    const { data: party, error: fetchErr } = await adminClient
+    // 1. Fetch party to ensure it exists within tenant
+    let partyQuery = adminClient
       .from('party_master')
-      .select('id, firm_name, party_universal_code, party_type, source_lead_id')
-      .eq('id', partyId)
-      .single();
+      .select('id, firm_name, party_universal_code, source_lead_id')
+      .eq('id', partyId);
+
+    if (tenantId) {
+      partyQuery = partyQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: party, error: fetchErr } = await partyQuery.single();
 
     if (fetchErr || !party) {
       throw new Error('Party record not found or already deleted');
     }
 
     // 2. Check if downstream child parties depend on this party as parent
-    const { data: childParties } = await adminClient
+    let childQuery = adminClient
       .from('party_master')
-      .select('id, firm_name, party_type')
-      .or(`parent_distributor_id.eq.${partyId},parent_dealer_id.eq.${partyId}`)
-      .limit(5);
+      .select('id, firm_name')
+      .or(`parent_distributor_id.eq.${partyId},parent_dealer_id.eq.${partyId}`);
+
+    if (tenantId) {
+      childQuery = childQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: childParties } = await childQuery.limit(5);
 
     if (childParties && childParties.length > 0) {
-      const childNames = childParties.map(c => `${c.firm_name} (${c.party_type})`).join(', ');
+      const childNames = childParties.map(c => `${c.firm_name}`).join(', ');
       throw new Error(`Cannot delete "${party.firm_name}" because child partners are linked under it: ${childNames}. Please reassign or remove them first.`);
     }
 
@@ -1449,10 +1459,16 @@ export async function deletePartyMaster(partyId) {
     }
 
     // 5. Delete from party_master
-    const { error: delErr } = await adminClient
+    let delQuery = adminClient
       .from('party_master')
       .delete()
       .eq('id', partyId);
+
+    if (tenantId) {
+      delQuery = delQuery.eq('tenant_id', tenantId);
+    }
+
+    const { error: delErr } = await delQuery;
 
     if (delErr) {
       console.error('Error deleting from party_master:', delErr);
@@ -1514,18 +1530,20 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
     // Also fetch active distributors and dealers to resolve parent mapping by name or code if provided
     const { data: allPartiesMap } = await adminClient
       .from('party_master')
-      .select('id, firm_name, party_universal_code, party_type')
+      .select('id, firm_name, party_universal_code, business_nature')
       .eq('tenant_id', tenantId);
 
     const distMap = new Map();
     const dlrMap = new Map();
     (allPartiesMap || []).forEach(p => {
+      const meta = parsePartyMeta(p.business_nature);
+      const pType = (meta.party_type || meta.dealership_type || '').toLowerCase();
       const lowerName = (p.firm_name || '').toLowerCase().trim();
       const code = (p.party_universal_code || '').toLowerCase().trim();
-      if (p.party_type === 'Distributor') {
+      if (pType.includes('distributor')) {
         distMap.set(lowerName, p.id);
         if (code) distMap.set(code, p.id);
-      } else if (p.party_type === 'Dealer') {
+      } else if (pType.includes('dealer')) {
         dlrMap.set(lowerName, p.id);
         if (code) dlrMap.set(code, p.id);
       }

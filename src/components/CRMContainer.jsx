@@ -7057,6 +7057,8 @@ export default function CRMContainer({
                     onSubTabChange={(tab) => handlePartySubTabChange(tab)}
                     userRole={userRole}
                     moduleAccess={moduleAccess}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
