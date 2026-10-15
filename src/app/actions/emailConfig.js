@@ -527,19 +527,30 @@ export async function duplicateEmailTemplate(templateId, companyOrTenantId = '')
   }
 }
 
-// Seed / Merge Pre-Built Templates (20 Rich Designs for Marketing & HR)
-export async function seedPreBuiltTemplates(companyOrTenantId = '') {
+// Seed / Merge Pre-Built Templates (20 Rich Visual Drag & Drop Designs)
+export async function seedPreBuiltTemplates(companyOrTenantId = '', replaceExisting = true) {
   try {
     const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     const existingTemplates = currentConfig.templates || [];
 
     let addedCount = 0;
+    let updatedCount = 0;
     const updatedTemplates = [...existingTemplates];
 
     for (const pre of PREBUILT_EMAIL_TEMPLATES) {
-      const exists = updatedTemplates.some(t => t.id === pre.id || t.template_name === pre.template_name);
-      if (!exists) {
+      const idx = updatedTemplates.findIndex(t => t.id === pre.id || t.template_name === pre.template_name);
+      if (idx >= 0) {
+        if (replaceExisting || !Array.isArray(updatedTemplates[idx].blocks) || updatedTemplates[idx].blocks.length === 0) {
+          updatedTemplates[idx] = {
+            ...pre,
+            client_name: companyOrTenantId || updatedTemplates[idx].client_name || 'New Swan Group',
+            created_at: updatedTemplates[idx].created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          updatedCount++;
+        }
+      } else {
         updatedTemplates.push({
           ...pre,
           client_name: companyOrTenantId || 'New Swan Group',
@@ -553,7 +564,7 @@ export async function seedPreBuiltTemplates(companyOrTenantId = '') {
     currentConfig.templates = updatedTemplates;
     const saveRes = await saveEmailConfig(currentConfig, companyOrTenantId);
     if (saveRes.success) {
-      return { success: true, count: addedCount, total: updatedTemplates.length };
+      return { success: true, count: addedCount, updated: updatedCount, total: updatedTemplates.length };
     }
     return saveRes;
   } catch (error) {

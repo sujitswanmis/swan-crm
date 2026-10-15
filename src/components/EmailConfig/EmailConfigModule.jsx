@@ -899,11 +899,14 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setSeedingTemplates(true);
     try {
       const targetComp = getActiveComp();
-      const res = await seedPreBuiltTemplates(targetComp);
+      const res = await seedPreBuiltTemplates(targetComp, true);
       if (res.success) {
-        setSaveSuccessMsg(`Successfully imported ${res.count} new pre-built templates! Total templates: ${res.total}`);
+        const msg = res.updated > 0 
+          ? `✨ Upgraded ${res.updated} templates to Visual Drag & Drop and added ${res.count} new designs! Total: ${res.total}`
+          : `✨ Successfully imported ${res.count} advanced Visual Drag & Drop templates! Total: ${res.total}`;
+        setSaveSuccessMsg(msg);
         await loadConfig();
-        setTimeout(() => setSaveSuccessMsg(null), 4000);
+        setTimeout(() => setSaveSuccessMsg(null), 4500);
       } else {
         alert('Failed to import templates: ' + (res.error || 'Unknown error'));
       }
