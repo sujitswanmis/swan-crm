@@ -6831,6 +6831,9 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     initialSubTab={attendanceSubTab}
                     onSubTabChange={(tab) => handleAttendanceSubTabChange(tab)}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -6851,6 +6854,9 @@ export default function CRMContainer({
                     onSubTabChange={(tab) => handleChecklistSubTabChange(tab)}
                     pendingSlotToOpen={pendingChecklistSlot}
                     onSlotOpened={() => setPendingChecklistSlot(null)}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -6869,6 +6875,9 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     initialSubTab={delegationSubTab}
                     onSubTabChange={(tab) => handleDelegationSubTabChange(tab)}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

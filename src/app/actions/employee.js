@@ -14,7 +14,7 @@ const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 const cleanUUID = (val) => (val && typeof val === 'string' && val.trim() !== '' ? val : null);
 
-export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
+export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company = null) {
   const adminClient = getAdminClient();
   const employeeMap = new Map();
 
@@ -26,7 +26,20 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID) {
       .order('emp_name', { ascending: true });
 
     if (!rolesErr && Array.isArray(userRoles)) {
-      userRoles.forEach(u => {
+      let filteredRoles = userRoles;
+      if (company && company !== 'all') {
+        const cLower = company.toLowerCase().trim();
+        const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
+        filteredRoles = userRoles.filter(u => {
+          const uComp = (u.company || '').toLowerCase().trim();
+          if (isSwan) {
+            return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
+          }
+          return uComp === cLower;
+        });
+      }
+
+      filteredRoles.forEach(u => {
         const email = (u.email || '').trim().toLowerCase();
         if (!email) return;
 

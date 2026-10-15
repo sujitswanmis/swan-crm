@@ -101,10 +101,26 @@ export default function ChecklistModule({
   initialSubTab = 'dashboard',
   onSubTabChange = null,
   pendingSlotToOpen = null,
-  onSlotOpened = null
+  onSlotOpened = null,
+  userCompany = '',
+  tenantId = null,
+  isMasterAdmin = false
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.checklist?.is_manager === true;
+
+  // Multi-tenant effective tenant ID computation
+  const effectiveTenantId = useMemo(() => {
+    if (tenantId && isValidUUID(tenantId)) return tenantId;
+    const lowerCompany = (userCompany || '').toLowerCase().trim();
+    if (lowerCompany.includes('supuja')) {
+      return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    }
+    if (lowerCompany.includes('testing')) {
+      return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    }
+    return '00000000-0000-0000-0000-000000000001';
+  }, [tenantId, userCompany]);
 
   // Tabs: 'dashboard' | 'my_checklists' | 'templates' | 'compliance' | 'holidays'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
@@ -284,7 +300,7 @@ export default function ChecklistModule({
       clearTimeout(timer);
       timer = setTimeout(async () => {
         try {
-          const employees = await getEmployeesMaster();
+          const employees = await getEmployeesMaster(effectiveTenantId, userCompany);
           if (active && Array.isArray(employees)) setEmployeesList(employees);
         } catch (error) {
           console.warn('Reporting hierarchy refresh failed:', error.message);
@@ -301,7 +317,7 @@ export default function ChecklistModule({
       client.removeChannel(channel);
       window.removeEventListener('focus', refresh);
     };
-  }, [userEmail]);
+  }, [userEmail, effectiveTenantId, userCompany]);
   const canAccessTemplates = isManager || moduleAccess?.checklist?.sub_items?.templates?.view === true;
   const canAccessCompliance = isManager || isReportingManager || moduleAccess?.checklist?.sub_items?.compliance?.view === true;
 
@@ -787,7 +803,7 @@ export default function ChecklistModule({
     }).catch(() => {});
     loadEmployees();
     loadDepartments();
-  }, []);
+  }, [effectiveTenantId, userCompany]);
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
@@ -809,7 +825,7 @@ export default function ChecklistModule({
     } else if (activeTab === 'holidays') {
       loadHolidays();
     }
-  }, [activeTab, selectedFrequency, userEmail, dashboardDate]);
+  }, [activeTab, selectedFrequency, userEmail, dashboardDate, effectiveTenantId]);
 
   // Realtime Supabase Subscription for Checklist Submissions & Verification
   useEffect(() => {
@@ -864,7 +880,7 @@ export default function ChecklistModule({
 
   const loadEmployees = async () => {
     try {
-      const emps = await getEmployeesMaster();
+      const emps = await getEmployeesMaster(effectiveTenantId, userCompany);
       setEmployeesList(Array.isArray(emps) ? emps : []);
     } catch (e) {
       console.warn('Could not load employees master:', e.message);
@@ -878,7 +894,8 @@ export default function ChecklistModule({
       const res = await getEmployeeChecklistDashboard({
         employeeEmail: userEmail,
         frequency: selectedFrequency,
-        targetDate: targetObj
+        targetDate: targetObj,
+        tenantId: effectiveTenantId
       });
       if (res.success && Array.isArray(res.data)) {
         setDashboardChecklists(res.data);
@@ -902,7 +919,7 @@ export default function ChecklistModule({
     try {
       const res = await getChecklistTemplates({
         frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency
-      });
+      }, effectiveTenantId);
       if (res.success) {
         setTemplates(res.data || []);
       }
@@ -918,7 +935,8 @@ export default function ChecklistModule({
     if (!silent && complianceLogs.length === 0) setLoading(true);
     try {
       const res = await getChecklistComplianceReport({
-        frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency
+        frequency: selectedFrequency === 'ALL' ? undefined : selectedFrequency,
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         setComplianceLogs(res.data || []);
@@ -934,7 +952,7 @@ export default function ChecklistModule({
   const loadHolidays = async () => {
     setLoading(true);
     try {
-      const res = await getCompanyHolidays();
+      const res = await getCompanyHolidays(effectiveTenantId);
       if (res.success) {
         setHolidaysList(res.data || []);
       }
@@ -972,7 +990,7 @@ export default function ChecklistModule({
     }
     setSavingHoliday(true);
     try {
-      const res = await saveCompanyHoliday(holidayForm);
+      const res = await saveCompanyHoliday(holidayForm, effectiveTenantId);
       if (res.success) {
         setHolidaysList(res.data || []);
         setHolidayModalOpen(false);
@@ -992,7 +1010,7 @@ export default function ChecklistModule({
       return;
     }
     try {
-      const res = await deleteCompanyHoliday(h.id || h.date);
+      const res = await deleteCompanyHoliday(h.id || h.date, effectiveTenantId);
       if (res.success) {
         setHolidaysList(res.data || []);
         showNotification(`🗑️ Holiday "${h.name}" deleted!`);
@@ -1009,7 +1027,7 @@ export default function ChecklistModule({
       return;
     }
     try {
-      const res = await resetCompanyHolidaysToDefault();
+      const res = await resetCompanyHolidaysToDefault(effectiveTenantId);
       if (res.success) {
         setHolidaysList(res.data || []);
         showNotification('🔄 Restored default national holidays list!');
@@ -1203,7 +1221,7 @@ export default function ChecklistModule({
         responses: execResponses,
         submission_notes: execNotes,
         items: executingChecklist.items
-      });
+      }, effectiveTenantId);
 
       if (res.success) {
         // Instant Realtime Optimistic State Update
@@ -1488,7 +1506,7 @@ export default function ChecklistModule({
     setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, status: statusClean, is_active: isActive } : t));
     setTogglingStatusId(tmpl.id);
     try {
-      const res = await setChecklistTemplateStatus(tmpl.id, statusClean);
+      const res = await setChecklistTemplateStatus(tmpl.id, statusClean, effectiveTenantId);
       if (res.success) {
         showNotification(`Template set to ${statusClean === 'ACTIVE' ? '🟢 Active' : statusClean === 'DRAFT' ? '📝 Draft' : '🔴 Inactive'}`);
         loadEmployeeDashboard();
@@ -1533,7 +1551,7 @@ export default function ChecklistModule({
         status: finalStatus,
         is_active: isActive,
         created_by: userName
-      });
+      }, effectiveTenantId);
 
       if (res.success) {
         const statusMsg = finalStatus === 'ACTIVE' ? '✅ Published as Active!' : finalStatus === 'DRAFT' ? '📝 Saved as Draft!' : '🔴 Saved as Inactive!';
@@ -1552,7 +1570,7 @@ export default function ChecklistModule({
   const handleDeleteTemplate = async (id) => {
     if (!window.confirm('Are you sure you want to delete this checklist template?')) return;
     try {
-      const res = await deleteChecklistTemplate(id);
+      const res = await deleteChecklistTemplate(id, effectiveTenantId);
       if (res.success) {
         showNotification('Template deleted');
         loadTemplates();
@@ -1580,7 +1598,8 @@ export default function ChecklistModule({
         submissionId: verifyingSubmission.id,
         verificationStatus: status,
         verifiedBy: userName,
-        verificationRemarks: verifyRemarks
+        verificationRemarks: verifyRemarks,
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
@@ -1622,9 +1641,23 @@ export default function ChecklistModule({
         boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '1.75rem' }}>📋</span>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Smart Checklist Management</h1>
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: '#93c5fd',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              🏢 Workspace: {userCompany || 'Default'}
+            </span>
           </div>
           <p style={{ margin: 0, opacity: 0.85, fontSize: '0.9rem' }}>
             Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, & 1-Year Recurring Operations Engine

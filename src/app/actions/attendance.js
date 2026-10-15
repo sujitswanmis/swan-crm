@@ -1260,7 +1260,8 @@ export async function getTeamAttendanceMaster({
   startDate = '',
   endDate = '',
   department = '',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  company = ''
 }) {
   const adminClient = getAdminClient();
   let dbRecords = [];
@@ -1273,9 +1274,22 @@ export async function getTeamAttendanceMaster({
   try {
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company');
     if (!uErr && Array.isArray(usersData)) {
-      allUsers = usersData
+      let filteredUsers = usersData;
+      if (company && company !== 'all') {
+        const cLower = company.toLowerCase().trim();
+        const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
+        filteredUsers = usersData.filter(u => {
+          const uComp = (u.company || '').toLowerCase().trim();
+          if (isSwan) {
+            return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
+          }
+          return uComp === cLower;
+        });
+      }
+
+      allUsers = filteredUsers
         .filter(u => {
           // Team Management Approval Status = Approved
           if (u.is_approved !== true) return false;
@@ -1571,7 +1585,8 @@ export async function getTeamMonthlyMatrix({
   year = new Date().getFullYear(),
   month = new Date().getMonth() + 1,
   department = '',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  company = ''
 }) {
   const adminClient = getAdminClient();
   const targetYear = parseInt(year, 10);
@@ -1585,9 +1600,22 @@ export async function getTeamMonthlyMatrix({
   try {
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company');
     if (!uErr && Array.isArray(usersData)) {
-      allUsers = usersData
+      let filteredUsers = usersData;
+      if (company && company !== 'all') {
+        const cLower = company.toLowerCase().trim();
+        const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
+        filteredUsers = usersData.filter(u => {
+          const uComp = (u.company || '').toLowerCase().trim();
+          if (isSwan) {
+            return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
+          }
+          return uComp === cLower;
+        });
+      }
+
+      allUsers = filteredUsers
         .filter(u => {
           // Team Management Approval Status = Approved
           if (u.is_approved !== true) return false;

@@ -62,7 +62,8 @@ export async function createDelegationTask(taskData, tenantId = DEFAULT_TENANT_I
       actorEmail: taskData.delegated_by_email || '',
       activityType: 'CREATED',
       message: `Task delegated to ${taskData.assigned_to_name} with deadline ${new Date(payload.deadline).toLocaleString('en-IN')}`,
-      metadata: { priority: payload.priority, deadline: payload.deadline }
+      metadata: { priority: payload.priority, deadline: payload.deadline },
+      tenantId
     });
 
     return { success: true, data };
@@ -195,7 +196,8 @@ export async function updateTaskStatus({
       message: status === 'SUBMITTED' 
         ? `Task submitted for review with note: "${completionNotes || 'Completed'}"`
         : `Status changed to ${status}`,
-      metadata: { status, completionProof }
+      metadata: { status, completionProof },
+      tenantId
     });
 
     return { success: true, data };
@@ -238,7 +240,8 @@ export async function verifyAndCompleteTask({
       actorEmail: user.email || '',
       activityType: 'VERIFIED',
       message: `Task approved and closed with ${rating}★ rating. Feedback: "${feedbackRemarks || 'Excellent work'}"`,
-      metadata: { rating, feedbackRemarks }
+      metadata: { rating, feedbackRemarks },
+      tenantId
     });
 
     return { success: true, data };
@@ -283,7 +286,8 @@ export async function reopenTask({
       actorEmail: user.email || '',
       activityType: 'REOPENED',
       message: `Task reopened by delegator. Reason: "${remarks}". ${newDeadline ? `New Deadline: ${new Date(newDeadline).toLocaleString('en-IN')}` : ''}`,
-      metadata: { remarks, newDeadline }
+      metadata: { remarks, newDeadline },
+      tenantId
     });
 
     return { success: true, data };

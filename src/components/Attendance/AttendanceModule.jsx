@@ -102,10 +102,23 @@ export default function AttendanceModule({
   userEmail = '',
   moduleAccess = {},
   initialSubTab = 'my_attendance',
-  onSubTabChange = null
+  onSubTabChange = null,
+  userCompany = '',
+  tenantId = null,
+  isMasterAdmin = false
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isHodOrManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.attendance?.is_manager === true;
+
+  const effectiveTenantId = useMemo(() => {
+    if (tenantId && tenantId !== 'default' && tenantId !== '00000000-0000-0000-0000-000000000001') {
+      return tenantId;
+    }
+    const comp = (userCompany || '').toLowerCase().trim();
+    if (comp.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    return tenantId || '00000000-0000-0000-0000-000000000001';
+  }, [tenantId, userCompany]);
 
   // Active Sub-Tab: 'my_attendance' | 'monthly_logs' | 'regularization' | 'hod_approvals' | 'team_report'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'my_attendance');
@@ -434,7 +447,7 @@ export default function AttendanceModule({
     if (!userEmail) return;
     setLoadingToday(true);
     try {
-      const res = await getTodayAttendance(userEmail, userId);
+      const res = await getTodayAttendance(userEmail, userId, effectiveTenantId);
       if (res.success) {
         updateTodayRecord(res.data);
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
@@ -451,7 +464,7 @@ export default function AttendanceModule({
     if (!userEmail) return;
     setLoadingHistory(true);
     try {
-      const res = await getMyAttendanceHistory(userEmail, historyYear, historyMonth);
+      const res = await getMyAttendanceHistory(userEmail, historyYear, historyMonth, effectiveTenantId);
       if (res.success) {
         setHistoryRecords(res.records || []);
         setHistorySummary(res.summary || {});
@@ -471,7 +484,7 @@ export default function AttendanceModule({
     if (!userEmail) return;
     setLoadingMyRequests(true);
     try {
-      const res = await getMyRegularizationRequests(userEmail);
+      const res = await getMyRegularizationRequests(userEmail, effectiveTenantId);
       if (res.success) {
         setMyRequests(res.requests || []);
       }
@@ -492,7 +505,8 @@ export default function AttendanceModule({
       const res = await getHodPendingRequests({
         hodEmail: userEmail,
         userRole,
-        statusFilter: 'ALL'
+        statusFilter: 'ALL',
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         setHodRequests(res.allRequests || res.requests || []);
@@ -514,7 +528,9 @@ export default function AttendanceModule({
         date: teamStartDate,
         startDate: teamStartDate,
         endDate: teamEndDate,
-        department: teamMasterDepartment
+        department: teamMasterDepartment,
+        tenantId: effectiveTenantId,
+        company: userCompany
       });
       if (res.success) {
         setTeamMasterData({
@@ -537,7 +553,9 @@ export default function AttendanceModule({
       const res = await getTeamMonthlyMatrix({
         year: matrixYear,
         month: matrixMonth,
-        department: teamMasterDepartment
+        department: teamMasterDepartment,
+        tenantId: effectiveTenantId,
+        company: userCompany
       });
       if (res.success) {
         setMonthlyMatrixData(res);
@@ -648,7 +666,8 @@ export default function AttendanceModule({
         userId,
         empName: userName,
         location: punchLocation,
-        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH'
+        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         setPunchMessage(res.message);
@@ -743,7 +762,8 @@ export default function AttendanceModule({
         userId,
         empName: userName,
         location: punchLocation,
-        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH'
+        method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         setPunchMessage(res.message);
@@ -859,7 +879,8 @@ export default function AttendanceModule({
         reasonType: applyForm.reasonType,
         reasonDetails: applyForm.reasonDetails,
         assignedHodEmail: applyForm.assignedHodEmail,
-        assignedHodName: applyForm.assignedHodName
+        assignedHodName: applyForm.assignedHodName,
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
@@ -1524,7 +1545,23 @@ export default function AttendanceModule({
             <Clock size={22} />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.35rem', fontWeight: 700, margin: 0, lineHeight: 1.2 }}>Smart Attendance & Regularization</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, margin: 0, lineHeight: 1.2 }}>Smart Attendance & Regularization</h1>
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(59, 130, 246, 0.1)',
+                color: 'var(--primary, #2563eb)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                🏢 Workspace: {userCompany || 'Default'}
+              </span>
+            </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
               Daily 1-Time Punch In & Out • Missing Punch Applications • HOD Approvals & Auto Update
             </p>

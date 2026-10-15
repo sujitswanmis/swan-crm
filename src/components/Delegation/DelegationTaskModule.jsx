@@ -79,6 +79,10 @@ const getISTDateKey = (value) => {
   return isNaN(date.getTime()) ? '' : istDateFormatter.format(date);
 };
 
+const isValidUUID = (str) => {
+  return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
 export default function DelegationTaskModule({
   userRole = 'agent',
   userId = '',
@@ -86,12 +90,28 @@ export default function DelegationTaskModule({
   userEmail = '',
   moduleAccess = {},
   initialSubTab = 'dashboard',
-  onSubTabChange = null
+  onSubTabChange = null,
+  userCompany = '',
+  tenantId = null,
+  isMasterAdmin = false
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.delegation?.is_manager === true;
   const canAccessToMe = moduleAccess?.delegation?.sub_items?.to_me?.view !== false;
   const canAccessByMe = moduleAccess?.delegation?.sub_items?.by_me?.view !== false;
+
+  // Multi-tenant effective tenant ID computation
+  const effectiveTenantId = useMemo(() => {
+    if (tenantId && isValidUUID(tenantId)) return tenantId;
+    const lowerCompany = (userCompany || '').toLowerCase().trim();
+    if (lowerCompany.includes('supuja')) {
+      return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    }
+    if (lowerCompany.includes('testing')) {
+      return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    }
+    return '00000000-0000-0000-0000-000000000001';
+  }, [tenantId, userCompany]);
 
   // Tabs: 'dashboard' (Delegation Dashboard) | 'to_me' (Delegated To Me) | 'by_me' (Delegated By Me) | 'all' (Team Board)
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
@@ -161,7 +181,7 @@ export default function DelegationTaskModule({
       clearTimeout(timer);
       timer = setTimeout(async () => {
         try {
-          const employees = await getEmployeesMaster();
+          const employees = await getEmployeesMaster(effectiveTenantId, userCompany);
           if (active && Array.isArray(employees)) setEmployeesList(employees);
         } catch (error) {
           console.warn('Reporting hierarchy refresh failed:', error.message);
@@ -178,7 +198,7 @@ export default function DelegationTaskModule({
       client.removeChannel(channel);
       window.removeEventListener('focus', refresh);
     };
-  }, [userEmail]);
+  }, [userEmail, effectiveTenantId, userCompany]);
   const canAccessTeamBoard = isManager || isReportingManager || moduleAccess?.delegation?.sub_items?.all?.view === true;
 
   // Notifications
@@ -243,12 +263,12 @@ export default function DelegationTaskModule({
     const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
     const dd = String(tomorrow.getDate()).padStart(2, '0');
     setCreateForm(prev => ({ ...prev, deadlineDate: `${yyyy}-${mm}-${dd}` }));
-  }, []);
+  }, [effectiveTenantId, userCompany]);
 
   useEffect(() => {
     loadTasks();
     loadAnalytics();
-  }, [activeTab, teamBoardFilter, statusFilter, priorityFilter, searchQuery, userEmail, reportingTeamKey]);
+  }, [activeTab, teamBoardFilter, statusFilter, priorityFilter, searchQuery, userEmail, reportingTeamKey, effectiveTenantId]);
 
   const showNotification = (msg, isError = false) => {
     if (isError) {
@@ -262,7 +282,7 @@ export default function DelegationTaskModule({
 
   const loadEmployees = async () => {
     try {
-      const emps = await getEmployeesMaster();
+      const emps = await getEmployeesMaster(effectiveTenantId, userCompany);
       setEmployeesList(Array.isArray(emps) ? emps : []);
     } catch (e) {
       console.warn('Could not load employees master:', e.message);
@@ -282,7 +302,8 @@ export default function DelegationTaskModule({
           teamMemberEmails: teamEmails,
           status: 'ALL',
           priority: 'ALL',
-          search: ''
+          search: '',
+          tenantId: effectiveTenantId
         });
         if (resDash.success) {
           setAllDashboardTasks(resDash.data || []);
@@ -295,7 +316,8 @@ export default function DelegationTaskModule({
         teamMemberEmails: teamEmails,
         status: statusFilter,
         priority: priorityFilter,
-        search: searchQuery
+        search: searchQuery,
+        tenantId: effectiveTenantId
       });
       if (res.success && Array.isArray(res.data)) {
         setTasks(res.data);
@@ -316,7 +338,7 @@ export default function DelegationTaskModule({
 
   const loadAnalytics = async () => {
     try {
-      const res = await getDelegationAnalytics(userEmail);
+      const res = await getDelegationAnalytics(userEmail, effectiveTenantId);
       if (res.success) {
         setAnalytics(res.stats);
       }
@@ -854,7 +876,7 @@ export default function DelegationTaskModule({
         assigned_to_department: createForm.assigned_to_department,
         deadline: deadlineIso,
         subtasks: cleanSubtasks
-      });
+      }, effectiveTenantId);
 
       if (res.success) {
         showNotification(`✅ Task successfully delegated to ${createForm.assigned_to_name}!`);
@@ -919,7 +941,8 @@ export default function DelegationTaskModule({
       const res = await updateTaskStatus({
         taskId: task.id,
         status: 'IN_PROGRESS',
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         showNotification('Task marked as In Progress');
@@ -966,7 +989,8 @@ export default function DelegationTaskModule({
         status: 'SUBMITTED',
         completionNotes: submissionNotes,
         completionProof: submissionProof,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
@@ -1009,7 +1033,8 @@ export default function DelegationTaskModule({
         taskId: task.id,
         status: task.status === 'PENDING' ? 'IN_PROGRESS' : task.status,
         subtasks: updatedSubtasks,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
       loadTasks();
     } catch (e) {
@@ -1049,7 +1074,8 @@ export default function DelegationTaskModule({
         taskId: verifyingTask.id,
         rating,
         feedbackRemarks,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
@@ -1082,7 +1108,8 @@ export default function DelegationTaskModule({
         taskId: verifyingTask.id,
         remarks: feedbackRemarks,
         newDeadline,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
@@ -1106,7 +1133,7 @@ export default function DelegationTaskModule({
     setDrawerTask(task);
     setActivities([]);
     try {
-      const res = await getTaskActivities(task.id);
+      const res = await getTaskActivities(task.id, effectiveTenantId);
       if (res.success) {
         setActivities(res.data || []);
       }
@@ -1122,12 +1149,13 @@ export default function DelegationTaskModule({
       const res = await addTaskComment({
         taskId: drawerTask.id,
         comment: newComment,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
 
       if (res.success) {
         setNewComment('');
-        const refreshed = await getTaskActivities(drawerTask.id);
+        const refreshed = await getTaskActivities(drawerTask.id, effectiveTenantId);
         if (refreshed.success) setActivities(refreshed.data || []);
       }
     } catch (e) {
@@ -1201,9 +1229,23 @@ export default function DelegationTaskModule({
         boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '1.75rem' }}>🤝</span>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Employee-to-Employee Task Delegation</h1>
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: '#93c5fd',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              🏢 Workspace: {userCompany || 'Default'}
+            </span>
           </div>
           <p style={{ margin: 0, opacity: 0.85, fontSize: '0.9rem' }}>
             Assign, track, and complete high-priority tasks with strict deadline governance & quality sign-off
