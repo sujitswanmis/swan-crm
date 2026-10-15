@@ -64,9 +64,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 
-  // Settings State - Multi-Provider & Target Seats
-  const [provider, setProvider] = useState('aisensy');
-  const [targetSeats, setTargetSeats] = useState(5);
+  // Settings State - Multi-Active Providers & Default Gateway
+  const [enabledProviders, setEnabledProviders] = useState(['aisensy']);
+  const [defaultProvider, setDefaultProvider] = useState('aisensy');
   const [accountLimit, setAccountLimit] = useState(1);
   const [metaConfig, setMetaConfig] = useState({ phone_number_id: '', waba_id: '', access_token: '', api_version: 'v21.0' });
   const [aisensyConfig, setAisensyConfig] = useState({ api_key: '', user_name: 'New Swan MultiTech Limited-Swan Agro' });
@@ -79,6 +79,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
   const [apiKeyNstlp, setApiKeyNstlp] = useState('');
 
   // Test Connection State
+  const [testProvider, setTestProvider] = useState('aisensy');
   const [testPhone, setTestPhone] = useState('');
   const [testingConnection, setTestingConnection] = useState(false);
   const [testFeedback, setTestFeedback] = useState(null);
@@ -124,9 +125,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
     
     if (setRes.success && setRes.data) {
       const d = setRes.data;
-      setProvider(d.provider || (d.api_key_nstlp ? 'nextel' : 'aisensy'));
-      setTargetSeats(d.target_seats || 5);
-      setAccountLimit(d.account_limit || 1);
+      const initialEnabled = Array.isArray(d.enabled_providers) && d.enabled_providers.length > 0
+        ? d.enabled_providers
+        : (d.api_key_nstlp ? ['aisensy', 'nextel'] : ['aisensy']);
+      setEnabledProviders(initialEnabled);
+
+      const def = d.default_provider || d.provider || initialEnabled[0] || 'aisensy';
+      setDefaultProvider(def);
+      setTestProvider(def);
+      setAccountLimit(d.account_limit || initialEnabled.length);
+
       if (d.meta) setMetaConfig({ phone_number_id: d.meta.phone_number_id || '', waba_id: d.meta.waba_id || '', access_token: d.meta.access_token || '', api_version: d.meta.api_version || 'v21.0' });
       if (d.aisensy) setAisensyConfig({ api_key: d.aisensy.api_key || d.api_key_nsmlr || '', user_name: d.aisensy.user_name || 'New Swan MultiTech Limited-Swan Agro' });
       if (d.interakt) setInteraktConfig({ api_key: d.interakt.api_key || '' });
@@ -141,13 +149,33 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
     setLoading(false);
   };
 
+  const toggleProvider = (pId) => {
+    if (!settingsPerms.edit) return;
+    setEnabledProviders(prev => {
+      let updated;
+      if (prev.includes(pId)) {
+        if (prev.length === 1) {
+          alert('At least one WhatsApp provider must remain enabled.');
+          return prev;
+        }
+        updated = prev.filter(x => x !== pId);
+        if (defaultProvider === pId) setDefaultProvider(updated[0]);
+        if (testProvider === pId) setTestProvider(updated[0]);
+      } else {
+        updated = [...prev, pId];
+      }
+      return updated;
+    });
+  };
+
   // --- SETTINGS LOGIC ---
   const handleSaveSettings = async () => {
     setLoading(true);
     const payload = {
-      provider,
-      target_seats: Number(targetSeats) || 5,
-      account_limit: Number(accountLimit) || 1,
+      enabled_providers: enabledProviders,
+      default_provider: defaultProvider,
+      provider: defaultProvider,
+      account_limit: Number(accountLimit) || enabledProviders.length,
       meta: metaConfig,
       aisensy: aisensyConfig,
       interakt: interaktConfig,
@@ -158,7 +186,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
     };
     const res = await saveWhatsappSettings(payload);
     setLoading(false);
-    if (res.success) alert('WhatsApp settings saved securely!');
+    if (res.success) alert('WhatsApp multi-provider settings saved securely!');
     else alert('Error saving settings: ' + res.error);
   };
 
@@ -176,7 +204,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
       wati: watiConfig,
       nextel: nextelConfig
     };
-    const res = await testWhatsappProviderConnection({ provider, config, testPhone });
+    const res = await testWhatsappProviderConnection({ provider: testProvider, config, testPhone });
     setTestingConnection(false);
     setTestFeedback(res);
   };
@@ -292,11 +320,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
               WhatsApp Official API & Multi-Provider Gateway
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-              Connect your official WhatsApp Business account (Meta Cloud API, AiSensy, Interakt, Wati, or Nextel). Includes 1 WhatsApp API account with allocated target CRM seats.
+              Configure official WhatsApp Business API accounts. Enable one or more providers (Meta Cloud API, AiSensy, Interakt, Wati, Nextel) and designate your Primary Default Gateway.
             </p>
           </div>
 
-          {/* SAAS ENTITLEMENT & TARGET SEATS ALLOCATION CARD */}
+          {/* SAAS ENTITLEMENT & ACCOUNT SLOTS CARD */}
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
@@ -323,10 +351,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
               </div>
               <div>
                 <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                  SaaS Entitlement: 1 Official API Account
+                  WhatsApp API Account Quota & Setup
                 </div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
-                  Onetime setup cost model for 1 connected WhatsApp Business account. Fully managed & isolated per workspace.
+                  Onetime setup package provides dedicated WhatsApp API integration. Toggle and configure individual accounts below.
                 </div>
               </div>
             </div>
@@ -343,49 +371,49 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
                 justifyContent: 'center',
                 flexShrink: 0
               }}>
-                <Users size={22} />
+                <ShieldCheck size={22} />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <label style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Target Seat Limit:
+                    Active Connected Accounts:
                   </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max="500"
-                      value={targetSeats}
-                      onChange={(e) => setTargetSeats(Math.max(1, parseInt(e.target.value) || 1))}
-                      disabled={!settingsPerms.edit}
-                      style={{ 
-                        width: '70px', 
-                        padding: '0.3rem 0.5rem', 
-                        borderRadius: '6px', 
-                        border: '1px solid var(--border-light)', 
-                        textAlign: 'center',
-                        fontWeight: 700,
-                        fontSize: '0.9rem',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)'
-                      }}
-                    />
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>seats</span>
-                  </div>
+                  <span style={{ 
+                    padding: '0.25rem 0.6rem', 
+                    borderRadius: '20px', 
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)', 
+                    color: '#065f46', 
+                    fontWeight: 700, 
+                    fontSize: '0.82rem' 
+                  }}>
+                    {enabledProviders.length} Account{enabledProviders.length > 1 ? 's' : ''} Active
+                  </span>
                 </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Number of CRM telecallers/agents entitled to send WhatsApp broadcasts & updates.
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                  {enabledProviders.map(p => (
+                    <span key={p} style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+                      {p}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* PROVIDER SELECTOR */}
+          {/* MULTI-ACTIVE PROVIDER SELECTION */}
           <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ fontSize: '0.92rem', fontWeight: 700, display: 'block', marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-              Select WhatsApp Gateway Provider (BSP / API)
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+              <div>
+                <label style={{ fontSize: '0.95rem', fontWeight: 700, display: 'block', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                  Configured WhatsApp Gateways (Enable/Disable Accounts)
+                </label>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Check any provider you have purchased/subscribed to (e.g. AiSensy, Interakt, or both).
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.75rem' }}>
               {[
                 { id: 'meta', name: 'Meta Cloud API', tag: 'Direct Graph API', note: 'Direct Meta platform v21.0' },
                 { id: 'aisensy', name: 'AiSensy', tag: 'Meta BSP', note: 'Campaigns & NSMLR default' },
@@ -393,29 +421,29 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
                 { id: 'wati', name: 'Wati', tag: 'Clare.ai BSP', note: 'Team inbox & broadcasts' },
                 { id: 'nextel', name: 'Nextel.io', tag: 'Meta BSP', note: 'Session & NSTLP default' }
               ].map(p => {
-                const isSelected = provider === p.id;
+                const isEnabled = enabledProviders.includes(p.id);
                 return (
                   <div
                     key={p.id}
-                    onClick={() => settingsPerms.edit && setProvider(p.id)}
+                    onClick={() => toggleProvider(p.id)}
                     style={{
                       padding: '0.85rem',
                       borderRadius: '8px',
-                      border: isSelected ? '2px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                      backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.06)' : 'var(--bg-primary)',
+                      border: isEnabled ? '2px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                      backgroundColor: isEnabled ? 'rgba(37, 99, 235, 0.06)' : 'var(--bg-primary)',
                       cursor: settingsPerms.edit ? 'pointer' : 'default',
                       transition: 'all 0.15s ease-in-out',
                       position: 'relative'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isEnabled ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
                         {p.name}
                       </span>
-                      {isSelected ? (
+                      {isEnabled ? (
                         <CheckCircle2 size={16} color="var(--accent-color, #2563eb)" />
                       ) : (
-                        <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '1.5px solid var(--border-light)' }} />
+                        <div style={{ width: '14px', height: '14px', borderRadius: '4px', border: '1.5px solid var(--border-light)' }} />
                       )}
                     </div>
                     <span style={{ 
@@ -424,11 +452,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
                       fontWeight: 600, 
                       padding: '0.15rem 0.4rem', 
                       borderRadius: '4px', 
-                      backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.15)' : 'var(--bg-surface)',
-                      color: isSelected ? '#1d4ed8' : 'var(--text-secondary)',
+                      backgroundColor: isEnabled ? 'rgba(37, 99, 235, 0.15)' : 'var(--bg-surface)',
+                      color: isEnabled ? '#1d4ed8' : 'var(--text-secondary)',
                       marginBottom: '0.35rem'
                     }}>
-                      {p.tag}
+                      {isEnabled ? '● Active Account' : p.tag}
                     </span>
                     <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: '1.25' }}>
                       {p.note}
@@ -439,217 +467,231 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
             </div>
           </div>
 
-          {/* DYNAMIC CREDENTIALS FORM ACCORDING TO SELECTED PROVIDER */}
+          {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
           <div style={{ 
             marginBottom: '1.5rem', 
-            padding: '1.5rem', 
+            padding: '1rem 1.25rem', 
             backgroundColor: 'var(--bg-primary)', 
-            borderRadius: '10px', 
-            border: '1px solid var(--border-light)' 
+            border: '1px solid var(--border-light)', 
+            borderRadius: '8px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
           }}>
-            {provider === 'meta' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
-                  <ShieldCheck size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Enter your Meta for Developers credentials. Messages will be dispatched directly through the official Meta Graph API without intermediary BSP markups.
-                </p>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                  <div>
-                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <input 
-                      type="text"
-                      value={metaConfig.phone_number_id}
-                      onChange={(e) => setMetaConfig({ ...metaConfig, phone_number_id: e.target.value })}
-                      disabled={!settingsPerms.edit}
-                      placeholder="e.g. 104857291823901"
-                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      WABA ID (WhatsApp Business Account ID)
-                    </label>
-                    <input 
-                      type="text"
-                      value={metaConfig.waba_id}
-                      onChange={(e) => setMetaConfig({ ...metaConfig, waba_id: e.target.value })}
-                      disabled={!settingsPerms.edit}
-                      placeholder="e.g. 293847192837465"
-                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                    <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                      System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowSecretToken(!showSecretToken)} 
-                      style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem' }}
-                    >
-                      {showSecretToken ? <EyeOff size={14} /> : <Eye size={14} />} {showSecretToken ? 'Hide Token' : 'Show Token'}
-                    </button>
-                  </div>
-                  <textarea 
-                    value={metaConfig.access_token}
-                    onChange={(e) => setMetaConfig({ ...metaConfig, access_token: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    rows={showSecretToken ? 3 : 2}
-                    placeholder="EAAG..."
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.65rem', 
-                      borderRadius: '6px', 
-                      border: '1px solid var(--border-light)', 
-                      backgroundColor: 'var(--bg-surface)', 
-                      fontFamily: 'monospace', 
-                      fontSize: '0.82rem',
-                      filter: showSecretToken ? 'none' : 'blur(3px)',
-                      transition: 'filter 0.2s'
-                    }}
-                  />
-                </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                Option C: Primary Default Gateway
               </div>
-            )}
-
-            {provider === 'aisensy' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
-                  <ShieldCheck size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials</h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Enter your AiSensy API Key (used for New Swan MultiTech Limited - NSMLR). Broadcast campaigns & quick template messages will route via AiSensy.
-                </p>
-
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <textarea 
-                    value={aisensyConfig.api_key}
-                    onChange={(e) => setAisensyConfig({ ...aisensyConfig, api_key: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    AiSensy Registered Business / User Name
-                  </label>
-                  <input 
-                    type="text"
-                    value={aisensyConfig.user_name}
-                    onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="e.g. New Swan MultiTech Limited-Swan Agro"
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
-                  />
-                </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                When a template or lead has no specific company/route selected, messages will dispatch through this primary gateway.
               </div>
-            )}
-
-            {provider === 'interakt' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
-                  <ShieldCheck size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Connect your Interakt account. You can generate your Secret API Key under Interakt Dashboard &rarr; Settings &rarr; Developer Settings.
-                </p>
-
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <input 
-                    type="password"
-                    value={interaktConfig.api_key}
-                    onChange={(e) => setInteraktConfig({ ...interaktConfig, api_key: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="e.g. a1b2c3d4e5f6..."
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {provider === 'wati' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
-                  <ShieldCheck size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Connect Wati team inbox. Obtain your API Endpoint and Access Token from Wati Dashboard &rarr; API Docs &rarr; Access Token.
-                </p>
-
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <input 
-                    type="text"
-                    value={watiConfig.endpoint_url}
-                    onChange={(e) => setWatiConfig({ ...watiConfig, endpoint_url: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="e.g. https://live-server-xxxx.wati.io/api/v1"
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <textarea 
-                    value={watiConfig.access_token}
-                    onChange={(e) => setWatiConfig({ ...watiConfig, access_token: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="Bearer token from Wati..."
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '65px' }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {provider === 'nextel' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
-                  <ShieldCheck size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials</h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Enter your Nextel session endpoint URL (used for New Swan Transmission Ltd - NSTLP).
-                </p>
-
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <textarea 
-                    value={nextelConfig.endpoint_url}
-                    onChange={(e) => setNextelConfig({ ...nextelConfig, endpoint_url: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="https://api.nextel.io/API_V2/Whatsapp/send_session/..."
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
-                  />
-                </div>
-              </div>
-            )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <select
+                value={defaultProvider}
+                onChange={(e) => setDefaultProvider(e.target.value)}
+                disabled={!settingsPerms.edit}
+                style={{ 
+                  padding: '0.5rem 0.85rem', 
+                  borderRadius: '6px', 
+                  border: '1px solid var(--border-light)', 
+                  backgroundColor: 'var(--bg-surface)', 
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                {enabledProviders.map(p => (
+                  <option key={p} value={p}>
+                    {p === 'meta' ? 'Meta Cloud API' : p === 'aisensy' ? 'AiSensy' : p === 'interakt' ? 'Interakt' : p === 'wati' ? 'Wati' : 'Nextel.io'} (Default)
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+
+          {/* DYNAMIC CREDENTIALS FOR ALL ENABLED PROVIDERS */}
+          {enabledProviders.includes('meta') && (
+            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
+                <ShieldCheck size={20} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                    Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input 
+                    type="text"
+                    value={metaConfig.phone_number_id}
+                    onChange={(e) => setMetaConfig({ ...metaConfig, phone_number_id: e.target.value })}
+                    disabled={!settingsPerms.edit}
+                    placeholder="e.g. 104857291823901"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                    WABA ID (WhatsApp Business Account ID)
+                  </label>
+                  <input 
+                    type="text"
+                    value={metaConfig.waba_id}
+                    onChange={(e) => setMetaConfig({ ...metaConfig, waba_id: e.target.value })}
+                    disabled={!settingsPerms.edit}
+                    placeholder="e.g. 293847192837465"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                    System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowSecretToken(!showSecretToken)} 
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem' }}
+                  >
+                    {showSecretToken ? <EyeOff size={14} /> : <Eye size={14} />} {showSecretToken ? 'Hide Token' : 'Show Token'}
+                  </button>
+                </div>
+                <textarea 
+                  value={metaConfig.access_token}
+                  onChange={(e) => setMetaConfig({ ...metaConfig, access_token: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  rows={showSecretToken ? 3 : 2}
+                  placeholder="EAAG..."
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.65rem', 
+                    borderRadius: '6px', 
+                    border: '1px solid var(--border-light)', 
+                    backgroundColor: 'var(--bg-surface)', 
+                    fontFamily: 'monospace', 
+                    fontSize: '0.82rem',
+                    filter: showSecretToken ? 'none' : 'blur(3px)',
+                    transition: 'filter 0.2s'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {enabledProviders.includes('aisensy') && (
+            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
+                <ShieldCheck size={20} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials</h3>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea 
+                  value={aisensyConfig.api_key}
+                  onChange={(e) => setAisensyConfig({ ...aisensyConfig, api_key: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  AiSensy Registered Business / User Name
+                </label>
+                <input 
+                  type="text"
+                  value={aisensyConfig.user_name}
+                  onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="e.g. New Swan MultiTech Limited-Swan Agro"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          )}
+
+          {enabledProviders.includes('interakt') && (
+            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
+                <ShieldCheck size={20} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  type="password"
+                  value={interaktConfig.api_key}
+                  onChange={(e) => setInteraktConfig({ ...interaktConfig, api_key: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="e.g. a1b2c3d4e5f6..."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          )}
+
+          {enabledProviders.includes('wati') && (
+            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
+                <ShieldCheck size={20} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  type="text"
+                  value={watiConfig.endpoint_url}
+                  onChange={(e) => setWatiConfig({ ...watiConfig, endpoint_url: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="e.g. https://live-server-xxxx.wati.io/api/v1"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea 
+                  value={watiConfig.access_token}
+                  onChange={(e) => setWatiConfig({ ...watiConfig, access_token: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="Bearer token from Wati..."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '65px' }}
+                />
+              </div>
+            </div>
+          )}
+
+          {enabledProviders.includes('nextel') && (
+            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
+                <ShieldCheck size={20} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials (NSTLP)</h3>
+              </div>
+              <div>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                  Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea 
+                  value={nextelConfig.endpoint_url}
+                  onChange={(e) => setNextelConfig({ ...nextelConfig, endpoint_url: e.target.value })}
+                  disabled={!settingsPerms.edit}
+                  placeholder="https://api.nextel.io/API_V2/Whatsapp/send_session/..."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* DUAL COMPANY BACKWARD COMPATIBILITY NOTICE */}
           <div style={{ 
@@ -679,17 +721,37 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
               Live Connection Verification
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-              Verify connectivity with your selected WhatsApp provider ({provider.toUpperCase()}) before saving.
+              Select an enabled provider and verify connectivity before broadcasting messages.
             </p>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: testFeedback ? '0.75rem' : 0 }}>
+              <select
+                value={testProvider}
+                onChange={(e) => setTestProvider(e.target.value)}
+                style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }}
+              >
+                {enabledProviders.map(p => (
+                  <option key={p} value={p}>
+                    Test {p.toUpperCase()} Gateway
+                  </option>
+                ))}
+              </select>
+
               <input 
                 type="text"
                 value={testPhone}
                 onChange={(e) => setTestPhone(e.target.value)}
-                placeholder="Recipient Mobile Number (e.g. 9876543210)"
+                placeholder="Recipient Mobile (e.g. 9876543210)"
                 style={{ 
-                  flex: '1 1 240px', 
+                  flex: '1 1 200px', 
                   padding: '0.65rem 0.85rem', 
                   borderRadius: '6px', 
                   border: '1px solid var(--border-light)', 
@@ -716,7 +778,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
                 }}
               >
                 <RefreshCw size={16} className={testingConnection ? 'animate-spin' : ''} />
-                {testingConnection ? 'Verifying...' : 'Test Connection'}
+                {testingConnection ? 'Verifying...' : `Test ${testProvider.toUpperCase()}`}
               </button>
             </div>
 
@@ -790,11 +852,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Company</label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Gateway / Route (Option A & B)</label>
                   <select value={currentTemplate.company || 'All'} onChange={e => setCurrentTemplate({...currentTemplate, company: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                    <option value="All">Both / All</option>
-                    <option value="NSMLR">NSMLR</option>
-                    <option value="NSTLP">NSTLP</option>
+                    <option value="All">All / Default (Smart Auto-Route)</option>
+                    <option value="AiSensy">AiSensy (Official Meta BSP)</option>
+                    <option value="Interakt">Interakt (Jio Haptik BSP)</option>
+                    <option value="Meta">Meta Cloud API (Direct)</option>
+                    <option value="Wati">Wati (Clare.ai BSP)</option>
+                    <option value="Nextel">Nextel.io (Session Webhook)</option>
+                    <option value="NSMLR">NSMLR (AiSensy Legacy Brand)</option>
+                    <option value="NSTLP">NSTLP (Nextel Legacy Brand)</option>
                   </select>
                 </div>
                 <div className="form-group">

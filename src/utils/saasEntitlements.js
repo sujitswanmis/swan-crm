@@ -97,7 +97,7 @@ export const DEFAULT_PROCESS_CATALOG = [
     category: 'COMMUNICATION',
     monthly_rate_per_user: 99.00,
     one_time_setup_rate: 1999.00,
-    description: '1 WhatsApp API Account (Meta Cloud, AiSensy, Interakt, Wati, Nextel) with target seat allocation & stage automations',
+    description: 'Official WhatsApp Suite (1+ API Accounts: Meta Cloud, AiSensy, Interakt, Wati, Nextel) with hybrid routing & stage automations',
     is_active: true,
     sort_order: 10
   }

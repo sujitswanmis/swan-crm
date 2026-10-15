@@ -29,11 +29,18 @@ export async function getWhatsappSettings() {
   }
 
   // Normalize multi-provider structure while guaranteeing 100% backward compatibility
+  let defaultEnabled = ['aisensy'];
+  if (data.api_key_nstlp) defaultEnabled.push('nextel');
+  if (parsedConfig?.enabled_providers && Array.isArray(parsedConfig.enabled_providers) && parsedConfig.enabled_providers.length > 0) {
+    defaultEnabled = parsedConfig.enabled_providers;
+  }
+
   const normalized = {
     ...data,
-    provider: parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
-    target_seats: parsedConfig?.target_seats || 5,
-    account_limit: parsedConfig?.account_limit || 1,
+    enabled_providers: defaultEnabled,
+    default_provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
+    provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
+    account_limit: parsedConfig?.account_limit || Math.max(1, defaultEnabled.length),
     meta: {
       phone_number_id: parsedConfig?.meta?.phone_number_id || '',
       waba_id: parsedConfig?.meta?.waba_id || '',
@@ -67,10 +74,17 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
   let nstlpKey = '';
 
   if (typeof payload === 'object' && payload !== null) {
+    const enabledList = Array.isArray(payload.enabled_providers) && payload.enabled_providers.length > 0
+      ? payload.enabled_providers
+      : [payload.default_provider || payload.provider || 'aisensy'];
+
+    const primaryDefault = payload.default_provider || payload.provider || enabledList[0] || 'aisensy';
+
     configToSave = {
-      provider: payload.provider || 'aisensy',
-      target_seats: Number(payload.target_seats || 5),
-      account_limit: Number(payload.account_limit || 1),
+      enabled_providers: enabledList,
+      default_provider: primaryDefault,
+      provider: primaryDefault,
+      account_limit: Number(payload.account_limit || enabledList.length || 1),
       meta: payload.meta || {},
       aisensy: payload.aisensy || {},
       interakt: payload.interakt || {},
@@ -83,10 +97,13 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
     // Legacy invocation: saveWhatsappSettings(nsmlrKey, nstlpKey)
     nsmlrKey = payload || '';
     nstlpKey = fallbackNstlp || '';
+    const initialEnabled = ['aisensy'];
+    if (nstlpKey) initialEnabled.push('nextel');
     configToSave = {
+      enabled_providers: initialEnabled,
+      default_provider: nstlpKey ? 'nextel' : 'aisensy',
       provider: nstlpKey ? 'nextel' : 'aisensy',
-      target_seats: 5,
-      account_limit: 1,
+      account_limit: initialEnabled.length,
       aisensy: { api_key: nsmlrKey, user_name: 'New Swan MultiTech Limited-Swan Agro' },
       nextel: { endpoint_url: nstlpKey }
     };
@@ -299,10 +316,32 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           try { parsedProviderConfig = JSON.parse(settings.api_key); } catch (_e) {}
         }
 
-        // Determine active provider: explicit provider config or legacy company fallback
-        let activeProvider = parsedProviderConfig?.provider;
+        // =========================================================================
+        // HYBRID PROVIDER ROUTING: OPTION A (Template) -> OPTION B (Company) -> OPTION C (Default)
+        // =========================================================================
+        let activeProvider = null;
+
+        // OPTION A: Template-Level Specific Provider Selection
+        const tplTarget = String(template.provider || template.company || '').trim().toLowerCase();
+        if (['meta', 'aisensy', 'interakt', 'wati', 'nextel'].includes(tplTarget)) {
+          activeProvider = tplTarget;
+        }
+
+        // OPTION B: Company/Brand Routing (NSMLR -> AiSensy, NSTLP -> Nextel)
         if (!activeProvider) {
-          activeProvider = company === 'NSTLP' ? 'nextel' : 'aisensy';
+          if (company === 'NSTLP' || tplTarget === 'nstlp') {
+            activeProvider = 'nextel';
+          } else if (company === 'NSMLR' || tplTarget === 'nsmlr') {
+            activeProvider = 'aisensy';
+          }
+        }
+
+        // OPTION C: Primary Default Provider Fallback
+        if (!activeProvider) {
+          activeProvider = parsedProviderConfig?.default_provider || 
+                           parsedProviderConfig?.provider || 
+                           (Array.isArray(parsedProviderConfig?.enabled_providers) ? parsedProviderConfig.enabled_providers[0] : null) || 
+                           (settings.api_key_nstlp ? 'nextel' : 'aisensy');
         }
 
         if (activeProvider === 'meta') {
