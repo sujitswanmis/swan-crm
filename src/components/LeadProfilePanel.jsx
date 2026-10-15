@@ -8,6 +8,7 @@ import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
 import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
+import { triggerEmailAutomationForStage } from '@/app/actions/emailConfig';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 
@@ -838,6 +839,7 @@ export default function LeadProfilePanel({
 
       try {
         triggerWhatsappAutomationForStage(lead.id, formattedNewStatus);
+        triggerEmailAutomationForStage(lead.id, formattedNewStatus);
       } catch (e) {}
 
       // Automatic Transfer to Party Master S00 only when status explicitly indicates transfer (not pending)

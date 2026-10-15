@@ -663,6 +663,70 @@ export async function deleteEmailAutomation(automationId, companyOrTenantId = ''
   }
 }
 
+// Trigger Stage Automation for Email on Lead Stage Change
+export async function triggerEmailAutomationForStage(leadId, newStage) {
+  try {
+    if (!leadId || !newStage) return { success: false, message: 'Missing leadId or newStage' };
+    const supabase = getAdminClient();
+    const { data: lead, error: leadErr } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+    if (leadErr || !lead) return { success: false, error: 'Lead not found' };
+
+    const recipientEmail = lead.email || lead.cp1_email || lead.contact_email || lead.client_email || lead.email_id;
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      return { success: true, message: 'No valid email address on lead to trigger automation.' };
+    }
+
+    const companyKey = lead.our_company || lead.company || lead.tenant_id || '';
+    const cfgRes = await getEmailConfig(companyKey);
+    const config = cfgRes?.data;
+    const automations = Array.isArray(config?.automations) ? config.automations : [];
+
+    // Find active rule matching stage and company
+    const matchingRule = automations.find(auto => {
+      if (auto.is_active === false) return false;
+      if (auto.frequency && auto.frequency !== 'Once') return false; // Default on stage transition triggers 'Once'
+      // Company check
+      const ruleCompany = (auto.company || 'All').trim().toLowerCase();
+      if (ruleCompany !== 'all' && ruleCompany !== 'all companies') {
+        const leadCompany = (lead.our_company || lead.company || '').trim().toLowerCase();
+        if (leadCompany && !leadCompany.includes(ruleCompany) && !ruleCompany.includes(leadCompany)) {
+          return false;
+        }
+      }
+      // Stage check (flexible matching for format like '2;02>Contact Stage>Wrong Number' or '02 - Contact Stage' or 'Wrong Number')
+      const ruleStage = (auto.stage_name || auto.stage_id || auto.stage || '').trim().toLowerCase();
+      const targetStage = String(newStage).trim().toLowerCase();
+      if (ruleStage === targetStage) return true;
+      if (ruleStage && targetStage.includes(ruleStage)) return true;
+      if (ruleStage.includes('>') && targetStage.includes('>')) {
+        const ruleTail = ruleStage.split('>').pop().trim();
+        const targetTail = targetStage.split('>').pop().trim();
+        if (ruleTail === targetTail) return true;
+      }
+      return false;
+    });
+
+    if (!matchingRule || !matchingRule.template_id) {
+      return { success: true, message: 'No matching email automation rule for this stage and company.' };
+    }
+
+    // Trigger email send
+    const sendRes = await sendTestEmail(
+      recipientEmail,
+      null, // use default smtp
+      matchingRule.smtp_account_id || null,
+      matchingRule.template_id,
+      null,
+      companyKey
+    );
+
+    return sendRes;
+  } catch (err) {
+    console.error('triggerEmailAutomationForStage error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // =========================================================================
 // REALTIME TRACKING RECORDING HELPERS (OPEN & CLICK)
 // =========================================================================

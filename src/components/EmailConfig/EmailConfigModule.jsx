@@ -91,6 +91,17 @@ const SALES_STAGES = [
   '07 - Final Stage'
 ];
 
+const DEFAULT_STAGES = [
+  { name: '01 - New Stage', substages: ['New Lead', 'Assigned', 'Contact Pending'] },
+  { name: '02 - Contact Stage', substages: ['Contacted', 'Wrong Number', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '03 - Qualification Stage', substages: ['Interested', 'Qualified', 'Unqualified', 'Need Identified', 'Budget Confirmed', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '04 - Follow Up Stage', substages: ['Catalog Shared', 'Follow Up Required', 'Next Follow Up Set', 'Follow Up Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '05 - Sales Process Stage', substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '06 - Conversion Stage', substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '07 - Final Stage', substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '08 - Transfer to Party', substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'] }
+];
+
 const RECRUITER_STAGES = [
   { id: 'S00', label: 'S00 - Requirements Received' },
   { id: 'S01', label: 'S01 - JDs Prepared & Posted' },
@@ -296,20 +307,114 @@ export default function EmailConfigModule({
   });
   const [resizingCol, setResizingCol] = useState(null);
 
-  // Automations State
+  // Automations & CRM Stages State
+  const [stages, setStages] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.stages?.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
+            return parsed.stages;
+          }
+        }
+      } catch (e) {}
+    }
+    return DEFAULT_STAGES;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.stages?.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
+            setStages(parsed.stages);
+          }
+        }
+      } catch (e) {}
+    }
+  }, []);
+
   const [automations, setAutomations] = useState([]);
-  const [showAutoModal, setShowAutoModal] = useState(false);
+  const [showAutoForm, setShowAutoForm] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({
     id: '',
     name: '',
-    pipeline: 'sales',
-    stage_id: '01 - New Stage',
-    stage_label: '01 - New Stage',
-    template_id: '',
-    smtp_account_id: '',
+    company: 'All',
     is_active: true,
-    delay_minutes: 0
+    stage_name: '',
+    template_id: '',
+    frequency: 'Once'
   });
+
+  // Column Resizing for Automations Table (Mandatory Lead Data Pattern)
+  const [autoColWidths, setAutoColWidths] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_email_automations_col_widths');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      company: 130,
+      stage: 260,
+      template: 240,
+      frequency: 140,
+      status: 120,
+      actions: 140
+    };
+  });
+  const [resizingAutoCol, setResizingAutoCol] = useState(null);
+
+  const handleAutoColResizeMouseDown = (e, colKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = autoColWidths[colKey] || 150;
+    setResizingAutoCol(colKey);
+
+    const onMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const minW = 80;
+      const newWidth = Math.max(minW, startWidth + deltaX);
+      setAutoColWidths(prev => {
+        const updated = { ...prev, [colKey]: newWidth };
+        try {
+          localStorage.setItem('crm_email_automations_col_widths', JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      setResizingAutoCol(null);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleResetAutoColWidth = (colKey) => {
+    const defaults = {
+      company: 130,
+      stage: 260,
+      template: 240,
+      frequency: 140,
+      status: 120,
+      actions: 140
+    };
+    setAutoColWidths(prev => {
+      const updated = { ...prev, [colKey]: defaults[colKey] || 150 };
+      try {
+        localStorage.setItem('crm_email_automations_col_widths', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
 
   // Logs State
   const [logs, setLogs] = useState([]);
@@ -995,17 +1100,63 @@ export default function EmailConfigModule({
   };
 
   const handleSaveAutomation = async () => {
-    if (!currentAuto.name || !currentAuto.template_id) {
-      alert('Automation Name and Selected Template are required.');
+    if (!currentAuto.stage_name) {
+      alert('Please select a target CRM Stage for this automation rule.');
       return;
     }
-    const targetComp = getActiveComp();
-    const res = await saveEmailAutomation(currentAuto, targetComp);
-    if (res.success) {
-      setShowAutoModal(false);
-      loadConfig();
-    } else {
-      alert('Error: ' + res.error);
+    if (!currentAuto.template_id) {
+      alert('Please select an Email Template to send.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const targetComp = getActiveComp();
+      const autoData = {
+        ...currentAuto,
+        name: currentAuto.name?.trim() || `${currentAuto.company || 'All'} - ${currentAuto.stage_name}`,
+        stage_id: currentAuto.stage_name,
+        stage_label: currentAuto.stage_name
+      };
+      const res = await saveEmailAutomation(autoData, targetComp);
+      if (res.success) {
+        setShowAutoForm(false);
+        setCurrentAuto({
+          id: '',
+          name: '',
+          company: 'All',
+          is_active: true,
+          stage_name: '',
+          template_id: '',
+          frequency: 'Once'
+        });
+        setSaveSuccessMsg('Stage automation rule saved successfully!');
+        await loadConfig();
+        setTimeout(() => setSaveSuccessMsg(null), 3000);
+      } else {
+        alert('Error: ' + res.error);
+      }
+    } catch (err) {
+      alert('Failed to save automation: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleAutoActive = async (auto) => {
+    try {
+      const targetComp = getActiveComp();
+      const updated = {
+        ...auto,
+        is_active: !auto.is_active
+      };
+      const res = await saveEmailAutomation(updated, targetComp);
+      if (res.success) {
+        loadConfig();
+      } else {
+        alert('Failed to update status: ' + res.error);
+      }
+    } catch (err) {
+      alert('Error updating status: ' + err.message);
     }
   };
 
@@ -2341,136 +2492,306 @@ export default function EmailConfigModule({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: STAGE AUTOMATIONS (SALES & RECRUITER) */}
+      {/* TAB 3: STAGE-BASED AUTOMATION RULES */}
       {/* ========================================================================= */}
       {activeTab === 'automations' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                Automated Stage Trigger Rules
-              </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
-                When a Lead or Recruiter Candidate enters a specific stage, automatically dispatch the assigned email template.
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
+                Stage-Based Automation Rules
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Map your templates to specific CRM stages to send automated drip campaigns.
               </p>
             </div>
-
-            <button
+            <button 
               type="button"
               onClick={() => {
                 setCurrentAuto({
                   id: '',
                   name: '',
-                  pipeline: 'sales',
-                  stage_id: '01 - New Stage',
-                  stage_label: '01 - New Stage',
-                  template_id: templates[0]?.id || '',
+                  company: 'All',
                   is_active: true,
-                  delay_minutes: 0
+                  stage_name: '',
+                  template_id: templates[0]?.id || '',
+                  frequency: 'Once'
                 });
-                setShowAutoModal(true);
+                setShowAutoForm(true);
               }}
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.15rem', fontSize: '0.88rem', borderRadius: '8px' }}
+              style={{
+                padding: '0.55rem 1.15rem',
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontWeight: 600,
+                fontSize: '0.88rem',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)'
+              }}
             >
-              <Plus size={16} />
-              <span>Add Stage Automation</span>
+              <Plus size={18} /> Add New Rule
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {automations.map(auto => {
-              const matchedTemplate = templates.find(t => t.id === auto.template_id);
-
-              return (
-                <div
-                  key={auto.id}
-                  className="card"
-                  style={{
-                    padding: '1rem 1.25rem',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '1rem',
-                    border: '1px solid var(--border-light)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '10px',
-                      background: auto.pipeline === 'recruiter' ? '#fdf2f8' : '#eff6ff',
-                      color: auto.pipeline === 'recruiter' ? '#db2777' : '#2563eb',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      {auto.pipeline === 'recruiter' ? <Briefcase size={20} /> : <Database size={20} />}
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                          {auto.name}
-                        </span>
-                        <span style={{
-                          fontSize: '0.68rem',
-                          fontWeight: 700,
-                          padding: '0.1rem 0.4rem',
-                          borderRadius: '6px',
-                          background: auto.is_active ? '#dcfce7' : '#f3f4f6',
-                          color: auto.is_active ? '#166534' : '#4b5563'
-                        }}>
-                          {auto.is_active ? 'ACTIVE' : 'PAUSED'}
-                        </span>
-                      </div>
-
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span>Trigger: <strong>{auto.stage_label || auto.stage_id}</strong></span>
-                        <span>•</span>
-                        <span>Template: <strong>{matchedTemplate ? matchedTemplate.template_name : 'No Template'}</strong></span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentAuto(auto);
-                        setShowAutoModal(true);
-                      }}
-                      className="btn-action-secondary"
-                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                    >
-                      <Edit3 size={13} />
-                      <span style={{ marginLeft: '0.3rem' }}>Edit</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAutomation(auto.id)}
-                      style={{
-                        padding: '0.4rem 0.8rem',
-                        fontSize: '0.8rem',
-                        background: '#fee2e2',
-                        color: '#b91c1c',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <Trash2 size={13} />
-                      <span style={{ marginLeft: '0.3rem' }}>Delete</span>
-                    </button>
-                  </div>
+          {/* Inline Rule Form */}
+          {showAutoForm && (
+            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.75rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {currentAuto.id ? 'Edit' : 'New'} Automation Rule
+              </h3>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '1.75rem' }}>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Company</label>
+                  <select 
+                    value={currentAuto.company || 'All'} 
+                    onChange={e => setCurrentAuto({...currentAuto, company: e.target.value})}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.88rem' }}
+                  >
+                    <option value="All">All Companies</option>
+                    <option value="NSMLR">NSMLR Only</option>
+                    <option value="NSTLP">NSTLP Only</option>
+                    {branches.filter(b => b.branch_name && b.branch_name !== 'NSMLR' && b.branch_name !== 'NSTLP').map(b => (
+                      <option key={b.id || b.branch_name} value={b.branch_name}>{b.branch_name}</option>
+                    ))}
+                  </select>
                 </div>
-              );
-            })}
+
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Status</label>
+                  <select 
+                    value={currentAuto.is_active ? 'active' : 'inactive'} 
+                    onChange={e => setCurrentAuto({...currentAuto, is_active: e.target.value === 'active'})}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? '#16a34a' : '#ef4444', fontWeight: 600, fontSize: '0.88rem' }}
+                  >
+                    <option value="active">Active (Sending)</option>
+                    <option value="inactive">Paused (Inactive)</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>If Lead is in Stage:</label>
+                  <select 
+                    value={currentAuto.stage_name || ''} 
+                    onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} 
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.88rem' }}
+                  >
+                    <option value="">Select Stage</option>
+                    {stages.map((stageObj, i) => {
+                      const stageNum = i + 1;
+                      const cleanStageName = (stageObj.name || '').replace(/^\d+\s*-\s*/, '');
+                      return (
+                        <optgroup key={`email-stage-${i}`} label={stageObj.name}>
+                          {(stageObj.substages || []).map((sub, j) => {
+                            const subNum = String(j + 1).padStart(2, '0');
+                            const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                            const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                            return <option key={val} value={val}>{val}</option>;
+                          })}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Send this Template:</label>
+                  <select 
+                    value={currentAuto.template_id || ''} 
+                    onChange={e => setCurrentAuto({...currentAuto, template_id: e.target.value})}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.88rem' }}
+                  >
+                    <option value="">-- Select Template --</option>
+                    {templates.filter(tpl => !currentAuto.company || currentAuto.company === 'All' || tpl.branch === 'All Branches' || tpl.branch === currentAuto.company || tpl.client_name === currentAuto.company).map(tpl => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.template_name} ({tpl.branch || tpl.client_name || 'All'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Frequency:</label>
+                  <select 
+                    value={currentAuto.frequency || 'Once'} 
+                    onChange={e => setCurrentAuto({...currentAuto, frequency: e.target.value})}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.88rem' }}
+                  >
+                    <option value="Once">Send Once (On Entry)</option>
+                    <option value="Weekly">Weekly (Every 7 Days)</option>
+                    <option value="Monthly">Monthly (Every 30 Days)</option>
+                    <option value="Quarterly">Quarterly (Every 90 Days)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button 
+                  type="button"
+                  onClick={handleSaveAutomation} 
+                  disabled={saving} 
+                  style={{ padding: '0.6rem 1.5rem', background: 'var(--accent-color, #2563eb)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+                >
+                  {saving ? 'Saving...' : 'Save Rule'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowAutoForm(false)} 
+                  style={{ padding: '0.6rem 1.5rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.88rem' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Rules Table */}
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+            <MobileTableView id="EmailConfig-Automations-1">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+                <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                    {[
+                      { key: 'company', label: 'Company' },
+                      { key: 'stage', label: 'Target Stage' },
+                      { key: 'template', label: 'Template Assigned' },
+                      { key: 'frequency', label: 'Frequency' },
+                      { key: 'status', label: 'Status' },
+                      { key: 'actions', label: 'Actions', align: 'right' }
+                    ].map(col => (
+                      <th
+                        key={col.key}
+                        style={{
+                          width: autoColWidths[col.key] || 150,
+                          position: 'relative',
+                          padding: '0.9rem 1rem',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          color: 'var(--text-secondary)',
+                          textAlign: col.align || 'left',
+                          userSelect: 'none',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {col.label}
+                        <div
+                          onMouseDown={(e) => handleAutoColResizeMouseDown(e, col.key)}
+                          onDoubleClick={() => handleResetAutoColWidth(col.key)}
+                          title="Drag to resize, double click to reset"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            right: 0,
+                            width: '7px',
+                            height: '100%',
+                            cursor: 'col-resize',
+                            userSelect: 'none',
+                            touchAction: 'none',
+                            backgroundColor: resizingAutoCol === col.key ? 'var(--accent-color, #2563eb)' : 'transparent',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {automations.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No automation rules defined yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    automations.map(auto => {
+                      const matchedTemplate = templates.find(t => t.id === auto.template_id);
+                      const displayStage = auto.stage_name || auto.stage_id || auto.stage_label || 'Any Stage';
+
+                      return (
+                        <tr key={auto.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '1rem', width: autoColWidths.company }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.4rem', backgroundColor: 'var(--th-hover-bg, #f1f5f9)', borderRadius: '4px', color: 'var(--text-primary)' }}>
+                              {auto.company || 'All'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem', fontWeight: 500, fontSize: '0.88rem', width: autoColWidths.stage, wordBreak: 'break-word' }}>
+                            {displayStage}
+                          </td>
+                          <td style={{ padding: '1rem', width: autoColWidths.template, wordBreak: 'break-word' }}>
+                            {matchedTemplate ? (
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem' }}>
+                                {matchedTemplate.template_name}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#ef4444', fontSize: '0.85rem' }}>
+                                Missing Template
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '1rem', width: autoColWidths.frequency }}>
+                            <span style={{ padding: '0.2rem 0.5rem', backgroundColor: '#e0f2fe', color: '#0284c7', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 500 }}>
+                              {auto.frequency || 'Once'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem', width: autoColWidths.status }}>
+                            <span 
+                              onClick={() => handleToggleAutoActive(auto)}
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '0.35rem', 
+                                color: auto.is_active ? '#10b981' : '#94a3b8', 
+                                fontSize: '0.85rem', 
+                                fontWeight: 500,
+                                cursor: 'pointer'
+                              }}
+                              title="Click to toggle status"
+                            >
+                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: auto.is_active ? '#10b981' : '#94a3b8' }}></div>
+                              {auto.is_active ? 'Active' : 'Paused'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem', textAlign: 'right', width: autoColWidths.actions }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  setCurrentAuto({
+                                    id: auto.id,
+                                    name: auto.name || '',
+                                    company: auto.company || 'All',
+                                    is_active: auto.is_active !== false,
+                                    stage_name: auto.stage_name || auto.stage_id || '',
+                                    template_id: auto.template_id || '',
+                                    frequency: auto.frequency || 'Once'
+                                  });
+                                  setShowAutoForm(true);
+                                }} 
+                                style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer', fontSize: '0.85rem' }}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => handleDeleteAutomation(auto.id)} 
+                                style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer', fontSize: '0.85rem' }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </MobileTableView>
           </div>
         </div>
       )}
@@ -3575,129 +3896,7 @@ export default function EmailConfigModule({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: CREATE / EDIT AUTOMATION RULE */}
-      {/* ========================================================================= */}
-      {showAutoModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div className="card" style={{ width: '100%', maxWidth: '560px', padding: '1.75rem', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>
-                {currentAuto.id ? 'Edit Stage Automation' : 'New Stage Automation Rule'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowAutoModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Automation Name *</label>
-              <input
-                type="text"
-                value={currentAuto.name || ''}
-                onChange={(e) => setCurrentAuto({ ...currentAuto, name: e.target.value })}
-                placeholder="e.g. Auto-send Welcome Email on New Lead"
-                style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Pipeline Type</label>
-                <select
-                  value={currentAuto.pipeline || 'sales'}
-                  onChange={(e) => {
-                    const pipe = e.target.value;
-                    setCurrentAuto({
-                      ...currentAuto,
-                      pipeline: pipe,
-                      stage_id: pipe === 'recruiter' ? 'S03' : '01 - New Stage',
-                      stage_label: pipe === 'recruiter' ? 'S03 - Interview Executed' : '01 - New Stage'
-                    });
-                  }}
-                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
-                >
-                  <option value="sales">📊 Sales Pipeline (Leads)</option>
-                  <option value="recruiter">💼 HR & Recruitment (Candidates)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Trigger Stage</label>
-                <select
-                  value={currentAuto.stage_id || ''}
-                  onChange={(e) => {
-                    const stId = e.target.value;
-                    let stLabel = stId;
-                    if (currentAuto.pipeline === 'recruiter') {
-                      const found = RECRUITER_STAGES.find(s => s.id === stId);
-                      if (found) stLabel = found.label;
-                    }
-                    setCurrentAuto({ ...currentAuto, stage_id: stId, stage_label: stLabel });
-                  }}
-                  style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
-                >
-                  {currentAuto.pipeline === 'recruiter' ? (
-                    RECRUITER_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)
-                  ) : (
-                    SALES_STAGES.map(s => <option key={s} value={s}>{s}</option>)
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>Assigned Email Template *</label>
-              <select
-                value={currentAuto.template_id || ''}
-                onChange={(e) => setCurrentAuto({ ...currentAuto, template_id: e.target.value })}
-                style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
-              >
-                <option value="">-- Select Template --</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.template_name} ({t.target_pipeline})</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <input
-                type="checkbox"
-                id="autoActiveCheck"
-                checked={currentAuto.is_active}
-                onChange={(e) => setCurrentAuto({ ...currentAuto, is_active: e.target.checked })}
-                style={{ width: '16px', height: '16px', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
-              />
-              <label htmlFor="autoActiveCheck" style={{ fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
-                Enable this automation rule
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                type="button"
-                onClick={() => setShowAutoModal(false)}
-                className="btn-action-secondary"
-                style={{ padding: '0.6rem 1.25rem', fontSize: '0.88rem' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAutomation}
-                className="btn-primary"
-                style={{ padding: '0.6rem 1.5rem', fontSize: '0.88rem', borderRadius: '8px' }}
-              >
-                Save Automation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* MODAL: ADD / EDIT SMTP SERVER ACCOUNT */}

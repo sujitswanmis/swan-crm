@@ -15,6 +15,7 @@ import {
 } from '@tanstack/react-table';
 import { createClient } from '@/utils/supabase/client';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
+import { triggerEmailAutomationForStage } from '@/app/actions/emailConfig';
 import { logAuditAction } from '@/app/actions/audit';
 import { enqueueOfflineAction, canPerformOfflineAction, upsertLeadsLocally, matchesLeadPreviewStage, markLeadStartupTiming, showSyncToast } from '@/utils/offlineSync';
 import { normalizeEmployeeName, normalizeStateName, normalizeDistrictName, normalizeCityName } from '@/utils/dataSanitizer';
@@ -525,7 +526,7 @@ const LeadStatusCell = React.memo(({ info }) => {
         }
       }
       
-      // Trigger WhatsApp automation (non-blocking)
+      // Trigger WhatsApp and Email automations (non-blocking)
       triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
         if (!res.success) {
           console.warn("WhatsApp automation not triggered:", res.message || res.error);
@@ -533,6 +534,7 @@ const LeadStatusCell = React.memo(({ info }) => {
       }).catch(err => {
         console.error("WhatsApp trigger error:", err);
       });
+      triggerEmailAutomationForStage(lead.id, newStatus).catch(() => {});
     } catch (netErr) {
       console.warn('Network stage update failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadStatusUpdate');
@@ -2259,7 +2261,7 @@ export default function LeadTable({
       const processed = processLeads([updatedRawLead], teamMembers)[0];
       updateLeadInState(processed);
       
-      // Trigger WhatsApp automation (non-blocking)
+      // Trigger WhatsApp and Email automations (non-blocking)
       triggerWhatsappAutomationForStage(lead.id, newStatus).then(res => {
         if (!res.success) {
           console.warn("WhatsApp automation not triggered:", res.message || res.error);
@@ -2267,6 +2269,7 @@ export default function LeadTable({
       }).catch(err => {
         console.error("WhatsApp trigger error:", err);
       });
+      triggerEmailAutomationForStage(lead.id, newStatus).catch(() => {});
     } catch (netErr) {
       console.warn('Network direct status change failed, fallback to offline:', netErr);
       const check = canPerformOfflineAction('leadStatusUpdate');
