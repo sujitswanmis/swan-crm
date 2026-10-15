@@ -101,6 +101,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [tenantsList, setTenantsList] = useState([]);
   const [selectedHqForAllocation, setSelectedHqForAllocation] = useState('NEW_SWAN_GROUP');
   const [selectedClientForAllocation, setSelectedClientForAllocation] = useState('NEW_SWAN_GROUP');
+  const [selectedHqForCredentials, setSelectedHqForCredentials] = useState(() => userCompany || 'NEW_SWAN_GROUP');
+  const [selectedClientForCredentials, setSelectedClientForCredentials] = useState(() => userCompany || 'NEW_SWAN_GROUP');
   const [overviewTableHqFilter, setOverviewTableHqFilter] = useState('All');
   const [activeAdminSubTab, setActiveAdminSubTab] = useState('catalog'); // 'catalog' | 'allocations' | 'credentials'
   const [isClientScoped, setIsClientScoped] = useState(false);
@@ -383,6 +385,60 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     }
   };
 
+  const branchOptionsForSelectedCredentialsHq = React.useMemo(() => {
+    const targetHq = String(selectedHqForCredentials || userCompany || 'NEW_SWAN_GROUP').toLowerCase();
+    const hqItem = hqOptions.find(h => h.code.toLowerCase() === targetHq);
+    const hqName = (hqItem?.name || '').toLowerCase();
+
+    return allClients.filter(c => {
+      const cHq = (c.hqCode || '').toLowerCase();
+      const cGroup = (c.group || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+    });
+  }, [allClients, selectedHqForCredentials, userCompany, hqOptions]);
+
+  const loadClientCredentials = async (clientCode) => {
+    setLoading(true);
+    const res = await getWhatsappSettings(clientCode);
+    if (res.success && res.data) {
+      const d = res.data;
+      if (d.meta) setMetaConfig({ phone_number_id: d.meta.phone_number_id || '', waba_id: d.meta.waba_id || '', access_token: d.meta.access_token || '', api_version: d.meta.api_version || 'v21.0' });
+      if (d.aisensy) setAisensyConfig({ api_key: d.aisensy.api_key || '', user_name: d.aisensy.user_name || clientCode });
+      if (d.interakt) setInteraktConfig({ api_key: d.interakt.api_key || '' });
+      if (d.wati) setWatiConfig({ endpoint_url: d.wati.endpoint_url || '', access_token: d.wati.access_token || '' });
+      if (d.nextel) setNextelConfig({ endpoint_url: d.nextel.endpoint_url || '' });
+      if (d.bsp_credentials && typeof d.bsp_credentials === 'object') setBspCredentials(d.bsp_credentials);
+      if (d.default_provider) setDefaultProvider(d.default_provider);
+      if (Array.isArray(d.assigned_bsps)) setAssignedBsps(d.assigned_bsps);
+      setIsClientScoped(!!d.is_client_scoped);
+    }
+    setLoading(false);
+  };
+
+  const handleCredentialsHqChange = (newHqCode) => {
+    setSelectedHqForCredentials(newHqCode);
+    const targetHq = String(newHqCode || '').toLowerCase();
+    const hqItem = hqOptions.find(h => h.code.toLowerCase() === targetHq);
+    const hqName = (hqItem?.name || '').toLowerCase();
+
+    const matching = allClients.filter(c => {
+      const cHq = (c.hqCode || '').toLowerCase();
+      const cGroup = (c.group || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+    });
+
+    const newTarget = matching.length > 0 ? (matching[0].code || matching[0].name) : newHqCode;
+    setSelectedClientForCredentials(newTarget);
+    loadClientCredentials(newTarget);
+  };
+
+  const handleCredentialsClientChange = (newClientCode) => {
+    setSelectedClientForCredentials(newClientCode);
+    loadClientCredentials(newClientCode);
+  };
+
   const filteredTableClients = React.useMemo(() => {
     if (overviewTableHqFilter === 'All') return allClients;
     const targetHq = overviewTableHqFilter.toLowerCase();
@@ -556,7 +612,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     setLoading(true);
     const activeCustomBsps = customBspsOverride || customBsps;
     const activeEnabled = enabledProvidersOverride || enabledProviders;
+    const targetClient = selectedClientForCredentials || userCompany || 'NEW_SWAN_GROUP';
     const payload = {
+      target_client: targetClient,
       enabled_providers: activeEnabled,
       default_provider: defaultProvider,
       provider: defaultProvider,
@@ -576,7 +634,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     setLoading(false);
     if (res.success) {
       if (!customBspsOverride) {
-        alert('WhatsApp multi-provider settings saved securely!');
+        alert(`WhatsApp API settings saved successfully for ${targetClient}!`);
+      }
+      const allocRes = await getClientBspAllocations();
+      if (allocRes.success) {
+        setClientAllocations(allocRes.allocations || {});
       }
     } else {
       alert('Error saving settings: ' + res.error);
@@ -933,14 +995,38 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         <div style={{ maxWidth: '1080px' }}>
           <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
-                WhatsApp Business Solutions (BSP) & Gateway Setup
-              </h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
-                {isAdmin 
-                  ? 'Manage Master BSP Gateway Catalog, allocate providers to client companies, and configure API credentials.' 
-                  : 'Configure official WhatsApp Business API credentials for your assigned workspace.'}
-              </p>
+              {activeTab === 'catalog' && (
+                <>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
+                    Master BSP Gateway Catalog (20+ Gateways)
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
+                    Browse official WhatsApp Business Solution Providers (BSPs) or add custom HTTP webhook gateways.
+                  </p>
+                </>
+              )}
+              {activeTab === 'allocations' && (
+                <>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
+                    Client & Branch WhatsApp Allocation Matrix
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
+                    Assign permitted BSP gateways and default sender endpoints to each Headquarters and Operational Branch Office.
+                  </p>
+                </>
+              )}
+              {activeTab === 'settings' && (
+                <>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
+                    WhatsApp API Credentials & Gateway Setup
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
+                    {isAdmin 
+                      ? 'Configure official WhatsApp Business API credentials per Headquarters and Branch Office.' 
+                      : 'Configure official WhatsApp Business API credentials for your assigned workspace.'}
+                  </p>
+                </>
+              )}
             </div>
             {isClientScoped && (
               <span style={{ 
@@ -949,7 +1035,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 backgroundColor: 'rgba(37, 99, 235, 0.1)', 
                 color: 'var(--accent-color, #2563eb)', 
                 fontWeight: 600, 
-                fontSize: '0.8rem',
+                fontSize: '0.8rem', 
                 border: '1px solid rgba(37, 99, 235, 0.25)' 
               }}>
                 🏢 Workspace: {userCompany || 'New Swan Group'}
@@ -957,85 +1043,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             )}
           </div>
 
-          {/* ADMIN 3-TIER SUB-TAB SWITCHER */}
-          {isAdmin && (
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', overflowX: 'auto' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveAdminSubTab('catalog');
-                  handleTabChange('catalog');
-                }}
-                style={{
-                  padding: '0.55rem 1rem',
-                  borderRadius: '6px',
-                  border: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? '#fff' : 'var(--text-primary)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Layers size={16} /> Tier 1: Master BSP Catalog ({catalog.length || 20}+ Gateways)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveAdminSubTab('allocations');
-                  handleTabChange('allocations');
-                }}
-                style={{
-                  padding: '0.55rem 1rem',
-                  borderRadius: '6px',
-                  border: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? '#fff' : 'var(--text-primary)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Users size={16} /> Tier 2: Client Allocation Matrix
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveAdminSubTab('credentials');
-                  handleTabChange('settings');
-                }}
-                style={{
-                  padding: '0.55rem 1rem',
-                  borderRadius: '6px',
-                  border: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? '#fff' : 'var(--text-primary)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Key size={16} /> Tier 3: API Setup & Credentials
-              </button>
-            </div>
-          )}
-
           {/* ======================================================== */}
           {/* TIER 1: MASTER BSP CATALOG (ALL 20+ GLOBAL GATEWAYS)    */}
           {/* ======================================================== */}
-          {isAdmin && (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) && (
+          {isAdmin && activeTab === 'catalog' && (
             <div>
               {/* TOP ACTIONS & SEARCH */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -1745,17 +1756,33 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               {alloc.account_limit || (alloc.allowed_bsps || []).length} gateway(s)
                             </td>
                             <td style={{ padding: '0.75rem' }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (c.hqCode) setSelectedHqForAllocation(c.hqCode);
-                                  setSelectedClientForAllocation(c.code || c.name);
-                                  window.scrollTo({ top: 150, behavior: 'smooth' });
-                                }}
-                                style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
-                              >
-                                Edit
-                              </button>
+                              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (c.hqCode) setSelectedHqForAllocation(c.hqCode);
+                                    setSelectedClientForAllocation(c.code || c.name);
+                                    window.scrollTo({ top: 150, behavior: 'smooth' });
+                                  }}
+                                  style={{ padding: '0.3rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (c.hqCode) setSelectedHqForCredentials(c.hqCode);
+                                    const code = c.code || c.name;
+                                    setSelectedClientForCredentials(code);
+                                    loadClientCredentials(code);
+                                    handleTabChange('settings');
+                                  }}
+                                  style={{ padding: '0.3rem 0.55rem', borderRadius: '4px', border: '1px solid rgba(37, 99, 235, 0.3)', backgroundColor: 'rgba(37, 99, 235, 0.08)', color: 'var(--accent-color, #2563eb)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                  title="Configure API Keys for this office"
+                                >
+                                  <Key size={12} /> Keys
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1770,32 +1797,149 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 3: WORKSPACE API SETUP & CREDENTIALS               */}
           {/* ======================================================== */}
-          {(!isAdmin || (activeTab === 'settings' && activeAdminSubTab === 'credentials') || (!['catalog', 'allocations'].includes(activeTab) && activeAdminSubTab === 'credentials')) && (
-            <div>
-              {/* SCOPED CLIENT NOTICE */}
-              {isClientScoped && (
-                <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1.15rem', backgroundColor: 'rgba(37, 99, 235, 0.07)', border: '1px solid rgba(37, 99, 235, 0.25)', borderRadius: '8px', fontSize: '0.83rem', color: '#1e40af' }}>
-                  🔒 <strong>Workspace Gateway Access:</strong> Your company (<strong>{userCompany || 'New Swan Group'}</strong>) is configured with dedicated access to {assignedBsps.length} WhatsApp BSP gateway(s). Only your assigned gateways are shown below.
-                </div>
-              )}
+          {(!isAdmin || activeTab === 'settings') && (() => {
+            const activeClientObj = allClients.find(c => 
+              (c.code || '').toLowerCase() === (selectedClientForCredentials || '').toLowerCase() || 
+              (c.name || '').toLowerCase() === (selectedClientForCredentials || '').toLowerCase()
+            );
+            const activeClientName = activeClientObj?.name || selectedClientForCredentials || userCompany || 'New Swan Group';
+            const targetClientStr = String(selectedClientForCredentials || userCompany || 'NEW_SWAN_GROUP').toUpperCase();
+            const isNewSwan = targetClientStr === 'NEW_SWAN_GROUP' || targetClientStr.includes('NSMLR') || targetClientStr.includes('NSTLP') || targetClientStr.includes('NEW SWAN');
 
-              {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
-              <div style={{ 
-                marginBottom: '1.5rem', 
-                padding: '1rem 1.25rem', 
-                backgroundColor: 'var(--bg-primary)', 
-                border: '1px solid var(--border-light)', 
-                borderRadius: '8px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '1rem'
-              }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                    Primary Default Dispatch Gateway
+            return (
+              <div>
+                {/* 2 LINKED CASCADING FILTERS FOR CREDENTIALS: HEADQUARTERS -> USKE ANUSAR BRANCH */}
+                {isAdmin && (
+                  <div style={{
+                    marginBottom: '1.5rem',
+                    padding: '1.15rem 1.25rem',
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1.5px solid rgba(37, 99, 235, 0.25)',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.96rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.2rem' }}>
+                        <Building2 size={18} color="var(--accent-color, #2563eb)" />
+                        Select Workspace to Configure API Keys:
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        Choose Headquarters and Branch Office to manage its dedicated WhatsApp API credentials.
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                      {/* FILTER 1: HEADQUARTERS */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>🏢</span> Headquarters:
+                        </label>
+                        <select
+                          value={selectedHqForCredentials}
+                          onChange={(e) => handleCredentialsHqChange(e.target.value)}
+                          style={{
+                            padding: '0.55rem 0.85rem',
+                            borderRadius: '6px',
+                            border: '1.5px solid var(--accent-color, #2563eb)',
+                            backgroundColor: 'var(--bg-surface)',
+                            fontWeight: 700,
+                            fontSize: '0.88rem',
+                            color: 'var(--text-primary)',
+                            minWidth: '200px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {hqOptions.map(hq => (
+                            <option key={hq.code} value={hq.code}>
+                              {hq.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* FILTER 2: BRANCH / OFFICE */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>🏭</span> Branch / Office:
+                        </label>
+                        <select
+                          value={selectedClientForCredentials}
+                          onChange={(e) => handleCredentialsClientChange(e.target.value)}
+                          style={{
+                            padding: '0.55rem 0.85rem',
+                            borderRadius: '6px',
+                            border: '1.5px solid var(--accent-color, #2563eb)',
+                            backgroundColor: 'var(--bg-surface)',
+                            fontWeight: 700,
+                            fontSize: '0.88rem',
+                            color: 'var(--text-primary)',
+                            minWidth: '230px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {branchOptionsForSelectedCredentialsHq.length > 0 ? (
+                            branchOptionsForSelectedCredentialsHq.map(b => (
+                              <option key={b.id || b.code} value={b.code || b.name}>
+                                {b.name}
+                              </option>
+                            ))
+                          ) : (
+                            <option value={selectedHqForCredentials}>
+                              {selectedHqForCredentials} (Headquarters)
+                            </option>
+                          )}
+                        </select>
+                      </div>
+                    </div>
                   </div>
+                )}
+
+                {/* ACTIVE WORKSPACE STATUS BADGE */}
+                <div style={{ 
+                  marginBottom: '1.25rem', 
+                  padding: '0.85rem 1.15rem', 
+                  backgroundColor: isNewSwan ? 'rgba(37, 99, 235, 0.07)' : 'rgba(16, 185, 129, 0.08)', 
+                  border: isNewSwan ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.3)', 
+                  borderRadius: '8px', 
+                  fontSize: '0.83rem', 
+                  color: isNewSwan ? '#1e40af' : '#065f46',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem'
+                }}>
+                  <div>
+                    🔒 <strong>Active Workspace:</strong> Configuring credentials for <strong>{activeClientName}</strong>
+                    {assignedBsps.length > 0 && ` (${assignedBsps.length} assigned gateway(s))`}.
+                  </div>
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', fontWeight: 600 }}>
+                    {isNewSwan ? '🏢 Global & Master Internal Routing' : '🏭 Dedicated Isolated Tenant'}
+                  </span>
+                </div>
+
+                {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
+                <div style={{ 
+                  marginBottom: '1.5rem', 
+                  padding: '1rem 1.25rem', 
+                  backgroundColor: 'var(--bg-primary)', 
+                  border: '1px solid var(--border-light)', 
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem'
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                      Primary Default Dispatch Gateway for {activeClientName}
+                    </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     When a template or campaign has no specific provider selected, messages will dispatch through this primary gateway.
                   </div>
@@ -1900,7 +2044,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
                     <ShieldCheck size={20} />
-                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials</h3>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials {isNewSwan ? '(NSMLR / Global)' : `(${activeClientName})`}</h3>
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
@@ -1923,7 +2067,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       value={aisensyConfig.user_name}
                       onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
                       disabled={!settingsPerms.edit}
-                      placeholder="e.g. New Swan Group"
+                      placeholder={`e.g. ${activeClientName}`}
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
                     />
                   </div>
@@ -1993,7 +2137,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
                     <ShieldCheck size={20} />
-                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials (NSTLP)</h3>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials {isNewSwan ? '(NSTLP)' : `(${activeClientName})`}</h3>
                   </div>
                   <div>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
@@ -2190,21 +2334,38 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
               ))}
 
-              {/* DUAL COMPANY BACKWARD COMPATIBILITY NOTICE */}
-              <div style={{ 
-                marginBottom: '1.5rem', 
-                padding: '1rem 1.25rem', 
-                backgroundColor: 'rgba(2, 132, 199, 0.05)', 
-                border: '1px dashed rgba(2, 132, 199, 0.35)', 
-                borderRadius: '8px' 
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#0369a1', fontWeight: 600, fontSize: '0.88rem' }}>
-                  <HelpCircle size={16} /> Legacy Dual Routing Synchronization (NSMLR & NSTLP)
+              {/* DUAL COMPANY BACKWARD COMPATIBILITY / DEDICATED TENANT NOTICE */}
+              {isNewSwan ? (
+                <div style={{ 
+                  marginBottom: '1.5rem', 
+                  padding: '1rem 1.25rem', 
+                  backgroundColor: 'rgba(2, 132, 199, 0.05)', 
+                  border: '1px dashed rgba(2, 132, 199, 0.35)', 
+                  borderRadius: '8px' 
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#0369a1', fontWeight: 600, fontSize: '0.88rem' }}>
+                    <HelpCircle size={16} /> Legacy Dual Routing Synchronization (NSMLR & NSTLP)
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
+                    For New Swan internal operations, leads tagged with <strong>NSMLR</strong> automatically route through AiSensy, and leads tagged with <strong>NSTLP</strong> route through Nextel. Both keys are securely preserved in the database to guarantee zero disruption to existing telecalling workflows.
+                  </p>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
-                  For New Swan internal operations, leads tagged with <strong>NSMLR</strong> automatically route through AiSensy, and leads tagged with <strong>NSTLP</strong> route through Nextel. Both keys are securely preserved in the database to guarantee zero disruption to existing telecalling workflows.
-                </p>
-              </div>
+              ) : (
+                <div style={{ 
+                  marginBottom: '1.5rem', 
+                  padding: '1rem 1.25rem', 
+                  backgroundColor: 'rgba(16, 185, 129, 0.05)', 
+                  border: '1px dashed rgba(16, 185, 129, 0.35)', 
+                  borderRadius: '8px' 
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#059669', fontWeight: 600, fontSize: '0.88rem' }}>
+                    <ShieldCheck size={16} /> Dedicated Tenant Credentials ({activeClientName})
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
+                    Credentials configured here are securely isolated and dedicated exclusively to <strong>{activeClientName}</strong>. All broadcasts and automated templates for this company/branch will dispatch using these API keys.
+                  </p>
+                </div>
+              )}
 
               {/* LIVE TEST CONNECTION CARD */}
               <div style={{ 
@@ -2319,14 +2480,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
                     }}
                   >
-                    <Save size={18} /> {loading ? 'Saving Settings...' : 'Save WhatsApp Configuration'}
+                    <Save size={18} /> {loading ? 'Saving Settings...' : `Save Configuration for ${activeClientName}`}
                   </button>
                 ) : (
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>🔒 Read-only view. Contact administrator to update API keys.</span>
                 )}
               </div>
             </div>
-          )}
+          );
+        })()}
         </div>
       )}
 

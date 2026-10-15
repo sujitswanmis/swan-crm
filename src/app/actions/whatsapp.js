@@ -109,50 +109,65 @@ export async function getWhatsappSettings(clientCompany = '') {
 
   let isClientScoped = false;
   let assignedBsps = [];
+  let clientSpecificCreds = {};
 
-  // Check if a specific company/tenant has assigned BSPs
+  const compStr = String(clientCompany || '').trim().toUpperCase();
+  const isNewSwan = !clientCompany || 
+    compStr === 'DEFAULT' || 
+    compStr === 'NEW_SWAN_GROUP' || 
+    compStr.includes('NSMLR') || 
+    compStr.includes('NSTLP') || 
+    compStr.includes('NEW SWAN');
+
+  // Check if a specific company/tenant has assigned BSPs or credentials
   if (clientCompany) {
     const compKey = String(clientCompany).trim();
     const alloc = clientAllocations[compKey] || 
                   clientAllocations[compKey.toLowerCase()] ||
                   clientAllocations[compKey.toUpperCase()];
-    if (alloc && Array.isArray(alloc.allowed_bsps) && alloc.allowed_bsps.length > 0) {
-      isClientScoped = true;
-      assignedBsps = alloc.allowed_bsps;
-      defaultEnabled = alloc.allowed_bsps;
+    if (alloc) {
+      if (Array.isArray(alloc.allowed_bsps) && alloc.allowed_bsps.length > 0) {
+        isClientScoped = true;
+        assignedBsps = alloc.allowed_bsps;
+        defaultEnabled = alloc.allowed_bsps;
+      }
+      clientSpecificCreds = alloc.credentials || {};
     }
   }
 
   const normalized = {
     ...data,
-    is_client_scoped: isClientScoped,
-    assigned_bsps: assignedBsps,
+    is_client_scoped: !isNewSwan || isClientScoped,
+    assigned_bsps: assignedBsps.length > 0 ? assignedBsps : (isNewSwan ? defaultEnabled : ['aisensy', 'meta']),
     client_allocations: clientAllocations,
-    bsp_credentials: bspCredentials,
-    enabled_providers: defaultEnabled,
-    default_provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
-    provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
+    bsp_credentials: isNewSwan ? {
+      ...bspCredentials,
+      ...(clientSpecificCreds?.bsp_credentials || {})
+    } : (clientSpecificCreds?.bsp_credentials || {}),
+    enabled_providers: isNewSwan ? defaultEnabled : (assignedBsps.length > 0 ? assignedBsps : ['aisensy', 'meta']),
+    default_provider: clientSpecificCreds?.default_bsp || (isNewSwan ? (parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy')) : (assignedBsps[0] || 'aisensy')),
+    provider: clientSpecificCreds?.default_bsp || (isNewSwan ? (parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy')) : (assignedBsps[0] || 'aisensy')),
     account_limit: parsedConfig?.account_limit || Math.max(1, defaultEnabled.length),
     custom_bsps: customBsps,
     meta: {
-      phone_number_id: parsedConfig?.meta?.phone_number_id || '',
-      waba_id: parsedConfig?.meta?.waba_id || '',
-      access_token: parsedConfig?.meta?.access_token || '',
-      api_version: parsedConfig?.meta?.api_version || 'v21.0'
+      phone_number_id: clientSpecificCreds?.meta?.phone_number_id || (isNewSwan ? parsedConfig?.meta?.phone_number_id || '' : ''),
+      waba_id: clientSpecificCreds?.meta?.waba_id || (isNewSwan ? parsedConfig?.meta?.waba_id || '' : ''),
+      access_token: clientSpecificCreds?.meta?.access_token || (isNewSwan ? parsedConfig?.meta?.access_token || '' : ''),
+      api_version: clientSpecificCreds?.meta?.api_version || (isNewSwan ? parsedConfig?.meta?.api_version || 'v21.0' : 'v21.0')
     },
     aisensy: {
-      api_key: parsedConfig?.aisensy?.api_key || data.api_key_nsmlr || (typeof data.api_key === 'string' && !data.api_key.trim().startsWith('{') ? data.api_key : ''),
-      user_name: parsedConfig?.aisensy?.user_name || 'New Swan Group'
+      api_key: clientSpecificCreds?.aisensy?.api_key || (isNewSwan ? (parsedConfig?.aisensy?.api_key || data.api_key_nsmlr || (typeof data.api_key === 'string' && !data.api_key.trim().startsWith('{') ? data.api_key : '')) : ''),
+      user_name: clientSpecificCreds?.aisensy?.user_name || (isNewSwan ? (parsedConfig?.aisensy?.user_name || 'New Swan Group') : (clientCompany || ''))
     },
     interakt: {
-      api_key: parsedConfig?.interakt?.api_key || ''
+      api_key: clientSpecificCreds?.interakt?.api_key || (isNewSwan ? parsedConfig?.interakt?.api_key || '' : '')
     },
     wati: {
-      endpoint_url: parsedConfig?.wati?.endpoint_url || '',
-      access_token: parsedConfig?.wati?.access_token || ''
+      endpoint_url: clientSpecificCreds?.wati?.endpoint_url || (isNewSwan ? parsedConfig?.wati?.endpoint_url || '' : ''),
+      access_token: clientSpecificCreds?.wati?.access_token || (isNewSwan ? parsedConfig?.wati?.access_token || '' : '')
     },
     nextel: {
-      endpoint_url: parsedConfig?.nextel?.endpoint_url || data.api_key_nstlp || ''
+      endpoint_url: clientSpecificCreds?.nextel?.endpoint_url || (isNewSwan ? parsedConfig?.nextel?.endpoint_url || data.api_key_nstlp || '' : '')
     }
   };
 
@@ -162,6 +177,14 @@ export async function getWhatsappSettings(clientCompany = '') {
 export async function saveWhatsappSettings(payload, fallbackNstlp) {
   const supabase = await createClient();
   
+  // Check if setting exists first
+  const { data: existing } = await supabase.from('whatsapp_settings').select('*').limit(1).single();
+
+  let existingParsed = null;
+  if (existing?.api_key && typeof existing.api_key === 'string' && existing.api_key.trim().startsWith('{')) {
+    try { existingParsed = JSON.parse(existing.api_key); } catch (_) {}
+  }
+
   let configToSave = null;
   let nsmlrKey = '';
   let nstlpKey = '';
@@ -173,22 +196,69 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
 
     const primaryDefault = payload.default_provider || payload.provider || enabledList[0] || 'aisensy';
 
-    configToSave = {
-      enabled_providers: enabledList,
-      default_provider: primaryDefault,
-      provider: primaryDefault,
-      account_limit: Number(payload.account_limit || enabledList.length || 1),
-      custom_bsps: Array.isArray(payload.custom_bsps) ? payload.custom_bsps : [],
-      client_allocations: payload.client_allocations || {},
-      bsp_credentials: payload.bsp_credentials || {},
-      meta: payload.meta || {},
-      aisensy: payload.aisensy || {},
-      interakt: payload.interakt || {},
-      wati: payload.wati || {},
-      nextel: payload.nextel || {}
-    };
-    nsmlrKey = payload.aisensy?.api_key || payload.api_key_nsmlr || '';
-    nstlpKey = payload.nextel?.endpoint_url || payload.api_key_nstlp || '';
+    const clientAllocs = payload.client_allocations || (existingParsed?.client_allocations || {});
+    const targetClient = payload.target_client || payload.client_code;
+    const targetStr = String(targetClient || '').trim().toUpperCase();
+    const isNewSwanTarget = !targetClient || 
+      targetStr === 'DEFAULT' || 
+      targetStr === 'NEW_SWAN_GROUP' || 
+      targetStr.includes('NSMLR') || 
+      targetStr.includes('NSTLP') || 
+      targetStr.includes('NEW SWAN');
+
+    if (targetClient) {
+      const tKey = String(targetClient).trim();
+      const existingAlloc = clientAllocs[tKey] || {};
+      clientAllocs[tKey] = {
+        ...existingAlloc,
+        default_bsp: payload.default_provider || existingAlloc.default_bsp || 'aisensy',
+        credentials: {
+          meta: payload.meta || {},
+          aisensy: payload.aisensy || {},
+          interakt: payload.interakt || {},
+          wati: payload.wati || {},
+          nextel: payload.nextel || {},
+          ...(payload.bsp_credentials || {})
+        }
+      };
+    }
+
+    if (isNewSwanTarget) {
+      configToSave = {
+        enabled_providers: enabledList,
+        default_provider: primaryDefault,
+        provider: primaryDefault,
+        account_limit: Number(payload.account_limit || enabledList.length || 1),
+        custom_bsps: Array.isArray(payload.custom_bsps) ? payload.custom_bsps : (existingParsed?.custom_bsps || []),
+        client_allocations: clientAllocs,
+        bsp_credentials: payload.bsp_credentials || {},
+        meta: payload.meta || {},
+        aisensy: payload.aisensy || {},
+        interakt: payload.interakt || {},
+        wati: payload.wati || {},
+        nextel: payload.nextel || {}
+      };
+      nsmlrKey = payload.aisensy?.api_key || payload.api_key_nsmlr || '';
+      nstlpKey = payload.nextel?.endpoint_url || payload.api_key_nstlp || '';
+    } else {
+      // Preserving root New Swan settings while updating client allocation
+      configToSave = {
+        enabled_providers: existingParsed?.enabled_providers || ['aisensy', 'nextel'],
+        default_provider: existingParsed?.default_provider || 'aisensy',
+        provider: existingParsed?.provider || 'aisensy',
+        account_limit: existingParsed?.account_limit || 2,
+        custom_bsps: Array.isArray(payload.custom_bsps) ? payload.custom_bsps : (existingParsed?.custom_bsps || []),
+        client_allocations: clientAllocs,
+        bsp_credentials: existingParsed?.bsp_credentials || {},
+        meta: existingParsed?.meta || {},
+        aisensy: existingParsed?.aisensy || {},
+        interakt: existingParsed?.interakt || {},
+        wati: existingParsed?.wati || {},
+        nextel: existingParsed?.nextel || {}
+      };
+      nsmlrKey = existing?.api_key_nsmlr || '';
+      nstlpKey = existing?.api_key_nstlp || '';
+    }
   } else {
     // Legacy invocation: saveWhatsappSettings(nsmlrKey, nstlpKey)
     nsmlrKey = payload || '';
@@ -201,14 +271,12 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
       provider: nstlpKey ? 'nextel' : 'aisensy',
       account_limit: initialEnabled.length,
       aisensy: { api_key: nsmlrKey, user_name: 'New Swan Group' },
-      nextel: { endpoint_url: nstlpKey }
+      nextel: { endpoint_url: nstlpKey },
+      client_allocations: existingParsed?.client_allocations || {}
     };
   }
 
   const jsonString = JSON.stringify(configToSave);
-
-  // Check if setting exists
-  const { data: existing } = await supabase.from('whatsapp_settings').select('id').limit(1).single();
   
   let result;
   if (existing) {
@@ -532,13 +600,18 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         const matchedCatalogBsp = globalCatalogData.find(b => b.id === activeProvider);
         const matchedCustomBsp = customBsps.find(b => b.id === activeProvider || (b.name && b.name.toLowerCase() === String(activeProvider).toLowerCase()));
         const bspDefinition = matchedCustomBsp || (activeProvider !== 'aisensy' ? matchedCatalogBsp : null);
-        const bspCreds = parsedProviderConfig?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.[activeProvider] || {};
+        
+        const clientAllocCreds = parsedProviderConfig?.client_allocations?.[company] || 
+                                 parsedProviderConfig?.client_allocations?.[company.toLowerCase()] ||
+                                 parsedProviderConfig?.client_allocations?.[company.toUpperCase()];
+        const clientCreds = clientAllocCreds?.credentials || {};
+        const bspCreds = clientCreds?.[activeProvider] || parsedProviderConfig?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.[activeProvider] || {};
 
         if (activeProvider === 'meta') {
           // =======================
           // META DIRECT CLOUD API
           // =======================
-          const meta = parsedProviderConfig?.meta || {};
+          const meta = clientCreds?.meta || parsedProviderConfig?.meta || {};
           if (!meta.phone_number_id || !meta.access_token) {
             throw new Error("Meta Cloud API Phone ID or Access Token is missing in WhatsApp Settings");
           }
@@ -652,7 +725,7 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           // =======================
           // NEXTEL API INTEGRATION
           // =======================
-          const nextelUrl = parsedProviderConfig?.nextel?.endpoint_url || settings.api_key_nstlp;
+          const nextelUrl = clientCreds?.nextel?.endpoint_url || parsedProviderConfig?.nextel?.endpoint_url || settings.api_key_nstlp;
           if (!nextelUrl) throw new Error("Nextel API Endpoint is not configured in settings");
 
           const endpoint = nextelUrl.includes('http') 
@@ -754,14 +827,15 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           // =======================
           // AISENSY API INTEGRATION
           // =======================
-          const apiKey = parsedProviderConfig?.aisensy?.api_key || settings.api_key_nsmlr || settings.api_key;
+          const aisensyCreds = clientCreds?.aisensy || {};
+          const apiKey = aisensyCreds.api_key || parsedProviderConfig?.aisensy?.api_key || settings.api_key_nsmlr || settings.api_key;
           if (!apiKey) throw new Error("AiSensy API Key is not configured in settings");
 
           const payload = {
             apiKey: apiKey,
             campaignName: template.campaign_name,
             destination: phoneStr,
-            userName: parsedProviderConfig?.aisensy?.user_name || "New Swan Group",
+            userName: aisensyCreds.user_name || parsedProviderConfig?.aisensy?.user_name || company || "New Swan Group",
             templateParams: [
               lead.name || lead.company || lead.business_type || "Customer"
             ],
