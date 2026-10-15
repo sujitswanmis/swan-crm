@@ -1,11 +1,34 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import fs from 'fs/promises';
+import path from 'path';
 import {
   DEFAULT_TENANT_ID,
   DEFAULT_PROCESS_CATALOG,
   DEFAULT_CYCLE_DISCOUNTS
 } from '@/utils/saasEntitlements';
+
+const SMTP_LIMITS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'tenant_smtp_limits.json');
+
+async function readLocalSmtpLimits() {
+  try {
+    const content = await fs.readFile(SMTP_LIMITS_FILE_PATH, 'utf-8');
+    return JSON.parse(content || '{}');
+  } catch {
+    return {};
+  }
+}
+
+async function writeLocalSmtpLimits(limits) {
+  try {
+    const dir = path.dirname(SMTP_LIMITS_FILE_PATH);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(SMTP_LIMITS_FILE_PATH, JSON.stringify(limits, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('writeLocalSmtpLimits error:', err);
+  }
+}
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -423,12 +446,8 @@ export async function getAllTenantsWithSubscriptions() {
       .select('company, user_id, role, emp_official_mail_id');
 
     // Load tenant SMTP limits map
-    const { data: smtpLimitsData } = await admin
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tenant_smtp_limits')
-      .maybeSingle();
-    const smtpLimitsMap = smtpLimitsData?.value || {};
+    const limitsRes = await getTenantSmtpLimitsMap();
+    const smtpLimitsMap = limitsRes?.limits || {};
 
     const now = new Date();
 
@@ -478,8 +497,8 @@ export async function getAllTenantsWithSubscriptions() {
 
       const branches = t.id === DEFAULT_TENANT_ID ? ['NSMLR', 'NSTLP'] : (t.branches || []);
 
-      const isHq = t.id === DEFAULT_TENANT_ID;
-      const smtpLimit = isHq 
+      const isMasterHq = t.name === 'SuPuja Creations' || t.tenant_code === 'SUPUJA_CREATIONS' || t.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || t.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+      const smtpLimit = isMasterHq 
         ? 999 
         : (Number(smtpLimitsMap[t.id]) || Number(smtpLimitsMap[t.tenant_code]) || Number(smtpLimitsMap[t.name]) || 1);
 
@@ -1008,24 +1027,32 @@ export async function updateTenantSmtpLimit(tenantId, limit = 1) {
     if (!tenantId) throw new Error('Tenant ID missing.');
     const parsedLimit = Math.max(1, parseInt(limit, 10) || 1);
 
-    const { data: existing } = await admin
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tenant_smtp_limits')
-      .maybeSingle();
+    // 1. Update persistent local JSON file backup
+    const localLimits = await readLocalSmtpLimits();
+    localLimits[tenantId] = parsedLimit;
+    await writeLocalSmtpLimits(localLimits);
 
-    const currentMap = existing?.value || {};
-    currentMap[tenantId] = parsedLimit;
+    // 2. Upsert to Supabase tenant_entitlements (module_key: 'SMTP_SERVER_LIMIT')
+    try {
+      const { error } = await admin
+        .from('tenant_entitlements')
+        .upsert({
+          tenant_id: tenantId,
+          module_key: 'SMTP_SERVER_LIMIT',
+          is_enabled: true,
+          config_json: {
+            limit: parsedLimit,
+            updated_at: new Date().toISOString()
+          }
+        }, { onConflict: 'tenant_id,module_key' });
 
-    const { error } = await admin
-      .from('system_settings')
-      .upsert({
-        key: 'tenant_smtp_limits',
-        value: currentMap,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'key' });
+      if (error) {
+        console.warn('Could not sync SMTP limit to tenant_entitlements, local storage updated:', error.message);
+      }
+    } catch (dbErr) {
+      console.warn('DB upsert error for SMTP limit, local storage updated:', dbErr.message);
+    }
 
-    if (error) throw error;
     return {
       success: true,
       message: `SMTP Server Addon Quota updated to ${parsedLimit} account(s)!`,
@@ -1042,16 +1069,30 @@ export async function updateTenantSmtpLimit(tenantId, limit = 1) {
  */
 export async function getTenantSmtpLimitsMap() {
   try {
+    const localLimits = await readLocalSmtpLimits();
     const admin = getAdminClient();
-    const { data, error } = await admin
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tenant_smtp_limits')
-      .maybeSingle();
-    if (!error && data?.value) {
-      return { success: true, limits: data.value };
+
+    let dbLimits = {};
+    try {
+      const { data, error } = await admin
+        .from('tenant_entitlements')
+        .select('tenant_id, config_json')
+        .eq('module_key', 'SMTP_SERVER_LIMIT');
+
+      if (!error && Array.isArray(data)) {
+        data.forEach(row => {
+          if (row.tenant_id && row.config_json?.limit) {
+            dbLimits[row.tenant_id] = Number(row.config_json.limit);
+          }
+        });
+      }
+    } catch (e) {
+      // Table query fallback
     }
-    return { success: true, limits: {} };
+
+    // Merge: DB limits take precedence, fallback to local file
+    const merged = { ...localLimits, ...dbLimits };
+    return { success: true, limits: merged };
   } catch (err) {
     console.error('getTenantSmtpLimitsMap error:', err);
     return { success: true, limits: {} };

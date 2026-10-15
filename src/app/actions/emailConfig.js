@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
 import nodemailer from 'nodemailer';
+import { getTenantSmtpLimitsMap } from '@/app/actions/saasSubscription';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'email_campaign_settings.json');
 
@@ -189,14 +190,8 @@ export async function getTenantSmtpQuota(companyOrTenantId = '', isMasterAdmin =
     return { limit: 999, is_unlimited: true };
   }
   try {
-    const supabase = getAdminClient();
-    const { data: limitsData } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tenant_smtp_limits')
-      .maybeSingle();
-
-    const limitsMap = limitsData?.value || {};
+    const limitsRes = await getTenantSmtpLimitsMap();
+    const limitsMap = limitsRes?.limits || {};
     const normalizedKey = String(companyOrTenantId || '').trim();
 
     // Check direct match in limits map
@@ -206,6 +201,7 @@ export async function getTenantSmtpQuota(companyOrTenantId = '', isMasterAdmin =
 
     // Try finding tenant in tenants table by id, code, or name
     if (normalizedKey) {
+      const supabase = getAdminClient();
       const { data: tenants } = await supabase
         .from('tenants')
         .select('id, name, tenant_code');
@@ -218,7 +214,8 @@ export async function getTenantSmtpQuota(companyOrTenantId = '', isMasterAdmin =
 
       if (found) {
         // Master/HQ tenant is unlimited
-        if (found.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4') {
+        const isMasterHq = found.name === 'SuPuja Creations' || found.tenant_code === 'SUPUJA_CREATIONS' || found.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || found.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+        if (isMasterHq) {
           return { limit: 999, is_unlimited: true };
         }
         const lim = limitsMap[found.id] ?? limitsMap[found.tenant_code] ?? limitsMap[found.name];
