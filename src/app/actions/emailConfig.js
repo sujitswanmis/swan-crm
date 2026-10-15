@@ -107,15 +107,32 @@ const DEFAULT_CONFIG = {
   logs: []
 };
 
+// Helpers: Resolve Tenant Storage Key & File Path
+function getTenantConfigStorageKey(companyOrTenantId = '') {
+  const norm = String(companyOrTenantId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  if (!norm || norm === 'default' || norm === 'supuja_creations' || norm === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4') {
+    return 'messaging_email_config';
+  }
+  return `messaging_email_config_${norm}`;
+}
+
+function getTenantConfigFilePath(companyOrTenantId = '') {
+  const norm = String(companyOrTenantId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  if (!norm || norm === 'default' || norm === 'supuja_creations' || norm === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4') {
+    return CONFIG_FILE_PATH;
+  }
+  return path.join(process.cwd(), 'src', 'config', `email_campaign_settings_${norm}.json`);
+}
+
 // Helper: Ensure config file exists
-async function ensureConfigFile() {
+async function ensureConfigFile(targetPath = CONFIG_FILE_PATH) {
   try {
-    const dir = path.dirname(CONFIG_FILE_PATH);
+    const dir = path.dirname(targetPath);
     await fs.mkdir(dir, { recursive: true });
     try {
-      await fs.access(CONFIG_FILE_PATH);
+      await fs.access(targetPath);
     } catch {
-      await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf8');
+      await fs.writeFile(targetPath, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf8');
     }
   } catch (e) {
     console.error('ensureConfigFile error:', e);
@@ -222,17 +239,19 @@ export async function getTenantSmtpQuota(companyOrTenantId = '', isMasterAdmin =
 // Get Email Campaign & SMTP Configuration
 export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = false) {
   try {
-    await ensureConfigFile();
+    const targetFilePath = getTenantConfigFilePath(companyOrTenantId);
+    await ensureConfigFile(targetFilePath);
     
     // Fetch quota for tenant
     const quota = await getTenantSmtpQuota(companyOrTenantId, isMasterAdmin);
+    const storageKey = getTenantConfigStorageKey(companyOrTenantId);
 
     // First try Supabase system_settings
     const supabase = getAdminClient();
     const { data: dbData, error } = await supabase
       .from('system_settings')
       .select('value')
-      .eq('key', 'messaging_email_config')
+      .eq('key', storageKey)
       .maybeSingle();
 
     if (!error && dbData && dbData.value) {
@@ -252,21 +271,35 @@ export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = fal
     }
 
     // Fallback to JSON file
-    const fileContent = await fs.readFile(CONFIG_FILE_PATH, 'utf8');
-    const parsed = JSON.parse(fileContent);
-    const { accounts, primarySmtp } = normalizeSmtpAccounts(parsed);
-    return {
-      success: true,
-      data: {
-        smtp: primarySmtp,
-        smtp_accounts: accounts,
-        smtp_limit: quota.limit,
-        is_unlimited: quota.is_unlimited,
-        templates: parsed.templates || DEFAULT_CONFIG.templates,
-        automations: parsed.automations || DEFAULT_CONFIG.automations,
-        logs: (parsed.logs || []).slice(0, 50)
-      }
-    };
+    try {
+      const fileContent = await fs.readFile(targetFilePath, 'utf8');
+      const parsed = JSON.parse(fileContent);
+      const { accounts, primarySmtp } = normalizeSmtpAccounts(parsed);
+      return {
+        success: true,
+        data: {
+          smtp: primarySmtp,
+          smtp_accounts: accounts,
+          smtp_limit: quota.limit,
+          is_unlimited: quota.is_unlimited,
+          templates: parsed.templates || DEFAULT_CONFIG.templates,
+          automations: parsed.automations || DEFAULT_CONFIG.automations,
+          logs: (parsed.logs || []).slice(0, 50)
+        }
+      };
+    } catch {
+      const { accounts, primarySmtp } = normalizeSmtpAccounts(DEFAULT_CONFIG);
+      return {
+        success: true,
+        data: {
+          ...DEFAULT_CONFIG,
+          smtp: primarySmtp,
+          smtp_accounts: accounts,
+          smtp_limit: quota.limit,
+          is_unlimited: quota.is_unlimited
+        }
+      };
+    }
   } catch (error) {
     console.error('getEmailConfig error:', error);
     const { accounts, primarySmtp } = normalizeSmtpAccounts(DEFAULT_CONFIG);
@@ -284,10 +317,12 @@ export async function getEmailConfig(companyOrTenantId = '', isMasterAdmin = fal
 }
 
 // Save Full Email Configuration (SMTP, Templates, Automations)
-export async function saveEmailConfig(newConfig) {
+export async function saveEmailConfig(newConfig, companyOrTenantId = '') {
   try {
-    await ensureConfigFile();
+    const targetFilePath = getTenantConfigFilePath(companyOrTenantId);
+    await ensureConfigFile(targetFilePath);
     const supabase = getAdminClient();
+    const storageKey = getTenantConfigStorageKey(companyOrTenantId);
 
     const { accounts, primarySmtp } = normalizeSmtpAccounts(newConfig);
 
@@ -301,14 +336,18 @@ export async function saveEmailConfig(newConfig) {
     };
 
     // Save to local JSON file
-    await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(configToSave, null, 2), 'utf8');
+    try {
+      await fs.writeFile(targetFilePath, JSON.stringify(configToSave, null, 2), 'utf8');
+    } catch (fsErr) {
+      console.warn('saveEmailConfig local file write error:', fsErr.message);
+    }
 
     // Save to Supabase system_settings
     try {
       await supabase
         .from('system_settings')
         .upsert({
-          key: 'messaging_email_config',
+          key: storageKey,
           value: configToSave,
           updated_at: new Date().toISOString()
         }, { onConflict: 'key' });
@@ -339,7 +378,7 @@ export async function saveSmtpAccount(account, companyOrTenantId = '', isMasterA
     if (isNew && !quota.is_unlimited && accounts.length >= quota.limit) {
       return {
         success: false,
-        error: `SMTP server limit reached! Your current subscription allows up to ${quota.limit} SMTP server account(s). Please contact Master Admin or purchase an SMTP Server Addon to connect additional servers.`
+        error: `SMTP server limit reached! This tenant allows up to ${quota.limit} SMTP server account(s). Please purchase an SMTP Server Addon or increase quota in SaaS Studio.`
       };
     }
 
@@ -368,7 +407,7 @@ export async function saveSmtpAccount(account, companyOrTenantId = '', isMasterA
     }
 
     currentConfig.smtp_accounts = accounts;
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('saveSmtpAccount error:', error);
     return { success: false, error: error.message };
@@ -376,9 +415,9 @@ export async function saveSmtpAccount(account, companyOrTenantId = '', isMasterA
 }
 
 // Delete an SMTP Server Account
-export async function deleteSmtpAccount(accountId) {
+export async function deleteSmtpAccount(accountId, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     let accounts = currentConfig.smtp_accounts || [];
 
@@ -394,7 +433,7 @@ export async function deleteSmtpAccount(accountId) {
     }
 
     currentConfig.smtp_accounts = accounts;
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('deleteSmtpAccount error:', error);
     return { success: false, error: error.message };
@@ -402,9 +441,9 @@ export async function deleteSmtpAccount(accountId) {
 }
 
 // Set Default Primary SMTP Server
-export async function setDefaultSmtpAccount(accountId) {
+export async function setDefaultSmtpAccount(accountId, companyOrTenantId = '') {
   try {
-    const res = await getEmailConfig();
+    const res = await getEmailConfig(companyOrTenantId);
     const currentConfig = res.data;
     let accounts = currentConfig.smtp_accounts || [];
 
@@ -414,7 +453,7 @@ export async function setDefaultSmtpAccount(accountId) {
     }));
 
     currentConfig.smtp_accounts = accounts;
-    return await saveEmailConfig(currentConfig);
+    return await saveEmailConfig(currentConfig, companyOrTenantId);
   } catch (error) {
     console.error('setDefaultSmtpAccount error:', error);
     return { success: false, error: error.message };

@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.0.753",
+  "version": "1.0.754",
   "private": true,
   "scripts": {
     "dev": "next dev",

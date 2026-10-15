@@ -23,6 +23,7 @@ import {
   sendTestEmail 
 } from '@/app/actions/emailConfig';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
 
 const SMTP_PRESETS = [
   {
@@ -108,6 +109,15 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   // Addon Quota State
   const [smtpLimit, setSmtpLimit] = useState(1);
   const [isUnlimitedQuota, setIsUnlimitedQuota] = useState(false);
+
+  // SaaS Tenants Management (Master Admin)
+  const [tenantsList, setTenantsList] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState(''); // '' means SuPuja Creations (Master HQ)
+  const [modalQuotaInput, setModalQuotaInput] = useState(1);
+  const [modalTenantId, setModalTenantId] = useState('');
+  const [showQuickQuotaModal, setShowQuickQuotaModal] = useState(false);
+  const [quickQuotaInput, setQuickQuotaInput] = useState(1);
+  const [savingQuickQuota, setSavingQuickQuota] = useState(false);
 
   // Config State & Multiple SMTP Accounts
   const [smtp, setSmtp] = useState({
@@ -219,19 +229,33 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     loadConfig();
   }, []);
 
-  const loadConfig = async () => {
+  const loadConfig = async (overrideComp = null, overrideTenant = undefined) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const SWAN_COMPANIES = ['nstlp', 'nsmlr', 'nstl', 'swan agro', 'new swan', 'new swan group'];
-      const compStr = String(userCompany || '').trim().toLowerCase();
-      const isSwan = !userCompany || SWAN_COMPANIES.includes(compStr);
-      const effectiveBranchComp = isSwan ? 'New Swan Group' : (userCompany || 'SuPuja Creations');
+      const tenantToUse = overrideTenant !== undefined ? overrideTenant : (tenantsList.find(t => t.id === selectedTenantId) || null);
+      const compToUse = overrideComp !== null 
+        ? overrideComp 
+        : (tenantToUse ? (tenantToUse.name || tenantToUse.tenant_code) : (userCompany || 'SuPuja Creations'));
 
-      const [res, branchRes] = await Promise.all([
-        getEmailConfig(userCompany, isMasterAdmin),
+      const isHqTarget = !tenantToUse || tenantToUse.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4' || compToUse === 'SuPuja Creations';
+
+      const SWAN_COMPANIES = ['nstlp', 'nsmlr', 'nstl', 'swan agro', 'new swan', 'new swan group'];
+      const compStr = String(compToUse || '').trim().toLowerCase();
+      const isSwan = SWAN_COMPANIES.includes(compStr);
+      const effectiveBranchComp = isSwan ? 'New Swan Group' : compToUse;
+
+      const promises = [
+        getEmailConfig(compToUse, isMasterAdmin && isHqTarget),
         getTenantBranches(effectiveBranchComp).catch(() => ({ success: false, branches: [] }))
-      ]);
+      ];
+
+      if (isMasterAdmin) {
+        promises.push(getAllTenantsWithSubscriptions().catch(() => ({ success: false, tenants: [] })));
+      }
+
+      const [res, branchRes, tenantsRes] = await Promise.all(promises);
+
       if (res.success && res.data) {
         setSmtp(res.data.smtp || {});
         const accounts = res.data.smtp_accounts || [];
@@ -249,6 +273,9 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       if (branchRes.success && Array.isArray(branchRes.branches)) {
         setBranches(branchRes.branches);
       }
+      if (tenantsRes?.success && Array.isArray(tenantsRes.tenants)) {
+        setTenantsList(tenantsRes.tenants);
+      }
     } catch (e) {
       console.error('loadConfig error:', e);
       setErrorMsg('Failed to load email configuration.');
@@ -257,12 +284,55 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     }
   };
 
+  const handleSwitchTenant = async (tenantId) => {
+    setSelectedTenantId(tenantId);
+    const targetTenant = tenantsList.find(t => t.id === tenantId) || null;
+    const targetComp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+    await loadConfig(targetComp, targetTenant);
+  };
+
+  const handleSaveQuickQuota = async () => {
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    if (!targetTenant) return;
+    setSavingQuickQuota(true);
+    try {
+      const res = await updateTenantSmtpLimit(targetTenant.id, quickQuotaInput);
+      if (res.success) {
+        setSaveSuccessMsg(`SMTP Addon Quota updated to ${quickQuotaInput} server(s) for ${targetTenant.name}!`);
+        setShowQuickQuotaModal(false);
+        const tRes = await getAllTenantsWithSubscriptions().catch(() => ({ success: false, tenants: [] }));
+        if (tRes.success && Array.isArray(tRes.tenants)) {
+          setTenantsList(tRes.tenants);
+          const updatedTarget = tRes.tenants.find(t => t.id === targetTenant.id);
+          await loadConfig(targetTenant.name || targetTenant.tenant_code, updatedTarget);
+        }
+        setTimeout(() => setSaveSuccessMsg(null), 3000);
+      } else {
+        alert('Failed to update quota: ' + res.error);
+      }
+    } catch (err) {
+      alert('Error updating quota: ' + err.message);
+    } finally {
+      setSavingQuickQuota(false);
+    }
+  };
+
   // --- SMTP Server Accounts Handlers ---
   const handleOpenAddSmtp = () => {
-    if (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) {
-      alert(`SMTP Server Quota Reached!\n\nYour current subscription plan allows up to ${smtpLimit} active SMTP server account(s).\n\nTo connect additional outbound email servers or branches, please contact your Master Admin to increase your quota.`);
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+    const currentLimit = targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : (smtpLimit || 1));
+
+    if (!isUnlimitedQuota && !(isMasterAdmin && isHqTarget) && smtpAccounts.length >= currentLimit) {
+      alert(`SMTP Server Quota Reached!\n\nThis client allows up to ${currentLimit} active SMTP server account(s).\n\nTo connect additional outbound email servers or branches, please increase quota.`);
       return;
     }
+
+    setModalTenantId(selectedTenantId || '');
+    setModalQuotaInput(targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : 1));
+
+    const activeCompName = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+
     setEditingSmtp({
       id: '',
       account_name: '',
@@ -274,7 +344,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
       secure: false,
       username: '',
       password: '',
-      from_name: smtp.from_name || (userCompany ? `${userCompany} Team` : 'SuPuja Creations Team'),
+      from_name: smtp.from_name || `${activeCompName} Team`,
       from_email: '',
       reply_to: '',
       signature: smtp.signature || '',
@@ -285,6 +355,10 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
   };
 
   const handleOpenEditSmtp = (acc) => {
+    const targetTenant = tenantsList.find(t => t.id === selectedTenantId) || null;
+    const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+    setModalTenantId(selectedTenantId || '');
+    setModalQuotaInput(targetTenant?.smtp_accounts_limit || (isHqTarget ? 999 : (smtpLimit || 1)));
     setEditingSmtp({ ...acc });
     setShowPassword(false);
     setShowSmtpModal(true);
@@ -338,12 +412,32 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     }
     setSaving(true);
     try {
-      const res = await saveSmtpAccount(editingSmtp, userCompany, isMasterAdmin);
+      const targetTenant = tenantsList.find(t => t.id === (isMasterAdmin ? modalTenantId : selectedTenantId)) || (selectedTenantId ? tenantsList.find(t => t.id === selectedTenantId) : null);
+      const targetComp = targetTenant ? (targetTenant.name || targetTenant.tenant_code) : (userCompany || 'SuPuja Creations');
+      const isHqTarget = !targetTenant || targetTenant.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+
+      // If Master Admin updated quota inside modal for a client tenant
+      if (isMasterAdmin && targetTenant && !isHqTarget && modalQuotaInput && modalQuotaInput !== targetTenant.smtp_accounts_limit) {
+        await updateTenantSmtpLimit(targetTenant.id, modalQuotaInput);
+      }
+
+      const res = await saveSmtpAccount(editingSmtp, targetComp, isMasterAdmin && isHqTarget);
       if (res.success) {
-        setSaveSuccessMsg(`SMTP Server "${editingSmtp.account_name}" saved successfully!`);
+        setSaveSuccessMsg(`SMTP Server "${editingSmtp.account_name}" saved successfully for ${targetComp}!`);
         setShowSmtpModal(false);
         setEditingSmtp(null);
-        await loadConfig();
+        if (isMasterAdmin) {
+          const tRes = await getAllTenantsWithSubscriptions().catch(() => ({ success: false, tenants: [] }));
+          if (tRes.success && Array.isArray(tRes.tenants)) {
+            setTenantsList(tRes.tenants);
+            const updatedTarget = tRes.tenants.find(t => t.id === targetTenant?.id);
+            await loadConfig(targetComp, updatedTarget);
+          } else {
+            await loadConfig(targetComp, targetTenant);
+          }
+        } else {
+          await loadConfig(targetComp, targetTenant);
+        }
         setTimeout(() => setSaveSuccessMsg(null), 3000);
       } else {
         alert('Error: ' + res.error);
@@ -754,31 +848,96 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                   fontWeight: 700,
                   padding: '0.2rem 0.6rem',
                   borderRadius: '6px',
-                  background: (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#fef2f2' : '#ecfdf5',
-                  color: (!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#b91c1c' : '#047857',
-                  border: `1px solid ${(!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit) ? '#fecaca' : '#a7f3d0'}`
+                  background: (!isUnlimitedQuota && smtpAccounts.length >= smtpLimit) ? '#fef2f2' : '#ecfdf5',
+                  color: (!isUnlimitedQuota && smtpAccounts.length >= smtpLimit) ? '#b91c1c' : '#047857',
+                  border: `1px solid ${(!isUnlimitedQuota && smtpAccounts.length >= smtpLimit) ? '#fecaca' : '#a7f3d0'}`
                 }}>
-                  Quota: {smtpAccounts.length} / {isUnlimitedQuota || isMasterAdmin ? '∞ Unlimited' : `${smtpLimit} Allowed`}
+                  Quota: {smtpAccounts.length} / {isUnlimitedQuota ? '∞ Unlimited' : `${smtpLimit} Allowed`}
                 </span>
+                {isMasterAdmin && selectedTenantId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = tenantsList.find(x => x.id === selectedTenantId);
+                      setQuickQuotaInput(t?.smtp_accounts_limit || smtpLimit || 1);
+                      setShowQuickQuotaModal(true);
+                    }}
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #c7d2fe',
+                      background: '#eef2ff',
+                      color: '#4338ca',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                    title="Change allowed mail accounts for this client"
+                  >
+                    ⚙️ Change Quota
+                  </button>
+                )}
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
                 Add and manage multiple outbound email gateways. Assign primary defaults, set branch scopes, and run live verification tests.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenAddSmtp}
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.15rem', fontSize: '0.88rem', borderRadius: '8px' }}
-            >
-              <Plus size={16} />
-              <span>Add SMTP Server</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {isMasterAdmin && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: '8px',
+                  background: '#f8fafc',
+                  border: '1.5px solid #cbd5e1'
+                }}>
+                  <Building2 size={16} color="#4338ca" />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                    Client:
+                  </span>
+                  <select
+                    value={selectedTenantId}
+                    onChange={(e) => handleSwitchTenant(e.target.value)}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: '6px',
+                      border: '1.5px solid #6366f1',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      background: '#fff',
+                      color: '#1e293b',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">👑 SuPuja Creations (Master HQ)</option>
+                    {tenantsList
+                      .filter(t => t.id !== 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4' && t.name !== 'SuPuja Creations')
+                      .map(t => (
+                        <option key={t.id} value={t.id}>
+                          🏢 {t.name} ({t.tenant_code}) — Quota: {t.smtp_accounts_limit || 1}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenAddSmtp}
+                className="btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.15rem', fontSize: '0.88rem', borderRadius: '8px' }}
+              >
+                <Plus size={16} />
+                <span>Add SMTP Server</span>
+              </button>
+            </div>
           </div>
 
           {/* Quota limit warning notice if reached */}
-          {!isUnlimitedQuota && !isMasterAdmin && smtpAccounts.length >= smtpLimit && (
+          {!isUnlimitedQuota && smtpAccounts.length >= smtpLimit && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -792,7 +951,16 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
             }}>
               <AlertCircle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
               <div>
-                <strong>Addon Quota Reached:</strong> You have reached your allocated SMTP server limit (<strong>{smtpAccounts.length}/{smtpLimit}</strong>). To connect additional branches or multiple SMTP gateways, please contact Master Admin to increase your quota.
+                <strong>Addon Quota Reached:</strong> This client has reached its allocated SMTP server limit (<strong>{smtpAccounts.length}/{smtpLimit}</strong>).
+                {isMasterAdmin ? (
+                  <span style={{ marginLeft: '0.35rem' }}>
+                    Click <strong>"⚙️ Change Quota"</strong> above to increase allowed accounts.
+                  </span>
+                ) : (
+                  <span style={{ marginLeft: '0.35rem' }}>
+                    To connect additional branches or multiple SMTP gateways, please contact Master Admin to increase your quota.
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -2225,6 +2393,122 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
               </button>
             </div>
 
+            {/* Master Admin: Target Client & Quota Allocation */}
+            {isMasterAdmin && (
+              <div style={{
+                marginBottom: '1.25rem',
+                padding: '0.9rem 1rem',
+                background: '#f8fafc',
+                borderRadius: '10px',
+                border: '1.5px solid #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ flex: 1, minWidth: '220px' }}>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.3rem' }}>
+                      🏢 Target Client / Company
+                    </label>
+                    <select
+                      value={modalTenantId}
+                      onChange={(e) => {
+                        const tid = e.target.value;
+                        setModalTenantId(tid);
+                        const found = tenantsList.find(t => t.id === tid);
+                        if (found) {
+                          setModalQuotaInput(found.smtp_accounts_limit || 1);
+                        } else {
+                          setModalQuotaInput(999);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1.5px solid #6366f1',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        background: '#fff',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">👑 SuPuja Creations (Master HQ)</option>
+                      {tenantsList
+                        .filter(t => t.id !== 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4' && t.name !== 'SuPuja Creations')
+                        .map(t => (
+                          <option key={t.id} value={t.id}>
+                            🏢 {t.name} ({t.tenant_code})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.3rem' }}>
+                      🔢 Allowed Mail Accounts (Addon Quota)
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        type="button"
+                        disabled={!modalTenantId}
+                        onClick={() => setModalQuotaInput(prev => Math.max(1, prev - 1))}
+                        style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: modalTenantId ? 'pointer' : 'not-allowed', opacity: modalTenantId ? 1 : 0.5 }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        disabled={!modalTenantId}
+                        value={!modalTenantId ? '∞' : modalQuotaInput}
+                        onChange={(e) => setModalQuotaInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        style={{ width: '54px', textAlign: 'center', padding: '0.3rem', borderRadius: '6px', border: '1.5px solid #6366f1', fontWeight: 700, fontSize: '0.92rem' }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!modalTenantId}
+                        onClick={() => setModalQuotaInput(prev => prev + 1)}
+                        style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: modalTenantId ? 'pointer' : 'not-allowed', opacity: modalTenantId ? 1 : 0.5 }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {modalTenantId ? (
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Kitne Mail Accounts / Servers Allowed:</span>
+                    {[1, 2, 3, 5, 10].map(cnt => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => setModalQuotaInput(cnt)}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: modalQuotaInput === cnt ? 700 : 500,
+                          background: modalQuotaInput === cnt ? '#4338ca' : '#fff',
+                          color: modalQuotaInput === cnt ? '#fff' : '#475569',
+                          border: `1px solid ${modalQuotaInput === cnt ? '#4338ca' : '#cbd5e1'}`,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {cnt} {cnt === 1 ? 'Server (Default)' : 'Servers'}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.75rem', color: '#166534', background: '#dcfce7', padding: '0.3rem 0.6rem', borderRadius: '4px', display: 'inline-block' }}>
+                    ✨ Master Admin HQ has unlimited mail accounts by default. Select a client above to set their addon quota.
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 1-Click Presets inside modal */}
             <div style={{ marginBottom: '1.25rem', padding: '1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
@@ -2455,7 +2739,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 rows={3}
                 value={editingSmtp.signature || ''}
                 onChange={(e) => setEditingSmtp({ ...editingSmtp, signature: e.target.value })}
-                placeholder="Best regards,&#10;SuPuja Creations Team&#10;https://swanagro.in"
+                placeholder="Best regards,&#10;Company Team"
                 style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.85rem', resize: 'vertical' }}
               />
             </div>
@@ -2477,6 +2761,101 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 style={{ padding: '0.6rem 1.5rem', fontSize: '0.88rem', borderRadius: '8px' }}
               >
                 {saving ? 'Saving...' : 'Save SMTP Server'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Change Quota Modal for Master Admin */}
+      {showQuickQuotaModal && selectedTenantId && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="card" style={{ width: '100%', maxWidth: '480px', padding: '1.5rem', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>📧 Set Outbound SMTP Quota</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowQuickQuotaModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1rem 0' }}>
+              Client: <strong>{tenantsList.find(t => t.id === selectedTenantId)?.name}</strong> ({tenantsList.find(t => t.id === selectedTenantId)?.tenant_code})
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Allowed Mail Accounts / Servers:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setQuickQuotaInput(prev => Math.max(1, prev - 1))}
+                  style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={quickQuotaInput}
+                  onChange={(e) => setQuickQuotaInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={{ width: '54px', textAlign: 'center', padding: '0.3rem', borderRadius: '6px', border: '1.5px solid #6366f1', fontWeight: 700, fontSize: '0.92rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setQuickQuotaInput(prev => prev + 1)}
+                  style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Quick Presets:</span>
+              {[1, 2, 3, 5, 10].map(cnt => (
+                <button
+                  key={cnt}
+                  type="button"
+                  onClick={() => setQuickQuotaInput(cnt)}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: quickQuotaInput === cnt ? 700 : 500,
+                    background: quickQuotaInput === cnt ? '#4338ca' : '#fff',
+                    color: quickQuotaInput === cnt ? '#fff' : '#475569',
+                    border: `1px solid ${quickQuotaInput === cnt ? '#4338ca' : '#cbd5e1'}`,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {cnt} {cnt === 1 ? 'Server (Default)' : 'Servers'}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowQuickQuotaModal(false)}
+                className="btn-action-secondary"
+                style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickQuota}
+                disabled={savingQuickQuota}
+                className="btn-primary"
+                style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+              >
+                {savingQuickQuota ? 'Saving...' : 'Update Quota'}
               </button>
             </div>
           </div>
