@@ -28,11 +28,22 @@ import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionU
 const ALL_WA_TABS = [
   { id: 'templates', label: 'Templates Library', icon: MessageSquare },
   { id: 'automations', label: 'Stage Automations', icon: Repeat },
-  { id: 'settings', label: 'Global Settings', icon: Settings }
+  { id: 'catalog', label: 'Master BSP Catalog (20+)', icon: Layers },
+  { id: 'allocations', label: 'Client Allocation Matrix', icon: Users },
+  { id: 'settings', label: 'API Credentials & Setup', icon: Settings }
 ];
 
 export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '' }) {
-  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_official', ALL_WA_TABS);
+  const rLower = String(userRole || '').trim().toLowerCase();
+  const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'super_admin' || rLower === 'masteradmin' || rLower === 'owner' || rLower.includes('admin');
+
+  const visibleTabs = React.useMemo(() => {
+    let list = ALL_WA_TABS;
+    if (!isAdmin) {
+      list = list.filter(t => t.id !== 'catalog' && t.id !== 'allocations');
+    }
+    return filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_official', list);
+  }, [moduleAccess, userRole, isAdmin]);
 
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -62,13 +73,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const handleTabChange = (tabId) => {
     if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
+    if (tabId === 'catalog') setActiveAdminSubTab('catalog');
+    if (tabId === 'allocations') setActiveAdminSubTab('allocations');
+    if (tabId === 'settings') setActiveAdminSubTab('credentials');
     const params = new URLSearchParams(window.location.search);
     params.set('wa_tab', tabId);
     window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
   };
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
-  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
   // Settings State - Multi-Active Providers & Default Gateway
   const [enabledProviders, setEnabledProviders] = useState(['aisensy']);
@@ -676,8 +689,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         })}
       </div>
 
-      {/* SETTINGS TAB */}
-      {activeTab === 'settings' && (
+      {/* SETTINGS, CATALOG & ALLOCATIONS TABS */}
+      {['settings', 'catalog', 'allocations'].includes(activeTab) && (
         <div style={{ maxWidth: '1080px' }}>
           <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
@@ -710,13 +723,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', overflowX: 'auto' }}>
               <button
                 type="button"
-                onClick={() => setActiveAdminSubTab('catalog')}
+                onClick={() => {
+                  setActiveAdminSubTab('catalog');
+                  handleTabChange('catalog');
+                }}
                 style={{
                   padding: '0.55rem 1rem',
                   borderRadius: '6px',
-                  border: activeAdminSubTab === 'catalog' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: activeAdminSubTab === 'catalog' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: activeAdminSubTab === 'catalog' ? '#fff' : 'var(--text-primary)',
+                  border: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) ? '#fff' : 'var(--text-primary)',
                   fontWeight: 600,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
@@ -730,13 +746,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </button>
               <button
                 type="button"
-                onClick={() => setActiveAdminSubTab('allocations')}
+                onClick={() => {
+                  setActiveAdminSubTab('allocations');
+                  handleTabChange('allocations');
+                }}
                 style={{
                   padding: '0.55rem 1rem',
                   borderRadius: '6px',
-                  border: activeAdminSubTab === 'allocations' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: activeAdminSubTab === 'allocations' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: activeAdminSubTab === 'allocations' ? '#fff' : 'var(--text-primary)',
+                  border: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) ? '#fff' : 'var(--text-primary)',
                   fontWeight: 600,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
@@ -750,13 +769,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </button>
               <button
                 type="button"
-                onClick={() => setActiveAdminSubTab('credentials')}
+                onClick={() => {
+                  setActiveAdminSubTab('credentials');
+                  handleTabChange('settings');
+                }}
                 style={{
                   padding: '0.55rem 1rem',
                   borderRadius: '6px',
-                  border: activeAdminSubTab === 'credentials' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: activeAdminSubTab === 'credentials' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-                  color: activeAdminSubTab === 'credentials' ? '#fff' : 'var(--text-primary)',
+                  border: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: (activeTab === 'settings' && activeAdminSubTab === 'credentials') ? '#fff' : 'var(--text-primary)',
                   fontWeight: 600,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
@@ -774,7 +796,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 1: MASTER BSP CATALOG (ALL 20+ GLOBAL GATEWAYS)    */}
           {/* ======================================================== */}
-          {isAdmin && activeAdminSubTab === 'catalog' && (
+          {isAdmin && (activeTab === 'catalog' || (activeTab === 'settings' && activeAdminSubTab === 'catalog')) && (
             <div>
               {/* TOP ACTIONS & SEARCH */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -951,7 +973,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 2: CLIENT / WORKSPACE ALLOCATION MATRIX            */}
           {/* ======================================================== */}
-          {isAdmin && activeAdminSubTab === 'allocations' && (
+          {isAdmin && (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) && (
             <div style={{ marginBottom: '2rem' }}>
               <div style={{ 
                 padding: '1.25rem', 
@@ -1221,7 +1243,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 3: WORKSPACE API SETUP & CREDENTIALS               */}
           {/* ======================================================== */}
-          {(!isAdmin || activeAdminSubTab === 'credentials') && (
+          {(!isAdmin || (activeTab === 'settings' && activeAdminSubTab === 'credentials') || (!['catalog', 'allocations'].includes(activeTab) && activeAdminSubTab === 'credentials')) && (
             <div>
               {/* SCOPED CLIENT NOTICE */}
               {isClientScoped && (
